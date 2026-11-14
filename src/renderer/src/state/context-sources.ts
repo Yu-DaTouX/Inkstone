@@ -11,6 +11,8 @@ export interface ContextSources {
   mcpTools: ContextSourceItem[]
   memoryFiles: ContextSourceItem[]
   skills: ContextSourceItem[]
+  builtinTools: ContextSourceItem[]
+  mcpServers: ContextSourceItem[]
 }
 
 const parsed = new Map<string, ContextSources | null>()
@@ -42,7 +44,9 @@ export function parseContextSources(text: string | undefined): ContextSources | 
         deferred: { builtin: count(deferred.builtin), mcp: count(deferred.mcp) },
         mcpTools: items(raw.mcpTools),
         memoryFiles: items(raw.memoryFiles),
-        skills: items(raw.skillList)
+        skills: items(raw.skillList),
+        builtinTools: items(raw.builtinTools),
+        mcpServers: items(raw.mcpServers)
       }
     }
   } catch {
@@ -51,6 +55,36 @@ export function parseContextSources(text: string | undefined): ContextSources | 
   if (parsed.size > 16) parsed.clear()
   parsed.set(text, result)
   return result
+}
+
+export type SourceListId = 'builtin' | 'mcp' | 'skills' | 'mcpInfo' | 'memory' | 'deferredMcp' | 'deferredBuiltin'
+
+export function sourceItems(sources: ContextSources | null | undefined, id: string): ContextSourceItem[] {
+  if (!sources) return []
+  switch (id) {
+    case 'builtin': return sources.builtinTools.filter((item) => !item.deferred)
+    case 'mcp': return sources.mcpTools.filter((item) => !item.deferred)
+    case 'deferredBuiltin': return sources.builtinTools.filter((item) => item.deferred)
+    case 'deferredMcp': return sources.mcpTools.filter((item) => item.deferred)
+    case 'skills': return sources.skills
+    case 'mcpInfo': return sources.mcpServers
+    case 'memory': return sources.memoryFiles
+    default: return []
+  }
+}
+
+export function scaledSourceItems(sources: ContextSources | null | undefined, id: string, shownTokens: number): ContextSourceItem[] {
+  const items = sourceItems(sources, id)
+  const estimate = sources && (SYSTEM_PART_IDS as readonly string[]).includes(id) ? sources.parts[id as SystemPartId] : 0
+  if (!items.length || estimate <= 0 || shownTokens <= 0 || shownTokens === estimate) return items
+  const factor = shownTokens / estimate
+  return items.map((item) => ({ ...item, tokens: Math.round(item.tokens * factor) }))
+}
+
+export function sourceItemLabel(name: string, id: string): string {
+  if (id === 'memory') return name.split(/[\\/]/).filter(Boolean).slice(-2).join('/') || name
+  if (id === 'mcp' || id === 'deferredMcp' || id === 'mcpInfo') return name.replace(/^mcp__/i, '').split('__').filter(Boolean).join(' › ') || name
+  return name
 }
 
 export function sourcesTotal(sources: ContextSources | null | undefined): number {

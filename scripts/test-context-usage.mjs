@@ -65,6 +65,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(a.deferred.mcp === tok({ name: 'mcp__figma__get_file', description: 'Get file', parameters: { type: 'object' } }), '未发出的 MCP 工具计为延迟加载')
   ok(a.deferred.builtin === tok({ name: 'grep', description: 'Search', parameters: { type: 'object' } }), '未激活的内置工具计为延迟加载，hidden 不计')
   ok(a.mcpTools.length === 3 && a.mcpTools.at(-1)[0] === 'mcp__figma__get_file' && a.mcpTools.at(-1)[2] === 1, 'MCP 清单列出已发出与延迟的工具，延迟的排后并带标记')
+  ok(a.builtinTools.filter(([, , d]) => !d).map(([n]) => n).sort().join(',') === 'bash,read' && a.builtinTools.find(([n]) => n === 'grep')?.[2] === 1, '内置工具清单：已发出的按注册名，未发出的带延迟标记，hidden 不列', JSON.stringify(a.builtinTools))
+  ok(a.builtinTools.filter(([, , d]) => !d).reduce((n, [, t]) => n + t, 0) === a.builtin, '内置工具清单与合计一致')
+  ok(a.mcpServers.map(([n]) => n).sort().join(',') === 'figma,github', 'MCP 服务说明按服务拆开：pi 原生逐行与砇托管一行', JSON.stringify(a.mcpServers))
+  const servers = ext.mcpServersOf('MCP servers whose tools are not declared to you. Call codemode tools from scripts.\n- mcp__codegraph (codemode): # Codegraph\n  details line\n- docs: library docs')
+  ok(servers.map(([n]) => n).join(',') === 'mcp__codegraph,docs' && servers[0][1] > servers[1][1], '原生服务行去掉括号与冒号，续行算入同一服务', JSON.stringify(servers))
+  ok(ext.mcpServersOf('Inkstone-hosted MCP servers: a, b. Their tools are not declared.').map(([n]) => n).join(',') === 'a,b', '托管服务句中的多个名字')
 
   const responses = {
     instructions: systemText,
@@ -122,6 +128,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const sources = sourcesMod.parseContextSources(pushed[0][1])
   ok(sources && sources.parts.memory === a.memory && sources.mcpTools.length === 3 && sources.mcpTools.at(-1).deferred === true, '界面能解析状态 JSON')
   ok(sourcesMod.parseContextSources('not json') === null && sourcesMod.parseContextSources('{"v":2}') === null, '无法识别的状态返回 null')
+  ok(sources.builtinTools.length === a.builtinTools.length && sources.mcpServers.length === 2, '界面解析内置工具与 MCP 服务清单')
+  ok(sourcesMod.parseContextSources('{"v":1}').builtinTools.length === 0, '旧版状态没有新清单时为空')
+  ok(sourcesMod.sourceItems(sources, 'builtin').every((item) => !item.deferred) && sourcesMod.sourceItems(sources, 'deferredBuiltin').map((item) => item.name).join() === 'grep', '类别对应条目：已发出与延迟分开')
+  ok(sourcesMod.sourceItems(sources, 'mcp').length === 2 && sourcesMod.sourceItems(sources, 'deferredMcp').length === 1 && sourcesMod.sourceItems(sources, 'mcpInfo').length === 2 && sourcesMod.sourceItems(sources, 'user').length === 0, 'MCP 工具、服务与无条目类别')
+  const half = sourcesMod.scaledSourceItems(sources, 'memory', Math.round(sources.parts.memory / 2))
+  ok(half.length === 2 && Math.abs(half.reduce((n, item) => n + item.tokens, 0) - sourcesMod.sourceItems(sources, 'memory').reduce((n, item) => n + item.tokens, 0) * Math.round(sources.parts.memory / 2) / sources.parts.memory) <= 2, '条目按类别显示值同比例折算', JSON.stringify(half))
+  ok(sourcesMod.scaledSourceItems(sources, 'deferredBuiltin', 1)[0].tokens === sourcesMod.sourceItems(sources, 'deferredBuiltin')[0].tokens, '延迟加载条目不折算')
+  ok(sourcesMod.sourceItemLabel('E:\\proj\\sub\\AGENTS.md', 'memory') === 'sub/AGENTS.md' && sourcesMod.sourceItemLabel('mcp__figma__get_file', 'deferredMcp') === 'figma › get_file' && sourcesMod.sourceItemLabel('mcp__codegraph', 'mcpInfo') === 'codegraph' && sourcesMod.sourceItemLabel('read', 'builtin') === 'read', '条目显示名：路径取末两段，MCP 去前缀并分隔')
 
   const total = sourcesMod.sourcesTotal(sources)
   const split = sourcesMod.splitSystem(5000, sources, false)

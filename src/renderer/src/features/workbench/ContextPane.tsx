@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactEle
 import { useI18n, useT, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { UIMessage } from '../../../../shared/ipc'
-import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, type ContextSourceItem } from '../../state/context-sources'
+import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, sourceItemLabel, type ContextSourceItem, type SystemPartId } from '../../state/context-sources'
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import {
   compactionErrorTip,
@@ -165,7 +165,7 @@ function SourceList({ id, label, items, text, deferredLabel }: { id: string; lab
       <ul className="wb-ctx-table">
         {shown.map((item) => (
           <li key={item.name} title={item.name} data-deferred={item.deferred ? '1' : undefined}>
-            <span className="wb-ctx-table-name">{item.name.split(/[\\/]/).filter(Boolean).slice(-2).join('/') || item.name}</span>
+            <span className="wb-ctx-table-name">{sourceItemLabel(item.name, id)}</span>
             <span className="wb-ctx-table-num">{`${item.deferred ? `${deferredLabel} ` : ''}${shortTokens(item.tokens)}`}</span>
           </li>
         ))}
@@ -270,11 +270,19 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const reserveRows: Array<{ id: ContextRowId; tokens: number }> = reserve
     ? [...(reserve.buffer ? [{ id: 'buffer' as const, tokens: reserve.buffer }] : []), { id: 'free' as const, tokens: reserve.free }]
     : []
+  const scaled = (id: SystemPartId, items: ContextSourceItem[]): ContextSourceItem[] => {
+    const shown = rows.find((row) => row.id === id)?.tokens ?? 0
+    const estimate = sources?.parts[id] ?? 0
+    if (shown <= 0 || estimate <= 0 || shown === estimate) return items
+    return items.map((item) => (item.deferred ? item : { ...item, tokens: Math.round((item.tokens * shown) / estimate) }))
+  }
   const sourceLists = sources
     ? [
-        { id: 'mcp', label: t('ctx.cat.mcp'), items: sources.mcpTools },
-        { id: 'memory', label: t('ctx.cat.memory'), items: sources.memoryFiles },
-        { id: 'skills', label: t('ctx.cat.skills'), items: sources.skills }
+        { id: 'memory', label: t('ctx.cat.memory'), items: scaled('memory', sources.memoryFiles) },
+        { id: 'mcpInfo', label: t('ctx.cat.mcpInfo'), items: scaled('mcpInfo', sources.mcpServers) },
+        { id: 'mcp', label: t('ctx.cat.mcp'), items: scaled('mcp', sources.mcpTools) },
+        { id: 'builtin', label: t('ctx.cat.builtin'), items: scaled('builtin', sources.builtinTools) },
+        { id: 'skills', label: t('ctx.cat.skills'), items: scaled('skills', sources.skills) }
       ].filter((list) => list.items.length > 0)
     : []
   const deferredRows = sources

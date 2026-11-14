@@ -123,6 +123,21 @@ export function skillsOf(text) {
   return skills
 }
 
+export function mcpServersOf(text) {
+  const servers = []
+  const hosted = /Inkstone-hosted MCP servers: ([^\n]*?)\.(?=\s|$)/.exec(text)
+  if (hosted) {
+    const names = hosted[1].split(',').map((name) => name.trim()).filter(Boolean)
+    const share = Math.ceil(estimateTextTokens(text) / Math.max(1, names.length))
+    for (const name of names) servers.push([name, share])
+    return servers
+  }
+  const pattern = /^- ([^\s(:]+)[^\n]*(?:\n(?!- |<\/)[^\n]*)*/gm
+  let match
+  while ((match = pattern.exec(text))) servers.push([match[1], estimateTextTokens(match[0])])
+  return servers
+}
+
 function merged(rows) {
   const byName = new Map()
   for (const row of rows) {
@@ -142,7 +157,7 @@ function isMcpTool(tool) {
 
 export function contextUsageReport({ payload, systemPrompt = '', tools = [] }) {
   const text = systemTextOf(payload) || String(systemPrompt ?? '')
-  const report = { v: 1, prompt: 0, builtin: 0, mcp: 0, skills: 0, mcpInfo: 0, memory: 0, deferred: { builtin: 0, mcp: 0 }, mcpTools: [], memoryFiles: [], skillList: [] }
+  const report = { v: 1, prompt: 0, builtin: 0, mcp: 0, skills: 0, mcpInfo: 0, memory: 0, deferred: { builtin: 0, mcp: 0 }, mcpTools: [], memoryFiles: [], skillList: [], builtinTools: [], mcpServers: [] }
   for (const section of splitSections(text)) {
     const tokens = estimateTextTokens(section.text)
     if (MEMORY_SECTIONS.has(section.name)) {
@@ -151,8 +166,10 @@ export function contextUsageReport({ payload, systemPrompt = '', tools = [] }) {
     } else if (SKILL_SECTIONS.has(section.name)) {
       report.skills += tokens
       report.skillList.push(...skillsOf(section.text))
-    } else if (MCP_INFO_SECTIONS.has(section.name)) report.mcpInfo += tokens
-    else report.prompt += tokens
+    } else if (MCP_INFO_SECTIONS.has(section.name)) {
+      report.mcpInfo += tokens
+      report.mcpServers.push(...mcpServersOf(section.text))
+    } else report.prompt += tokens
   }
   const registered = new Map()
   for (const tool of Array.isArray(tools) ? tools : []) {
@@ -168,7 +185,10 @@ export function contextUsageReport({ payload, systemPrompt = '', tools = [] }) {
     if (mcp) {
       report.mcp += tool.tokens
       report.mcpTools.push([own?.name ?? tool.name, tool.tokens, 0])
-    } else report.builtin += tool.tokens
+    } else {
+      report.builtin += tool.tokens
+      report.builtinTools.push([own?.name ?? tool.name, tool.tokens, 0])
+    }
   }
   for (const [key, tool] of registered) {
     if (sentNames.has(key)) continue
@@ -176,11 +196,16 @@ export function contextUsageReport({ payload, systemPrompt = '', tools = [] }) {
     if (isMcpTool(tool)) {
       report.deferred.mcp += tokens
       report.mcpTools.push([tool.name, tokens, 1])
-    } else report.deferred.builtin += tokens
+    } else {
+      report.deferred.builtin += tokens
+      report.builtinTools.push([tool.name, tokens, 1])
+    }
   }
   report.mcpTools = merged(report.mcpTools).sort((a, b) => a[2] - b[2] || b[1] - a[1])
   report.memoryFiles = merged(report.memoryFiles).sort((a, b) => b[1] - a[1])
   report.skillList = merged(report.skillList).sort((a, b) => b[1] - a[1])
+  report.builtinTools = merged(report.builtinTools).sort((a, b) => a[2] - b[2] || b[1] - a[1])
+  report.mcpServers = merged(report.mcpServers).sort((a, b) => b[1] - a[1])
   return report
 }
 

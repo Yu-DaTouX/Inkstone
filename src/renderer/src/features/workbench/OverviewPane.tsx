@@ -1,12 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { Copy, FileDiff, Files, Folder, FolderGit2, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from '../../ui/icons'
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react'
+import { ChevronRight, Copy, FileDiff, Files, Folder, FolderGit2, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from '../../ui/icons'
 import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Notice, Popover, RailRow, RailValue, Separator, TooltipText, type RailTone } from '../../ui'
 import { BranchPicker } from '../changes/BranchPicker'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
-import { CONTEXT_USAGE_STATUS_KEY, parseContextSources } from '../../state/context-sources'
+import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, scaledSourceItems, sourceItemLabel, type ContextSourceItem } from '../../state/context-sources'
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { viewSubagentRuns } from '../../state/subagent-view'
@@ -403,8 +403,51 @@ function ContextName({ label, hint }: { label: string; hint?: string }): ReactEl
   )
 }
 
+const ITEMS_PREVIEW = 8
+
+function ContextItems({ id, items, rail }: { id: string; items: ContextSourceItem[]; rail: RailText }): ReactElement {
+  const [all, setAll] = useState(false)
+  const shown = all ? items : items.slice(0, ITEMS_PREVIEW)
+  return (
+    <li className="wb-ov-ctx-items" data-testid={`wb-ov-ctx-items-${id}`}>
+      <ul>
+        {shown.map((item) => (
+          <li key={item.name} title={item.name}>
+            <span className="wb-ctx-legend-name">{sourceItemLabel(item.name, id)}</span>
+            <span className="wb-ctx-legend-num">{shortTokens(item.tokens)}</span>
+          </li>
+        ))}
+      </ul>
+      {items.length > ITEMS_PREVIEW ? (
+        <Button variant="plain" size="sm" className="wb-ov-ctx-more" aria-expanded={all} onPress={() => setAll((value) => !value)}>
+          {all ? rail.showLess : rail.more(items.length - ITEMS_PREVIEW)}
+        </Button>
+      ) : null}
+    </li>
+  )
+}
+
 function ContextDetail({ data, rail }: { data: ContextPaneData; rail: RailText }): ReactElement {
   const t = useT()
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set())
+  const toggle = (id: string): void => setOpenIds((current) => {
+    const next = new Set(current)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+  const expandable = (id: string, items: ContextSourceItem[]) => (items.length ? {
+    role: 'button',
+    tabIndex: 0,
+    'aria-expanded': openIds.has(id),
+    'data-open': openIds.has(id) ? '1' : undefined,
+    onClick: () => toggle(id),
+    onKeyDown: (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      toggle(id)
+    }
+  } : {})
+  const chevron = (items: ContextSourceItem[]) => (items.length ? <ChevronRight size={12} className="wb-ov-ctx-chevron" aria-hidden /> : null)
   const { usage, parts, compacted, sources } = data
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
   const used = parts.filter((s) => s.tokens > 0)
@@ -428,13 +471,6 @@ function ContextDetail({ data, rail }: { data: ContextPaneData; rail: RailText }
         { id: 'deferredBuiltin', label: t('ctx.cat.deferredBuiltin'), tokens: sources.deferred.builtin }
       ] as const).filter((row) => row.tokens > 0)
     : []
-  const lists = sources
-    ? [
-        { id: 'mcp', label: t('ctx.cat.mcp'), items: sources.mcpTools },
-        { id: 'memory', label: t('ctx.cat.memory'), items: sources.memoryFiles },
-        { id: 'skills', label: t('ctx.cat.skills'), items: sources.skills }
-      ].filter((list) => list.items.length > 0)
-    : []
   const limitNote = usage.cappedByLimit
     ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
     : ''
@@ -457,29 +493,40 @@ function ContextDetail({ data, rail }: { data: ContextPaneData; rail: RailText }
         <span className="wb-ov-ctx-room" data-tone={glyphTone(usage.tone)} data-testid="wb-ov-ctx-room">{room}</span>
       </div>
       <ul className="wb-ctx-legend" data-testid="wb-ov-ctx-breakdown">
-        {rows.map((row) => (
-          <li key={row.id} className={row.id === 'free' || row.id === 'buffer' ? 'free' : undefined} data-part={row.id}>
-            <i className={`wb-ctx-swatch c-${row.id}`} aria-hidden />
-            <ContextName label={t(contextPartLabel(row.id, compacted))} hint={hintOf(row.id, row.approx)} />
-            <span className="wb-ctx-legend-num">{`${row.approx ? '≈' : ''}${shortTokens(row.tokens)}`}</span>
-            <span className="wb-ctx-legend-pct">{`${share(row.tokens).toFixed(1)}%`}</span>
-          </li>
-        ))}
-        {deferred.length || lists.length ? <li className="wb-ov-ctx-sep" role="presentation"><Separator /></li> : null}
-        {deferred.map((row) => (
-          <li key={row.id} className="free" data-wide="1" data-part={row.id}>
-            <i className="wb-ctx-swatch c-deferred" aria-hidden />
-            <ContextName label={row.label} hint={t('ctx.hint.deferred')} />
-            <span className="wb-ctx-legend-num">{shortTokens(row.tokens)}</span>
-          </li>
-        ))}
-        {lists.map((list) => (
-          <li key={list.id} className="free" data-wide="1" data-part={list.id} title={list.items.map((item) => item.name).join('\n')} data-testid={`wb-ov-ctx-list-${list.id}`}>
-            <i aria-hidden />
-            <span className="wb-ctx-legend-name">{list.label}</span>
-            <span className="wb-ctx-legend-num">{list.items.length}</span>
-          </li>
-        ))}
+        {rows.map((row) => {
+          const items = scaledSourceItems(sources, row.id, row.tokens)
+          return (
+            <Fragment key={row.id}>
+              <li className={row.id === 'free' || row.id === 'buffer' ? 'free' : undefined} data-part={row.id} {...expandable(row.id, items)}>
+                <i className={`wb-ctx-swatch c-${row.id}`} aria-hidden />
+                <span className="wb-ov-ctx-label">
+                  <ContextName label={t(contextPartLabel(row.id, compacted))} hint={hintOf(row.id, row.approx)} />
+                  {chevron(items)}
+                </span>
+                <span className="wb-ctx-legend-num">{`${row.approx ? '≈' : ''}${shortTokens(row.tokens)}`}</span>
+                <span className="wb-ctx-legend-pct">{`${share(row.tokens).toFixed(1)}%`}</span>
+              </li>
+              {openIds.has(row.id) && items.length ? <ContextItems id={row.id} items={items} rail={rail} /> : null}
+            </Fragment>
+          )
+        })}
+        {deferred.length ? <li className="wb-ov-ctx-sep" role="presentation"><Separator /></li> : null}
+        {deferred.map((row) => {
+          const items = scaledSourceItems(sources, row.id, row.tokens)
+          return (
+            <Fragment key={row.id}>
+              <li className="free" data-wide="1" data-part={row.id} {...expandable(row.id, items)}>
+                <i className="wb-ctx-swatch c-deferred" aria-hidden />
+                <span className="wb-ov-ctx-label">
+                  <ContextName label={row.label} hint={t('ctx.hint.deferred')} />
+                  {chevron(items)}
+                </span>
+                <span className="wb-ctx-legend-num">{shortTokens(row.tokens)}</span>
+              </li>
+              {openIds.has(row.id) && items.length ? <ContextItems id={row.id} items={items} rail={rail} /> : null}
+            </Fragment>
+          )
+        })}
       </ul>
     </div>
   )
