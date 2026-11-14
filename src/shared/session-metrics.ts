@@ -148,15 +148,55 @@ export interface LiveStepSpeed {
   estimated: boolean
 }
 
-export function liveStepSpeed(m: UIMessage | null | undefined, floor: number | null = null): LiveStepSpeed | null {
-  const decode = liveDecode(m, floor)
+export type ThinkingVisibility = 'full' | 'summary'
+
+const VISIBILITY_SAMPLES = 5
+const VISIBILITY_MIN_THINKING_TOKENS = 20
+const FULL_THINKING_MAX_RATIO = 2
+const LIVE_USAGE_MIN_TOKENS = 16
+const LIVE_USAGE_MIN_SHARE = 0.5
+
+function outputContent(m: UIMessage): string {
+  let content = m.text ?? ''
+  for (const call of m.toolCalls ?? []) {
+    if (typeof call.argsRaw === 'string') content += call.argsRaw
+    else {
+      try { content += JSON.stringify(call.args) ?? '' } catch { }
+    }
+  }
+  return content
+}
+
+export function thinkingVisibility(settled: readonly UIMessage[], model?: string): ThinkingVisibility | null {
+  let hidden = 0
+  let shown = 0
+  let samples = 0
+  const msgs = effectiveMessages(settled)
+  for (let i = msgs.length - 1; i >= 0 && samples < VISIBILITY_SAMPLES; i -= 1) {
+    const m = msgs[i]
+    if (m.role !== 'assistant' || m.error || !m.thinking) continue
+    if (model && m.model && m.model !== model) continue
+    const usage = sanitizeUsage(m.usage)
+    if (!usage || usage.output <= 0) continue
+    const thinking = estimateTextTokens(m.thinking)
+    if (thinking < VISIBILITY_MIN_THINKING_TOKENS) continue
+    hidden += usage.reasoning ?? Math.max(0, usage.output - estimateTextTokens(outputContent(m)))
+    shown += thinking
+    samples += 1
+  }
+  if (!samples || shown <= 0) return null
+  return hidden / shown <= FULL_THINKING_MAX_RATIO ? 'full' : 'summary'
+}
+
+export function liveStepSpeed(m: UIMessage | null | undefined, floor: number | null = null, visibility: ThinkingVisibility | null = null): LiveStepSpeed | null {
+  const decode = liveDecode(m, floor, visibility)
   return decode ? { speed: decode.tokens / (decode.ms / 1000), estimated: decode.estimated } : null
 }
 
 export const SPEED_WINDOW_MS = 60_000
 
 export function windowSpeed(settled: readonly UIMessage[], live: UIMessage | null | undefined, floor: number | null = null, windowMs = SPEED_WINDOW_MS): LiveStepSpeed | null {
-  const current = liveDecode(live, floor)
+  const current = live ? liveDecode(live, floor, thinkingVisibility(settled, live.model)) : null
   let tokens = current?.tokens ?? 0
   let ms = current?.ms ?? 0
   const msgs = effectiveMessages(settled)
@@ -169,22 +209,20 @@ export function windowSpeed(settled: readonly UIMessage[], live: UIMessage | nul
   return tokens > 0 && ms >= MIN_DECODE_MS ? { speed: tokens / (ms / 1000), estimated: current?.estimated ?? false } : null
 }
 
-function liveDecode(m: UIMessage | null | undefined, floor: number | null): (StepDecode & { estimated: boolean }) | null {
+function liveDecode(m: UIMessage | null | undefined, floor: number | null, visibility: ThinkingVisibility | null): (StepDecode & { estimated: boolean }) | null {
   if (!m || m.role !== 'assistant') return null
-  const decode = stepDecode(m, floor)
-  if (decode) return { ...decode, estimated: false }
-  if ((sanitizeUsage(m.usage)?.output ?? 0) > 0) return null
-  if (m.thinking) return null
-  const ms = m.generationTiming?.decodeMs
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < MIN_DECODE_MS) return null
-  let content = `${m.text ?? ''}${m.thinking ?? ''}`
-  for (const call of m.toolCalls ?? []) {
-    if (typeof call.argsRaw === 'string') content += call.argsRaw
-    else {
-      try { content += JSON.stringify(call.args) ?? '' } catch { }
-    }
+  const output = estimateTextTokens(outputContent(m))
+  const thinking = m.thinking ? estimateTextTokens(m.thinking) : 0
+  const full = !!m.thinking && visibility === 'full'
+  const reported = sanitizeUsage(m.usage)?.output ?? 0
+  if (reported >= LIVE_USAGE_MIN_TOKENS && reported >= (output + (full ? thinking : 0)) * LIVE_USAGE_MIN_SHARE) {
+    const decode = stepDecode(m, floor)
+    return decode ? { ...decode, estimated: false } : null
   }
-  const tokens = estimateTextTokens(content)
+  const gt = m.generationTiming
+  const ms = m.thinking && !full ? gt?.outputDecodeMs : gt?.decodeMs
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < MIN_DECODE_MS) return null
+  const tokens = full ? output + thinking : output
   if (tokens <= 0) return null
   const speed = tokens / (ms / 1000)
   return speed > 0 && speed <= MAX_PLAUSIBLE_TPS ? { tokens, ms, estimated: true } : null

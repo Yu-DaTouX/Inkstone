@@ -24,6 +24,7 @@ try {
     splitLiveStep,
     stepSpeed,
     stepSpeeds,
+    thinkingVisibility,
     windowSpeed
   } = await import(pathToFileURL(resolve(temp, 'session-metrics.mjs')).href)
 
@@ -587,6 +588,28 @@ try {
     eq(liveStepSpeed({ ...streaming, text: '', thinking: '' }), null, '没有到达内容时不编速度')
     eq(liveStepSpeed({ ...streaming, thinking: '摘要' }), null, '带推理摘要时有不可见推理 Token，不按可见文字估算')
     eq(liveStepSpeed({ ...streaming, generationTiming: { durationMs: 100, decodeMs: 100 } }), null, '解码过短不估算')
+
+    const longText = '字'.repeat(1200)
+    const anthropicLive = { id: 'al', role: 'assistant', text: longText, usage: usage({ output: 1 }), generationTiming: { durationMs: 17000, ttftMs: 2000, decodeMs: 15000, startEvent: 'turn_start' } }
+    eq(liveStepSpeed(anthropicLive, 2000), { speed: 80, estimated: true }, '开头报的临时输出数（1）不当真，按已到达文字估算')
+    eq(liveStepSpeed({ ...anthropicLive, usage: usage({ output: 1150 }) }), { speed: 1150 / 15, estimated: false }, '中途报的累计输出与文字相符时用真实值')
+    const summaryLive = { id: 'sl', role: 'assistant', thinking: '摘要'.repeat(50), text: longText, usage: usage({ output: 0 }), generationTiming: { durationMs: 30000, ttftMs: 2000, decodeMs: 28000, outputDecodeMs: 12000 } }
+    eq(liveStepSpeed(summaryLive, null, 'summary'), { speed: 100, estimated: true }, '思考是摘要：只按正文字数 ÷ 正文生成时间')
+    eq(liveStepSpeed(summaryLive), { speed: 100, estimated: true }, '还不知道思考链是否完整时按摘要处理')
+    eq(liveStepSpeed({ ...summaryLive, text: '', generationTiming: { durationMs: 9000, ttftMs: 2000, decodeMs: 7000 } }, null, 'summary'), null, '摘要模型还在思考阶段时不编速度')
+    const fullLive = { id: 'fl', role: 'assistant', thinking: '想'.repeat(700), text: '', usage: usage({ output: 0 }), generationTiming: { durationMs: 9000, ttftMs: 2000, decodeMs: 7000 } }
+    eq(liveStepSpeed(fullLive, null, 'full'), { speed: 100, estimated: true }, '思考链完整可见：思考阶段就按思考字数实时估算')
+    eq(liveStepSpeed({ ...fullLive, text: '字'.repeat(300), generationTiming: { durationMs: 12000, ttftMs: 2000, decodeMs: 10000, outputDecodeMs: 3000 } }, null, 'full'), { speed: 100, estimated: true }, '思考链完整可见：思考加正文 ÷ 从首字起的生成时间')
+
+    const done = (id, thinking, output, reasoning, model) => ({ id, role: 'assistant', model, thinking, text: '答'.repeat(100), usage: usage({ output, ...(reasoning ? { reasoning } : {}) }), generationTiming: { durationMs: 12000, ttftMs: 2000, decodeMs: 10000, outputDecodeMs: 2000 } })
+    eq(thinkingVisibility([done('d1', '想'.repeat(900), 1100, 950), done('d2', '想'.repeat(600), 800, 0)]), 'full', '推理 Token 与可见思考字数相当（DeepSeek 类）判为完整思考链')
+    eq(thinkingVisibility([done('c1', '摘要'.repeat(40), 2100, 2000)]), 'summary', '推理 Token 远多于可见思考（Anthropic、GPT 类）判为摘要')
+    eq(thinkingVisibility([done('s1', '短', 900, 800)]), null, '思考太短不作判断')
+    eq(thinkingVisibility([done('m1', '想'.repeat(900), 1100, 950, 'deepseek'), done('m2', '摘要'.repeat(40), 2100, 2000, 'claude')], 'deepseek'), 'full', '只看同一模型的步骤')
+    const deepseekHistory = [{ id: 'u', role: 'user', text: 'q' }, done('h1', '想'.repeat(900), 1100, 950), done('h2', '想'.repeat(800), 1000, 850)]
+    const settledOnly = windowSpeed(deepseekHistory, null, null)
+    const withThinking = windowSpeed(deepseekHistory, { ...fullLive, thinking: '想'.repeat(2100) }, null)
+    check(withThinking.estimated === true && withThinking.speed > settledOnly.speed, `完整思考链的模型思考阶段也计入会话栏均速：${settledOnly.speed} → ${withThinking.speed}`)
 
     const withError = projectSessionMetrics([
       { id: 'u1', role: 'user', text: 'hi' },
