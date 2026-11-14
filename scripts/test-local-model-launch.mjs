@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { EventEmitter } from 'node:events'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +25,8 @@ function serve(port) {
   })
 }
 
+const close = (server) => new Promise((resolve) => server.close(resolve))
+
 await runSuite(import.meta.url, async (ok, compile) => {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-local-launch-'))
   process.env.YAN_PI_DIR = dir
@@ -32,33 +35,53 @@ await runSuite(import.meta.url, async (ok, compile) => {
   try {
     const port = await freePort()
     const idlePort = await freePort()
+    const failPort = await freePort()
     await writeFile(join(dir, 'models.json'), JSON.stringify({
       providers: {
         ninfer: { name: '本地 NInfer', baseUrl: `http://127.0.0.1:${port}/v1`, api: 'openai-completions', models: [{ id: 'qwen' }] },
         idle: { baseUrl: `http://127.0.0.1:${idlePort}/v1`, api: 'openai-completions', models: [{ id: 'm' }] },
+        broken: { baseUrl: `http://127.0.0.1:${failPort}/v1`, api: 'openai-completions', models: [{ id: 'b' }] },
         cloud: { baseUrl: 'https://api.example.com/v1', api: 'openai-completions', models: [{ id: 'gpt' }] }
       }
     }))
     const api = await compile('src/main/local-model-launch.ts')
     await mkdir(join(dir, 'yan'), { recursive: true })
     await writeFile(join(dir, 'yan', 'local-models.json'), JSON.stringify({ urls: ['http://127.0.0.1:9999'] }))
+    const startBat = join(dir, '启动-NInfer.bat')
+    const stopBat = join(dir, '停止-NInfer.bat')
+    await writeFile(startBat, '@echo off\r\n')
+    await writeFile(stopBat, '@echo off\r\n')
 
     const listed = await api.listLocalLaunchers()
-    ok(listed.map((item) => item.provider).join(',') === 'idle,ninfer', '只列出地址在本机或局域网的服务商')
+    ok(listed.map((item) => item.provider).join(',') === 'broken,idle,ninfer', '只列出地址在本机或局域网的服务商')
     ok(listed.find((item) => item.provider === 'ninfer')?.name === '本地 NInfer', '显示 models.json 里的服务商名称')
+    ok(listed.every((item) => item.idleUnload === true && item.stopCommand === ''), '闲置卸载默认开启，停止命令默认为空')
 
-    await api.saveLocalLauncher('ninfer', '  E:\\AI\\ninfer\\start.bat  ')
-    await api.saveLocalLauncher('idle', 'serve-idle')
+    const saved = await api.saveLocalLauncher('ninfer', { command: `  ${startBat}  `, stopCommand: stopBat })
+    await api.saveLocalLauncher('idle', { command: 'serve-idle', idleUnload: false })
+    await api.saveLocalLauncher('broken', { command: 'broken-cmd' })
     const config = JSON.parse(await readFile(join(dir, 'yan', 'local-models.json'), 'utf8'))
-    ok(config.launchers.ninfer.command === 'E:\\AI\\ninfer\\start.bat', '保存启动命令并去掉首尾空白')
+    ok(config.launchers.ninfer.command === startBat && config.launchers.ninfer.stopCommand === stopBat, '保存启动与停止命令并去掉首尾空白')
+    ok(config.launchers.idle.idleUnload === false && !('idleUnload' in config.launchers.ninfer), '只在关闭时记录闲置卸载开关')
     ok(config.urls?.[0] === 'http://127.0.0.1:9999', '保存时保留同一文件里的本地地址配置')
-    let refused = false
-    try {
-      await api.saveLocalLauncher('cloud', 'evil.exe')
-    } catch {
-      refused = true
+    ok(!saved.warning, '正常的启动脚本没有警告')
+
+    const warned = await api.saveLocalLauncher('ninfer', { command: stopBat, stopCommand: stopBat })
+    ok(/停止脚本|stop script/.test(warned.warning ?? ''), '启动命令选成停止脚本时给出警告')
+    await api.saveLocalLauncher('ninfer', { command: startBat, stopCommand: stopBat })
+
+    const rejects = async (provider, input) => {
+      try {
+        await api.saveLocalLauncher(provider, input)
+        return false
+      } catch (error) {
+        return error.message
+      }
     }
-    ok(refused, '云端服务商不能设置启动命令')
+    ok(/不存在|does not exist/.test(await rejects('ninfer', { command: join(dir, '没有这个.bat') })), '启动脚本文件不存在时拒绝保存')
+    ok(/不存在|does not exist/.test(await rejects('ninfer', { command: startBat, stopCommand: `"${join(dir, 'missing stop.bat')}" now` })), '停止命令文件不存在时拒绝保存')
+    ok(!!(await rejects('cloud', { command: 'evil.exe' })), '云端服务商不能设置启动命令')
+    ok(api.commandFile('ollama serve') === null && api.commandFile('"C:\\a b\\x.bat" 1') === 'C:\\a b\\x.bat', '只把像路径的命令当文件检查')
 
     const renamed = await api.renameLocalModel('ninfer', 'qwen', '  Qwen   本地  ')
     let models = JSON.parse(await readFile(join(dir, 'models.json'), 'utf8'))
@@ -89,7 +112,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       onStarting: () => { notices++ },
       run: (command) => {
         runs++
-        ok(command === 'E:\\AI\\ninfer\\start.bat', '运行的是用户保存的启动命令')
+        ok(command === startBat, '运行的是用户保存的启动命令')
         setTimeout(() => void serve(port).then((server) => servers.push(server)), 120)
       }
     }
@@ -100,8 +123,61 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const again = await api.ensureLocalModelReady('ninfer', 'qwen', { run: () => { runs++ } })
     ok(again.ok && !again.started && runs === 1, '服务已在运行时不再启动')
 
+    const failing = new EventEmitter()
+    const startedAt = Date.now()
+    const broken = await api.ensureLocalModelReady('broken', 'b', { pollMs: 20, timeoutMs: 5_000, run: () => { setTimeout(() => failing.emit('exit', 1), 30); return failing } })
+    ok(!broken.ok && /代码 1|code 1/.test(broken.error ?? '') && Date.now() - startedAt < 2_000, '启动命令出错退出时立即失败，不等到超时')
+
     const stuck = await api.ensureLocalModelReady('idle', 'm', { pollMs: 20, timeoutMs: 150, run: () => {} })
     ok(!stuck.ok && /草稿已保留|draft kept/.test(stuck.error ?? ''), '超时没就绪时不发送并说明草稿保留')
+
+    let busy = true
+    const unloadCalls = []
+    let clock = 1_000_000
+    const scan = (extra = {}) => api.scanIdleLocalModels({
+      busy: () => busy,
+      now: () => clock,
+      unload: async (provider) => {
+        unloadCalls.push(provider)
+        return true
+      },
+      ...extra
+    })
+    await scan()
+    clock += 11 * 60_000
+    ok((await scan()).length === 0, '有会话正在用时不卸载')
+    busy = false
+    clock += 9 * 60_000
+    ok((await scan()).length === 0, '空闲不到 10 分钟不卸载')
+    clock += 2 * 60_000
+    const named = []
+    const unloaded = await scan({ onUnloaded: (name) => named.push(name) })
+    ok(unloaded.join(',') === 'ninfer' && named[0] === '本地 NInfer', '空闲满 10 分钟卸载并通知服务商名称')
+    ok(!unloadCalls.includes('idle'), '关闭了闲置卸载的服务商不卸载')
+
+    const stops = []
+    const killed = []
+    const result = await api.unloadLocalModel('ninfer', {
+      stop: async (command) => {
+        stops.push(command)
+        await Promise.all(servers.splice(0).map(close))
+      },
+      kill: async (pid) => { killed.push(pid) },
+      closeWaitMs: 2_000
+    })
+    ok(result && stops[0] === stopBat && killed.length === 0, '有停止命令时运行停止命令并确认端口已关闭')
+
+    const killServer = await serve(port)
+    await api.saveLocalLauncher('ninfer', { command: startBat })
+    const killResult = await api.unloadLocalModel('ninfer', {
+      listener: async (value) => (value === port ? 4242 : null),
+      kill: async (pid) => {
+        killed.push(pid)
+        await close(killServer)
+      },
+      closeWaitMs: 2_000
+    })
+    ok(killResult && killed[0] === 4242, '没有停止命令时结束占用端口的进程')
 
     ok(api.launcherFromProcess({ command: '"E:\\AI\\ninfer\\engine\\ninfer-serve.exe" model --vision', parent: 'C:\\Windows\\system32\\cmd.exe /c ""E:\\AI\\ninfer\\启动-NInfer.bat" "' }) === 'E:\\AI\\ninfer\\启动-NInfer.bat', '由 bat 拉起时识别出 bat 路径')
     ok(api.launcherFromProcess({ command: 'C:\\ollama\\ollama.exe serve', parent: 'C:\\Windows\\explorer.exe' }) === 'C:\\ollama\\ollama.exe serve', '没有启动脚本时用进程本身的命令行')
@@ -116,7 +192,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(line.line === `"${script}"` && line.cwd === dir, '脚本路径带空格时加引号并在脚本目录运行')
     ok(api.launchLine('ollama serve').line === 'ollama serve' && !api.launchLine('ollama serve').cwd, '完整命令原样运行')
   } finally {
-    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))))
+    await Promise.all(servers.map(close))
     await rm(dir, { recursive: true, force: true })
   }
 })

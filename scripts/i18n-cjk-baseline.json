@@ -64,6 +64,7 @@
   "src/main/ipc/settings-ipc.ts": 2,
   "src/main/ipc/shell-ipc.ts": 3,
   "src/main/ipc/workspace-data-ipc.ts": 10,
+  "src/main/local-model-launch.ts": 1,
   "src/main/lookup-commands.ts": 21,
   "src/main/mcp/app-native-witness.ts": 9,
   "src/main/mcp/app-ownership-guard.ts": 11,

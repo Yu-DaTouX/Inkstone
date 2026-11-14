@@ -432,7 +432,20 @@ export interface LocalLauncherView {
   name: string
   baseUrl: string
   command: string
+  stopCommand: string
+  idleUnload: boolean
   models: Array<{ id: string; name?: string }>
+}
+
+export interface LocalLauncherInput {
+  command: string
+  stopCommand?: string
+  idleUnload?: boolean
+}
+
+export interface LocalLauncherSaveResult {
+  launchers: LocalLauncherView[]
+  warning?: string
 }
 
 export interface LocalLauncherDetectResult {
