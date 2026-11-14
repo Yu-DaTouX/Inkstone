@@ -6,6 +6,7 @@ import {
   createRageClickDetector,
   createScrollJumpDetector,
   createTriggerThrottle,
+  isBenignFrictionError,
   isFrictionHotkey,
   type FrictionMark,
   type FrictionReason
@@ -69,7 +70,8 @@ function start(): Recording {
           viewport: { width: window.innerWidth, height: window.innerHeight },
           startedAt,
           capturedAt: Date.now(),
-          privateVisible: !!document.querySelector(FRICTION_PRIVATE_SELECTOR)
+          privateVisible: !!document.querySelector(FRICTION_PRIVATE_SELECTOR),
+          fonts: loadedFontUrls()
         }
       })
       .then((result) => {
@@ -117,7 +119,10 @@ function start(): Recording {
   window.addEventListener('click', onClick, true)
   cleanups.push(() => window.removeEventListener('click', onClick, true))
 
-  const onError = (event: ErrorEvent): void => trigger('error', String(event.message || event.error))
+  const onError = (event: ErrorEvent): void => {
+    const message = String(event.message || event.error)
+    if (!isBenignFrictionError(message)) trigger('error', message)
+  }
   const onRejection = (event: PromiseRejectionEvent): void => trigger('error', String(event.reason instanceof Error ? event.reason.message : event.reason))
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onRejection)
@@ -175,6 +180,32 @@ function observe(type: string, onEntry: (entry: PerformanceEntry) => void, clean
   })
   observer.observe({ type, buffered: false })
   cleanups.push(() => observer.disconnect())
+}
+
+function loadedFontUrls(): string[] {
+  const key = (family: string, weight: string, style: string, range: string): string => [family.replace(/["']/g, ''), weight, style, range].join('|')
+  const loaded = new Set<string>()
+  document.fonts.forEach((font) => {
+    if (font.status === 'loaded') loaded.add(key(font.family, font.weight, font.style, font.unicodeRange))
+  })
+  const urls: string[] = []
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList
+    try {
+      rules = sheet.cssRules
+    } catch {
+      continue
+    }
+    for (const rule of Array.from(rules)) {
+      if (!(rule instanceof CSSFontFaceRule)) continue
+      const s = rule.style
+      const k = key(s.getPropertyValue('font-family'), s.getPropertyValue('font-weight') || 'normal', s.getPropertyValue('font-style') || 'normal', s.getPropertyValue('unicode-range') || 'U+0-10FFFF')
+      if (!loaded.has(k)) continue
+      const src = /url\(\s*["']?([^"')]+)/.exec(s.getPropertyValue('src'))?.[1]
+      if (src) urls.push(new URL(src, sheet.href || location.href).href)
+    }
+  }
+  return urls
 }
 
 function describe(target: EventTarget | Node | null): string {

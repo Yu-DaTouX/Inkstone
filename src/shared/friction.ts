@@ -13,6 +13,7 @@ export interface FrictionContext {
   startedAt: number
   capturedAt: number
   privateVisible?: boolean
+  fonts?: string[]
 }
 
 export interface FrictionCaptureRequest {
@@ -196,6 +197,18 @@ export function frictionDirName(at: Date, reason: FrictionReason): string {
   return `${stamp}-${reason}`
 }
 
+export function isBenignFrictionError(message: string): boolean {
+  return /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/.test(message.trim())
+}
+
+const FONT_URL = /^file:\/\/\/[^"'()\s\\]+\.(woff2?|ttf|otf)$/i
+
+function fontUrls(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const urls = [...new Set(value.filter((url): url is string => typeof url === 'string' && url.length <= 2000 && FONT_URL.test(url)))].slice(0, 300)
+  return urls.length ? urls : undefined
+}
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
@@ -228,7 +241,8 @@ export function sanitizeFrictionRequest(raw: unknown): FrictionCaptureRequest | 
       viewport: { width: finiteNumber(viewport.width) ?? 0, height: finiteNumber(viewport.height) ?? 0 },
       startedAt: finiteNumber(ctx.startedAt) ?? 0,
       capturedAt: finiteNumber(ctx.capturedAt) ?? Date.now(),
-      privateVisible: ctx.privateVisible !== false
+      privateVisible: ctx.privateVisible !== false,
+      fonts: fontUrls(ctx.fonts)
     }
   }
 }

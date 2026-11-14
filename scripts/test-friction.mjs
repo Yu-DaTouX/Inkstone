@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from '
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { runSuite } from './lib/test-suite.mjs'
 
 const repo = resolve('.')
@@ -93,6 +94,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
     context: { route: 'chat', viewport: { width: 800, height: 600 } }
   })
   ok(clean && clean.detail.length === 500 && clean.marks.length === 1 && clean.context.viewport.width === 800, '请求被清洗：截断说明、丢掉坏标记')
+  const withFonts = f.sanitizeFrictionRequest({
+    reason: 'hotkey',
+    events: [{ type: 2 }],
+    context: { viewport: {}, fonts: ['file:///E:/app/out/renderer/assets/a.woff2', 'file:///E:/app/out/renderer/assets/a.woff2', 'https://x.test/b.woff2', 'file:///E:/secret.txt', 42] }
+  })
+  ok(JSON.stringify(withFonts.context.fonts) === JSON.stringify(['file:///E:/app/out/renderer/assets/a.woff2']), '字体列表只留本机字体文件地址并去重')
+  ok(f.sanitizeFrictionRequest({ reason: 'hotkey', events: [{}], context: {} }).context.fonts === undefined, '没有字体时不带字体列表')
+
+  ok(f.isBenignFrictionError('ResizeObserver loop completed with undelivered notifications.'), 'ResizeObserver 循环警告不算报错')
+  ok(f.isBenignFrictionError('ResizeObserver loop limit exceeded'), '旧版 ResizeObserver 警告不算报错')
+  ok(!f.isBenignFrictionError('TypeError: x is undefined'), '真正的报错照常记录')
 
   const root = await mkdtemp(join(tmpdir(), 'inkstone-friction-'))
   try {
@@ -126,6 +138,28 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(hidden.ok && !existsSync(join(hidden.dir, 'shot.png')) && existsSync(join(hidden.dir, 'events.js')), '有私密内容时不截图，只留录像')
     const unknown = await main.saveFrictionCapture(contents, { ...request, context: { viewport: {} } }, true, store)
     ok(unknown.ok && !existsSync(join(unknown.dir, 'shot.png')), '没说明有无私密内容时按有处理')
+
+    const renderer = join(root, 'app', 'renderer')
+    await mkdir(join(renderer, 'assets'), { recursive: true })
+    await writeFile(join(renderer, 'assets', 'maple-1.woff2'), Buffer.from('font-bytes'))
+    await writeFile(join(root, 'app', 'outside.woff2'), Buffer.from('outside'))
+    const fileUrl = (p) => pathToFileURL(p).href
+    const used = fileUrl(join(renderer, 'assets', 'maple-1.woff2'))
+    const fontEvents = [{ type: 4, timestamp: 1 }, { type: 2, timestamp: 2, data: { css: `@font-face{src:url("${used}")}` } }]
+    const fontContents = { ...contents, getURL: () => fileUrl(join(renderer, 'index.html')) }
+    const fonted = await main.saveFrictionCapture(fontContents, { ...request, events: fontEvents, context: { ...request.context, fonts: [used, fileUrl(join(root, 'app', 'outside.woff2'))] } }, true, store)
+    const fontsJs = await readFile(join(fonted.dir, 'fonts.js'), 'utf8')
+    const embedded = JSON.parse(fontsJs.replace(/^window\.__FRICTION_FONTS__ = /, '').replace(/;\s*$/, ''))
+    ok(JSON.stringify(Object.keys(embedded)) === JSON.stringify(['maple-1.woff2']) && embedded['maple-1.woff2'] === `data:font/woff2;base64,${Buffer.from('font-bytes').toString('base64')}`, '用到的应用字体嵌进记录，应用目录外的文件不读')
+    const fontedMeta = JSON.parse(await readFile(join(fonted.dir, 'meta.json'), 'utf8'))
+    ok(fontedMeta.context.fonts === undefined, '元数据不重复存字体地址')
+    const fontedHtml = await readFile(join(fonted.dir, 'replay.html'), 'utf8')
+    ok(fontedHtml.includes('<script src="fonts.js"></script>') && !html.includes('fonts.js"'), '有字体时回放页才加载 fonts.js')
+    const script = fontedHtml.match(/const fonts = [\s\S]*?: recorded/)[0]
+    const replayed = new Function('window', `${script}\nreturn events`)({ __FRICTION_FONTS__: embedded, __FRICTION_EVENTS__: fontEvents })
+    ok(replayed[1].data.css === `@font-face{src:url("${embedded['maple-1.woff2']}")}`, '回放时字体地址换成嵌入的数据')
+    const untouched = new Function('window', `${script}\nreturn events`)({ __FRICTION_FONTS__: {}, __FRICTION_EVENTS__: fontEvents })
+    ok(untouched === fontEvents, '没有嵌入字体时事件原样回放')
 
     const bad = await main.saveFrictionCapture(contents, { reason: 'hotkey', events: 'x' }, true, store)
     ok(!bad.ok && bad.error === 'invalid', '坏请求被拒')

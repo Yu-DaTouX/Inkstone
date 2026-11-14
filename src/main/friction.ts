@@ -1,7 +1,8 @@
 import { app, type WebContents } from 'electron'
-import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, extname, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { YAN_DIR } from './paths'
 import {
   FRICTION_LIMITS,
@@ -38,7 +39,41 @@ async function ensurePlayer(root: string): Promise<void> {
   }
 }
 
-export function replayHtml(title: string): string {
+const FONT_MIME: Record<string, string> = { '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf' }
+const FONT_BUDGET_BYTES = 24 * 1024 * 1024
+
+function rendererAssetsDir(contents: WebContents): string | null {
+  try {
+    const url = typeof contents.getURL === 'function' ? contents.getURL() : ''
+    return url.startsWith('file:') ? join(dirname(fileURLToPath(url)), 'assets') : null
+  } catch {
+    return null
+  }
+}
+
+export async function embedFonts(urls: readonly string[], assetsDir: string | null): Promise<Record<string, string>> {
+  const fonts: Record<string, string> = {}
+  if (!assetsDir) return fonts
+  let budget = FONT_BUDGET_BYTES
+  for (const url of urls) {
+    let file: string
+    try {
+      file = fileURLToPath(url)
+    } catch {
+      continue
+    }
+    const name = basename(file)
+    const mime = FONT_MIME[extname(name).toLowerCase()]
+    if (!mime || fonts[name] || relative(assetsDir, file) !== name) continue
+    const data = await readFile(file).catch(() => null)
+    if (!data || data.length > budget) continue
+    budget -= data.length
+    fonts[name] = `data:${mime};base64,${data.toString('base64')}`
+  }
+  return fonts
+}
+
+export function replayHtml(title: string, withFonts = false): string {
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -51,10 +86,14 @@ export function replayHtml(title: string): string {
 <div id="meta"></div>
 <div id="player"></div>
 <script src="../${PLAYER_DIR_NAME}/rrweb-player.js"></script>
-<script src="events.js"></script>
+<script src="events.js"></script>${withFonts ? '\n<script src="fonts.js"></script>' : ''}
 <script>
 const meta = window.__FRICTION_META__ || {}
-const events = window.__FRICTION_EVENTS__ || []
+const fonts = window.__FRICTION_FONTS__ || {}
+const recorded = window.__FRICTION_EVENTS__ || []
+const events = Object.keys(fonts).length
+  ? JSON.parse(JSON.stringify(recorded).replace(/file:\\/\\/\\/[^"'()\\s\\\\]*\\/([^\\/"'()\\s\\\\]+\\.(?:woff2?|ttf|otf))/gi, (m, name) => fonts[name] || m))
+  : recorded
 document.getElementById('meta').textContent = [meta.reason, meta.detail, meta.savedAt].filter(Boolean).join(' · ')
 const Player = window.rrwebPlayer && (window.rrwebPlayer.default || window.rrwebPlayer)
 const vp = (meta.context && meta.context.viewport) || {}
@@ -116,14 +155,17 @@ export async function saveFrictionCapture(
     reason: req.reason,
     detail: req.detail,
     marks: req.marks,
-    context: req.context,
+    context: { ...req.context, fonts: undefined },
     version: app.getVersion(),
     savedAt: savedAt.toISOString(),
     events: req.events.length
   }
   await writeFile(join(dir, 'meta.json'), JSON.stringify(meta, null, 2))
   await writeFile(join(dir, 'events.js'), `window.__FRICTION_META__ = ${JSON.stringify(meta)};\nwindow.__FRICTION_EVENTS__ = ${eventsText};\n`)
-  await writeFile(join(dir, 'replay.html'), replayHtml(`${req.reason} ${meta.savedAt}`))
+  const fonts = await embedFonts(req.context.fonts ?? [], rendererAssetsDir(contents)).catch(() => ({}))
+  const withFonts = Object.keys(fonts).length > 0
+  if (withFonts) await writeFile(join(dir, 'fonts.js'), `window.__FRICTION_FONTS__ = ${JSON.stringify(fonts)};\n`)
+  await writeFile(join(dir, 'replay.html'), replayHtml(`${req.reason} ${meta.savedAt}`, withFonts))
   const shot = req.context.privateVisible ? null : await contents.capturePage().catch(() => null)
   if (shot && !shot.isEmpty()) await writeFile(join(dir, 'shot.png'), shot.toPNG())
   await ensurePlayer(root).catch(() => undefined)
