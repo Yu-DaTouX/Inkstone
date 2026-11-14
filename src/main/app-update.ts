@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AppUpdateStatus, AppUpdateWhatsNew } from '../shared/app-update'
+import { startupInstallDue, type AppUpdateStatus, type AppUpdateWhatsNew } from '../shared/app-update'
 import type { BackupSummary } from '../shared/data-backup'
 import type { IpcRegistrar } from './ipc/registrar'
 import { createUpdateAutoBackup } from './data-backup'
@@ -19,6 +19,7 @@ interface UpdatePreferences {
   automatic?: boolean
   seenVersion?: string
   notes?: { version: string; text: string }
+  pending?: string
 }
 
 export interface AutomaticInstallPreparation {
@@ -56,7 +57,17 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
   const readPrefs = async (): Promise<void> => {
     prefs = await readFile(preferences, 'utf8').then((value) => JSON.parse(value) as UpdatePreferences).catch(() => prefs)
   }
-  const savePrefs = (): Promise<void> => writeFile(preferences, JSON.stringify(prefs)).catch(() => undefined)
+  let prefsWrite: Promise<void> = Promise.resolve()
+  const writePrefs = (): Promise<void> => {
+    const next = prefsWrite.catch(() => undefined).then(async () => {
+      const temp = `${preferences}.tmp`
+      await writeFile(temp, JSON.stringify(prefs))
+      await rename(temp, preferences)
+    })
+    prefsWrite = next
+    return next
+  }
+  const savePrefs = (): Promise<void> => writePrefs().catch(() => undefined)
   let preparing: Promise<AutomaticInstallPreparation> | null = null
   let prepareAbort: AbortController | null = null
   let manualInstall: { reason: 'backed-up' | 'accepted-without-backup'; backup?: BackupSummary } | null = null
@@ -127,11 +138,17 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     return preparing
   }
   const cancelAutomaticInstallPreparation = (): void => { prepareAbort?.abort() }
-  autoUpdater.on('update-downloaded', () => {
+  const launchedAt = Date.now()
+  let launchPending: string | undefined
+  autoUpdater.on('update-downloaded', (info?: { version?: string }) => {
     state.phase = 'downloaded'
     state.percent = 100
     manualInstall = null
-    if (latestNotes) { prefs.notes = latestNotes; void savePrefs() }
+    const version = info?.version ?? state.latest
+    if (latestNotes) prefs.notes = latestNotes
+    if (version) prefs.pending = version
+    void savePrefs()
+    if (startupInstallDue({ pending: launchPending, downloaded: version, current: state.current, automatic: state.automatic, busy: busy() || installing, sinceLaunchMs: Date.now() - launchedAt })) void startupInstall()
   })
   const startDownload = (): void => {
     state.phase = 'downloading'
@@ -170,7 +187,7 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     state.automatic = enabled === true
     prefs.automatic = state.automatic
     autoUpdater.autoInstallOnAppQuit = false
-    await writeFile(preferences, JSON.stringify(prefs))
+    await writePrefs()
     if (state.phase === 'available' && state.automatic) startDownload()
     return { ...state }
   })
@@ -258,7 +275,27 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     }
   })
 
+  const startupInstall = async (): Promise<void> => {
+    launchPending = undefined
+    installing = true
+    let scheduled = false
+    try {
+      const summary = await runBackup().catch(() => null)
+      if (!summary || busy() || state.phase !== 'downloaded') return
+      manualInstall = { reason: 'backed-up', backup: summary }
+      scheduled = true
+      autoUpdater.quitAndInstall(true, true)
+    } finally {
+      if (!scheduled) installing = false
+    }
+  }
+
   prefsLoaded = readPrefs().then(() => {
+    if (prefs.pending === state.current) {
+      delete prefs.pending
+      void savePrefs()
+    }
+    launchPending = prefs.pending
     state.automatic = prefs.automatic !== false
     autoUpdater.autoInstallOnAppQuit = false
     if (!app.isPackaged) return
