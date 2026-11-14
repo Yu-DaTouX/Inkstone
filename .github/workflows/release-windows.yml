@@ -15,7 +15,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-windows-${{ github.ref }}
@@ -25,6 +25,8 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 120
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     env:
@@ -34,6 +36,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -42,17 +46,25 @@ jobs:
 
       - name: Resolve version and tag
         id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           version=$(node -p "require('./package.json').version")
-          if [ "${{ github.event_name }}" = "push" ]; then
-            tag="${{ github.ref_name }}"
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$REF_NAME"
             if [ "$tag" != "v$version" ]; then
               echo "tag $tag 与 package.json 版本 $version 不一致" >&2
               exit 1
             fi
           else
-            tag="${{ inputs.tag }}"
-            [ -n "$tag" ] || tag="v$version-ci.${{ github.run_number }}"
+            tag="$INPUT_TAG"
+            [ -n "$tag" ] || tag="v$version-ci.$GITHUB_RUN_NUMBER"
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+            echo "tag 只能含字母、数字、点、下划线和连字符：$tag" >&2
+            exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -93,26 +105,31 @@ jobs:
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          notes="CI 构建（提交 ${GITHUB_SHA::8}，运行 ${{ github.run_id }}）。草稿：核对资产、补写更新说明后再发布。安装包未签名。"
-          gh release create "${{ steps.meta.outputs.tag }}" release/public/* \
+          notes="CI 构建（提交 ${GITHUB_SHA::8}，运行 $GITHUB_RUN_ID）。草稿：核对资产、补写更新说明后再发布。安装包未签名。"
+          gh release create "$RELEASE_TAG" release/public/* \
             --draft \
             --target "$GITHUB_SHA" \
-            --title "Inkstone ${{ steps.meta.outputs.version }}" \
+            --title "Inkstone $RELEASE_VERSION" \
             --notes "$notes"
 
   android:
     needs: windows
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    permissions:
+      contents: write
     steps:
       - name: Check signing secrets
         id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
             echo "::warning::没有配置 APK 签名密钥（ANDROID_KEYSTORE_BASE64 等），跳过手机安装包"
@@ -123,6 +140,8 @@ jobs:
 
       - uses: actions/checkout@v4
         if: steps.signing.outputs.ready == 'true'
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         if: steps.signing.outputs.ready == 'true'
@@ -151,6 +170,10 @@ jobs:
         if: steps.signing.outputs.ready == 'true'
         env:
           INKSTONE_PREBUILT_ASSETS: '1'
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           dir="$RUNNER_TEMP/inkstone-signing"
           mkdir -p "$dir"
@@ -168,7 +191,9 @@ jobs:
         if: steps.signing.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.windows.outputs.tag }}
         run: |
           apk=$(ls release/apk-*/Inkstone-mobile-*.apk | grep -v debug-signed | head -1)
           [ -n "$apk" ] || { echo "没有找到正式签名的 APK" >&2; exit 1; }
-          gh release upload "${{ needs.windows.outputs.tag }}" "$apk" --clobber
+          gh release upload "$RELEASE_TAG" "$apk" --clobber
