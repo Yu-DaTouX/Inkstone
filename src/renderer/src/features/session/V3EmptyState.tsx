@@ -11,6 +11,7 @@ import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 import { compactNumber, useUsageStats } from '../usage/UsageOverview'
 import { NewSessionPicker } from '../sidebar/NewSessionPicker'
 import { importSessionBundles } from '../sidebar/session-import'
+import { isSessionBundleDrag } from '../composer/session-bundle-drag'
 import { shortProject } from '../sidebar/sidebar-model'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { homeBackgroundMode, useHomeBackground } from '../ambient/home-background'
@@ -223,10 +224,11 @@ export function V3EmptyState(): JSX.Element {
     return known || run.title || t('rail.untitled')
   }
 
-  const bundleDrag = (event: DragEvent<HTMLElement>): boolean =>
-    event.dataTransfer.types.includes('Files') && [...event.dataTransfer.items].some((item) => item.kind === 'file' && (item.type === 'application/json' || item.type === ''))
   const onDragOver = (event: DragEvent<HTMLElement>): void => {
-    if (!bundleDrag(event)) return
+    if (!isSessionBundleDrag(event.dataTransfer)) {
+      setDropping(false)
+      return
+    }
     event.preventDefault()
     event.stopPropagation()
     event.dataTransfer.dropEffect = 'copy'
@@ -253,7 +255,7 @@ export function V3EmptyState(): JSX.Element {
   }
 
   return (
-    <div className="v3-empty v3-empty-page" data-testid="v3-empty" data-dropping={dropping || undefined} onDragEnterCapture={onDragOver} onDragOverCapture={onDragOver} onDragLeaveCapture={onDragLeave} onDropCapture={onDrop}>
+    <div className="v3-empty v3-empty-page" data-testid="v3-empty" data-dropping={dropping || undefined} data-bundle-drop onDragEnterCapture={onDragOver} onDragOverCapture={onDragOver} onDragLeaveCapture={onDragLeave} onDropCapture={onDrop}>
       {dropping ? <div className="v3-empty-drop" role="status" data-testid="v3-empty-drop">{home.dropImport}</div> : null}
       <UsageTitle text={home} bars={!landscape} fresh={fresh} />
       <div className="v3-home-gap" aria-hidden="true" />

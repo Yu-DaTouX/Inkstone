@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Files, Folder, Image } from '../../ui/icons'
 import { useT } from '../../i18n'
+import { isSessionBundleDrag } from './session-bundle-drag'
 
 export type FileDropKind = 'image' | 'file' | 'mixed'
 
@@ -16,6 +17,11 @@ const DROP_FADE_MS = 220
 
 export function acceptsFileDrop(data: DataTransfer | null): data is DataTransfer {
   return !!data && (data.types.includes('Files') || INTERNAL_TYPES.some((type) => data.types.includes(type)))
+}
+
+function bundleDropTarget(event: DragEvent): boolean {
+  const target = event.target instanceof Element ? event.target : null
+  return !!target?.closest('[data-bundle-drop]') && isSessionBundleDrag(event.dataTransfer)
 }
 
 export function fileDropKind(data: DataTransfer): FileDropKind {
@@ -56,6 +62,9 @@ export function useFileDropZone(anchor: RefObject<HTMLElement | null>, onDrop: (
     const onEnter = (event: DragEvent): void => {
       if (acceptsFileDrop(event.dataTransfer)) show(event.dataTransfer)
     }
+    const onBundleOver = (event: DragEvent): void => {
+      if (host.contains(event.target as Node | null) && bundleDropTarget(event)) hide()
+    }
     const onOver = (event: DragEvent): void => {
       if (!acceptsFileDrop(event.dataTransfer)) return
       event.preventDefault()
@@ -82,6 +91,8 @@ export function useFileDropZone(anchor: RefObject<HTMLElement | null>, onDrop: (
     }
     host.addEventListener('dragenter', onEnter)
     host.addEventListener('dragover', onOver)
+    window.addEventListener('dragenter', onBundleOver, true)
+    window.addEventListener('dragover', onBundleOver, true)
     host.addEventListener('dragleave', onLeave)
     host.addEventListener('drop', onHostDrop)
     window.addEventListener('dragleave', onWindowEnd)
@@ -91,6 +102,8 @@ export function useFileDropZone(anchor: RefObject<HTMLElement | null>, onDrop: (
       window.clearTimeout(fade)
       host.removeEventListener('dragenter', onEnter)
       host.removeEventListener('dragover', onOver)
+      window.removeEventListener('dragenter', onBundleOver, true)
+      window.removeEventListener('dragover', onBundleOver, true)
       host.removeEventListener('dragleave', onLeave)
       host.removeEventListener('drop', onHostDrop)
       window.removeEventListener('dragleave', onWindowEnd)
