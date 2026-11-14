@@ -4,7 +4,7 @@ import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron'
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
-import type { CustomProviderInput } from '../../shared/custom-provider'
+import type { CustomProviderInput, LocalLauncherInput } from '../../shared/custom-provider'
 import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders } from '../credentials'
 import { addApiKey, captureActiveApiKey, clearApiKeys, listApiKeyPools, removeApiKey, renameApiKey, switchApiKey } from '../api-key-pool'
@@ -86,7 +86,14 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:discoverCustomModels', async (input: Partial<CustomProviderInput>) => discoverCustomProviderModels(input))
   handle('yan:detectLocalModels', async () => detectLocalModelServers())
   handle('yan:localLaunchers', async () => listLocalLaunchers())
-  handle('yan:saveLocalLauncher', async (provider: string, command: string) => saveLocalLauncher(String(provider ?? ''), String(command ?? '')))
+  handle('yan:saveLocalLauncher', async (provider: string, input: LocalLauncherInput) => {
+    const value = (input && typeof input === 'object' ? input : {}) as Partial<LocalLauncherInput>
+    return saveLocalLauncher(String(provider ?? ''), {
+      command: String(value.command ?? ''),
+      stopCommand: String(value.stopCommand ?? ''),
+      idleUnload: value.idleUnload !== false
+    })
+  })
   handle('yan:renameLocalModel', async (provider: string, modelId: string, name: string) => {
     const next = await renameLocalModel(String(provider ?? ''), String(modelId ?? ''), String(name ?? ''))
     void restartAgent('local model renamed').catch((error) => console.error('[auth] refresh after model rename failed', error))

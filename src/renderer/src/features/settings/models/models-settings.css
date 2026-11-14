@@ -645,7 +645,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--s-8);
-    align-items: center;
+    align-items: end;
   }
 
   .ms-custom-test {

@@ -13,6 +13,8 @@ export type {
   CustomProviderTestResult,
   CustomProviderView,
   LocalLauncherDetectResult,
+  LocalLauncherInput,
+  LocalLauncherSaveResult,
   LocalLauncherView,
   LocalModelServer,
   ModelsShrink
@@ -23,6 +25,8 @@ import type {
   CustomProviderTestResult,
   CustomProviderView,
   LocalLauncherDetectResult,
+  LocalLauncherInput,
+  LocalLauncherSaveResult,
   LocalLauncherView,
   LocalModelServer,
   ModelsShrink
@@ -1654,7 +1658,7 @@ export interface YanBridge {
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>
   detectLocalModels(): Promise<LocalModelServer[]>
   localLaunchers(): Promise<LocalLauncherView[]>
-  saveLocalLauncher(provider: string, command: string): Promise<LocalLauncherView[]>
+  saveLocalLauncher(provider: string, input: LocalLauncherInput): Promise<LocalLauncherSaveResult>
   renameLocalModel(provider: string, modelId: string, name: string): Promise<LocalLauncherView[]>
   pickLocalLauncher(current?: string): Promise<string | null>
   detectLocalLauncher(provider: string): Promise<LocalLauncherDetectResult>

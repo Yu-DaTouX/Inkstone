@@ -115,6 +115,7 @@ import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
 import { executionBusy } from '../core/run-state'
+import { startLocalModelIdleUnload } from './local-model-launch'
 import { RuntimeRef } from '../shared/runs'
 import { isWithin } from './file-path-gate'
 import { SubagentService } from './subagent-service'
@@ -2102,6 +2103,17 @@ function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; 
   return starting
 }
 
+let stopLocalModelIdleUnload: (() => void) | undefined
+
+function localModelBusy(provider: string): boolean {
+  const agentBusy = (runners?.agents() ?? []).some((agent) => {
+    const state = agent.getState()
+    return state?.model?.provider === provider && executionBusy(state, () => agent.hasRunningBash(), () => agent.getPendingUiCount())
+  })
+  return agentBusy || (subagentService.current()?.list() ?? []).some((run) =>
+    (run.status === 'running' || run.status === 'starting') && (!run.model || run.model.startsWith(`${provider}/`)))
+}
+
 async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (runners?.active()?.running) return { ok: true }
   if (restore?.sessionFile) void readHistoryWithArtifacts(restore.sessionFile).catch(() => undefined)
@@ -2367,6 +2379,11 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
 
   runners.startIdleReclaim()
+  stopLocalModelIdleUnload ??= startLocalModelIdleUnload({
+    busy: localModelBusy,
+    onUnloaded: (name) => push({ ch: 'notify', payload: { id: `local-model-unload-${Date.now()}`, method: 'notify', notifyType: 'info',
+      message: pick(`本地模型「${name}」已闲置 10 分钟，已自动卸载；下次发消息时会自动启动`, `Local model "${name}" was idle for 10 minutes and has been unloaded; it will start again when you send a message`) } })
+  })
 
   void initializeIsolationView()
 
