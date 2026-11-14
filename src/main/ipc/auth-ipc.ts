@@ -8,6 +8,7 @@ import { authFileInfo, clearAuth, listAuthProviders } from '../credentials'
 import { addApiKey, captureActiveApiKey, clearApiKeys, listApiKeyPools, removeApiKey, renameApiKey, switchApiKey } from '../api-key-pool'
 import { detectToolchain } from '../toolchain'
 import { detectLocalModelServers } from '../local-models'
+import { detectLocalLauncher, listLocalLaunchers, saveLocalLauncher } from '../local-model-launch'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
@@ -82,6 +83,9 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   })
   handle('yan:discoverCustomModels', async (input: Partial<CustomProviderInput>) => discoverCustomProviderModels(input))
   handle('yan:detectLocalModels', async () => detectLocalModelServers())
+  handle('yan:localLaunchers', async () => listLocalLaunchers())
+  handle('yan:saveLocalLauncher', async (provider: string, command: string) => saveLocalLauncher(String(provider ?? ''), String(command ?? '')))
+  handle('yan:detectLocalLauncher', async (provider: string) => detectLocalLauncher(String(provider ?? '')))
   handle('yan:removeCustomProvider', async (id: string) => {
     const r = await removeCustomProvider(id)
     if (r.ok) void restartAgent('自定义服务已移除').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))

@@ -10,6 +10,7 @@ export interface ProviderInstanceEntry {
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
   displayName: string;
+  local?: boolean;
   enabled: boolean;
   installed: boolean;
   isAvailable: boolean;

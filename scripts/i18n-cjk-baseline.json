@@ -216,7 +216,7 @@
   "src/renderer/src/features/settings/search/entries-capabilities.ts": 45,
   "src/renderer/src/features/settings/search/entries-data.ts": 25,
   "src/renderer/src/features/settings/search/entries-general.ts": 67,
-  "src/renderer/src/features/settings/search/entries-models.ts": 17,
+  "src/renderer/src/features/settings/search/entries-models.ts": 19,
   "src/renderer/src/features/settings/settings-text.ts": 130,
   "src/renderer/src/features/settings/shortcuts/shortcuts-text.ts": 13,
   "src/renderer/src/features/sidebar/BrandMark.tsx": 1,

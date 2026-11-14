@@ -8,6 +8,7 @@ function entryFrom(
   info: AuthProviderInfo | undefined,
   hasAvailableModels: boolean,
   setupMessage: (kind: "signIn" | "apiKey") => string,
+  local: boolean,
 ): ProviderInstanceEntry {
   const ready = hasAvailableModels || info?.status === "ready";
   const unknown = info?.status === "unknown" || info === undefined;
@@ -15,6 +16,7 @@ function entryFrom(
     instanceId: provider,
     driverKind: provider,
     displayName: info?.name?.trim() || provider,
+    ...(local ? { local: true } : {}),
     enabled: ready || unknown,
     installed: ready,
     isAvailable: ready,
@@ -57,8 +59,9 @@ export function providerInstanceEntries(input: {
   }
   if (ids.length === 0) return EMPTY_ENTRIES;
   const availableProviders = new Set(input.models.map((model) => model.provider));
+  const localProviders = new Set(input.models.filter((model) => model.local).map((model) => model.provider));
   return ids.map((provider) =>
-    entryFrom(provider, byId.get(provider), availableProviders.has(provider), input.setupMessage),
+    entryFrom(provider, byId.get(provider), availableProviders.has(provider), input.setupMessage, localProviders.has(provider)),
   );
 }
 

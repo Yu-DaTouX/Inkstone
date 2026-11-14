@@ -1,4 +1,4 @@
-const SOURCES = import.meta.glob<string>('../assets/provider-icons/*.{png,jpg}', { query: '?url', import: 'default', eager: true })
+const SOURCES = import.meta.glob<string>('../assets/provider-icons/*.{png,jpg,svg}', { query: '?url', import: 'default', eager: true })
 
 const URLS = new Map<string, string>()
 for (const [path, url] of Object.entries(SOURCES)) {
@@ -26,9 +26,10 @@ const ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(command-?code)$/, 'commandcode']
 ]
 
-export function providerFavicon(provider: string): string | null {
+export function providerFavicon(provider: string, local = false): string | null {
   const id = provider.trim().toLowerCase()
   if (!id) return null
+  if (local && id !== 'local') return providerFavicon(id) ?? URLS.get('local') ?? null
   const direct = URLS.get(id)
   if (direct) return direct
   for (const [pattern, name] of ALIASES) if (pattern.test(id)) return URLS.get(name) ?? null

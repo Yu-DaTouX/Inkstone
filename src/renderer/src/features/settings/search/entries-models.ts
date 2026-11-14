@@ -53,6 +53,13 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   {
+    id: 'models-local-launch',
+    section: 'models',
+    zh: '本地模型自动启动',
+    en: 'Auto-start local models',
+    keywords: ['启动脚本', '启动命令', 'start script', 'launch', 'bat', '本地模型', 'local model']
+  },
+  {
     id: 'models-claude-code',
     section: 'models',
     zh: 'Claude Code 订阅',

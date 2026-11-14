@@ -12,6 +12,8 @@ export type {
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView,
+  LocalLauncherDetectResult,
+  LocalLauncherView,
   LocalModelServer,
   ModelsShrink
 } from './custom-provider'
@@ -20,6 +22,8 @@ import type {
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView,
+  LocalLauncherDetectResult,
+  LocalLauncherView,
   LocalModelServer,
   ModelsShrink
 } from './custom-provider'
@@ -328,6 +332,7 @@ export interface ModelInfo {
   name: string
   provider: string
   api?: string
+  local?: boolean
   reasoning: boolean
   reasoningStatus?: CapabilityStatus
   input?: Array<'text' | 'image' | string>
@@ -1648,6 +1653,9 @@ export interface YanBridge {
   removeCustomProvider(id: string): Promise<CustomProviderResult>
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>
   detectLocalModels(): Promise<LocalModelServer[]>
+  localLaunchers(): Promise<LocalLauncherView[]>
+  saveLocalLauncher(provider: string, command: string): Promise<LocalLauncherView[]>
+  detectLocalLauncher(provider: string): Promise<LocalLauncherDetectResult>
   testCustomProvider(
     id: string,
     mode: 'endpoint' | 'billable',

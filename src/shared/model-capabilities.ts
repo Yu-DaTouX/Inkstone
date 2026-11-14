@@ -18,6 +18,22 @@ function capabilityStatusForBoolean(value: unknown): CapabilityStatus {
   return 'unknown'
 }
 
+export function isLocalBaseUrl(raw: unknown): boolean {
+  if (typeof raw !== 'string' || !raw.trim()) return false
+  let host: string
+  try {
+    host = new URL(raw.trim()).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  } catch {
+    return false
+  }
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '::1' || host === '0.0.0.0') return true
+  if (/^(fc|fd)[0-9a-f]{2}:/.test(host) || host.startsWith('fe80:')) return true
+  const parts = host.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false
+  const [a, b] = parts as [number, number, number, number]
+  return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)
+}
+
 export function modelKeyOf(model: Pick<ModelInfo, 'provider' | 'id'> | null | undefined): string | undefined {
   if (!model?.provider || !model.id) return undefined
   return `${model.provider}/${model.id}`
@@ -41,6 +57,7 @@ export function normalizeModelInfo(raw: unknown): ModelInfo | undefined {
     name,
     provider,
     ...(api ? { api } : {}),
+    ...(isLocalBaseUrl(value.baseUrl) ? { local: true } : {}),
     reasoning: value.reasoning === true,
     reasoningStatus: capabilityStatusForBoolean(value.reasoning),
     ...(input ? { input } : {}),

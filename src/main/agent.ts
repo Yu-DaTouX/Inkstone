@@ -157,6 +157,7 @@ import type { SubagentForkSource } from './subagent-fork'
 import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
 import { readPendingModelSwitch, takePendingModelSwitch, writePendingModelSwitch } from './pending-model-switch'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
+import { ensureLocalModelReady } from './local-model-launch'
 
 const AUTH_BLIP_RETRY_MS = 5000
 
@@ -2968,7 +2969,22 @@ export class AgentController extends EventEmitter {
     expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
+    const local = await this.startLocalModel()
+    if (!local.ok) return { ok: false, error: local.error }
     return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue)))
+  }
+
+  private async startLocalModel(): Promise<{ ok: boolean; error?: string }> {
+    const model = this.deferredModelSwitch?.model ?? this.state?.model
+    if (!model?.provider || !model.id) return { ok: true }
+    const sessionId = this.state?.sessionId
+    const result = await ensureLocalModelReady(model.provider, model.id, {
+      onStarting: (name) => this.push({ ch: 'notify', payload: { id: `local-model-start-${Date.now()}`, method: 'notify', notifyType: 'info',
+        message: pick(`正在启动本地模型「${name}」，就绪后自动发送…`, `Starting local model "${name}"; the message will be sent once it is ready…`) } })
+    }).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error), started: true }))
+    if (!result.ok) return { ok: false, error: result.error }
+    if (result.started && this.state?.sessionId !== sessionId) return { ok: false, error: pick('本地模型已启动，但会话已切换，消息未发送，草稿已保留', 'The local model started, but the session changed; message not sent, draft kept') }
+    return { ok: true }
   }
 
   private async withExecutionAdmission(task: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {

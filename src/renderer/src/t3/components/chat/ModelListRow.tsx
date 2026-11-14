@@ -20,6 +20,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   subProvider?: string | undefined;
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
+  local?: boolean | undefined;
   providerDisplayName: string;
   isFavorite: boolean;
   isSelected: boolean;
@@ -71,6 +72,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
           <div className="t3-model-row__provider">
             <ProviderInstanceIcon
               driverKind={props.driverKind}
+              local={props.local}
               displayName={props.providerDisplayName}
               iconSize={12}
             />

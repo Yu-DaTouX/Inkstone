@@ -23,7 +23,8 @@ export function localServiceBase(raw: string | undefined, port: number): string 
   }
 }
 
-const CONFIG_FILE = join(YAN_DIR, 'local-models.json')
+export const LOCAL_MODELS_CONFIG = join(YAN_DIR, 'local-models.json')
+const CONFIG_FILE = LOCAL_MODELS_CONFIG
 
 export async function readLocalModelUrls(): Promise<string[]> {
   try {
