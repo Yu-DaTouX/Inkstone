@@ -180,6 +180,40 @@ check('输入框高度变化：尾部占位重新按当前底部留白测量，�
   }
 })
 
+check('正文栏变宽而滚动容器不变（切换会话、侧栏开合）：释放旧高度，不留大空隙', () => {
+  const previous = { ResizeObserver: globalThis.ResizeObserver, requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame, getComputedStyle: globalThis.getComputedStyle }
+  const frames = []
+  let notify
+  globalThis.ResizeObserver = class {
+    constructor(callback) { notify = callback }
+    observe() {}
+    disconnect() {}
+  }
+  globalThis.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length }
+  globalThis.cancelAnimationFrame = () => {}
+  globalThis.getComputedStyle = () => ({ borderTopWidth: '0', borderBottomWidth: '0', paddingTop: '0', paddingBottom: '0', marginBottom: '0' })
+  let content = 500
+  const tail = { clientWidth: 400, style: { minHeight: '' }, lastElementChild: { getBoundingClientRect: () => ({ bottom: content }) }, getBoundingClientRect: () => ({ top: 0, height: Math.max(content, parseFloat(tail.style.minHeight) || 0) }) }
+  const scroller = { clientWidth: 900, clientHeight: 600, getBoundingClientRect: () => ({ bottom: 600 }), addEventListener() {}, removeEventListener() {} }
+  let release
+  try {
+    release = tailHold.holdStreamTail(scroller, () => tail)
+    assert.equal(tail.style.minHeight, '500px')
+    content = 300
+    tail.clientWidth = 700
+    notify()
+    frames.shift()()
+    assert.equal(tail.style.minHeight, '300px')
+    content = 260
+    notify()
+    frames.shift()()
+    assert.equal(tail.style.minHeight, '300px', '宽度不变时仍按原规则留住看得见的空白')
+  } finally {
+    release?.()
+    Object.assign(globalThis, previous)
+  }
+})
+
 check('运行中末行变矮：看得见的空白留住，视口下方的空白收回，最多留半屏', () => {
   assert.equal(tailHold.heldTailHeight(800, 700, 800, 600), 800)
   assert.equal(tailHold.heldTailHeight(800, 700, 760, 600), 760)

@@ -22,12 +22,13 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   let frame = 0
   let pausedUntil = 0
   let resume = 0
-  let width = scroller.clientWidth
+  let width = ''
   const release = (): void => {
     if (target) target.style.minHeight = ''
     target = null
     written = ''
     paddingBottom = null
+    width = ''
   }
   const sync = (): void => {
     const tail = findTail()
@@ -40,12 +41,12 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
       release()
       return
     }
-    const scrollerWidth = scroller.clientWidth
-    if (Math.abs(scrollerWidth - width) > 0.5) {
-      width = scrollerWidth
+    const widthNow = `${Math.round(scroller.clientWidth ?? 0)}|${Math.round(target.clientWidth ?? 0)}`
+    if (width && widthNow !== width) {
       target.style.minHeight = ''
       written = ''
     }
+    width = widthNow
     observer.observe(target)
     if (target.lastElementChild) observer.observe(target.lastElementChild)
     const padding = getComputedStyle(target).paddingBottom
