@@ -1656,6 +1656,7 @@ export interface YanBridge {
   localLaunchers(): Promise<LocalLauncherView[]>
   saveLocalLauncher(provider: string, command: string): Promise<LocalLauncherView[]>
   renameLocalModel(provider: string, modelId: string, name: string): Promise<LocalLauncherView[]>
+  pickLocalLauncher(current?: string): Promise<string | null>
   detectLocalLauncher(provider: string): Promise<LocalLauncherDetectResult>
   testCustomProvider(
     id: string,

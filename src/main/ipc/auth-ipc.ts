@@ -1,4 +1,6 @@
 import { pick } from '../../shared/ui-lang'
+import { existsSync } from 'node:fs'
+import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron'
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
@@ -89,6 +91,22 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     const next = await renameLocalModel(String(provider ?? ''), String(modelId ?? ''), String(name ?? ''))
     void restartAgent('local model renamed').catch((error) => console.error('[auth] refresh after model rename failed', error))
     return next
+  })
+  handle('yan:pickLocalLauncher', async (current?: string) => {
+    const bare = String(current ?? '').trim().replace(/^"(.*)"$/, '$1')
+    const near = bare && existsSync(bare) ? bare : undefined
+    const options: OpenDialogOptions = {
+      title: pick('选择本地模型的启动脚本或程序', 'Choose the start script or program for the local model'),
+      properties: ['openFile'],
+      filters: [
+        { name: pick('启动脚本或程序', 'Start scripts or programs'), extensions: ['bat', 'cmd', 'ps1', 'exe'] },
+        { name: pick('所有文件', 'All files'), extensions: ['*'] }
+      ],
+      ...(near ? { defaultPath: near } : {})
+    }
+    const parent = BrowserWindow.getFocusedWindow()
+    const picked = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    return picked.canceled ? null : picked.filePaths[0] ?? null
   })
   handle('yan:detectLocalLauncher', async (provider: string) => detectLocalLauncher(String(provider ?? '')))
   handle('yan:removeCustomProvider', async (id: string) => {

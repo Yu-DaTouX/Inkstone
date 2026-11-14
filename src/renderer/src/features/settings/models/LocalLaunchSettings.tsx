@@ -58,11 +58,11 @@ export function LocalLaunchSettings(): ReactElement | null {
     }
   }
 
-  const save = async (item: LocalLauncherView): Promise<void> => {
+  const save = async (item: LocalLauncherView, picked?: string): Promise<void> => {
     setBusy(`${item.provider}:save`)
     setMsg(null)
     try {
-      const command = valueOf(item).trim()
+      const command = (picked ?? valueOf(item)).trim()
       const next = await window.yan.saveLocalLauncher(item.provider, command)
       if (!alive.current) return
       setList(next)
@@ -73,6 +73,20 @@ export function LocalLaunchSettings(): ReactElement | null {
     } finally {
       if (alive.current) setBusy('')
     }
+  }
+
+  const choose = async (item: LocalLauncherView): Promise<void> => {
+    setBusy(`${item.provider}:pick`)
+    setMsg(null)
+    let path: string | null = null
+    try {
+      path = await window.yan.pickLocalLauncher(valueOf(item))
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
+    } finally {
+      if (alive.current) setBusy('')
+    }
+    if (path && alive.current) await save(item, path)
   }
 
   const detect = async (item: LocalLauncherView): Promise<void> => {
@@ -148,6 +162,14 @@ export function LocalLaunchSettings(): ReactElement | null {
                 })}
               </div>
               <div className="ms-custom-actions">
+                <Button
+                  variant="secondary"
+                  isDisabled={!!busy}
+                  data-testid={`ms-local-launch-pick-${item.provider}`}
+                  onPress={() => void choose(item)}
+                >
+                  {t('localLaunch.pick')}
+                </Button>
                 <Button
                   variant="secondary"
                   isDisabled={!!busy}
