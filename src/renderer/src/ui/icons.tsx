@@ -78,6 +78,7 @@ import {
   FilmSlate as PFilmSlate,
   FilmStrip as PFilmStrip,
   Flask as PFlask,
+  Flower as PFlower,
   Folder as PFolder,
   FolderMinus as PFolderMinus,
   FolderOpen as PFolderOpen,
@@ -290,6 +291,7 @@ export const FileWarning = icon(PFileX, 'FileWarning')
 export const Files = icon(PFiles, 'Files')
 export const Film = icon(PFilmStrip, 'Film')
 export const FlaskConical = icon(PFlask, 'FlaskConical')
+export const Flower = icon(PFlower, 'Flower')
 export const Folder = icon(PFolder, 'Folder')
 export const FolderCodeIcon = icon(PFolderSimple, 'FolderCodeIcon')
 export const FolderCog = icon(PFolders, 'FolderCog')

@@ -40,11 +40,11 @@ export function HomeBackdrop({ active, asciiEnabled, lift = false }: { active: b
           aria-hidden
           data-kind="dither"
           data-in-session={active ? undefined : ''}
-          style={{ '--home-fade': active ? 0 : SESSION_FADE_SHARE, '--home-mask': 'var(--bg)', '--home-strength': background.params.strength } as CSSProperties}
+          style={{ '--home-fade': 0, '--home-mask': 'var(--bg)', '--home-strength': active ? background.params.strength : background.params.sessionStrength } as CSSProperties}
           data-testid="v3-home-dither"
         >
           <Suspense fallback={null}>
-            <ShaderBackdrop kind="dither" image={background.flowImage && background.image ? homeImageSource(background.image) : null} params={background.params} animate={active} />
+            <ShaderBackdrop kind="dither" image={background.flowImage && background.image ? homeImageSource(background.image) : null} flowStyle={background.flowStyle} params={active ? background.params : { ...background.params, speed: background.params.sessionSpeed }} animate />
           </Suspense>
         </div>
       ) : null}

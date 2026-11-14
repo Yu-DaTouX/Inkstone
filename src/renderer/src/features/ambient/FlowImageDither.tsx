@@ -1,9 +1,9 @@
 import { memo, type CSSProperties, type JSX } from 'react'
 import { ShaderMount } from '@paper-design/shaders-react'
-import { DitheringTypes, ShaderFitOptions, defaultObjectSizing, getShaderColorFromString, imageDitheringFragmentShader } from '@paper-design/shaders'
+import { DitheringTypes, HalftoneDotsGrids, HalftoneDotsTypes, ShaderFitOptions, defaultObjectSizing, getShaderColorFromString, halftoneDotsFragmentShader, imageDitheringFragmentShader } from '@paper-design/shaders'
 
 function patch(source: string, anchor: string, replacement: string): string {
-  if (!source.includes(anchor)) throw new Error(`image dithering shader changed: ${anchor}`)
+  if (!source.includes(anchor)) throw new Error(`paper shader changed: ${anchor}`)
   return source.replace(anchor, replacement)
 }
 
@@ -26,7 +26,92 @@ export const flowImageDitherShader = patch(
   FLOW_LUM
 )
 
-interface FlowImageDitherProps {
+const HALFTONE_FLOW = `float lum = getLumAtPx(samplingUV, contrast);
+  float cellSeed = fract(sin(dot(uv_i - inCellOffset, vec2(12.9898, 78.233))) * 43758.5453);
+  float twinkle = .5 + .5 * sin(u_time * (1.2 + 1.6 * cellSeed) + 6.2832 * cellSeed);
+  float breath = .5 + .5 * sin(.6 * u_time - 3. * (samplingUV.x + samplingUV.y));
+  float bright = u_inverted ? 1. - lum : lum;
+  float edge = 1. - smoothstep(.25, .85, bright);
+  bright *= (1. + u_twinkle * edge * (1.1 * twinkle - .65)) * (1. + u_breath * (.4 * breath - .2));
+  bright = clamp(bright, 0., 1.);
+  lum = u_inverted ? 1. - bright : bright;
+  float rawLum = dot(vec3(.2126, .7152, .0722), texture(u_image, samplingUV).rgb);`
+
+export const flowHalftoneShader = patch(
+  patch(
+    patch(halftoneDotsFragmentShader, 'return ball * outOfFrame;', 'return ball * outOfFrame * step(.07, rawLum);'), 'uniform float u_type;', 'uniform float u_type;\nuniform float u_time;\nuniform float u_twinkle;\nuniform float u_breath;'
+  ),
+  'float lum = getLumAtPx(samplingUV, contrast);',
+  HALFTONE_FLOW
+)
+
+const SIZING = {
+  u_fit: ShaderFitOptions.cover,
+  u_rotation: defaultObjectSizing.rotation,
+  u_scale: defaultObjectSizing.scale,
+  u_offsetX: defaultObjectSizing.offsetX,
+  u_offsetY: defaultObjectSizing.offsetY,
+  u_originX: defaultObjectSizing.originX,
+  u_originY: defaultObjectSizing.originY,
+  u_worldWidth: defaultObjectSizing.worldWidth,
+  u_worldHeight: defaultObjectSizing.worldHeight
+}
+
+interface Placement {
+  scale?: number
+  offsetX?: number
+  offsetY?: number
+}
+
+function placement({ scale = 1, offsetX = 0, offsetY = 0 }: Placement): typeof SIZING {
+  return { ...SIZING, u_scale: scale, u_offsetX: offsetX, u_offsetY: offsetY }
+}
+
+interface FlowHalftoneProps extends Placement {
+  image: string
+  shape: 'classic' | 'gooey' | 'holes' | 'soft'
+  twinkle: number
+  breath: number
+  dotSize: number
+  contrast: number
+  grid: 'hex' | 'square'
+  speed: number
+  colorFront: string
+  className?: string
+  style?: CSSProperties
+  minPixelRatio?: number
+  maxPixelCount?: number
+}
+
+export const FlowHalftone = memo(function FlowHalftone({ image, shape, twinkle, breath, dotSize, contrast, grid, speed, scale, offsetX, offsetY, colorFront, ...props }: FlowHalftoneProps): JSX.Element {
+  return (
+    <ShaderMount
+      {...props}
+      speed={speed}
+      fragmentShader={flowHalftoneShader}
+      uniforms={{
+        u_image: image,
+        u_colorFront: getShaderColorFromString(colorFront),
+        u_colorBack: getShaderColorFromString('rgba(0, 0, 0, 0)'),
+        u_size: dotSize,
+        u_radius: 1.25,
+        u_contrast: contrast,
+        u_originalColors: false,
+        u_inverted: true,
+        u_grainMixer: 0,
+        u_grainOverlay: 0,
+        u_grainSize: 0.5,
+        u_grid: HalftoneDotsGrids[grid],
+        u_type: HalftoneDotsTypes[shape],
+        u_twinkle: twinkle,
+        u_breath: breath,
+        ...placement({ scale, offsetX, offsetY })
+      }}
+    />
+  )
+})
+
+interface FlowImageDitherProps extends Placement {
   image: string
   pixel: number
   colorSteps: number
@@ -41,7 +126,7 @@ interface FlowImageDitherProps {
   maxPixelCount?: number
 }
 
-export const FlowImageDither = memo(function FlowImageDither({ image, pixel, colorSteps, speed, originalColors, colorFront, colorBack, colorHighlight, ...props }: FlowImageDitherProps): JSX.Element {
+export const FlowImageDither = memo(function FlowImageDither({ image, pixel, colorSteps, speed, originalColors, colorFront, colorBack, colorHighlight, scale, offsetX, offsetY, ...props }: FlowImageDitherProps): JSX.Element {
   return (
     <ShaderMount
       {...props}
@@ -57,15 +142,7 @@ export const FlowImageDither = memo(function FlowImageDither({ image, pixel, col
         u_colorSteps: colorSteps,
         u_originalColors: originalColors,
         u_inverted: false,
-        u_fit: ShaderFitOptions.cover,
-        u_rotation: defaultObjectSizing.rotation,
-        u_scale: defaultObjectSizing.scale,
-        u_offsetX: defaultObjectSizing.offsetX,
-        u_offsetY: defaultObjectSizing.offsetY,
-        u_originX: defaultObjectSizing.originX,
-        u_originY: defaultObjectSizing.originY,
-        u_worldWidth: defaultObjectSizing.worldWidth,
-        u_worldHeight: defaultObjectSizing.worldHeight
+        ...placement({ scale, offsetX, offsetY })
       }}
     />
   )

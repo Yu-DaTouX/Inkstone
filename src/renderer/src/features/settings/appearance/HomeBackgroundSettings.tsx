@@ -1,10 +1,10 @@
 import { useState, type ReactElement } from 'react'
-import { ImagePlus, Palette, Trash2 } from '../../../ui/icons'
+import { Flower, ImagePlus, Palette, Trash2 } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, Slider } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
-import { BUILTIN_PAINTING, HOME_BLUR_MAX, homeBackgroundMode, homeImageSource, shrinkImage, updateHomeBackground, useHomeBackground, type HomeBackgroundMode } from '../../ambient/home-background'
+import { BLOSSOM_PARAMS, BUILTIN_BLOSSOM, BUILTIN_PAINTING, HOME_BLUR_MAX, updateHomeParams, homeBackgroundMode, homeImageSource, shrinkImage, updateHomeBackground, useHomeBackground, type HomeBackgroundMode } from '../../ambient/home-background'
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
 import { HomeEffectSettings } from './HomeEffectSettings'
 import './home-background-settings.css'
@@ -21,6 +21,9 @@ interface HomeBackgroundText {
   pictureDesc: string
   flowPicture: string
   flowPictureDesc: string
+  blossom: string
+  flowStyle: string
+  flowStyleDesc: string
   choose: string
   replace: string
   remove: string
@@ -55,6 +58,9 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     pictureDesc: '支持 PNG、JPG、WebP、GIF、BMP，过大的图片会自动缩小。',
     flowPicture: '用图片',
     flowPictureDesc: '网点按图片明暗排布并缓缓流动；不选则用图案。',
+    blossom: '用花簇',
+    flowStyle: '风格',
+    flowStyleDesc: '抖动保留色彩与细节，网点是黑白圆点。',
     choose: '选择图片…',
     replace: '更换图片…',
     remove: '移除',
@@ -87,6 +93,9 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     pictureDesc: 'PNG, JPG, WebP, GIF or BMP. Large images are scaled down.',
     flowPicture: 'Image',
     flowPictureDesc: 'Dots follow the image and drift slowly; without one, a pattern is used.',
+    blossom: 'Use blossoms',
+    flowStyle: 'Style',
+    flowStyleDesc: 'Dither keeps color and detail; halftone uses round monochrome dots.',
     choose: 'Choose image…',
     replace: 'Replace image…',
     remove: 'Remove',
@@ -151,6 +160,13 @@ export function HomeBackgroundSettings(): ReactElement {
     if (asciiOn) void patchSettings(asciiBackgroundPatch(false)).catch(() => undefined)
   }
 
+  const useBlossom = (): void => {
+    updateHomeBackground({ mode: 'dither', image: BUILTIN_BLOSSOM, flowImage: true, flowStyle: 'halftone' })
+    updateHomeParams(BLOSSOM_PARAMS)
+    setPicked(null)
+    if (asciiOn) void patchSettings(asciiBackgroundPatch(false)).catch(() => undefined)
+  }
+
   const removeImage = (): void => {
     updateHomeBackground(mode === 'dither' ? { flowImage: false } : { image: null, mode: 'none' })
     setPicked(null)
@@ -183,6 +199,11 @@ export function HomeBackgroundSettings(): ReactElement {
                 {text.painting}
               </Button>
             ) : null}
+            {mode === 'dither' && shown !== BUILTIN_BLOSSOM ? (
+              <Button size="sm" variant="ghost" icon={<Flower size={14} aria-hidden />} onPress={useBlossom} data-testid="v3-home-bg-blossom">
+                {text.blossom}
+              </Button>
+            ) : null}
             {shown ? (
               <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onPress={removeImage} data-testid="v3-home-bg-remove">
                 {text.remove}
@@ -191,7 +212,20 @@ export function HomeBackgroundSettings(): ReactElement {
           </div>
         </SettingsRow>
       ) : null}
-      {mode === 'dither' ? <HomeEffectSettings target={flowing ? 'dither-image' : 'dither'} params={background.params} /> : null}
+      {flowing ? (
+        <SettingsRow settingId="appearance-home-flow-style" label={text.flowStyle} description={text.flowStyleDesc}>
+          <Segmented
+            label={text.flowStyle}
+            value={background.flowStyle}
+            options={[
+              { value: 'dither', label: text.effectDither, testId: 'v3-home-flow-dither' },
+              { value: 'halftone', label: text.effectHalftone, testId: 'v3-home-flow-halftone' }
+            ]}
+            onChange={(flowStyle) => updateHomeBackground({ flowStyle })}
+          />
+        </SettingsRow>
+      ) : null}
+      {mode === 'dither' ? <HomeEffectSettings target={!flowing ? 'dither' : background.flowStyle === 'halftone' ? 'dither-halftone' : 'dither-image'} params={background.params} preset={flowing && background.image === BUILTIN_BLOSSOM ? BLOSSOM_PARAMS : undefined} /> : null}
       {mode === 'image' && background.image ? (
         <>
           <SettingsRow settingId="appearance-home-image-effect" label={text.effect} description={text.effectDesc}>
