@@ -278,6 +278,8 @@ if (DOWNLOADS_DIR) {
   app.setPath('downloads', DOWNLOADS_DIR)
 }
 
+if (app.isPackaged) delete process.env.YAN_DANGER_GUARD
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) {
   app.exit(0)
@@ -3039,7 +3041,15 @@ function createWindow(): void {
 
   win.webContents.on('will-navigate', (event, url) => {
     const dev = process.env.ELECTRON_RENDERER_URL
-    if (dev ? new URL(url).origin === new URL(dev).origin : url.startsWith('file://')) return
+    let own = false
+    try {
+      own = dev
+        ? new URL(url).origin === new URL(dev).origin
+        : url.startsWith('file://') && resolve(fileURLToPath(url)).toLowerCase() === resolve(__dirname_, '../renderer/index.html').toLowerCase()
+    } catch {
+      own = false
+    }
+    if (own) return
     event.preventDefault()
     const external = openableExternalUrl(url)
     if (external) void shell.openExternal(external)

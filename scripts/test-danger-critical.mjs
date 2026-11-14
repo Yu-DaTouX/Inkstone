@@ -88,6 +88,19 @@ await runSuite(import.meta.url, async (ok) => {
     }
 
     ok(guard.criticalDanger('read', { path: '/' }, project).length === 0, '非命令工具不检查')
+
+    const authFile = join(home, '.pi', 'agent', 'auth.json')
+    const secret = (reasons) => reasons.length === 1 && reasons[0].includes('模型凭据')
+    ok(secret(check('bash', 'cat ~/.pi/agent/auth.json')), '命中：读取模型凭据文件')
+    ok(secret(check('powershell', `Get-Content "${authFile}"`)), '命中：绝对路径读取模型凭据文件')
+    ok(secret(check('bash', 'cd ~/.pi/agent && cat auth.json')), '命中：切到 pi 目录后读取模型凭据文件')
+    ok(secret(guard.criticalDanger('read', { path: authFile }, project)), '命中：read 工具读取模型凭据文件')
+    ok(check('bash', 'cat auth.json').length === 0, '不命中：项目里的同名文件')
+    ok(check('bash', 'cat ~/.pi/agent/settings.json').length === 0, '不命中：pi 目录里的其他文件')
+    ok(guard.criticalDanger('read', { path: join(project, 'auth.json') }, project).length === 0, '不命中：read 工具读项目里的同名文件')
+    ok(secret(guard.detectDanger('bash', { command: 'cat ~/.pi/agent/auth.json' }, project)), '自动批准档同样要问')
+    const secretText = guard.criticalBlockReason(check('bash', 'cat ~/.pi/agent/auth.json'), 'The user did not answer within 1 minute')
+    ok(/credentials/.test(secretText) && !/deletes a critical location/.test(secretText) && /Do not retry/.test(secretText), '凭据拦截说明不套用删除的措辞')
     const text = guard.criticalBlockReason(['删除关键位置（盘根或文件系统根）：/'], 'The user did not answer within 1 minute')
     ok(text.includes('盘根') && text.includes('1 minute') && /Do not retry/.test(text), '拦截说明带原因和不许重试')
   } finally {

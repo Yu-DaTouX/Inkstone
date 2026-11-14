@@ -588,7 +588,7 @@ export class RemoteServer {
     if (req.method === 'GET' && url.pathname === '/remote/v1/tunnel/invite' && this.options.tunnel) {
       const pairing = this.options.devices?.currentPairing()
       if (!pairing) return writeError(res, 403, pick('电脑上没有正在进行的配对，请先在电脑上生成配对码', 'No pairing in progress on the computer. Generate a pairing code first'), 'no_pairing')
-      const source = relayHeaderSource(req) ?? req.socket?.remoteAddress ?? 'unknown'
+      const source = (this.options.relayToken ? relayHeaderSource(req) : null) ?? req.socket?.remoteAddress ?? 'unknown'
       if (!this.allowInvite(source)) return writeError(res, 429, pick('配对通道请求过于频繁，请稍后再试', 'Too many pairing channel requests. Try again later'), 'rate_limited')
       const key = `${pairing.code}:${pairing.expiresAt}`
       if (!this.inviteCache || this.inviteCache.key !== key) {

@@ -623,18 +623,42 @@ function scanCritical(command, reasons, depth, cwd, start) {
   if (DISK_WIPE.test(ruleText(command))) reasons.push('格式化或擦除磁盘')
 }
 
+const CREDENTIAL_REASON = '访问 pi 与砚保存的模型凭据：'
+
+export function credentialAccess(toolName, input, cwd) {
+  const name = String(toolName ?? '')
+  const agentDir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
+  const dir = canonicalRoot(agentDir)
+  const file = canonicalRoot(join(agentDir, 'auth.json'))
+  if (name === 'bash' || name === 'powershell') {
+    const command = String(input?.command ?? '')
+    if (hostScansTerminalInput(command)) return []
+    const text = command.replace(/\\+/g, '/').replace(/\/{2,}/g, '/').toLowerCase()
+    if (!/(?:^|[^\w.-])auth\.json(?![\w.-])/.test(text)) return []
+    const near = text.includes('.pi/agent') || text.includes(dir) || isInside(canonicalRoot(cwd || process.cwd()), [dir])
+    return near ? [`${CREDENTIAL_REASON}${file}`] : []
+  }
+  if (name !== 'read') return []
+  const raw = fileToolPath(input?.path ?? input?.file_path ?? input?.filePath)
+  return typeof raw === 'string' && raw.trim() && resolveTarget(raw, cwd) === file ? [`${CREDENTIAL_REASON}${file}`] : []
+}
+
 export function criticalDanger(toolName, input, cwd, options = {}) {
   const name = String(toolName ?? '')
-  if (name !== 'bash' && name !== 'powershell') return []
+  const secrets = credentialAccess(name, input, cwd)
+  if (name !== 'bash' && name !== 'powershell') return secrets
   const command = String(input?.command ?? '')
   if (!command.trim() || hostScansTerminalInput(command)) return []
   const root = cwd || process.cwd()
   const reasons = []
   scanCritical(command, reasons, 0, root, options.base === undefined ? canonicalRoot(root) : options.base)
-  return [...new Set(reasons)]
+  return [...new Set([...reasons, ...secrets])]
 }
 
 export function criticalBlockReason(reasons, why) {
+  if (reasons.every((reason) => reason.startsWith(CREDENTIAL_REASON))) {
+    return `Blocked: ${reasons.join('; ')}. This file holds the model credentials Inkstone and pi store. ${why}. Do not retry it and do not get at the credentials another way. If the user asked for this, tell them it needs their approval; otherwise carry on without it.`
+  }
   return `Blocked: ${reasons.join('; ')}. This deletes a critical location (a drive root, a top-level folder, the home folder, the working folder or one of its parents, or Inkstone's data folder) or wipes a disk. ${why}. Do not retry it and do not reach the same result another way. If you meant something narrower, rewrite the command so it names the exact path to delete; otherwise stop and ask the user.`
 }
 
@@ -682,6 +706,7 @@ export function detectDanger(toolName, input, cwd, options = {}) {
       }
     }
   }
+  reasons.push(...credentialAccess(name, input, cwd))
   return [...new Set(reasons)]
 }
 
