@@ -9,11 +9,10 @@ import {
   latencyFloor,
   liveActivitySince,
   liveStepId,
-  liveStepSpeed,
   projectSessionMetrics,
   splitLiveStep,
   stepSpeeds,
-  stepSpeed
+  windowSpeed
 } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
 import { buildRailStats, railTimeText, retainRailSpeed, type RailFact, type RailSpeedHold, type RailSegment, type RailStatsModel } from './rail-stats'
@@ -64,8 +63,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
     const { messages, liveId, running } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
     const floor = latencyFloor(settled)
-    const latestSpeed = settled.reduceRight<number | null>((found, message) => found ?? stepSpeed(message, floor), null)
-    const reading = (live ? liveStepSpeed(live, floor) : null) ?? (latestSpeed === null ? null : { speed: latestSpeed, estimated: false })
+    const reading = windowSpeed(settled, live, floor)
     const identity = JSON.stringify([view, messages.findLast((message) => message.role === 'user')?.id])
     speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
     const heldReading = speedHold.current.sample

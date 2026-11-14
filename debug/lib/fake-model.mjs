@@ -102,6 +102,7 @@ export const FAKE_TRIGGERS = {
   MDCODE: '一段 220 行（约 38KB）的 ts 代码块加前后各一句话，不规则块长与间隔，用来看长代码块流式渲染',
   MDREAL: '一段常见的编程助手总结（标题、加粗、行内代码、链接、有序与嵌套列表、删除线、表格、引用、代码块、分隔线），不规则块长与间隔，用来看 markdown 流式渲染',
   MDSHOW: '一篇含行内代码、链接、代码块、表格、公式、Mermaid、图片、列表的短文，慢速逐块流出，用来看 markdown 流式渲染（CHUNK<n> 每块字符数，GAP<n> 间隔毫秒）',
+  'HOLD<n>': '与其他触发词同用：响应开始后先等 n 毫秒再出字，模拟隐藏思考后上游集中发送',
   LONGTEXT: '约 20KB markdown 长文本，慢速逐块流出',
   REPORTDEMO: '一段三层字色的汇报（主体、*附带说明*、**需要注意**），用来看汇报字色',
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
@@ -179,6 +180,8 @@ async function respond(res, text, done, requestNo) {
   const id = `resp_${requestNo}`
   const output = []
   send({ type: 'response.created', response: { id, status: 'in_progress', output: [] } })
+  const hold = Number(/HOLD(\d+)/.exec(text)?.[1] ?? 0)
+  if (hold > 0) await sleep(hold)
   const streamText = async (content, chunk, delay) => {
     const index = output.length
     const item = { id: `msg_${requestNo}_${index}`, type: 'message', role: 'assistant', status: 'in_progress', content: [] }

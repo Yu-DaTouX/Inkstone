@@ -7,6 +7,17 @@ const DRAIN_SPEED = 1.2
 const SLOW_TAU_MS = 4000
 const SURGE_RATIO = 2
 const MAX_LAG_MS = 2000
+const CAPPED_LAG_MS = 4000
+const TYPE_TOKENS_PER_MS = 0.12
+const CJK_CHARS_PER_TOKEN = 1.2
+const LATIN_CHARS_PER_TOKEN = 4
+const RATE_SAMPLE_CHARS = 400
+const CJK = /[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g
+const BURST_WAIT_MS = 10_000
+const BURST_TOKENS_PER_MS = 0.25
+const BURST_RATE_MIN_MS = 300
+const BURST_GAP_MS = 500
+const BURST_CHUNK_TOKENS = 240
 const MIN_WEIGHT = 0.25
 export const LIVE_TAIL_GRACE_MS = 200
 const RATE_TAU_MS = 1000
@@ -68,7 +79,46 @@ export function drainMs(backlog: number): number {
   return Math.min(MAX_DRAIN_MS, Math.max(REVEAL_DRAIN_MS, backlog / DRAIN_SPEED))
 }
 
-export function stepReveal(state: RevealState, length: number, now: number, live: boolean): RevealState {
+export function tokenUnits(text: string): number {
+  const cjk = text.match(CJK)?.length ?? 0
+  return cjk / CJK_CHARS_PER_TOKEN + (text.length - cjk) / LATIN_CHARS_PER_TOKEN
+}
+
+export function typeRate(pending: string): number {
+  const sample = pending.slice(0, RATE_SAMPLE_CHARS)
+  const units = tokenUnits(sample)
+  return units > 0 ? (TYPE_TOKENS_PER_MS * sample.length) / units : TYPE_TOKENS_PER_MS * LATIN_CHARS_PER_TOKEN
+}
+
+export interface BurstWatch {
+  length: number
+  firstAt: number | null
+  lastAt: number | null
+  units: number
+  burst: boolean
+}
+
+export function startBurstWatch(length: number, now?: number): BurstWatch {
+  return { length, firstAt: null, lastAt: length > 0 && now !== undefined ? now : null, units: 0, burst: false }
+}
+
+export function watchBurst(watch: BurstWatch, text: string, now: number, startedAt?: number): BurstWatch {
+  if (text.length < watch.length) return { ...watch, length: text.length }
+  if (text.length === watch.length) return watch
+  const delta = tokenUnits(text.slice(watch.length))
+  const known = typeof startedAt === 'number' && Number.isFinite(startedAt)
+  const since = watch.lastAt ?? (known ? startedAt : null)
+  const gap = since === null ? 0 : now - since
+  const firstAt = watch.firstAt ?? now
+  const units = watch.units + delta
+  const waited = known && firstAt - startedAt >= BURST_WAIT_MS
+  const span = now - firstAt
+  const rushing = waited && span >= BURST_RATE_MIN_MS && units / span > BURST_TOKENS_PER_MS
+  const chunk = delta >= BURST_CHUNK_TOKENS && gap >= BURST_GAP_MS
+  return { length: text.length, firstAt, lastAt: now, units, burst: watch.burst || rushing || chunk }
+}
+
+export function stepReveal(state: RevealState, length: number, now: number, live: boolean, cap = Infinity): RevealState {
   const elapsed = Math.max(0, now - state.at)
   const dt = Math.min(FRAME_CAP_MS, elapsed)
   const arrived = Math.max(0, length - state.seen)
@@ -81,10 +131,11 @@ export function stepReveal(state: RevealState, length: number, now: number, live
   const shown = Math.min(state.shown, length)
   const backlog = length - shown
   if (backlog <= 0) return { shown: length, seen, rate, slow, weight, chunk, drain: 0, at: now }
-  const drain = live ? 0 : state.drain || backlog / drainMs(backlog)
+  const lagMs = Number.isFinite(cap) ? CAPPED_LAG_MS : MAX_LAG_MS
+  const drain = live ? 0 : state.drain || Math.max(Math.min(backlog / drainMs(backlog), cap), backlog / lagMs)
   const buffer = Math.min(BUFFER_MAX_CHARS, Math.max(BUFFER_MIN_CHARS, chunk * BUFFER_CHUNKS, rate * BUFFER_MS))
   const paced = backlog < buffer ? rate * (EASE_OFF + (1 - EASE_OFF) * (backlog / buffer)) : rate + (backlog - buffer) / CATCH_MS
-  const limit = Math.max((slow / Math.max(weight, MIN_WEIGHT)) * SURGE_RATIO, backlog / MAX_LAG_MS)
+  const limit = Math.max(Math.min((slow / Math.max(weight, MIN_WEIGHT)) * SURGE_RATIO, cap), backlog / lagMs)
   const speed = Math.max(Math.min(paced, limit), FLOOR_RATE, drain)
   return { shown: Math.min(length, shown + speed * dt), seen, rate, slow, weight, chunk, drain, at: now }
 }
@@ -104,7 +155,7 @@ export function revealLength(text: string, shown: number): number {
   return length
 }
 
-export function useSmoothReveal(text: string, live: boolean, id?: string | null, fresh = live): string {
+export function useSmoothReveal(text: string, live: boolean, id?: string | null, fresh = live, startedAt?: number): string {
   const reduced = prefersReducedMotion()
   const [start] = useState(() => initialShown(text.length, fresh, savedShown(id, text), reduced))
   const [shown, setShown] = useState(start)
@@ -116,8 +167,12 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
   const wasLiveProp = useRef(live)
   const drainRef = useRef(start < text.length)
   const baseRef = useRef(start)
+  const [initialWatch] = useState(() => startBurstWatch(text.length, Date.now()))
+  const burstRef = useRef<BurstWatch>(initialWatch)
   textRef.current = text
   liveRef.current = live
+  if (live) burstRef.current = watchBurst(burstRef.current, text, Date.now(), startedAt)
+  else if (burstRef.current.length > text.length) burstRef.current = { ...burstRef.current, length: text.length }
 
   const now = performance.now()
   if (live || wasLiveProp.current) liveUntil.current = now + LIVE_TAIL_GRACE_MS
@@ -143,7 +198,8 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
     const tick = (now: number): void => {
       const current = textRef.current
       const state = stateRef.current ?? startReveal(Math.min(shownRef.current, current.length), now)
-      const step = stepReveal(state, current.length, now, liveRef.current)
+      const cap = burstRef.current.burst ? typeRate(current.slice(Math.floor(state.shown))) : Infinity
+      const step = stepReveal(state, current.length, now, liveRef.current, cap)
       stateRef.current = step
       const next = revealLength(current, step.shown)
       if (next !== shownRef.current) {

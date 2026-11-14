@@ -149,9 +149,30 @@ export interface LiveStepSpeed {
 }
 
 export function liveStepSpeed(m: UIMessage | null | undefined, floor: number | null = null): LiveStepSpeed | null {
+  const decode = liveDecode(m, floor)
+  return decode ? { speed: decode.tokens / (decode.ms / 1000), estimated: decode.estimated } : null
+}
+
+export const SPEED_WINDOW_MS = 60_000
+
+export function windowSpeed(settled: readonly UIMessage[], live: UIMessage | null | undefined, floor: number | null = null, windowMs = SPEED_WINDOW_MS): LiveStepSpeed | null {
+  const current = liveDecode(live, floor)
+  let tokens = current?.tokens ?? 0
+  let ms = current?.ms ?? 0
+  const msgs = effectiveMessages(settled)
+  for (let i = msgs.length - 1; i >= 0 && ms < windowMs; i -= 1) {
+    const decode = stepDecode(msgs[i], floor)
+    if (!decode) continue
+    tokens += decode.tokens
+    ms += decode.ms
+  }
+  return tokens > 0 && ms >= MIN_DECODE_MS ? { speed: tokens / (ms / 1000), estimated: current?.estimated ?? false } : null
+}
+
+function liveDecode(m: UIMessage | null | undefined, floor: number | null): (StepDecode & { estimated: boolean }) | null {
   if (!m || m.role !== 'assistant') return null
   const decode = stepDecode(m, floor)
-  if (decode) return { speed: decode.tokens / (decode.ms / 1000), estimated: false }
+  if (decode) return { ...decode, estimated: false }
   if ((sanitizeUsage(m.usage)?.output ?? 0) > 0) return null
   if (m.thinking) return null
   const ms = m.generationTiming?.decodeMs
@@ -166,7 +187,7 @@ export function liveStepSpeed(m: UIMessage | null | undefined, floor: number | n
   const tokens = estimateTextTokens(content)
   if (tokens <= 0) return null
   const speed = tokens / (ms / 1000)
-  return speed > 0 && speed <= MAX_PLAUSIBLE_TPS ? { speed, estimated: true } : null
+  return speed > 0 && speed <= MAX_PLAUSIBLE_TPS ? { tokens, ms, estimated: true } : null
 }
 
 function turnCountsOf(msgs: readonly UIMessage[]): SessionTurnCounts {

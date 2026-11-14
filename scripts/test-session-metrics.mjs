@@ -23,7 +23,8 @@ try {
     projectSessionMetrics,
     splitLiveStep,
     stepSpeed,
-    stepSpeeds
+    stepSpeeds,
+    windowSpeed
   } = await import(pathToFileURL(resolve(temp, 'session-metrics.mjs')).href)
 
   let checks = 0
@@ -546,6 +547,18 @@ try {
     eq(Math.round(stepSpeed(bursty[2], latencyFloor(bursty))), 102, '成批到达的步骤按「输出 ÷（生成时长 − 请求开销）」计，不再是 1017 / 1.9s = 534')
     eq(stepSpeeds(bursty, 12).map(Math.round), [174, 102, 91, 132], '柱图同口径')
     eq(latencyFloor(bursty.slice(0, 3)), null, '首字计时不足 3 步时不估请求开销')
+
+    const floor = latencyFloor(bursty)
+    const all = windowSpeed(bursty, null, floor)
+    const spans = [4994, 14232, 10743, 10338].map((ms) => ms - floor)
+    eq(Math.round(all.speed), Math.round((121 + 1017 + 588 + 797) / (spans.reduce((a, b) => a + b, 0) / 1000)), '速度数字是窗口内总输出 ÷ 总生成时长，不是最后一步')
+    check(all.estimated === false, '已完成的步骤不算估算')
+    const recent = windowSpeed(bursty, null, floor, 7000)
+    eq(Math.round(recent.speed), Math.round((588 + 797) / ((spans[2] + spans[3]) / 1000)), '窗口只取最近几步，凑够时长就停')
+    const spike = step('a5', 1644, 20615, 17300, 486)
+    const withSpike = windowSpeed(bursty, spike, floor)
+    check(withSpike.speed < 150, `进行中的一步集中到达也不把数字拉到几百：${withSpike.speed}`)
+    eq(windowSpeed([{ id: 'u1', role: 'user', text: 'hi' }], null, null), null, '没有可用计时时未知')
   }
 
   {

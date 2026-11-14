@@ -659,7 +659,13 @@ export const Markdown = memo(function Markdown({
     ? s.sessionRuntimes[sessionId]?.session?.cwd ?? s.sessions.find((item) => item.id === sessionId)?.cwd ?? (s.session?.sessionId === sessionId ? s.session.cwd : undefined)
     : s.session?.cwd)
   sourceCwd = sourceCwd || sessionCwd
-  const revealedText = useSmoothReveal(text, live, messageId ? `${sessionId ?? ''}|${messageId}` : null, fresh)
+  const startedAt = useStore((s) => {
+    if (!live || !messageId) return undefined
+    const id = messageId.replace(/[#:].*$/, '')
+    const own = sessionId ? s.sessionRuntimes[sessionId]?.messages.findLast((m) => m.id === id) : undefined
+    return (own ?? s.messages.findLast((m) => m.id === id))?.timestamp
+  })
+  const revealedText = useSmoothReveal(text, live, messageId ? `${sessionId ?? ''}|${messageId}` : null, fresh, startedAt)
   const draining = !live && revealedText.length < text.length
   const running = live || draining
   const renderedText = prepareStreamingMarkdown(running ? revealedText : text, running)

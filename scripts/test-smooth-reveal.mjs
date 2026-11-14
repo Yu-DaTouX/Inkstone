@@ -9,7 +9,7 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(resolve('node_modules/.inkstone-smooth-reveal-'))
 const outfile = join(dir, 'smooth-reveal.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/smooth-reveal.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error', external: ['react'] })
-const { startReveal, stepReveal, revealLength, revealActive, revealDraining, drainMs, initialShown, REVEAL_DRAIN_MS, MAX_DRAIN_MS, LIVE_TAIL_GRACE_MS, FRESH_TYPE_CHARS } = await import(pathToFileURL(outfile).href)
+const { startReveal, stepReveal, typeRate, tokenUnits, startBurstWatch, watchBurst, revealLength, revealActive, revealDraining, drainMs, initialShown, REVEAL_DRAIN_MS, MAX_DRAIN_MS, LIVE_TAIL_GRACE_MS, FRESH_TYPE_CHARS } = await import(pathToFileURL(outfile).href)
 await rm(dir, { recursive: true, force: true })
 
 let pass = 0
@@ -124,6 +124,102 @@ check('最后一段整块到达后结束：排空按积压伸缩且有上限', (
   assert.ok(run.doneAt <= MAX_DRAIN_MS + FRAME * 2, `排空用时 ${run.doneAt}`)
   assert.equal(drainMs(10), REVEAL_DRAIN_MS)
   assert.equal(drainMs(100000), MAX_DRAIN_MS)
+})
+
+check('正常出字速度按文字折算：中文约每秒 144 字，英文约每秒 480 字', () => {
+  assert.ok(Math.abs(typeRate('中文回答'.repeat(50)) - 0.144) < 1e-9, `${typeRate('中文回答'.repeat(50))}`)
+  assert.ok(Math.abs(typeRate('english reply '.repeat(30)) - 0.48) < 1e-9)
+  const half = '中'.repeat(200) + 'a'.repeat(200)
+  assert.ok(Math.abs(typeRate(half) - 0.12 * 400 / (200 / 1.2 + 200 / 4)) < 1e-9, `中英各半按 token 加权：${typeRate(half)}`)
+  assert.ok(Math.abs(typeRate(half) - 0.2215) < 0.001)
+  assert.equal(typeRate(''), 0.48)
+  assert.ok(Math.abs(typeRate('中'.repeat(400) + 'code '.repeat(200)) - 0.144) < 1e-9, '只看待显示的开头，后面追加的代码不改变中文的速度')
+})
+
+function arrive({ startedAt, waitMs, chunk, everyMs, totalMs }) {
+  let watch = startBurstWatch(0)
+  let text = ''
+  let burstAt = null
+  for (let now = startedAt + waitMs; now <= startedAt + waitMs + totalMs; now += everyMs) {
+    text += chunk
+    watch = watchBurst(watch, text, now, startedAt)
+    if (watch.burst && burstAt === null) burstAt = now - startedAt - waitMs
+  }
+  return burstAt
+}
+
+check('稳定 200 tok/s 的模型不算突发：不论首字等多久都不限速', () => {
+  const zh200 = { chunk: '中文中文中文', everyMs: 25, totalMs: 6000 }
+  assert.ok(Math.abs(tokenUnits(zh200.chunk) / 25 * 1000 - 200) < 1e-6)
+  assert.equal(arrive({ startedAt: 1000, waitMs: 800, ...zh200 }), null)
+  assert.equal(arrive({ startedAt: 1000, waitMs: 17000, ...zh200 }), null)
+  assert.equal(arrive({ startedAt: 1000, waitMs: 17000, chunk: 'abcdefghabcdefghabcdefghabcdefgh', everyMs: 40, totalMs: 6000 }), null)
+})
+
+check('长时间无输出后正文高速到达：约半秒内判为突发', () => {
+  const at = arrive({ startedAt: 1000, waitMs: 17300, chunk: '中文中文中文中文中文中文', everyMs: 33, totalMs: 3300 })
+  assert.ok(at !== null && at <= 500, `判定用时 ${at}`)
+  assert.equal(arrive({ startedAt: 1000, waitMs: 3000, chunk: '中文中文中文中文中文中文', everyMs: 33, totalMs: 3300 }), null, '首字正常时不凭速度判突发')
+  assert.equal(arrive({ startedAt: undefined, waitMs: 0, chunk: '中文中文中文中文中文中文', everyMs: 33, totalMs: 3300 }), null, '不知道开始时间时不猜')
+})
+
+check('停顿半秒以上后一次到达大段：判为突发；没停顿的大块不算', () => {
+  let watch = watchBurst(startBurstWatch(0), '开头', 1000, 0)
+  watch = watchBurst(watch, '开头' + '中'.repeat(300), 1700, 0)
+  assert.equal(watch.burst, true)
+  let quick = watchBurst(startBurstWatch(0), '开头', 1000, 0)
+  quick = watchBurst(quick, '开头' + '中'.repeat(300), 1100, 0)
+  assert.equal(quick.burst, false)
+  const small = watchBurst(watchBurst(startBurstWatch(0), '开头', 1000, 0), '开头' + '中'.repeat(100), 2000, 0)
+  assert.equal(small.burst, false)
+})
+
+check('突发一旦判定就保持到这条消息结束；文字变短只更新长度', () => {
+  let watch = { ...startBurstWatch(10), burst: true }
+  watch = watchBurst(watch, 'abc', 5000, 0)
+  assert.equal(watch.burst, true)
+  assert.equal(watch.length, 3)
+  assert.equal(watchBurst(watch, 'abc', 6000, 0), watch)
+})
+
+function capped({ size, overMs, cap, tailMs = 12000 }) {
+  let state = startReveal(0, 0)
+  let length = 0
+  let maxStep = 0
+  let maxLag = 0
+  let doneAt = null
+  for (let now = FRAME; now <= overMs + tailMs; now += FRAME) {
+    const live = now <= overMs
+    length = live ? Math.min(size, Math.round((size * now) / overMs)) : size
+    const before = state.shown
+    state = stepReveal(state, length, now, live, cap)
+    maxStep = Math.max(maxStep, state.shown - before)
+    maxLag = Math.max(maxLag, length - state.shown)
+    if (!live && doneAt === null && state.shown >= size) doneAt = now - overMs
+  }
+  return { maxStep, maxLag, doneAt }
+}
+
+check('隐藏思考后正文集中到达（3.3 秒到 1200 字）：按正常出字速度打完，不一秒吐完', () => {
+  const cap = typeRate('中文'.repeat(200))
+  const run = capped({ size: 1200, overMs: 3300, cap })
+  assert.ok(run.maxStep <= cap * 50 + 1, `单帧 ${run.maxStep}`)
+  assert.ok(run.doneAt !== null && run.doneAt >= 1500 && run.doneAt <= 4000 + FRAME * 2, `结束后补完用时 ${run.doneAt}`)
+})
+
+check('有上限时落后有界：持续高速到达也不超过约 4 秒', () => {
+  const run = capped({ size: 10000, overMs: 20000, cap: 0.144 })
+  assert.ok(run.maxLag <= 0.5 * 4000 + 50, `最大落后 ${run.maxLag}`)
+  assert.ok(run.doneAt !== null && run.doneAt <= 4000 + FRAME * 2, `结束后补完用时 ${run.doneAt}`)
+})
+
+check('低于正常速度的流不受上限影响', () => {
+  const slow = capped({ size: 600, overMs: 6000, cap: 0.48, tailMs: 2000 })
+  const free = capped({ size: 600, overMs: 6000, cap: Infinity, tailMs: 2000 })
+  assert.equal(slow.maxLag, free.maxLag)
+  assert.equal(slow.doneAt, free.doneAt)
+  assert.ok(slow.maxLag < 0.1 * 300, `最大落后 ${slow.maxLag}`)
+  assert.ok(slow.doneAt !== null && slow.doneAt <= MAX_DRAIN_MS + FRAME * 2, `结束后补完用时 ${slow.doneAt}`)
 })
 
 check('文字被改短时跟着收回', () => {
