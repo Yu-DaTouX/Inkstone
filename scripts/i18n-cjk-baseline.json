@@ -199,7 +199,7 @@
   "src/renderer/src/features/session/web-search/model.ts": 1,
   "src/renderer/src/features/session/web-search/text.ts": 20,
   "src/renderer/src/features/settings/appearance/AppearanceSettings.tsx": 1,
-  "src/renderer/src/features/settings/appearance/HomeBackgroundSettings.tsx": 28,
+  "src/renderer/src/features/settings/appearance/HomeBackgroundSettings.tsx": 30,
   "src/renderer/src/features/settings/appearance/HomeEffectSettings.tsx": 21,
   "src/renderer/src/features/settings/appearance/InterfaceTuningSettings.tsx": 18,
   "src/renderer/src/features/settings/capabilities/McpAppRefresh.tsx": 11,

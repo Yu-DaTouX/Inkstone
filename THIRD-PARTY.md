@@ -19,7 +19,7 @@
 
 ## 首页背景
 
-- 动态网点与图片的抖动、网点效果使用 [Paper Shaders](https://github.com/paper-design/shaders)（Apache-2.0，npm 包 `@paper-design/shaders-react`）。其 NOTICE：「Paper Shaders / Copyright 2026 Paper」。
+- 动态网点与图片的抖动、网点效果使用 [Paper Shaders](https://github.com/paper-design/shaders)（Apache-2.0，npm 包 `@paper-design/shaders-react` 与 `@paper-design/shaders`）；[`FlowImageDither.tsx`](src/renderer/src/features/ambient/FlowImageDither.tsx) 在其图片抖动着色器上加了随时间流动的取样偏移和明暗波带。其 NOTICE：「Paper Shaders / Copyright 2026 Paper」。
 - 内置画作 [`twilight-in-the-wilderness.webp`](src/renderer/src/assets/wallpapers/twilight-in-the-wilderness.webp) 取自 Frederic Edwin Church《Twilight in the Wilderness》（1860），克利夫兰美术馆藏品 1965.233，馆方以 CC0 开放，本仓库只做缩放与格式转换。
 
 ## 子代理模型 Bot

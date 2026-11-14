@@ -7,7 +7,7 @@
     --side-glass: light-dark(rgba(246,249,252,.95), rgba(0,0,0,.95));
     --side-tint: light-dark(rgba(247,248,250,.7), rgba(32,32,35,.7));
     --glass-side: light-dark(#F7F8FA, #202023);
-    --glass-main: light-dark(#F2F3F5, #18181A);
+    --glass-main: light-dark(#F2F3F5, #26262A);
     --home-print-ink: #C4673F;
     --home-print-glow: #E2A64B;
     --side-fg2: light-dark(#4D4F49, #E0E0E0);

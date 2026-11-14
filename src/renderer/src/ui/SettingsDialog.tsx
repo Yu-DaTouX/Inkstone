@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactElement,
   type ReactNode
 } from 'react'
@@ -69,9 +70,26 @@ export function SettingsDialog({
   const t = useOptionalT()
   const stacked = narrow === true && narrowNav != null
   const modalCount = useModalCount()
+  const [peek, setPeek] = useState(false)
+  const startPeek = (event: PointerEvent<HTMLDivElement>): void => {
+    const target = event.target as HTMLElement
+    if (event.button !== 0 || !target.closest('.ui-slider__track')) return
+    const row = target.closest<HTMLElement>('.ui-setting-row')
+    if (!row) return
+    row.dataset.peek = ''
+    setPeek(true)
+    const end = (): void => {
+      delete row.dataset.peek
+      setPeek(false)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+    }
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
   return (
     <ModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable className="ui-settings-overlay">
-      <RACModal className="ui-settings-modal" data-nested-dialog-open={modalCount > 1 ? '1' : undefined}>
+      <RACModal className="ui-settings-modal" data-nested-dialog-open={modalCount > 1 ? '1' : undefined} data-peek={peek ? '' : undefined}>
         <RACDialog className="ui-settings-dialog">
           {({ close }) => {
             const closeButton = (
@@ -92,6 +110,7 @@ export function SettingsDialog({
                 data-layout={stacked ? 'stacked' : 'split'}
                 data-testid={testId}
                 onKeyDown={onKeyDown}
+                onPointerDownCapture={startPeek}
               >
                 <ModalLayerToken />
                 {stacked ? (

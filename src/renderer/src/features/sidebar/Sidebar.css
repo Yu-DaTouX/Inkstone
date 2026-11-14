@@ -69,8 +69,16 @@
     :root[data-material][data-glass='full'] .v3-stream-host::after {
       content: none;
     }
-    :root[data-material][data-glass='full'] .v3-stream-host > .v3-stream {
-      mask-image: linear-gradient(to top, transparent calc(var(--composer-h, 0px) + var(--s-24)), #000 calc(var(--composer-h, 0px) + var(--s-24) + var(--s-32)));
+    :root[data-material][data-glass='full'] .v3-chat::before {
+      content: none;
+    }
+    :root[data-material][data-glass='full'] .t3-composer-shell {
+      --chat-composer-glass-surface: var(--glass-main);
+      --glass-opacity: 90%;
+    }
+    :root[data-material][data-glass='full'] .v3-stream {
+      --surface: color-mix(in srgb, var(--glass-main) 45%, transparent);
+      --sunken: color-mix(in srgb, var(--glass-main) 55%, transparent);
     }
     :root[data-material][data-glass='full'] .v3-root[data-narrow='0'] > .v3-side {
       border-right-color: color-mix(in srgb, var(--line) 60%, transparent);

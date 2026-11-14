@@ -44,7 +44,7 @@ export function HomeBackdrop({ active, asciiEnabled, lift = false }: { active: b
           data-testid="v3-home-dither"
         >
           <Suspense fallback={null}>
-            <ShaderBackdrop kind="dither" params={background.params} animate={active} />
+            <ShaderBackdrop kind="dither" image={background.flowImage && background.image ? homeImageSource(background.image) : null} params={background.params} animate={active} />
           </Suspense>
         </div>
       ) : null}

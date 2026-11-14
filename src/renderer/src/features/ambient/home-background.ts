@@ -62,6 +62,7 @@ export interface HomeBackground {
   blur: number
   tone: HomeMaskTone
   effect: HomeImageEffect
+  flowImage: boolean
   params: HomeEffectParams
 }
 
@@ -70,7 +71,7 @@ const STORAGE_KEY = 'yan:home-background'
 const MAX_EDGE = 2560
 const DEFAULT_FADE = 0.35
 export const HOME_BLUR_MAX = 40
-const EMPTY: HomeBackground = { mode: null, image: null, fade: DEFAULT_FADE, blur: 0, tone: 'page', effect: 'none', params: HOME_PARAM_DEFAULTS }
+const EMPTY: HomeBackground = { mode: null, image: null, fade: DEFAULT_FADE, blur: 0, tone: 'page', effect: 'none', flowImage: false, params: HOME_PARAM_DEFAULTS }
 
 let cached: HomeBackground | null = null
 const listeners = new Set<() => void>()
@@ -86,6 +87,7 @@ function read(): HomeBackground {
       blur: typeof raw?.blur === 'number' && raw.blur >= 0 && raw.blur <= HOME_BLUR_MAX ? raw.blur : 0,
       tone: raw?.tone === 'dark' || raw?.tone === 'light' ? raw.tone : 'page',
       effect: raw?.effect === 'dither' || raw?.effect === 'halftone' ? raw.effect : 'none',
+      flowImage: raw?.flowImage === true,
       params: sanitizeHomeParams(raw?.params)
     }
   } catch {

@@ -51,6 +51,25 @@
     opacity: 1;
   }
 
+  .ui-modal-overlay.ui-settings-overlay:has(.ui-settings-modal[data-peek]) {
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .ui-settings-modal[data-peek] {
+    visibility: hidden;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ui-settings-modal[data-peek] .ui-setting-row[data-peek] {
+    visibility: visible;
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-dialog);
+  }
+
   .ui-settings-dialog {
     display: flex;
     flex: 1;

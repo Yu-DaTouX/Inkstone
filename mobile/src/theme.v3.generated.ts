@@ -111,7 +111,7 @@ export const v3Dark = {
   "sideGlass": "rgba(0,0,0,.95)",
   "sideTint": "rgba(32,32,35,.7)",
   "glassSide": "#202023",
-  "glassMain": "#18181A",
+  "glassMain": "#26262A",
   "homePrintInk": "#C4673F",
   "homePrintGlow": "#E2A64B",
   "sideFg2": "#E0E0E0",

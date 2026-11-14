@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore, type JSX } from 'react'
 import { Dithering, HalftoneDots, ImageDithering } from '@paper-design/shaders-react'
 import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
 import type { HomeEffectParams, HomeImageEffect, HomeInk } from './home-background'
+import { FlowImageDither } from './FlowImageDither'
 
 const PIXEL_BUDGET = { minPixelRatio: 1, maxPixelCount: 1920 * 1080 * 2 }
 const LIGHT_CONTRAST = 0.55
@@ -41,6 +42,13 @@ export default function ShaderBackdrop({ kind, image, effect, params, animate }:
   const colors = useThemeColors()
   const motion = useMotion()
   const style = { position: 'absolute', inset: 0 } as const
+  if (kind === 'dither' && image) {
+    const speed = animate && motion ? params.speed : 0
+    if (colors.light) {
+      return <FlowImageDither className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} pixel={params.pixel} colorSteps={params.colorSteps} speed={speed} originalColors={false} colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} />
+    }
+    return <FlowImageDither className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} pixel={params.pixel} colorSteps={params.colorSteps} speed={speed} originalColors colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} />
+  }
   if (kind === 'dither') {
     return (
       <Dithering

@@ -78,7 +78,7 @@ function RangeRow({ id, k, label, description, params, format }: { id: string; k
 
 const percent = (v: number): string => `${Math.round(v * 100)}%`
 
-export function HomeEffectSettings({ target, params }: { target: 'dither' | 'image-dither' | 'image-halftone'; params: HomeEffectParams }): ReactElement {
+export function HomeEffectSettings({ target, params }: { target: 'dither' | 'dither-image' | 'image-dither' | 'image-halftone'; params: HomeEffectParams }): ReactElement {
   const { lang } = useI18n()
   const text = TEXT[lang === 'en-US' ? 'en-US' : 'zh-CN']
   return (
@@ -102,6 +102,14 @@ export function HomeEffectSettings({ target, params }: { target: 'dither' | 'ima
             />
           </SettingsRow>
           <RangeRow id="appearance-home-dither-pixel" k="pixel" label={text.pixel} description={text.pixelDesc} params={params} format={(v) => `${v}px`} />
+          <RangeRow id="appearance-home-dither-strength" k="strength" label={text.strength} description={text.strengthDesc} params={params} format={percent} />
+          <RangeRow id="appearance-home-dither-speed" k="speed" label={text.speed} description={text.speedDesc} params={params} format={percent} />
+        </>
+      ) : null}
+      {target === 'dither-image' ? (
+        <>
+          <RangeRow id="appearance-home-dither-pixel" k="pixel" label={text.pixel} description={text.pixelDesc} params={params} format={(v) => `${v}px`} />
+          <RangeRow id="appearance-home-image-steps" k="colorSteps" label={text.steps} description={text.stepsDesc} params={params} format={(v) => String(v)} />
           <RangeRow id="appearance-home-dither-strength" k="strength" label={text.strength} description={text.strengthDesc} params={params} format={percent} />
           <RangeRow id="appearance-home-dither-speed" k="speed" label={text.speed} description={text.speedDesc} params={params} format={percent} />
         </>

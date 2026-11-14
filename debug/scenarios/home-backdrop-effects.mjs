@@ -1,4 +1,4 @@
-import { click, setTheme } from '../lib/review-kit.mjs'
+import { click, rect, setTheme } from '../lib/review-kit.mjs'
 
 export const meta = { description: '新标签页背景：动态网点（Paper Shaders 抖动）、图片的抖动与网点效果、设置项、会话里静止变淡、减弱动效时静止' }
 
@@ -76,10 +76,33 @@ export default async function run({ cdp, box, check, waitFor, sleep, shot, newSe
   await sleep(300)
   await click(cdp, '[data-testid="v3-home-bg-dither"]', { waitMs: 600 })
   check('点动态网点切换模式', await ev(`JSON.parse(localStorage.getItem('yan:home-background') || '{}').mode === 'dither'`))
+  check('动态网点可选图片', await ev(`!!document.querySelector('[data-setting-id="appearance-home-dither-image"]')`))
+  await ev(`document.querySelector('[data-testid="v3-home-param-speed"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(300)
+  const knob = await rect(cdp, '[data-testid="v3-home-param-speed"] .ui-slider__thumb')
+  const mouse = (type, x) => cdp.call('Input.dispatchMouseEvent', { type, x, y: knob.y, button: 'left', clickCount: 1 })
+  await mouse('mouseMoved', knob.x)
+  await mouse('mousePressed', knob.x)
+  await mouse('mouseMoved', knob.x - 12)
+  await sleep(300)
+  check('拖滑块时只留当前行', await ev(`!!document.querySelector('.ui-settings-modal[data-peek] .ui-setting-row[data-peek] [data-testid="v3-home-param-speed"]') && getComputedStyle(document.querySelector('.ui-settings-modal')).visibility === 'hidden'`))
+  await shot('settings-peek')
+  await mouse('mouseReleased', knob.x - 12)
+  await sleep(300)
+  check('松手后设置恢复', await ev(`!document.querySelector('[data-peek]')`))
   await ev(`document.querySelector('.ui-settings-dialog [aria-label="关闭"], [data-testid="v3-settings-close"]')?.click()`)
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
   await sleep(600)
+
+  await ev(setBg(`{ mode: 'dither', image: 'builtin:twilight', flowImage: true }`))
+  await waitFor(`!!document.querySelector('[data-testid="v3-home-dither"] canvas')`, 10000)
+  await sleep(1500)
+  const f1 = await frame('[data-testid="v3-home-dither"]')
+  await sleep(800)
+  const f2 = await frame('[data-testid="v3-home-dither"]')
+  check('动态网点用图片时在动', f1 !== null && f2 !== null && f1 !== f2, `${f1?.length} ${f2?.length}`)
+  await shot('flow-image-dark')
 
   await ev(setBg(`{ mode: 'image', image: 'builtin:twilight', effect: 'dither', fade: 0.2 }`))
   await waitFor(`!!document.querySelector('[data-testid="v3-home-image"] canvas')`, 10000)

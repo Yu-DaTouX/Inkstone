@@ -19,6 +19,8 @@ interface HomeBackgroundText {
   none: string
   picture: string
   pictureDesc: string
+  flowPicture: string
+  flowPictureDesc: string
   choose: string
   replace: string
   remove: string
@@ -51,6 +53,8 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     none: '无',
     picture: '背景图片',
     pictureDesc: '支持 PNG、JPG、WebP、GIF、BMP，过大的图片会自动缩小。',
+    flowPicture: '用图片',
+    flowPictureDesc: '网点按图片明暗排布并缓缓流动；不选则用图案。',
     choose: '选择图片…',
     replace: '更换图片…',
     remove: '移除',
@@ -81,6 +85,8 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     none: 'None',
     picture: 'Background image',
     pictureDesc: 'PNG, JPG, WebP, GIF or BMP. Large images are scaled down.',
+    flowPicture: 'Image',
+    flowPictureDesc: 'Dots follow the image and drift slowly; without one, a pattern is used.',
     choose: 'Choose image…',
     replace: 'Replace image…',
     remove: 'Remove',
@@ -120,13 +126,16 @@ export function HomeBackgroundSettings(): ReactElement {
     if ((next === 'ascii') !== asciiOn) void patchSettings(asciiBackgroundPatch(next === 'ascii')).catch(() => undefined)
   }
 
+  const flowing = mode === 'dither' && background.flowImage && !!background.image
+  const shown = mode === 'dither' ? (flowing ? background.image : null) : background.image
+
   const pickImage = async (): Promise<void> => {
     setBusy(true)
     try {
       const [file] = await window.yan.pickImages()
       if (!file) return
       const image = await shrinkImage(`data:${file.mimeType};base64,${file.data}`)
-      updateHomeBackground({ mode: 'image', image })
+      updateHomeBackground(mode === 'dither' ? { mode: 'dither', image, flowImage: true } : { mode: 'image', image })
       setPicked(null)
       if (asciiOn) void patchSettings(asciiBackgroundPatch(false)).catch(() => undefined)
     } catch (error) {
@@ -137,13 +146,13 @@ export function HomeBackgroundSettings(): ReactElement {
   }
 
   const usePainting = (): void => {
-    updateHomeBackground({ mode: 'image', image: BUILTIN_PAINTING, effect: 'dither', fade: 0.2, tone: 'page' })
+    updateHomeBackground(mode === 'dither' ? { image: BUILTIN_PAINTING, flowImage: true } : { mode: 'image', image: BUILTIN_PAINTING, effect: 'dither', fade: 0.2, tone: 'page' })
     setPicked(null)
     if (asciiOn) void patchSettings(asciiBackgroundPatch(false)).catch(() => undefined)
   }
 
   const removeImage = (): void => {
-    updateHomeBackground({ image: null, mode: 'none' })
+    updateHomeBackground(mode === 'dither' ? { flowImage: false } : { image: null, mode: 'none' })
     setPicked(null)
   }
 
@@ -162,20 +171,19 @@ export function HomeBackgroundSettings(): ReactElement {
           onChange={choose}
         />
       </SettingsRow>
-      {mode === 'dither' ? <HomeEffectSettings target="dither" params={background.params} /> : null}
-      {mode === 'image' ? (
-        <SettingsRow settingId="appearance-home-image" label={text.picture} description={text.pictureDesc}>
+      {mode === 'image' || mode === 'dither' ? (
+        <SettingsRow settingId={mode === 'dither' ? 'appearance-home-dither-image' : 'appearance-home-image'} label={mode === 'dither' ? text.flowPicture : text.picture} description={mode === 'dither' ? text.flowPictureDesc : text.pictureDesc}>
           <div className="home-bg-picker">
-            {background.image ? <img className="home-bg-thumb" src={homeImageSource(background.image)} alt="" data-testid="v3-home-bg-thumb" /> : null}
+            {shown ? <img className="home-bg-thumb" src={homeImageSource(shown)} alt="" data-testid="v3-home-bg-thumb" /> : null}
             <Button size="sm" variant="secondary" icon={<ImagePlus size={14} aria-hidden />} isPending={busy} onPress={() => void pickImage()} data-testid="v3-home-bg-choose">
-              {background.image ? text.replace : text.choose}
+              {shown ? text.replace : text.choose}
             </Button>
-            {background.image !== BUILTIN_PAINTING ? (
+            {shown !== BUILTIN_PAINTING ? (
               <Button size="sm" variant="ghost" icon={<Palette size={14} aria-hidden />} onPress={usePainting} data-testid="v3-home-bg-painting">
                 {text.painting}
               </Button>
             ) : null}
-            {background.image ? (
+            {shown ? (
               <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onPress={removeImage} data-testid="v3-home-bg-remove">
                 {text.remove}
               </Button>
@@ -183,6 +191,7 @@ export function HomeBackgroundSettings(): ReactElement {
           </div>
         </SettingsRow>
       ) : null}
+      {mode === 'dither' ? <HomeEffectSettings target={flowing ? 'dither-image' : 'dither'} params={background.params} /> : null}
       {mode === 'image' && background.image ? (
         <>
           <SettingsRow settingId="appearance-home-image-effect" label={text.effect} description={text.effectDesc}>
