@@ -160,7 +160,34 @@ function links(value: unknown, where: string): VisualLink[] | undefined {
 }
 
 const CHART_TYPES: readonly ChartType[] = ['bar', 'hbar', 'stacked', 'line', 'area', 'dumbbell', 'diverging']
-function parseChart(data: Record<string, unknown>): ChartBlock {
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
+function chartAliases(data: Record<string, unknown>): Record<string, unknown> {
+  const nested = isRecord(data.data) ? data.data : undefined
+  const xAxis = isRecord(data.xAxis) ? data.xAxis : undefined
+  const rawSeries = data.series ?? data.datasets ?? nested?.datasets
+  const declared = Array.isArray(rawSeries) ? rawSeries.filter(isRecord) : []
+  const rows = Array.isArray(data.data) && data.data.length > 0 && data.data.every(isRecord) ? data.data as Record<string, unknown>[] : undefined
+  let labels = data.labels ?? data.categories ?? nested?.labels ?? xAxis?.data
+  let series: unknown = Array.isArray(rawSeries)
+    ? rawSeries.map((item) => isRecord(item) ? { ...item, name: item.name ?? item.label, values: item.values ?? item.data } : item)
+    : rawSeries
+  if (labels === undefined && rows) {
+    const keys = Object.keys(rows[0])
+    const xKey = [data.xKey, data.labelKey, data.categoryKey, xAxis?.dataKey].find((k): k is string => typeof k === 'string')
+      ?? keys.find((k) => typeof rows[0][k] === 'string')
+    if (xKey) {
+      labels = rows.map((row) => row[xKey])
+      const keyOf = (item: Record<string, unknown>) => [item.key, item.dataKey].find((k): k is string => typeof k === 'string')
+      const picked = declared.length > 0 && declared.every((item) => keyOf(item))
+        ? declared.map((item) => ({ key: keyOf(item)!, name: item.name ?? item.label ?? keyOf(item) }))
+        : keys.filter((k) => k !== xKey && typeof rows[0][k] === 'number').map((k) => ({ key: k, name: k }))
+      series = picked.map(({ key, name }) => ({ name, values: rows.map((row) => row[key]) }))
+    }
+  }
+  return { ...data, labels, series }
+}
+function parseChart(input: Record<string, unknown>): ChartBlock {
+  const data = chartAliases(input)
   const declared = data.type === undefined ? 'bar' : CHART_TYPES.includes(data.type as ChartType) ? data.type as ChartType : fail(`type 只能是 ${CHART_TYPES.join(' / ')}`)
   const rawSeries = Array.isArray(data.series) ? data.series : []
   const negative = rawSeries.length === 1 && Array.isArray((rawSeries[0] as { values?: unknown })?.values) && ((rawSeries[0] as { values: unknown[] }).values).some((v) => typeof v === 'number' && v < 0)

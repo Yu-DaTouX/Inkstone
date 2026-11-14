@@ -36,6 +36,17 @@ export async function runVisualBlockTests(ok) {
     ok(single.ok && single.block.type === 'diverging', '图表：单组柱含负数时改用偏离基准画法')
   }
   ok(!parseVisualBlock('yan-chart', JSON.stringify({ ...base, type: 'bar', series: [{ name: 'a', values: [-3, 2] }, { name: 'b', values: [1, 2] }] })).ok, '图表：多组柱含负数仍拒绝')
+  {
+    const rows = parseVisualBlock('yan-chart', JSON.stringify({ type: 'bar', title: '知识与推理', xKey: 'bench', series: [{ key: '27B', name: 'Qwen3.8-27B' }, { key: 'fn', name: 'Flash-Next' }, { key: 'opus', name: 'Claude Opus 4.6 Max' }], data: [{ bench: 'GPQA Diamond', '27B': 89.2, fn: 91.7, opus: 91.3 }, { bench: 'HLE（跨学科难题）', '27B': 30.8, fn: 35.9, opus: 40.0 }], source: '模型卡' }))
+    ok(rows.ok && rows.block.labels.join() === 'GPQA Diamond,HLE（跨学科难题）' && rows.block.series.map((s) => s.name).join() === 'Qwen3.8-27B,Flash-Next,Claude Opus 4.6 Max' && rows.block.series[1].values.join() === '91.7,35.9', '图表：xKey + data 行 + series.key 按 labels / values 兼容')
+    const guess = parseVisualBlock('yan-chart', JSON.stringify({ title: 't', data: [{ name: 'a', x: 1, y: 2 }, { name: 'b', x: 3, y: 4 }], source: 's' }))
+    ok(guess.ok && guess.block.labels.join() === 'a,b' && guess.block.series.map((s) => s.name).join() === 'x,y' && guess.block.series[1].values.join() === '2,4', '图表：只有 data 行时文字列作类别、数字列作系列')
+    const chartjs = parseVisualBlock('yan-chart', JSON.stringify({ title: 't', data: { labels: ['a', 'b'], datasets: [{ label: 'v', data: [1, 2] }] }, source: 's' }))
+    ok(chartjs.ok && chartjs.block.series[0].name === 'v' && chartjs.block.series[0].values[1] === 2, '图表：Chart.js 的 labels / datasets 兼容')
+    const echarts = parseVisualBlock('yan-chart', JSON.stringify({ title: 't', xAxis: { data: ['a', 'b'] }, series: [{ name: 'v', data: [3, 4] }], source: 's' }))
+    ok(echarts.ok && echarts.block.labels[1] === 'b' && echarts.block.series[0].values[0] === 3, '图表：ECharts 的 xAxis.data / series.data 兼容')
+    ok(!parseVisualBlock('yan-chart', JSON.stringify({ title: 't', xKey: 'k', data: [{ k: 'a', v: 1 }] })).ok, '图表：兼容写法缺数据来源仍拒绝')
+  }
   ok(!parseVisualBlock('yan-chart', JSON.stringify({ ...base, type: 'stacked', max: 4, series: [{ name: 'a', values: [3, 1] }, { name: 'b', values: [2, 1] }] })).ok, '图表：堆叠总和超过上限拒绝')
   const stats = parseVisualBlock('yan-stats', JSON.stringify({ items: [{ label: '耗时', value: 28, delta: '-33%', trend: 'down', good: 'down', spark: [42, 28] }, { label: '额度', value: '4.2/5', meter: { value: 9, max: 5 } }] }))
   ok(stats.ok && stats.block.items[0].value === '28' && stats.block.items[1].meter.value === 5, '指标：数字值转文字，进度条封顶')
