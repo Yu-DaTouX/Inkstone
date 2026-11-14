@@ -18,6 +18,7 @@ export async function runRunnerReclaimTests(ok) {
     const agents = [], reclaimed = []
     const reg = new RunnerRegistry({
       now: () => now,
+      limit: 3,
       isSessionVisible: () => false,
       onReclaimed: entry => reclaimed.push(entry),
       ...options,

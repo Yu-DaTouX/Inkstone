@@ -30,6 +30,7 @@ import { supportsOAuthAccounts, type OAuthAccountPools, type OAuthAccountView } 
 import type { CodexAccountView } from '../../../../../shared/account-quota'
 import type { ApiKeyPools, ApiKeyView } from '../../../../../shared/api-keys'
 import { CustomEndpointSettings } from './CustomEndpointSettings'
+import { LocalLaunchSettings } from './LocalLaunchSettings'
 import { ImageGenerationSettings } from './ImageGenerationSettings'
 import { ModelVisibilityGroup } from './ModelVisibilityGroup'
 import { useModelsText } from './models-text'
@@ -578,6 +579,8 @@ export function ModelsSettings(): ReactElement {
       ) : null}
 
       <CustomEndpointSettings />
+
+      <LocalLaunchSettings />
 
       <ImageGenerationSettings />
 

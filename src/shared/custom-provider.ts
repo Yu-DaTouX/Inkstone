@@ -427,6 +427,19 @@ export interface LocalModelServer {
   installDir?: string
 }
 
+export interface LocalLauncherView {
+  provider: string
+  name: string
+  baseUrl: string
+  command: string
+}
+
+export interface LocalLauncherDetectResult {
+  ok: boolean
+  command?: string
+  message: string
+}
+
 export interface CustomProviderDiscoverResult {
   ok: boolean
   models: string[]

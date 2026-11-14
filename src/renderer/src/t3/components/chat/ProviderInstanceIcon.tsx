@@ -17,6 +17,7 @@ export function providerInitials(displayName: string): string {
 export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   driverKind: ProviderDriverKind;
   displayName: string;
+  local?: boolean | undefined;
   showBadge?: boolean;
   className?: string;
   iconClassName?: string;
@@ -26,7 +27,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
 }) {
   const brand = brandOfModel({ provider: props.driverKind, id: props.driverKind });
   const iconSize = props.iconSize ?? 16;
-  const favicon = providerFavicon(props.driverKind);
+  const favicon = providerFavicon(props.driverKind, props.local === true);
   return (
     <span
       className={cx(

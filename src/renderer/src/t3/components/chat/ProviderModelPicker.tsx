@@ -111,6 +111,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               <ProviderInstanceIcon
                 driverKind={activeEntry.driverKind}
                 displayName={activeEntry.displayName}
+                local={activeEntry.local}
                 showBadge={showInstanceBadge}
                 iconSize={16}
                 badgeClassName={cx("t3-provider-icon__badge--small", size === "xs" && "t3-provider-icon__badge--flat")}

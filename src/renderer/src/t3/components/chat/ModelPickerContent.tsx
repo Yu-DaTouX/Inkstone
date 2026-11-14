@@ -28,6 +28,7 @@ type ModelPickerItem = {
   badge?: "new";
   instanceId: ProviderInstanceId;
   driverKind: string;
+  local?: boolean | undefined;
   instanceDisplayName: string;
   isUnavailable?: boolean | undefined;
   contextWindow?: number | undefined;
@@ -249,6 +250,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
           instanceId,
           driverKind: entry.driverKind,
+          ...(entry.local ? { local: true } : {}),
           instanceDisplayName: entry.displayName,
         });
       }
@@ -543,6 +545,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         subProvider={model.subProvider}
                         instanceId={model.instanceId}
                         driverKind={model.driverKind}
+                        local={model.local}
                         providerDisplayName={model.instanceDisplayName}
                         isFavorite={isFavoriteModel(model)}
                         isSelected={modelKey === activeModelKey}
