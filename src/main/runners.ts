@@ -19,7 +19,7 @@ import {
 import { workspacePathsOverlap } from './workspace-mutation'
 import { normalizeLayoutPath as canonicalCwd } from '../shared/session-path'
 
-export const RUNNER_LIMIT = 3
+export const RUNNER_LIMIT = 5
 
 let lastGeneration = 0
 function nextGeneration(): number {

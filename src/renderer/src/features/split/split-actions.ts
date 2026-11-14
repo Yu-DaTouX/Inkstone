@@ -20,7 +20,7 @@ import { distanceFromBottom } from '../session/scroll-follow'
 
 export const SPLIT_STICK_SLACK_PX = 48
 
-export const SPLIT_RUNNER_LIMIT = 3
+export const SPLIT_RUNNER_LIMIT = 5
 
 export type SplitCommand =
   | 'focus-next'
