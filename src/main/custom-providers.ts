@@ -111,6 +111,31 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
   })
 }
 
+export const MODEL_NAME_MAX = 120
+
+export async function renameProviderModel(provider: string, modelId: string, name: string): Promise<{ ok: boolean; error?: string }> {
+  const value = name.replace(/\s+/g, ' ').trim()
+  if (value.length > MODEL_NAME_MAX) return { ok: false, error: pick(`名称最多 ${MODEL_NAME_MAX} 个字符`, `Name can be at most ${MODEL_NAME_MAX} characters`) }
+  return serializeModels(async () => {
+    const raw = await readRaw()
+    if (!raw.ok) return { ok: false, error: raw.error }
+    const base = (raw.json && typeof raw.json === 'object' ? raw.json : {}) as Json
+    const providers = base.providers && typeof base.providers === 'object' ? (base.providers as Json) : {}
+    const entry = providers[provider]
+    const models = entry && typeof entry === 'object' && Array.isArray((entry as Json).models) ? ((entry as Json).models as unknown[]) : []
+    const index = models.findIndex((m) => !!m && typeof m === 'object' && (m as Json).id === modelId)
+    if (index < 0) return { ok: false, error: pick(`models.json 里没有模型 ${provider}/${modelId}`, `Model ${provider}/${modelId} is not in models.json`) }
+    const model = { ...(models[index] as Json) }
+    if ((typeof model.name === 'string' ? model.name : '') === value) return { ok: true }
+    if (value) model.name = value
+    else delete model.name
+    const nextModels = [...models]
+    nextModels[index] = model
+    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
+    return { ok: true }
+  })
+}
+
 export async function removeCustomProvider(id: string): Promise<CustomProviderResult> {
   return serializeModels(async () => {
     const raw = await readRaw()

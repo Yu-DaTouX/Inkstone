@@ -7,7 +7,7 @@ import { pick } from '../shared/ui-lang'
 import { isLocalBaseUrl } from '../shared/model-capabilities'
 import type { LocalLauncherDetectResult, LocalLauncherView } from '../shared/custom-provider'
 import { atomicWriteFile } from './atomic-write'
-import { MODELS_FILE } from './custom-providers'
+import { MODELS_FILE, renameProviderModel } from './custom-providers'
 import { LOCAL_MODELS_CONFIG } from './local-models'
 
 const PROBE_TIMEOUT_MS = 1_500
@@ -41,7 +41,7 @@ interface LocalProvider {
   provider: string
   name: string
   baseUrl: string
-  models: Array<{ id: string; baseUrl?: string }>
+  models: Array<{ id: string; name?: string; baseUrl?: string }>
 }
 
 export function localProvidersOf(modelsJson: unknown): LocalProvider[] {
@@ -53,7 +53,7 @@ export function localProvidersOf(modelsJson: unknown): LocalProvider[] {
     const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl.trim() : ''
     const models = (Array.isArray(entry.models) ? entry.models : [])
       .filter((m): m is Json => !!m && typeof m === 'object' && typeof (m as Json).id === 'string')
-      .map((m) => ({ id: m.id as string, ...(typeof m.baseUrl === 'string' && m.baseUrl.trim() ? { baseUrl: m.baseUrl.trim() } : {}) }))
+      .map((m) => ({ id: m.id as string, ...(typeof m.name === 'string' && m.name.trim() ? { name: m.name.trim() } : {}), ...(typeof m.baseUrl === 'string' && m.baseUrl.trim() ? { baseUrl: m.baseUrl.trim() } : {}) }))
     if (!isLocalBaseUrl(baseUrl) && !models.some((m) => isLocalBaseUrl(m.baseUrl))) continue
     out.push({ provider, name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : provider, baseUrl, models })
   }
@@ -67,8 +67,17 @@ export async function listLocalLaunchers(): Promise<LocalLauncherView[]> {
     provider: item.provider,
     name: item.name,
     baseUrl: item.baseUrl || item.models.find((m) => m.baseUrl)?.baseUrl || '',
-    command: commands[item.provider] ?? ''
+    command: commands[item.provider] ?? '',
+    models: item.models.map((m) => ({ id: m.id, ...(m.name ? { name: m.name } : {}) }))
   }))
+}
+
+export async function renameLocalModel(provider: string, modelId: string, name: string): Promise<LocalLauncherView[]> {
+  const known = localProvidersOf(await readJson(MODELS_FILE)).some((item) => item.provider === provider)
+  if (!known) throw new Error(pick(`「${provider}」不是本地模型服务`, `"${provider}" is not a local model service`))
+  const result = await renameProviderModel(provider, modelId, name)
+  if (!result.ok) throw new Error(result.error)
+  return listLocalLaunchers()
 }
 
 export async function saveLocalLauncher(provider: string, command: string): Promise<LocalLauncherView[]> {

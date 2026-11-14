@@ -8,7 +8,7 @@ import { authFileInfo, clearAuth, listAuthProviders } from '../credentials'
 import { addApiKey, captureActiveApiKey, clearApiKeys, listApiKeyPools, removeApiKey, renameApiKey, switchApiKey } from '../api-key-pool'
 import { detectToolchain } from '../toolchain'
 import { detectLocalModelServers } from '../local-models'
-import { detectLocalLauncher, listLocalLaunchers, saveLocalLauncher } from '../local-model-launch'
+import { detectLocalLauncher, listLocalLaunchers, renameLocalModel, saveLocalLauncher } from '../local-model-launch'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
@@ -85,6 +85,11 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:detectLocalModels', async () => detectLocalModelServers())
   handle('yan:localLaunchers', async () => listLocalLaunchers())
   handle('yan:saveLocalLauncher', async (provider: string, command: string) => saveLocalLauncher(String(provider ?? ''), String(command ?? '')))
+  handle('yan:renameLocalModel', async (provider: string, modelId: string, name: string) => {
+    const next = await renameLocalModel(String(provider ?? ''), String(modelId ?? ''), String(name ?? ''))
+    void restartAgent('local model renamed').catch((error) => console.error('[auth] refresh after model rename failed', error))
+    return next
+  })
   handle('yan:detectLocalLauncher', async (provider: string) => detectLocalLauncher(String(provider ?? '')))
   handle('yan:removeCustomProvider', async (id: string) => {
     const r = await removeCustomProvider(id)
