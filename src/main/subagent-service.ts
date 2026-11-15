@@ -6,7 +6,7 @@ import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
-import type { SubagentRun } from '../shared/ipc'
+import type { SubagentPatch, SubagentRun } from '../shared/ipc'
 import type { PreservedOutputs } from './subagent-isolation'
 import { forkContextError, sideQuestionForkSource, type SubagentForkSource } from './subagent-fork'
 import { pick } from '../shared/ui-lang'
@@ -116,8 +116,8 @@ export interface SubagentServiceDeps {
   recordDangerReview?(review: ModelReviewReceiptInput, origin?: SubagentApprovalOrigin): void
   forkSource?(context: SubagentCommandContext): SubagentForkSource | string
   quotaWatch?: SubagentQuotaWatch
-  onChange(run: SubagentRun): void
-  onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
+  onChange(run: SubagentRun, patch?: SubagentPatch): void
+  onPatch?(payload: SubagentPatch): void
   onRemove(id: string): void
   onFinished?(run: SubagentRun): void
   onOvertime?(run: SubagentRun, minutes: number): void
@@ -139,6 +139,7 @@ export class SubagentService {
   private controller: SubagentController | null = null
   private loading?: Promise<SubagentController>
   private readonly startingWriters = new Map<string, number>()
+  private watched: readonly string[] = []
 
   private async startDefaultWriter(ctrl: SubagentController, cwd: string, start: (isolation: 'worktree' | 'shared-cwd') => ReturnType<SubagentController['start']>): Promise<{ result: Awaited<ReturnType<SubagentController['start']>>; note?: string }> {
     const root = resolve(cwd)
@@ -162,6 +163,11 @@ export class SubagentService {
     return this.controller
   }
 
+  watch(ids: readonly string[]): void {
+    this.watched = [...ids]
+    this.controller?.watch(this.watched)
+  }
+
   async get(): Promise<SubagentController> {
     if (this.loading) return this.loading
     if (this.controller) return this.controller
@@ -183,13 +189,14 @@ export class SubagentService {
       recordDangerReview: (review, origin) => this.deps.recordDangerReview?.(review, origin),
       ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),
       ...(this.deps.quotaWatch ? { quotaWatch: this.deps.quotaWatch } : {}),
-      onChange: (run) => this.deps.onChange(run),
+      onChange: (run, patch) => this.deps.onChange(run, patch),
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
       onRemove: (id) => this.deps.onRemove(id),
       onFinished: (run) => this.deps.onFinished?.(run),
       onOvertime: (run, minutes) => this.deps.onOvertime?.(run, minutes),
       ...(this.deps.onEvent ? { onEvent: (runId, evt, run) => this.deps.onEvent?.(runId, evt, run) } : {})
     })
+    this.controller.watch(this.watched)
     await this.controller.loadHistory()
     return this.controller
   }

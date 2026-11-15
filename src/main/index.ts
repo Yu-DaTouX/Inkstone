@@ -162,7 +162,7 @@ import { cachedTitlesSync, primeCachedTitles } from './title'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
-import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, SubagentPatch, SubagentRun, TerminalProgramStatus } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -466,19 +466,18 @@ const subagentService: SubagentService = new SubagentService({
     return parent ? parent.forkSource() : '来源会话已关闭，不能派 fork 子代理'
   },
   quotaWatch: subagentQuotaWatch,
-  onChange: (run) => {
+  onChange: (run, patch) => {
     if (run.status !== 'starting' && run.status !== 'running') {
       approvals.cancel((pending) => pending.subagentId === run.id)
       approvals.forgetSubagent(run.id)
     }
-    queueSubagentRun(run)
+    queueSubagentRun(run, patch)
     refreshTaskbar()
     workflowService.onSubagentChange()
   },
-  onPatch: ({ id, run, transcriptFrom }) => {
+  onPatch: (patch) => {
     flushSubagentRuns()
-    push({ ch: 'subagent-patch', payload: { id, run, transcriptFrom } })
-    refreshTaskbar()
+    push({ ch: 'subagent-patch', payload: patch })
   },
   onRemove: (id) => {
     pendingSubagentRuns.delete(id)
@@ -689,7 +688,7 @@ function yanThinExtensionPaths(): string[] {
 function push(msg: MainPush): void {
   remoteAccess?.publish(msg)
   if (msg.ch === 'runs') bundledPlugins.publishRuns(msg.payload)
-  if (msg.ch === 'runs') attention?.refreshTaskbar()
+  if (msg.ch === 'runs') refreshTaskbar()
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
 }
@@ -878,7 +877,22 @@ function toElectronMenu(nodes: AttentionMenuNode[]): Electron.MenuItemConstructo
   })
 }
 
+const TASKBAR_REFRESH_MS = 200
+let taskbarTimer: ReturnType<typeof setTimeout> | null = null
+let taskbarAt = 0
+
 function refreshTaskbar(force = false): void {
+  const wait = taskbarAt + TASKBAR_REFRESH_MS - Date.now()
+  if (!force && wait > 0) {
+    taskbarTimer ??= setTimeout(() => {
+      taskbarTimer = null
+      refreshTaskbar()
+    }, wait)
+    return
+  }
+  if (taskbarTimer) clearTimeout(taskbarTimer)
+  taskbarTimer = null
+  taskbarAt = Date.now()
   attention?.refreshTaskbar(force)
 }
 
@@ -2041,7 +2055,7 @@ function flushRestoreNotice(): void {
   push({ ch: 'notify', payload: { id: 'session-restore', method: 'notify', notifyType: 'info', message } })
 }
 
-const pendingSubagentRuns = new Map<string, Extract<MainPush, { ch: 'subagent' }>['payload']>()
+const pendingSubagentRuns = new Map<string, { run: SubagentRun; patches: SubagentPatch[] | null }>()
 let subagentFlushTimer: ReturnType<typeof setTimeout> | null = null
 
 function flushSubagentRuns(): void {
@@ -2052,11 +2066,20 @@ function flushSubagentRuns(): void {
   if (pendingSubagentRuns.size === 0) return
   const runs = [...pendingSubagentRuns.values()]
   pendingSubagentRuns.clear()
-  for (const run of runs) push({ ch: 'subagent', payload: run })
+  for (const { run, patches } of runs) {
+    if (!patches) {
+      push({ ch: 'subagent', payload: run })
+      continue
+    }
+    for (const patch of patches) push({ ch: 'subagent-patch', payload: patch })
+    remoteAccess?.publish({ ch: 'subagent', payload: run })
+  }
 }
 
-function queueSubagentRun(run: Extract<MainPush, { ch: 'subagent' }>['payload']): void {
-  pendingSubagentRuns.set(run.id, run)
+function queueSubagentRun(run: SubagentRun, patch?: SubagentPatch): void {
+  const previous = pendingSubagentRuns.get(run.id)
+  const patches = patch && (!previous || previous.patches) ? [...(previous?.patches ?? []), patch] : null
+  pendingSubagentRuns.set(run.id, { run, patches })
   if (run.status !== 'starting' && run.status !== 'running') {
     flushSubagentRuns()
     return

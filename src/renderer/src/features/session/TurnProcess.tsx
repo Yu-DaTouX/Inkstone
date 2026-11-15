@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useContext, useId, useLayoutEffect, useMemo, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
+import { Fragment, memo, useCallback, useContext, useId, useLayoutEffect, useMemo, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -198,7 +198,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
               </div>
             )
           : (
-              <ProcessGroup
+              <MemoProcessGroup
                 key={item.key}
                 groupKey={item.key}
                 segments={item.segments}
@@ -218,6 +218,28 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
     </div>
   )
 }
+
+function sameValue(a: unknown, b: unknown, depth: number): boolean {
+  if (Object.is(a, b)) return true
+  if (depth <= 0 || !a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((item, index) => sameValue(item, b[index], depth - 1))
+  }
+  if (a instanceof Set || b instanceof Set) {
+    if (!(a instanceof Set) || !(b instanceof Set) || a.size !== b.size) return false
+    for (const item of a) if (!b.has(item)) return false
+    return true
+  }
+  if (Object.getPrototypeOf(a) !== Object.prototype || Object.getPrototypeOf(b) !== Object.prototype) return false
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left)
+  if (keys.length !== Object.keys(right).length) return false
+  return keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameValue(left[key], right[key], depth - 1))
+}
+
+const PROCESS_PROPS_DEPTH = 6
 
 function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, showFailures, liveStartedAt, view, approvalIds, glowId, compactionAfter }: {
   segments: TurnSegment[]
@@ -313,6 +335,8 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
     </>
   )
 }
+
+const MemoProcessGroup = memo(ProcessGroup, (previous, next) => sameValue(previous, next, PROCESS_PROPS_DEPTH))
 
 type SessionText = ReturnType<typeof useSessionText>
 type TextKey = Parameters<SessionText>[0]

@@ -10,9 +10,12 @@ function motionReduced(): boolean {
   )
 }
 
-export function useSmoothHeight(el: HTMLElement | null): void {
+export function useSmoothHeight(el: HTMLElement | null, key?: string): void {
   const checkRef = useRef<(() => void) | null>(null)
+  const checkedKey = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
+    if (key !== undefined && checkedKey.current === key) return
+    checkedKey.current = key
     checkRef.current?.()
   })
   useLayoutEffect(() => {

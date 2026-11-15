@@ -1,7 +1,13 @@
 import { useEffect } from 'react'
 import { useStore } from '../../state/store'
 import { useRightPanel } from '../../state/right-panel'
-import { removedRunIds, subagentPaneId } from './subagent-panes'
+import { removedRunIds, subagentPaneId, subagentRunOfPane } from './subagent-panes'
+
+function watchedSubagent(): string | null {
+  const state = useRightPanel.getState()
+  const entry = state.byKey[state.key]
+  return entry?.open ? subagentRunOfPane(entry.active) : null
+}
 
 export function usePruneSubagentSurfaces(): void {
   useEffect(() => {
@@ -23,9 +29,19 @@ export function usePruneSubagentSurfaces(): void {
       const removed = removedRunIds(previous.subagents, state.subagents)
       if (removed.length) useRightPanel.getState().drop(removed.map(subagentPaneId))
     })
+    let watched: string | null | undefined
+    const syncWatched = (): void => {
+      const next = watchedSubagent()
+      if (next === watched) return
+      watched = next
+      void window.yan.subagents.watch?.(next ? [next] : [])?.catch(() => undefined)
+    }
+    syncWatched()
+    const unwatch = useRightPanel.subscribe(syncWatched)
     return () => {
       alive = false
       unsubscribe()
+      unwatch()
     }
   }, [])
 }

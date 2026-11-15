@@ -37,10 +37,22 @@ export function subagentAnchorIds(messages: readonly AnchorMessage[], runs: read
   return anchors
 }
 
-let anchorCache: { messages: readonly AnchorMessage[]; runs: readonly SubagentRun[]; anchors: Map<string, string> } | null = null
+let anchorCache: { messages: readonly AnchorMessage[]; runs: readonly SubagentRun[]; key: string; anchors: Map<string, string> } | null = null
+
+function anchorKey(runs: readonly SubagentRun[]): string {
+  let key = ''
+  for (const run of runs) key += `${run.id}\t${run.parentMessageId ?? ''}\t${run.startedAt}\n`
+  return key
+}
 
 export function cachedSubagentAnchors(messages: readonly AnchorMessage[], runs: readonly SubagentRun[]): Map<string, string> {
-  if (anchorCache?.messages !== messages || anchorCache.runs !== runs) anchorCache = { messages, runs, anchors: subagentAnchorIds(messages, runs) }
+  if (anchorCache?.messages === messages && anchorCache.runs === runs) return anchorCache.anchors
+  const key = anchorKey(runs)
+  if (anchorCache?.messages === messages && anchorCache.key === key) {
+    anchorCache.runs = runs
+    return anchorCache.anchors
+  }
+  anchorCache = { messages, runs, key, anchors: subagentAnchorIds(messages, runs) }
   return anchorCache.anchors
 }
 

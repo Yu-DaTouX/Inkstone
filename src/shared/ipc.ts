@@ -1033,6 +1033,14 @@ export type { SubagentBrief, SubagentResult } from './subagent-brief'
 export type { SubagentReviewState, SubagentDiffSummary, SubagentUsageTotals, SubagentEndReason, SubagentStopResult, SubagentRun, SubagentQuotaWait, SubagentRecovery } from './subagent-run'
 import type { SubagentStopResult, SubagentRun } from './subagent-run'
 
+export interface SubagentPatch {
+  id: string
+  run: SubagentRun
+  transcriptFrom: number
+  textFrom?: number
+  thinkingFrom?: number
+}
+
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
   get(id: string): Promise<SubagentRun | null>
@@ -1050,6 +1058,7 @@ export interface SubagentBridge {
   clearFinished(ids?: string[]): Promise<void>
   merge(id: string): Promise<{ ok: boolean; error?: string }>
   discard(id: string): Promise<{ ok: boolean; error?: string }>
+  watch(ids: string[]): Promise<void>
 }
 
 export interface WorkflowBridge {
@@ -1077,7 +1086,7 @@ export type MainPushBody =
   | { ch: 'artifact'; payload: { messageId: string; artifact: AssistantArtifact } }
   | { ch: 'tool'; payload: ToolPatch }
   | { ch: 'subagent'; payload: SubagentRun }
-  | { ch: 'subagent-patch'; payload: { id: string; run: SubagentRun; transcriptFrom: number } }
+  | { ch: 'subagent-patch'; payload: SubagentPatch }
   | { ch: 'subagent-remove'; payload: string }
   | { ch: 'workflow'; payload: import('./workflows').WorkflowRunView }
   | { ch: 'state'; payload: SessionState }

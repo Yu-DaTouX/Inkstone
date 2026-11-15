@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
+import { memo, useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -80,6 +80,10 @@ export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
 }
 
 const NO_RUNS: SubagentRun[] = []
+
+function phaseKind(snapshot: RunSnapshot | undefined): string {
+  return snapshot?.phase.kind ?? ''
+}
 
 type SessionText = (key: SessionTextKey, vars?: Record<string, string | number>) => string
 
@@ -216,9 +220,9 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   const [storedAll, setStoredAll] = useToolExpansion(`subagents-all:${turn.id}`)
   const publish = useSubagentGroups((s) => s.publish)
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null)
-  useSmoothHeight(rootEl)
   const selectedRunId = useFocusedSubagentRun()
   const awaitingIds = useStore(useShallow((s): string[] => s.approvals.flatMap((request) => request.subagentId ? [request.subagentId] : [])))
+  useSmoothHeight(rootEl, [storedOpen, storedAll, selectedRunId, awaitingIds.join(','), ...mine.map((run) => `${run.id}:${run.status}:${run.review ?? ''}:${phaseKind(snapshots[run.id])}`)].join('\n'))
 
   const phases: Record<string, RunSnapshot['phase']['kind'] | undefined> = {}
   for (const run of mine) phases[run.id] = snapshots[run.id]?.phase.kind
@@ -307,7 +311,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   )
 }
 
-function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
+const SubagentRow = memo(function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
   const { lang } = useI18n()
@@ -374,9 +378,9 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       <Icon name="chevron-right" size={13} className="v3-chev" />
     </button>
   )
-}
+})
 
-export function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
+export const SubagentTile = memo(function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
   const { lang } = useI18n()
@@ -428,7 +432,7 @@ export function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; s
       ) : null}
     </button>
   )
-}
+})
 
 export function firstLine(text: string): string {
   return text.split('\n').find((line) => line.trim())?.trim() ?? text

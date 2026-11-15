@@ -115,6 +115,11 @@
     padding: 0;
   }
 
+  .sa-pane-stream .v3-spread > :is(.v3-process-notes, .v3-process):not(:nth-last-child(-n + 2)) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+  }
+
   .sa-pane-brief .v3-user-body {
     max-width: 92%;
   }

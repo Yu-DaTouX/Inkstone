@@ -1,4 +1,4 @@
-import type { AppSettings, MainPush, SoundEvent, SubagentRun } from '../../../shared/ipc'
+import type { AppSettings, MainPush, SoundEvent } from '../../../shared/ipc'
 import type { MessageKey, TVars } from '../i18n'
 import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
@@ -266,17 +266,6 @@ export function consumeSubagentPush(m: MainPush, s: Store, ctx: PushContext): bo
             ? s.subagents.map((r) => (r.id === run.id ? run : r))
             : [...s.subagents, run]
       })
-      break
-    }
-    case 'subagent-patch': {
-      const { id, run, transcriptFrom } = m.payload
-      const previous = s.subagents.find((r) => r.id === id)
-      if (!previous) break
-      const merged: SubagentRun = {
-        ...run,
-        transcript: [...previous.transcript.slice(0, transcriptFrom), ...run.transcript]
-      }
-      set({ subagents: s.subagents.map((r) => (r.id === id ? merged : r)) })
       break
     }
     case 'subagent-remove':

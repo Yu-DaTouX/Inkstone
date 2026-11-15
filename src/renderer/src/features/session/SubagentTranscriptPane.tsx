@@ -40,6 +40,18 @@ function subagentBriefText(run: Pick<SubagentRun, 'task' | 'brief'>): string {
 
 const NO_APPROVAL_RECEIPTS: ApprovalReceipt[] = []
 
+type TranscriptItem = SubagentRun['transcript'][number]
+
+const paneItems = new WeakMap<TranscriptItem, { cwd: string; item: TranscriptItem }>()
+
+function paneItem(item: TranscriptItem, cwd: string): TranscriptItem {
+  const saved = paneItems.get(item)
+  if (saved && saved.cwd === cwd) return saved.item
+  const next = { ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? cwd }
+  paneItems.set(item, { cwd, item: next })
+  return next
+}
+
 function subagentTranscriptTurns(run: Pick<SubagentRun, 'id' | 'task' | 'brief' | 'transcript' | 'cwd'>, approvals: readonly ApprovalReceipt[]): Turn[] {
   const brief = subagentBriefText(run).trim()
   const prompt = run.brief ? briefPrompt(run.brief, run.task).trim() : brief
@@ -47,7 +59,7 @@ function subagentTranscriptTurns(run: Pick<SubagentRun, 'id' | 'task' | 'brief' 
   return groupIntoTurns(
     mergeApprovalLog(run.transcript, approvals, run.id)
       .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== prompt && item.text.trim() !== task && !isForkDirective(item.text)))
-      .map((item) => ({ ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? run.cwd }))
+      .map((item) => paneItem(item, run.cwd))
   )
 }
 
@@ -184,7 +196,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el && followRef.current) el.scrollTop = el.scrollHeight
-  }, [turns, model.live])
+  }, [run.id, model.live])
   useEffect(() => {
     const el = scrollRef.current
     const stream = streamRef.current

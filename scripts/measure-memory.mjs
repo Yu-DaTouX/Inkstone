@@ -791,6 +791,7 @@ if (argv.includes('--verify')) {
   }
   await evaluate(`window.__yanStore.getState().applyPush({ ch: 'subagent', payload: ${JSON.stringify(fullRun)} })`)
   await evaluate(`window.__yanStore.getState().applyPush({ ch: 'subagent-patch', payload: ${JSON.stringify(patch)} })`)
+  await evaluate('new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)))')
   const merged = await evaluate(
     `JSON.stringify(window.__yanStore.getState().subagents.find(r => r.id === ${JSON.stringify(runId)})?.transcript?.map(m => m.text) ?? null)`
   )

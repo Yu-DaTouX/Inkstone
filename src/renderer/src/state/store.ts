@@ -38,6 +38,7 @@ import { playSound } from '../lib/sound'
 import type { BrowserOpenTarget } from '../features/browser/browser-open'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
+import { SubagentPatchBatch, applySubagentPatches } from './subagent-patch-batch'
 import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
 import {
   type ComposerSubmitIdentity
@@ -400,6 +401,22 @@ let approvalChanges = new Map<string, ApprovalRequest | null>()
 const pendingMessagePatches = new MessagePatchBatch()
 const pendingRuntimePushes: MainPush[] = []
 const messagePatchFlush = createFrameFlush(() => flushPendingMessagePatches())
+const pendingSubagentPatches = new SubagentPatchBatch()
+let subagentResync: Promise<void> | null = null
+const subagentPatchFlush = createFrameFlush(() => flushPendingSubagentPatches())
+
+function flushPendingSubagentPatches(): void {
+  subagentPatchFlush.cancel()
+  if (pendingSubagentPatches.size === 0) return
+  const drained = pendingSubagentPatches.drain()
+  let stale = false
+  useStore.setState((state) => {
+    const out = applySubagentPatches(state.subagents, drained)
+    stale = out.stale
+    return out.runs === state.subagents ? state : { subagents: out.runs }
+  })
+  if (stale && !subagentResync) subagentResync = useStore.getState().loadSubagents().finally(() => { subagentResync = null })
+}
 const VIEW_RESYNC_GAP_MS = 3000
 let viewResyncTimer: ReturnType<typeof setTimeout> | null = null
 let viewResyncAt = 0
@@ -689,6 +706,12 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
+    if (m.ch === 'subagent-patch') {
+      pendingSubagentPatches.add(m.payload)
+      subagentPatchFlush.schedule()
+      return
+    }
+    if (m.ch === 'subagent' || m.ch === 'subagent-remove') flushPendingSubagentPatches()
     if (m.ch !== 'msg-update') flushPendingMessagePatches()
 
     const s = get()

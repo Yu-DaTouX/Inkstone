@@ -21,6 +21,9 @@ try {
     await build({ entryPoints: ['src/main/subagents.ts'], outfile: modulePath, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   }
   const { SubagentController } = await import(pathToFileURL(resolve(modulePath)).href)
+  const patchModule = join(scratch, 'subagent-patch.mjs')
+  await build({ entryPoints: ['src/shared/subagent-patch.ts'], outfile: patchModule, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const { mergeSubagentTranscript } = await import(pathToFileURL(patchModule).href)
   const make = async (name, onChange, onPatch) => {
     let rpc
     const ctrl = new SubagentController({ cwd: scratch, archiveDir: join(scratch, name),
@@ -41,6 +44,7 @@ try {
   if (!baseline) {
     const pushed = []
     const { ctrl, rpc, id } = await make('regression', run => pushed.push(JSON.parse(JSON.stringify(run))))
+    ctrl.watch([id])
     try {
       rpc.emit({ type: 'message_start', message: message('') })
       const startCount = pushed.length
@@ -79,6 +83,7 @@ try {
       (run) => full.push(JSON.parse(JSON.stringify(run))),
       (payload) => patches.push(JSON.parse(JSON.stringify(payload)))
     )
+    ctrl.watch([id])
     try {
       for (let i = 0; i < 60; i++) rpc.emit({ type: 'message_end', message: message('历史内容。'.repeat(400) + i) })
       rpc.emit({ type: 'message_start', message: message('') })
@@ -93,13 +98,44 @@ try {
         await sleep(20)
       }
       rpc.emit({ type: 'message_end', message: message(finalText) })
-      for (const patch of patches) merged = [...merged.slice(0, patch.transcriptFrom), ...patch.run.transcript]
+      for (const patch of patches) merged = mergeSubagentTranscript(merged, patch)
       ok(patches.length > 10, '流式期间确实走增量推送')
+      ok(patches.filter((p) => p.textFrom !== undefined).length >= patches.length - 2, '同一条消息继续流式时只推新增文字')
+      ok(patches.every((p) => p.textFrom === undefined || p.run.transcript[0].text.length <= '流式增量🖋️'.length * 3), '文字增量只含新增部分')
       ok(JSON.stringify(merged) === JSON.stringify(ctrl.get(id).transcript), '增量拼接后与权威转录一致')
       ok(patches.every((p) => p.run.transcript.length <= 2), '每次增量只带变化的那一两条')
       const patchBytes = patches.reduce((n, p) => n + Buffer.byteLength(JSON.stringify(p)), 0)
       const fullBytes = full.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0)
       ok(patchBytes * 5 < fullBytes, `增量字节远小于整条（${patchBytes} vs ${fullBytes}）`)
+    } finally { await ctrl.stopAll() }
+  }
+  if (!baseline) {
+    const patches = []
+    const { ctrl, rpc, id } = await make('background', () => {}, (payload) => patches.push(JSON.parse(JSON.stringify(payload))))
+    try {
+      rpc.emit({ type: 'message_end', message: message('第一段') })
+      rpc.emit({ type: 'message_start', message: message('') })
+      let base = JSON.parse(JSON.stringify(ctrl.get(id).transcript))
+      const started = Date.now()
+      let text = ''
+      while (Date.now() - started < 600) {
+        text += '后台'
+        rpc.emit({ type: 'message_update', message: message(text) })
+        await sleep(20)
+      }
+      ok(patches.length >= 1 && patches.length <= 4, `没打开记录面板的子代理降频推送（600ms 内 ${patches.length} 次）`)
+      text += '打开面板'
+      rpc.emit({ type: 'message_update', message: message(text) })
+      const before = patches.length
+      ctrl.watch([id])
+      ok(patches.length === before + 1, '打开记录面板时立即补推积压的增量')
+      text += '继续'
+      rpc.emit({ type: 'message_update', message: message(text) })
+      await sleep(55)
+      ok(patches.length === before + 2, '打开记录面板后恢复 33ms 推送')
+      for (const patch of patches) base = mergeSubagentTranscript(base, patch)
+      ok(base.at(-1).text === text, '降频与恢复期间拼接结果与权威文本一致')
+      ok(mergeSubagentTranscript([{ id: 'x', role: 'assistant', text: '短' }], { transcriptFrom: 0, textFrom: 5, run: { transcript: [{ id: 'x', role: 'assistant', text: '尾' }] } }) === null, '基线对不上时拒绝拼接')
     } finally { await ctrl.stopAll() }
   }
   const runs = []

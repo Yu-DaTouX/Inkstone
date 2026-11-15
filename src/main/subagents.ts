@@ -9,7 +9,7 @@ import { delimiter, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { reserveWorkspaceMutation, workspaceMutationInProgress } from './workspace-mutation'
-import type { QuotaWindow, SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
+import type { QuotaWindow, SubagentEndReason, SubagentPatch, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS } from '../shared/quota-resume'
 import { continuationPrompt, SUBAGENT_QUOTA_RESUME_PROMPT } from '../shared/continuation-prompt'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
@@ -136,6 +136,7 @@ export function describeProcessExit(
   return `${facts.join('；') || pick('pi 子进程提前退出', 'pi subprocess exited early')}${tail}`
 }
 const STREAM_PUSH_MS = 33
+const BACKGROUND_STREAM_PUSH_MS = 250
 export interface SubagentRpc {
   readonly running: boolean
   on(event: string, listener: (...args: never[]) => void): unknown
@@ -282,8 +283,8 @@ export interface SubagentOptions {
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   appendSystemPrompt?: string
   quotaWatch?: SubagentQuotaWatch
-  onChange: (run: SubagentRun) => void
-  onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
+  onChange: (run: SubagentRun, patch?: SubagentPatch) => void
+  onPatch?: (payload: SubagentPatch) => void
   onRemove?: (id: string) => void
   onFinished?: (run: SubagentRun) => void
   onOvertime?: (run: SubagentRun, minutes: number) => void
@@ -348,7 +349,8 @@ async function applyPatchExclusive(cwd: string, patchPath: string): ReturnType<t
 
 export class SubagentController {
   private runs = new Map<string, Run>()
-  private pushedTranscript = new Map<string, { length: number; firstId: string; lastId: string }>()
+  private pushedTranscript = new Map<string, { length: number; firstId: string; lastId: string; lastText: string; lastThinking: string }>()
+  private watched = new Set<string>()
   private preparing = 0
   private launchGeneration = 0
   private pendingLaunches = new Set<Promise<void>>()
@@ -492,7 +494,10 @@ export class SubagentController {
     run.pushTimer = undefined
     if (this.runs.get(run.id) !== run) return
     try {
-      this.opts.onChange(this.snapshot(run))
+      const snapshot = this.snapshot(run)
+      const live = run.status === 'running' || run.status === 'starting'
+      const patch = live && this.opts.onPatch ? this.deltaFor(run, snapshot) : null
+      this.opts.onChange(snapshot, patch ?? undefined)
     } catch (error) {
       console.warn('[subagent] 推送子代理状态失败', error)
     }
@@ -538,32 +543,60 @@ export class SubagentController {
       this.pushedTranscript.delete(run.id)
       return
     }
+    const last = transcript[transcript.length - 1]
     this.pushedTranscript.set(run.id, {
       length: transcript.length,
       firstId: transcript[0].id,
-      lastId: transcript[transcript.length - 1].id
+      lastId: last.id,
+      lastText: last.text ?? '',
+      lastThinking: last.thinking ?? ''
     })
   }
 
-  private emitDelta(run: Run): void {
+  private deltaFor(run: Run, snapshot: SubagentRun): SubagentPatch | null {
     const previous = this.pushedTranscript.get(run.id)
     const transcript = run.transcript
-    const onPatch = this.opts.onPatch
     const sameBase =
       previous !== undefined &&
       previous.length > 0 &&
       previous.length <= transcript.length &&
       transcript[0]?.id === previous.firstId &&
       transcript[previous.length - 1]?.id === previous.lastId
-    if (!sameBase || !onPatch) {
+    if (!sameBase) return null
+    const transcriptFrom = previous.length - 1
+    const changed = transcript.slice(transcriptFrom)
+    const base = changed[0]
+    const text = base.text ?? ''
+    const thinking = base.thinking ?? ''
+    const textFrom = previous.lastText && text.startsWith(previous.lastText) ? previous.lastText.length : undefined
+    const thinkingFrom = previous.lastThinking && thinking.startsWith(previous.lastThinking) ? previous.lastThinking.length : undefined
+    if (textFrom !== undefined || thinkingFrom !== undefined) {
+      changed[0] = {
+        ...base,
+        ...(textFrom !== undefined ? { text: text.slice(textFrom) } : {}),
+        ...(thinkingFrom !== undefined ? { thinking: thinking.slice(thinkingFrom) } : {})
+      }
+    }
+    return {
+      id: run.id,
+      run: { ...snapshot, transcript: changed },
+      transcriptFrom,
+      ...(textFrom !== undefined ? { textFrom } : {}),
+      ...(thinkingFrom !== undefined ? { thinkingFrom } : {})
+    }
+  }
+
+  private emitDelta(run: Run): void {
+    const onPatch = this.opts.onPatch
+    const patch = onPatch ? this.deltaFor(run, this.snapshot(run)) : null
+    if (!patch || !onPatch) {
       this.emit(run)
       return
     }
     clearTimeout(run.pushTimer)
     run.pushTimer = undefined
-    const transcriptFrom = previous.length - 1
     try {
-      onPatch({ id: run.id, run: { ...this.snapshot(run), transcript: transcript.slice(transcriptFrom) }, transcriptFrom })
+      onPatch(patch)
     } catch (error) {
       console.warn('[subagent] 推送子代理增量失败', error)
       return
@@ -576,7 +609,17 @@ export class SubagentController {
     run.pushTimer = setTimeout(() => {
       run.pushTimer = undefined
       if (this.runs.get(run.id) === run) this.emitDelta(run)
-    }, STREAM_PUSH_MS)
+    }, this.watched.has(run.id) ? STREAM_PUSH_MS : BACKGROUND_STREAM_PUSH_MS)
+  }
+
+  watch(ids: readonly string[]): void {
+    const next = new Set(ids)
+    const added = [...next].filter((id) => !this.watched.has(id))
+    this.watched = next
+    for (const id of added) {
+      const run = this.runs.get(id)
+      if (run?.pushTimer) this.emitDelta(run)
+    }
   }
 
   hasActiveWriter(cwd: string): boolean {
