@@ -4,6 +4,15 @@
     margin: 0;
   }
 
+  .ms-vault-error p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .ms-vault-error p + p {
+    margin-top: var(--s-4);
+  }
+
   .settings-section > .ms-overview + .settings-group {
     margin-top: calc(var(--s-16) * -1);
   }
@@ -80,6 +89,22 @@
     flex: none;
     padding-inline: 0;
     white-space: nowrap;
+  }
+
+  .ms-backups {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    margin-top: var(--s-8);
+    color: var(--fg2);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+
+  .ms-backups-text {
+    flex: 1 1 16rem;
+    min-width: 0;
   }
 
   .ms-file-path {

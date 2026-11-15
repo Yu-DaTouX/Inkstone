@@ -1,11 +1,12 @@
 import { pick } from '../shared/ui-lang'
 import { constants } from 'node:fs'
-import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { net } from 'electron'
 import { YAN_DIR } from './paths'
 import { readAuth, readAuthEntry, updateAuthFile } from './credentials'
+import { readCredentialFile, writeCredentialFile } from './credential-vault'
 import { decodeJwtClaims } from '../shared/account-quota'
 import { OAUTH_ACCOUNT_PROVIDERS, supportsOAuthAccounts, type OAuthAccountPools, type OAuthAccountProvider, type OAuthAccountView } from '../shared/oauth-accounts'
 
@@ -41,11 +42,12 @@ function string(value: unknown): string | undefined {
 }
 
 async function readStore(): Promise<Store> {
+  const text = await readCredentialFile(STORE_FILE)
+  if (text === null) return { version: 1, providers: {} }
   let raw: unknown
   try {
-    raw = JSON.parse(await readFile(STORE_FILE, 'utf8'))
+    raw = JSON.parse(text)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, providers: {} }
     if (!(error instanceof SyntaxError)) throw error
   }
   const store = raw as Store | null
@@ -58,11 +60,8 @@ async function readStore(): Promise<Store> {
   return store
 }
 
-async function writeStore(store: Store): Promise<void> {
-  await mkdir(YAN_DIR, { recursive: true })
-  const tmp = `${STORE_FILE}.${process.pid}.tmp`
-  await writeFile(tmp, JSON.stringify(store, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
-  await rename(tmp, STORE_FILE)
+async function writeStore(store: Store, background = false): Promise<void> {
+  await writeCredentialFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n', { background })
 }
 
 async function profile(url: string, access: string, headers: Record<string, string> = {}): Promise<Record<string, unknown>> {
@@ -139,7 +138,7 @@ export function listOAuthAccounts(): Promise<OAuthAccountPools> {
       const accounts = store.providers[provider]
       if (accounts?.length) result[provider] = accounts.map((a) => view(a, active?.key))
     }))
-    await writeStore(store)
+    await writeStore(store, true)
     return result
   })
 }
@@ -213,7 +212,7 @@ export function oauthAccountTargets(provider: OAuthAccountProvider): Promise<OAu
     const store = await readStore()
     const current = await readAuthEntry(provider)
     const active = isCredential(current) ? await upsert(store, provider, current) : undefined
-    if (active) await writeStore(store)
+    if (active) await writeStore(store, true)
     return (store.providers[provider] ?? []).map((a) => ({ ...view(a, active?.key), credential: a.credential }))
   })
 }

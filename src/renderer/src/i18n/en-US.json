@@ -582,6 +582,7 @@
   "quota.resume.kicker": "Auto-resume",
   "quota.resume.now": "Retry",
   "quota.stale": "Query failed ({msg}) · last data",
+  "quota.credentialsUnreadable": "Saved account credentials could not be read; some accounts are hidden. See Settings › Models",
   "quota.usedInline": "{pct}% used",
   "quota.usedMain": "used",
   "rail.cantDeleteCurrent": "In use",

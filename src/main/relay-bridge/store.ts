@@ -1,7 +1,8 @@
 import { pick } from '../../shared/ui-lang'
 import { createHash, randomUUID, type webcrypto } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, unlink, writeFile, copyFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { copyFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { readCredentialFile, writeCredentialFile } from '../credential-vault'
 import { exportKeyPair, generateKeyPair, importKeyPair, randomB64u, sha256, toB64u, type KeyPair } from './crypto'
 
 export const RELAY_PAIR_TTL_MS = 10 * 60_000
@@ -58,13 +59,8 @@ export class RelayBridgeStore {
   }
 
   private async readState(): Promise<StoredState> {
-    let text: string
-    try {
-      text = await readFile(this.file, 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      return this.createFreshState()
-    }
+    const text = await readCredentialFile(this.file)
+    if (text === null) return this.createFreshState()
     try {
       const parsed = JSON.parse(text) as Partial<StoredState>
       if (parsed?.version === 1 && typeof parsed.secret === 'string' && parsed.hostKey && Array.isArray(parsed.clients)) {
@@ -105,20 +101,9 @@ export class RelayBridgeStore {
     return state
   }
 
-  private save(state: StoredState | null = this.state): Promise<void> {
+  private save(state: StoredState | null = this.state, background = false): Promise<void> {
     const snapshot = JSON.stringify(state ?? this.state, null, 2)
-    const write = async (): Promise<void> => {
-      await mkdir(dirname(this.file), { recursive: true })
-      const temporary = `${this.file}.${process.pid}.${randomUUID()}.tmp`
-      try {
-        await writeFile(temporary, `${snapshot}\n`, { encoding: 'utf8', mode: 0o600 })
-        await rename(temporary, this.file)
-        await chmod(this.file, 0o600).catch(() => undefined)
-      } catch (error) {
-        await unlink(temporary).catch(() => undefined)
-        throw error
-      }
-    }
+    const write = (): Promise<void> => writeCredentialFile(this.file, `${snapshot}\n`, { background })
     const task = this.writing.then(write, write)
     this.writing = task.catch(() => undefined)
     return task
@@ -159,7 +144,7 @@ export class RelayBridgeStore {
     if (!expired.length) return []
     const ids = new Set(expired.map((c) => c.id))
     state.clients = state.clients.map((c) => (ids.has(c.id) ? { ...c, revokedAt: now } : c))
-    await this.save().catch(() => undefined)
+    await this.save(this.state, true).catch(() => undefined)
     return [...ids]
   }
 
@@ -176,7 +161,7 @@ export class RelayBridgeStore {
         const now = this.now()
         const next = state.clients.map((c) => (c.id === known.id ? { ...c, lastSeenAt: now } : c))
         state.clients = next
-        void this.save().catch(() => undefined)
+        void this.save(this.state, true).catch(() => undefined)
         return { ok: true, client: { ...known, lastSeenAt: now } }
       }
       if (known && known.revokedAt !== null && !code) return { ok: false, reason: pick('这台设备已被撤销，请重新配对', 'This device was revoked. Pair again') }

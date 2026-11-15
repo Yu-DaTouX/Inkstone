@@ -1,8 +1,8 @@
-import { readFile, copyFile } from 'node:fs/promises'
+import { copyFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './atomic-write'
+import { readCredentialFile, writeCredentialFile } from './credential-vault'
 import { readAuth, readAuthEntry, updateAuthFile, validProviderId } from './credentials'
 import { CURRENT_KEY_ID, nextUsableKey, poolView, withCurrentKey, type ApiKeyPools, type StoredApiKey } from '../shared/api-keys'
 import { pick } from '../shared/ui-lang'
@@ -30,13 +30,8 @@ function isStoredKey(v: unknown): v is StoredApiKey {
 }
 
 async function readStore(): Promise<Store> {
-  let text: string
-  try {
-    text = await readFile(STORE_FILE, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, providers: {} }
-    throw error
-  }
+  const text = await readCredentialFile(STORE_FILE)
+  if (text === null) return { version: 1, providers: {} }
   let raw: Partial<Store> | null = null
   try {
     raw = JSON.parse(text) as Partial<Store>
@@ -55,7 +50,7 @@ async function readStore(): Promise<Store> {
 }
 
 async function writeStore(store: Store): Promise<void> {
-  await atomicWriteFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n', { mode: 0o600, durable: true })
+  await writeCredentialFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n')
 }
 
 function apiKeyOf(entry: unknown): string | undefined {

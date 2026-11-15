@@ -213,7 +213,7 @@
   "src/renderer/src/features/settings/general/pi-native-text.ts": 40,
   "src/renderer/src/features/settings/models/ModelsSettings.tsx": 1,
   "src/renderer/src/features/settings/models/image-text.ts": 39,
-  "src/renderer/src/features/settings/models/models-text.ts": 53,
+  "src/renderer/src/features/settings/models/models-text.ts": 61,
   "src/renderer/src/features/settings/search/entries-capabilities.ts": 45,
   "src/renderer/src/features/settings/search/entries-data.ts": 25,
   "src/renderer/src/features/settings/search/entries-general.ts": 67,

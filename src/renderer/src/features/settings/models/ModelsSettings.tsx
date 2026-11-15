@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../../shared/ipc'
 import { modelErrorText } from '../../../../../shared/model-errors'
+import { credentialVaultMessage } from '../../../../../shared/credential-vault'
 import { useI18n, useT, type MessageKey } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
@@ -101,26 +102,69 @@ export function ModelsSettings(): ReactElement {
   const [pendingRemove, setPendingRemove] = useState<AuthProviderInfo | null>(null)
   const [showAllKeys, setShowAllKeys] = useState(false)
   const [showPath, setShowPath] = useState(false)
+  const [vaultErrors, setVaultErrors] = useState<Record<string, string>>({})
+  const [backupCount, setBackupCount] = useState(0)
+  const [confirmBackups, setConfirmBackups] = useState(false)
+
+  const loadBackups = async (): Promise<void> => {
+    const info = await window.yan.credentialBackups().catch(() => null)
+    setBackupCount(info?.count ?? 0)
+  }
+
+  const removeBackups = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const result = await window.yan.removeCredentialBackups()
+      if (result.error) setMsg({ kind: 'fail', text: result.error })
+      else if (result.failed) setMsg({ kind: 'fail', text: text('backupsFailed').replace('{n}', String(result.failed)) })
+      else setMsg({ kind: result.skipped ? 'info' : 'ok', text: [text('backupsDone').replace('{n}', String(result.removed)), result.skipped ? text('backupsSkipped').replace('{n}', String(result.skipped)) : ''].filter(Boolean).join(' ') })
+    } catch (error) {
+      setMsg({ kind: 'fail', text: readable(error) })
+    } finally {
+      setConfirmBackups(false)
+      setBusy(false)
+      await loadBackups()
+    }
+  }
+
+  const noteVault = (source: string, error: unknown): boolean => {
+    const message = error === undefined ? null : credentialVaultMessage(error)
+    setVaultErrors((current) => {
+      if ((current[source] ?? null) === message) return current
+      const next = { ...current }
+      if (message) next[source] = message
+      else delete next[source]
+      return next
+    })
+    return !!message
+  }
 
   const loadPools = async (): Promise<void> => {
-    const next = await window.yan.apiKeys().catch(() => null)
-    if (next) setPools(next)
+    try {
+      setPools(await window.yan.apiKeys())
+      noteVault('pools', undefined)
+    } catch (error) {
+      noteVault('pools', error)
+    }
   }
 
   const loadAccounts = async (): Promise<void> => {
-    try {
-      const [codex, others] = await Promise.all([window.yan.codexAccounts(), window.yan.oauthAccounts()])
-      setCodexAccounts(codex)
-      setOAuthAccounts(others)
-    } catch (error) {
-      setMsg({ kind: 'fail', text: readable(error) })
-    }
+    const [codex, others] = await Promise.allSettled([window.yan.codexAccounts(), window.yan.oauthAccounts()])
+    if (codex.status === 'fulfilled') {
+      setCodexAccounts(codex.value)
+      noteVault('codex', undefined)
+    } else if (!noteVault('codex', codex.reason)) setMsg({ kind: 'fail', text: readable(codex.reason) })
+    if (others.status === 'fulfilled') {
+      setOAuthAccounts(others.value)
+      noteVault('oauth', undefined)
+    } else if (!noteVault('oauth', others.reason)) setMsg({ kind: 'fail', text: readable(others.reason) })
   }
 
   useEffect(() => {
     if (useStore.getState().authProviders.length === 0) void loadAuthProviders()
     void loadPools()
     void loadAccounts()
+    void loadBackups()
     void window.yan
       .authFileInfo()
       .then(setFileInfo)
@@ -487,6 +531,13 @@ export function ModelsSettings(): ReactElement {
           {msg.text}
         </Notice>
       ) : null}
+      {Object.keys(vaultErrors).length ? (
+        <Notice tone="fail" className="ms-msg ms-vault-error" title={text('vaultError')} data-testid="ms-vault-error">
+          {[...new Set(Object.values(vaultErrors))].map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </Notice>
+      ) : null}
 
       <div className="ms-overview" role="group" aria-label={text('title')} data-testid="ms-services">
         <div className="ms-status">
@@ -534,6 +585,14 @@ export function ModelsSettings(): ReactElement {
         </div>
         {fileInfo && showPath ? (
           <span className="ms-file-path" data-testid="ms-file-path">{fileInfo.path}</span>
+        ) : null}
+        {backupCount > 0 ? (
+          <div className="ms-backups" data-testid="ms-plaintext-backups">
+            <span className="ms-backups-text">{text('backupsFound').replace('{n}', String(backupCount))}</span>
+            <Button variant="secondary" size="sm" isDisabled={busy} data-testid="ms-backups-delete" onPress={() => setConfirmBackups(true)}>
+              {text('backupsDelete')}
+            </Button>
+          </div>
         ) : null}
         {authProviders.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('noAuthInfo')} /> : null}
       </div>
@@ -597,6 +656,25 @@ export function ModelsSettings(): ReactElement {
 
         <PiThinkingLevelsGroup />
       </SettingsAdvanced>
+
+      {confirmBackups ? (
+        <ConfirmDialog
+          overlayClassName="settings-confirm-overlay"
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setConfirmBackups(false)
+          }}
+          title={text('backupsTitle')}
+          description={text('backupsBody').replace('{n}', String(backupCount))}
+          tone="danger"
+          cancelLabel={t('ui.cancel')}
+          confirmLabel={text('backupsDelete')}
+          confirmTestId="ms-backups-confirm"
+          isConfirmDisabled={busy}
+          closeOnConfirm={false}
+          onConfirm={() => void removeBackups()}
+        />
+      ) : null}
 
       {pendingRemove ? (
         <ConfirmDialog

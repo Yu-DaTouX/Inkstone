@@ -161,6 +161,7 @@ import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { cachedTitlesSync, primeCachedTitles } from './title'
+import { sweepCredentialFiles } from './credential-vault'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
@@ -3251,6 +3252,7 @@ app.whenReady().then(async () => {
   registerIpc()
   installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
+  void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
   void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json')).catch((error) => reportMainError('mcp-describe', error))
   trayLanguage = (await getSettings()).lang

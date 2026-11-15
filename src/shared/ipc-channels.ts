@@ -155,6 +155,8 @@ export interface IpcChannelMap {
   'yan:renameApiKey': Contract<B['renameApiKey']>
   'yan:removeApiKey': Contract<B['removeApiKey']>
   'yan:authFileInfo': Contract<B['authFileInfo']>
+  'yan:credentialBackups': Contract<B['credentialBackups']>
+  'yan:removeCredentialBackups': Contract<B['removeCredentialBackups']>
   'yan:accountQuota': Contract<B['accountQuota']>
   'yan:accountResetCredit': Contract<B['accountResetCredit']>
   'yan:codexAccounts': Contract<B['codexAccounts']>

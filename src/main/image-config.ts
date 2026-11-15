@@ -1,9 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pick } from '../shared/ui-lang'
 import { IMAGE_COMPLEXITIES, IMAGE_KEY_SERVICES, IMAGE_MODEL_SERVICES, isImageChoice, type ImageConfigFile, type ImageConfigPatch, type ImageKeyService } from '../shared/image-config'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './atomic-write'
+import { CredentialVaultError, readCredentialFile, writeCredentialFile } from './credential-vault'
 
 const CONFIG_FILE = (): string => join(YAN_DIR, 'image-config.json')
 
@@ -93,14 +94,38 @@ function sanitize(raw: unknown): StoredImageConfig {
 
 async function readFileConfig(): Promise<StoredImageConfig> {
   try {
-    return sanitize(JSON.parse(await readFile(CONFIG_FILE(), 'utf8')))
-  } catch {
+    const text = await readCredentialFile(CONFIG_FILE())
+    return text === null ? {} : sanitize(JSON.parse(text))
+  } catch (error) {
+    if (error instanceof CredentialVaultError) throw error
     return {}
   }
 }
 
+async function readConfigForWrite(): Promise<StoredImageConfig> {
+  const file = CONFIG_FILE()
+  const text = await readCredentialFile(file)
+  if (text === null) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    parsed = undefined
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    await copyFile(file, `${file}.corrupt.bak`, fsConstants.COPYFILE_EXCL).catch(() => undefined)
+    throw new Error(pick(`生图配置文件格式无效；为保护已保存的 key，已拒绝写入：${file}`, `The image settings file is invalid; write refused to protect saved keys: ${file}`))
+  }
+  return sanitize(parsed)
+}
+
 export async function refreshImageConfig(): Promise<ImageConfigFile> {
-  current = await readFileConfig()
+  try {
+    current = await readFileConfig()
+  } catch (error) {
+    current = {}
+    throw error
+  }
   return current
 }
 
@@ -141,11 +166,11 @@ function withoutCompatibleBinding(file: StoredImageConfig): StoredImageConfig {
 async function update(change: (file: StoredImageConfig) => StoredImageConfig): Promise<{ ok: boolean; error?: string }> {
   try {
     await serial(async () => {
-      const file = await readFileConfig()
+      const file = await readConfigForWrite()
       const changed = change(file)
       const baseChanged = normalizeImageEndpoint(effectiveCompatibleBase(file)) !== normalizeImageEndpoint(effectiveCompatibleBase(changed))
       const next = sanitize(baseChanged ? withoutCompatibleBinding(changed) : changed)
-      await atomicWriteFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
+      await writeCredentialFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n')
       current = next
     })
     return { ok: true }

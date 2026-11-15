@@ -8,6 +8,7 @@ import { claudeUsage, forgetClaudeUsage } from './claude-usage'
 import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
 import { oauthAccountTargets, type OAuthAccountTarget } from './oauth-accounts'
+import { CredentialVaultError } from './credential-vault'
 import {
   claudeResetCredits,
   claudeUsageWindows,
@@ -216,10 +217,15 @@ export function accountQuotaReport(): Promise<AccountQuotaReport> {
 }
 
 async function buildReport(): Promise<AccountQuotaReport> {
+  let credentialProblem = false
+  const accounts = <T>(work: Promise<T[]>): Promise<T[]> => work.catch((error: unknown) => {
+    if (error instanceof CredentialVaultError) credentialProblem = true
+    return []
+  })
   const [targets, claude, openrouter, commandCodeAliases] = await Promise.all([
-    codexAccountTargets().catch(() => [] as CodexAccountTarget[]),
-    oauthAccountTargets('anthropic').catch(() => [] as OAuthAccountTarget[]),
-    oauthAccountTargets('openrouter').catch(() => [] as OAuthAccountTarget[]),
+    accounts<CodexAccountTarget>(codexAccountTargets()),
+    accounts<OAuthAccountTarget>(oauthAccountTargets('anthropic')),
+    accounts<OAuthAccountTarget>(oauthAccountTargets('openrouter')),
     customCommandCodeQuotaProviders()
   ])
   targets.sort((a, b) => Number(b.active) - Number(a.active))
@@ -231,7 +237,7 @@ async function buildReport(): Promise<AccountQuotaReport> {
   const settled = await Promise.all(jobs.map((job) => job.catch(() => null)))
   const merged = mergeDuplicateCards([...settled.filter((c): c is AccountQuotaCard => !!c), ...(await debugQuotaCards())])
   const cards = await Promise.all(merged.map(withLastGood))
-  return { cards, checkedAt: Date.now() }
+  return { cards, checkedAt: Date.now(), ...(credentialProblem ? { credentialProblem: true } : {}) }
 }
 
 async function debugQuotaCards(): Promise<AccountQuotaCard[]> {

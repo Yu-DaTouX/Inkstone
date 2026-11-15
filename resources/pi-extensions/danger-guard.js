@@ -756,6 +756,35 @@ export function credentialAccess(toolName, input, cwd) {
   return typeof raw === 'string' && raw.trim() && windowsAliases(resolveTarget(raw, cwd)).includes(file) ? [`${CREDENTIAL_REASON}${file}`] : []
 }
 
+const VAULT_REASON = '读取砚保存的账号与 Key（或它们的明文备份）：'
+const VAULT_NAMES = '(?:api-keys|codex-accounts|image-config|oauth-accounts|relay-bridge|search-config)\\.json'
+const VAULT_FILE = new RegExp(`^${VAULT_NAMES}(?:\\.plaintext-[^/]*\\.bak)?$`)
+const VAULT_IN_COMMAND = new RegExp(`(?:^|[^\\w.-])(${VAULT_NAMES})(?:\\.plaintext-[^\\s'"\`;|&)<>]*)?(?![\\w.-])`)
+
+export function vaultCredentialAccess(toolName, input, cwd) {
+  const name = String(toolName ?? '')
+  const agentDir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
+  const dataDir = process.env.YAN_DATA_DIR?.trim() || join(agentDir, 'yan')
+  const dir = canonicalRoot(dataDir)
+  if (name === 'bash' || name === 'powershell') {
+    const command = String(input?.command ?? '')
+    if (hostScansTerminalInput(command)) return []
+    const text = command.replace(/\\+/g, '/').replace(/\/{2,}/g, '/').toLowerCase()
+    const hit = VAULT_IN_COMMAND.exec(text)
+    if (!hit) return []
+    const near = text.includes('.pi/agent') || text.includes(dir) || text.includes('yan_data_dir') || isInside(canonicalRoot(cwd || process.cwd()), [dir, canonicalRoot(agentDir)])
+    return near ? [`${VAULT_REASON}${dir}/${hit[1]}`] : []
+  }
+  if (name !== 'read') return []
+  const raw = fileToolPath(input?.path ?? input?.file_path ?? input?.filePath)
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  const target = windowsAliases(resolveTarget(raw, cwd)).find((p) => {
+    const slash = p.lastIndexOf('/')
+    return slash > 0 && p.slice(0, slash) === dir && VAULT_FILE.test(p.slice(slash + 1))
+  })
+  return target ? [`${VAULT_REASON}${target}`] : []
+}
+
 export function criticalDanger(toolName, input, cwd, options = {}) {
   const name = String(toolName ?? '')
   const secrets = credentialAccess(name, input, cwd)
@@ -815,7 +844,7 @@ export function detectDanger(toolName, input, cwd, options = {}) {
       if (sensitiveOutside(normalized, base)) reasons.push(`修改项目之外的系统或凭证文件：${abs}`)
     }
   }
-  reasons.push(...credentialAccess(name, input, cwd))
+  reasons.push(...credentialAccess(name, input, cwd), ...vaultCredentialAccess(name, input, cwd))
   return [...new Set(reasons)]
 }
 

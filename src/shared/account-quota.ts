@@ -52,6 +52,7 @@ export interface AccountQuotaCard {
 export interface AccountQuotaReport {
   cards: AccountQuotaCard[]
   checkedAt: number
+  credentialProblem?: boolean
 }
 
 export interface CodexAccountView {

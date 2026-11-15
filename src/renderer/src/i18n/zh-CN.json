@@ -582,6 +582,7 @@
   "quota.resume.kicker": "自动续跑",
   "quota.resume.now": "重试",
   "quota.stale": "查询失败（{msg}）· 上次数据",
+  "quota.credentialsUnreadable": "账号凭据读取失败，部分账号未显示，见「设置 › 模型」",
   "quota.usedInline": "已用 {pct}%",
   "quota.usedMain": "已用",
   "rail.cantDeleteCurrent": "使用中",

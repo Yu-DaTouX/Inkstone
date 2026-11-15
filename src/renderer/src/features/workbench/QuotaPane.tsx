@@ -179,6 +179,11 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
         </Notice>
       ) : null}
       {notice ? <Notice compact data-testid="v3-wb-quota-notice">{notice}</Notice> : null}
+      {report?.credentialProblem ? (
+        <Notice tone="fail" compact data-testid="v3-wb-quota-credentials">
+          {t('quota.credentialsUnreadable')}
+        </Notice>
+      ) : null}
 
       {groups.map((group) => {
         const icon = providerFavicon(group.provider)

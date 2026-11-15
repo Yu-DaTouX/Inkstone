@@ -1,8 +1,9 @@
 import { pick } from '../../shared/ui-lang'
-import { readFile } from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
-import { atomicWriteFile } from '../atomic-write'
+import { readCredentialFile, writeCredentialFile } from '../credential-vault'
 import { resolveQuotaProviderSecret } from '../quota-credentials'
 import {
   SEARCH_PROVIDERS,
@@ -27,19 +28,31 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function read(): Promise<SearchConfigFile> {
-  let text: string
-  try {
-    text = await readFile(CONFIG_FILE(), 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw error
-  }
+  const text = await readCredentialFile(CONFIG_FILE())
+  if (text === null) return {}
   const parsed = JSON.parse(text) as unknown
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as SearchConfigFile) : {}
 }
 
+async function readForWrite(): Promise<SearchConfigFile> {
+  const file = CONFIG_FILE()
+  const text = await readCredentialFile(file)
+  if (text === null) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    parsed = undefined
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    await copyFile(file, `${file}.corrupt.bak`, fsConstants.COPYFILE_EXCL).catch(() => undefined)
+    throw new Error(pick(`搜索配置文件格式无效；为保护已保存的 key，已拒绝写入：${file}`, `The search settings file is invalid; write refused to protect saved keys: ${file}`))
+  }
+  return parsed as SearchConfigFile
+}
+
 async function write(next: SearchConfigFile): Promise<void> {
-  await atomicWriteFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
+  await writeCredentialFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n')
 }
 
 function stateOf(cfg: SearchConfigFile, id: SearchProviderId): SearchProviderState {
@@ -76,7 +89,7 @@ export async function setSearchKey(id: SearchProviderId, key: string): Promise<{
   if (!value) return { ok: false, error: pick('API key 不能为空', 'API key cannot be empty') }
   if (/\s/.test(value)) return { ok: false, error: pick('API key 不应包含空白字符', 'API key must not contain whitespace') }
   try {
-    await serial(async () => write({ ...(await read()), [fieldOf(id)]: value }))
+    await serial(async () => write({ ...(await readForWrite()), [fieldOf(id)]: value }))
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : pick('写入失败', 'Write failed') }
@@ -86,7 +99,7 @@ export async function setSearchKey(id: SearchProviderId, key: string): Promise<{
 export async function clearSearchKey(id: SearchProviderId): Promise<{ ok: boolean; error?: string }> {
   try {
     await serial(async () => {
-      const next = { ...(await read()) }
+      const next = { ...(await readForWrite()) }
       delete next[fieldOf(id)]
       await write(next)
     })
@@ -97,5 +110,5 @@ export async function clearSearchKey(id: SearchProviderId): Promise<{ ok: boolea
 }
 
 export async function setSearchHintDismissed(dismissed: boolean): Promise<void> {
-  await serial(async () => write({ ...(await read()), hintDismissed: dismissed }))
+  await serial(async () => write({ ...(await readForWrite()), hintDismissed: dismissed }))
 }

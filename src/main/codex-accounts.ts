@@ -1,9 +1,10 @@
 import { pick } from '../shared/ui-lang'
 import { constants as fsConstants } from 'node:fs'
-import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises'
+import { copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { readAuthEntry, updateAuthFile } from './credentials'
+import { readCredentialFile, writeCredentialFile } from './credential-vault'
 import { refreshCodexCredential, type CodexOAuthCredential } from './oauth'
 import { isCodexCredential } from './codex-token'
 import { chatGptIdentity, type ChatGptIdentity, type CodexAccountView } from '../shared/account-quota'
@@ -61,13 +62,8 @@ async function backupCorruptStore(): Promise<void> {
 }
 
 async function readStore(): Promise<Store> {
-  let text: string
-  try {
-    text = await readFile(STORE_FILE, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, accounts: [] }
-    throw error
-  }
+  const text = await readCredentialFile(STORE_FILE)
+  if (text === null) return { version: 1, accounts: [] }
   let raw: Partial<Store>
   try {
     raw = JSON.parse(text) as Partial<Store>
@@ -87,11 +83,8 @@ async function readStore(): Promise<Store> {
   return store
 }
 
-async function writeStore(store: Store): Promise<void> {
-  await mkdir(YAN_DIR, { recursive: true })
-  const tmp = `${STORE_FILE}.${process.pid}.tmp`
-  await writeFile(tmp, JSON.stringify(store, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
-  await rename(tmp, STORE_FILE)
+async function writeStore(store: Store, background = false): Promise<void> {
+  await writeCredentialFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n', { background })
 }
 
 function upsert(store: Store, credential: CodexOAuthCredential, saved?: StoredAccount): { key?: string; changed: boolean } {
@@ -124,7 +117,7 @@ export function captureActiveCodexAccount(): Promise<string | undefined> {
     if (!current) return undefined
     const store = await readStore()
     const saved = upsert(store, current)
-    if (saved.changed) await writeStore(store)
+    if (saved.changed) await writeStore(store, true)
     return saved.key
   })
 }
@@ -134,7 +127,7 @@ export function listCodexAccounts(labels: Record<string, string> = {}): Promise<
     const current = await activeCredential()
     const store = await readStore()
     const saved = current ? upsert(store, current) : undefined
-    if (saved?.changed) await writeStore(store)
+    if (saved?.changed) await writeStore(store, true)
     return store.accounts.map((a) => ({ key: a.key, email: a.email, plan: a.plan, label: labels[a.key], active: a.key === saved?.key }))
   })
 }
@@ -227,13 +220,13 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
         account.plan = identity.plan ?? account.plan
         account.savedAt = Date.now()
         changed = true
-        await writeStore(store)
+        await writeStore(store, true)
         targets.push({ ...base, key: account.key, email: account.email, plan: account.plan, credential: account.credential })
       } catch (e) {
         targets.push({ ...base, problem: e instanceof Error ? e.message : String(e) })
       }
     }
-    if (changed) await writeStore(store)
+    if (changed) await writeStore(store, true)
     return targets
   })
 }
