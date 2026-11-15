@@ -814,6 +814,7 @@ function searchesText({ head, args }) {
 const TEXT_PRINTERS = new Set(['echo', 'printf', 'write-output'])
 const PLAIN_COMMANDS = new Set(['cd', 'pwd', 'ls', 'mkdir'])
 const GIT_READ_ONLY = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
+const GIT_REMOTE = new Set(['push', 'pull', 'fetch'])
 const GIT_COMMIT_FLAGS = new Set(['-a', '--all', '--allow-empty', '--allow-empty-message', '--no-edit', '-q', '--quiet', '-s', '--signoff', '-n', '--no-verify'])
 const YAN_GROUPS = new Set(['subagent', 'workflow', 'model'])
 const YAN_TEXT_FLAGS = new Set(['--task', '--message', '--title'])
@@ -914,12 +915,13 @@ function longPrefix(flag, ...names) {
   return !!name && names.some((full) => full.startsWith(name))
 }
 
-function commitWords(words, at, blank) {
+function commitWords(words, at, blank, watched) {
   const out = words.slice(0, at + 1)
   let paths = false
   for (let i = at + 1; i < words.length; i++) {
     const raw = words[i]
     const flag = bare(raw)
+    if (paths) watched.push(raw)
     if (paths || !/^-/.test(flag)) { out.push(raw); continue }
     if (flag === '--') { out.push(raw); paths = true; continue }
     const inline = /^(--message=|-[aqsn]*m)(?=["'])/.exec(raw)
@@ -935,21 +937,33 @@ function commitWords(words, at, blank) {
   return out
 }
 
-function gitWords(words, blank) {
+function gitWords(words, blank, watched) {
   let at = 1
   while (at < words.length && /^-/.test(bare(words[at]))) {
     const flag = bare(words[at])
-    if (flag === '-C') at += 2
-    else if (flag === '--no-pager' || flag === '-P') at += 1
+    if (flag === '-C') {
+      watched.push(words[at + 1] ?? '')
+      at += 2
+    } else if (flag === '--no-pager' || flag === '-P') at += 1
     else return null
   }
   if (at >= words.length) return null
   const sub = bare(words[at])
   const rest = words.slice(at + 1).map(bare)
   if (sub === 'branch') return rest.length === 1 && rest[0] === '--show-current' ? words : null
+  if (GIT_REMOTE.has(sub)) return rest.some((word) => /^-/.test(word)) ? null : words
   if (GIT_READ_ONLY.has(sub)) return rest.some((flag) => /^-O/.test(flag) || longPrefix(flag, 'output', 'ext-diff', 'textconv', 'open-files-in-pager')) ? null : words
   if (sub === 'add') return rest.some((flag) => /^-[a-z]*[pie]/i.test(flag) || longPrefix(flag, 'patch', 'interactive', 'edit')) ? null : words
-  return sub === 'commit' ? commitWords(words, at, blank) : null
+  return sub === 'commit' ? commitWords(words, at, blank, watched) : null
+}
+
+function powershellPlainWords(words, head) {
+  return words.slice(1).every((word) => {
+    const flag = bare(word)
+    if (flag.replace(/^[A-Za-z]:(?=[\\/]|$)/, '').includes(':')) return false
+    const name = /^-([A-Za-z]+)$/.exec(flag)?.[1]?.toLowerCase()
+    return !(head === 'mkdir' && name && ['name', 'value'].some((full) => full.startsWith(name)))
+  })
 }
 
 function relaxedSegment(text, dialect) {
@@ -959,12 +973,13 @@ function relaxedSegment(text, dialect) {
   const head = words[0].toLowerCase()
   const native = dialect === 'powershell' && head !== 'echo' && head !== 'write-output'
   const blank = (word, prefix = '') => blankValue(word, prefix, dialect, native)
-  const kept = PLAIN_COMMANDS.has(head) ? words
+  const watched = []
+  const kept = PLAIN_COMMANDS.has(head) ? (dialect !== 'powershell' || powershellPlainWords(words, head) ? words : null)
     : TEXT_PRINTERS.has(head) ? printerWords(words, head, blank)
-      : head === 'git' || head === 'git.exe' ? gitWords(words, blank)
+      : head === 'git' || head === 'git.exe' ? gitWords(words, blank, watched)
         : head === 'yan' ? yanWords(words, blank)
           : null
-  if (!kept || RELAX_KEYWORDS.test(bare(kept.join(' ')))) return null
+  if (!kept || RELAX_KEYWORDS.test(bare(watched.join(' ')))) return null
   return kept.join(' ')
 }
 
