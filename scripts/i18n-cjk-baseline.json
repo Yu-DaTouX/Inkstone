@@ -149,7 +149,7 @@
   "src/main/workflows/sandbox.ts": 3,
   "src/main/workflows/schema.ts": 16,
   "src/main/workflows/script.ts": 27,
-  "src/main/workflows/service.ts": 21,
+  "src/main/workflows/service.ts": 23,
   "src/main/workflows/worker.ts": 1,
   "src/renderer/src/app/ErrorBoundary.tsx": 5,
   "src/renderer/src/app/ShellV3.tsx": 3,
