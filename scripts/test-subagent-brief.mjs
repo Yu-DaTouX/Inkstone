@@ -42,6 +42,7 @@ export function runSubagentBriefTests(ok, mod) {
     ok(!tooMany.ok && /最多/.test(tooMany.error), '超过条数上限：如实报错，不静默截断')
     const tooLong = parseSubagentBrief({ goal: 'x'.repeat(SUBAGENT_BRIEF_LIMITS.maxGoal + 1) }, 'x')
     ok(!tooLong.ok, '目标超长：拒掉')
+    ok(parseSubagentBrief(undefined, 'x'.repeat(12_000)).ok, '没有 brief 时任务文本整段当目标，上限和派子代理的任务文本一致（12000），不再被 4000 卡住')
 
     const prompt = briefPrompt(full.brief, '查一下这两个模块的错误处理')
     ok(prompt.startsWith('摸清两个模块的错误处理是否一致'), 'prompt 从目标开始')

@@ -3,6 +3,7 @@ import type { ExpectedRuntimeOwner } from '../../shared/ipc'
 import type { SubagentService } from '../subagent-service'
 import { normalizeSubagentId } from '../../shared/subagent-id'
 import { pick } from '../../shared/ui-lang'
+import { SUBAGENT_TASK_MAX_CHARS } from '../../shared/subagent-brief'
 
 const invalidId = () => ({ ok: false, error: pick('子 Agent id 不合法', 'Invalid subagent id') })
 
@@ -64,7 +65,7 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
     const runId = normalizeSubagentId(id)
     if (!runId) return invalidId()
     const text = String(message ?? '')
-    if (text.length > 12_000) return { ok: false, error: pick('信息不能超过 12000 个字符', 'Message cannot exceed 12000 characters') }
+    if (text.length > SUBAGENT_TASK_MAX_CHARS) return { ok: false, error: pick(`信息不能超过 ${SUBAGENT_TASK_MAX_CHARS} 个字符`, `Message cannot exceed ${SUBAGENT_TASK_MAX_CHARS} characters`) }
     const result = await (await service.get()).send(runId, text, 'steer', { from: 'user' })
     return { ok: result.ok, ...(result.error ? { error: result.error } : {}), ...(result.delivery ? { delivery: result.delivery } : {}) }
   })

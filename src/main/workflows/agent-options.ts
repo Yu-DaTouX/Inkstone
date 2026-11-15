@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { THINKING_LEVELS } from '../../shared/thinking-levels'
+import { SUBAGENT_TASK_MAX_CHARS } from '../../shared/subagent-brief'
 import { schemaInstruction, schemaProblem, type JsonSchema } from './schema'
 
 export interface WorkflowAgentOptions {
@@ -17,7 +18,7 @@ export interface WorkflowAgentOptions {
 }
 
 const KNOWN = new Set(['label', 'model', 'thinking', 'readOnly', 'isolation', 'timeoutMinutes', 'goal', 'deliverables', 'sources', 'boundary', 'schema'])
-export const MAX_PROMPT_CHARS = 12_000
+export const MAX_PROMPT_CHARS = SUBAGENT_TASK_MAX_CHARS
 
 function text(value: unknown, name: string, max: number): string | undefined {
   if (value === undefined || value === null) return undefined

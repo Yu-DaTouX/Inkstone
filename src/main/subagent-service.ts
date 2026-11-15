@@ -11,7 +11,7 @@ import type { PreservedOutputs } from './subagent-isolation'
 import { forkContextError, sideQuestionForkSource, type SubagentForkSource } from './subagent-fork'
 import { pick } from '../shared/ui-lang'
 import { normalizeSubagentId } from '../shared/subagent-id'
-import { writtenPaths } from '../shared/subagent-brief'
+import { SUBAGENT_TASK_MAX_CHARS, writtenPaths } from '../shared/subagent-brief'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { markSubagentResultRead } from './subagent-notify'
 
@@ -257,10 +257,10 @@ export class SubagentService {
           'subagent start 需要 task'
         )
       }
-      if (task.length > 12_000) {
+      if (task.length > SUBAGENT_TASK_MAX_CHARS) {
         throw new CapabilityCommandError(
           'subagent_task_too_long',
-          '子代理任务不能超过 12000 个字符'
+          `子代理任务不能超过 ${SUBAGENT_TASK_MAX_CHARS} 个字符`
         )
       }
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined

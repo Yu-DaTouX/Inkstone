@@ -7,9 +7,11 @@ export interface SubagentBrief {
   timeoutMinutes?: number
 }
 
+export const SUBAGENT_TASK_MAX_CHARS = 12_000
+
 export const SUBAGENT_BRIEF_LIMITS = {
   maxTitle: 40,
-  maxGoal: 4000,
+  maxGoal: SUBAGENT_TASK_MAX_CHARS,
   maxBoundary: 2000,
   maxDeliverables: 8,
   maxSources: 20,
