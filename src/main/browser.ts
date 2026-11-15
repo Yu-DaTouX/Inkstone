@@ -19,7 +19,7 @@ import type {
   MainPush
 } from '../shared/ipc'
 import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
-import { failureUrl, shouldSurfaceLoadError } from '../shared/browser-navigation'
+import { failureUrl, proxyLoadFailure, shouldSurfaceLoadError } from '../shared/browser-navigation'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
@@ -53,6 +53,7 @@ import { createStateFlush, ownedViewVisible } from './browser/host-state'
 import { pick } from '../shared/ui-lang'
 import { SessionScope } from './browser/session-scope'
 import { attachPinnedNetworkGuard, pinnedGuardStatus } from './net/pinned-network'
+import { proxyErrorReason } from './net/pinned-proxy'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -115,6 +116,7 @@ interface BrowserTab {
   state: BrowserTabState
   committedUrl: string
   pendingMainFrameUrl: string | null
+  proxyFailure?: { url: string; reason: string }
   openerUrl: string
   dialogs: BrowserDialogRecord[]
   dialogPolicy?: BrowserActionOptions
@@ -441,6 +443,13 @@ export class BrowserController {
     return { action: 'deny' }
   }
 
+  private applyProxyFailure(tab: BrowserTab): void {
+    const failure = tab.proxyFailure
+    if (!failure || failure.url !== tab.committedUrl) return
+    tab.state.loadError = proxyLoadFailure(failure.reason, failure.url)
+    this.updateState()
+  }
+
   private createTab(sessionId: string = this.focusSessionId): BrowserTab {
     this.assertTabQuota(sessionId)
     const view = new WebContentsView({
@@ -473,6 +482,14 @@ export class BrowserController {
       dialogs: []
     }
     void tab.network.start()
+    cdp.on('Network.responseReceived', (params, cdpSession) => {
+      if (cdpSession || params.type !== 'Document') return
+      const response = params.response as { url?: unknown; headers?: Record<string, unknown> } | undefined
+      const reason = proxyErrorReason(response?.headers)
+      if (!reason || typeof response?.url !== 'string') return
+      tab.proxyFailure = { url: response.url, reason }
+      this.applyProxyFailure(tab)
+    })
     cdp.on('Page.javascriptDialogOpening', (params) => this.answerDialog(tab, params))
     view.webContents.on('dom-ready', () => {
       void view.webContents.executeJavaScript(PROMPT_SHIM, true).catch(() => undefined)
@@ -486,6 +503,7 @@ export class BrowserController {
     view.webContents.on('did-start-loading', () => {
       tab.state.loading = true
       tab.state.loadError = undefined
+      tab.proxyFailure = undefined
       this.updateState()
     })
     view.webContents.on('did-stop-loading', () => {
@@ -507,6 +525,7 @@ export class BrowserController {
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
+      this.applyProxyFailure(tab)
       this.updateState()
     })
     view.webContents.on('did-navigate-in-page', (_event, url) => {
@@ -937,6 +956,20 @@ export class BrowserController {
     const settled = this.navigationSettled(tab)
     tab.view.webContents.reload()
     await settled
+    return { ok: true }
+  }
+
+  async stop(): Promise<BrowserActionResult> {
+    if (this.external && this.activeMode === 'external') {
+      try {
+        await this.external.cdp.send('Page.stopLoading', {})
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
+    const tab = this.activeTab()
+    if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.stop()
     return { ok: true }
   }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, LogIn, Monitor, MonitorSmartphone, Pin, PinOff, Plus, RotateCw, Server, Smartphone, Tablet } from '../../ui/icons'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, LogIn, Monitor, MonitorSmartphone, Pin, PinOff, Plus, RotateCw, Server, Smartphone, Tablet, X } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import {
@@ -24,11 +24,12 @@ import {
   PanelTabList,
   RailRow,
   SiteIcon,
+  Spinner,
   Splitter,
   TextField
 } from '../../ui'
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
-import { addressTarget, isBlankAddress, nextAddressInput } from '../../../../shared/browser-navigation'
+import { addressShown, addressTarget, isBlankAddress, nextAddressInput, nextAddressMemory, type AddressMemory } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
 import type { BrowserViewport } from '../../../../shared/ipc'
 import { browserText } from './browser-text'
@@ -43,6 +44,7 @@ export type { BrowserPaneProps }
 
 const TABS_PINNED_KEY = 'inkstone.browser.tabsPinned'
 const START_PAGE_TOKEN = 'browser-start-page'
+const LOAD_ERROR_TOKEN = 'browser-load-error'
 const VIEWPORTS: readonly BrowserViewport[] = ['responsive', 'mobile', 'tablet', 'desktop']
 const VIEWPORT_ICONS = { responsive: MonitorSmartphone, mobile: Smartphone, tablet: Tablet, desktop: Monitor } as const
 const TABS_WIDTH_KEY = 'inkstone.browser.tabsWidth'
@@ -162,6 +164,12 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     if (!startPage) return
     return useStore.getState().acquireOverlayBlocker(START_PAGE_TOKEN)
   }, [startPage])
+  const loadFailed = control && state.mode !== 'external' && !!state.loadError
+  const failureReason = state.loadError ? text.loadFailureReason(state.loadError) : null
+  useEffect(() => {
+    if (!loadFailed) return
+    return useStore.getState().acquireOverlayBlocker(LOAD_ERROR_TOKEN)
+  }, [loadFailed])
 
   const [tabsPinned, setTabsPinned] = useState(readTabsPinned)
   const [tabsLayout, setTabsLayout] = useState<BrowserTabsLayout>(() => readTabsLayout())
@@ -216,7 +224,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     const timer = setTimeout(() => setCoverHeld(false), UNFREEZE_MS)
     return () => clearTimeout(timer)
   }, [nativeVisible])
-  const occludedShot = surfaceActive && !startPage && (!nativeVisible || coverHeld) ? cover : null
+  const occludedShot = surfaceActive && !startPage && !loadFailed && (!nativeVisible || coverHeld) ? cover : null
   const toggleTabs = (): void => {
     closePeek()
     setTabsPinned((prev) => {
@@ -237,6 +245,11 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   const shownUrl = isBlankAddress(state.url) ? '' : state.url
   const [draft, setDraft] = useState(shownUrl)
   const [dirty, setDirty] = useState(false)
+  const activeTabId = state.activeTabId ?? null
+  const hasLoadError = !!state.loadError
+  const memoryRef = useRef<AddressMemory>({ requested: null, restored: null })
+  const [addressMemory, setAddressMemory] = useState<AddressMemory>(memoryRef.current)
+  const addressUrl = addressShown(shownUrl, addressMemory, activeTabId)
   const [error, setError] = useState('')
   const [opening, setOpening] = useState(false)
   const [importStarting, setImportStarting] = useState(false)
@@ -295,7 +308,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     finally { setImportStarting(false) }
   }
   const importButton = (
-    <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} tooltip={text.importHint} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
+    <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} tooltip={importId ? text.importCancel : text.importLogin} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
       <span className="v3-browser__import-label">{importId ? text.importCancel : text.importLogin}</span>
     </Button>
   )
@@ -303,19 +316,33 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     <Notice
       tone={importId ? 'info' : importNote?.tone === 'ok' ? 'ok' : 'fail'}
       compact
+      className="v3-browser__import-note"
       data-testid="browser-pane-import-note"
       action={!importId && importNote ? (
         <CloseButton aria-label={text.importDismiss} tooltip={text.importDismiss} data-testid="browser-pane-import-dismiss" onPress={() => setImportNote(null)} />
       ) : undefined}
     >
-      {importId ? (importPhase === 'waiting' ? text.importWaiting : text.importing) : importNote?.text}
+      {importId ? (
+        importPhase === 'waiting' ? (
+          <span className="v3-browser__import-text">
+            <span>{text.importWaiting}</span>
+            <span className="v3-browser__import-detail">{text.importHint}</span>
+          </span>
+        ) : text.importing
+      ) : importNote?.text}
     </Notice>
   ) : null
 
 
   useEffect(() => {
-    setDraft((prev) => nextAddressInput(shownUrl, prev, dirty))
-  }, [shownUrl, dirty])
+    setDraft((prev) => nextAddressInput(addressUrl, prev, dirty))
+  }, [addressUrl, dirty])
+
+  useEffect(() => {
+    const next = nextAddressMemory(memoryRef.current, { loading: !!state.loading, shownUrl, tabId: activeTabId, failed: hasLoadError })
+    memoryRef.current = next
+    setAddressMemory((prev) => (prev.restored === next.restored ? prev : next))
+  }, [state.loading, shownUrl, activeTabId, hasLoadError])
 
   useEffect(() => {
     setDirty(false)
@@ -358,12 +385,12 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   }
 
   const restoreAddress = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (event.key !== 'Escape' || (!dirty && draft === shownUrl)) return
+    if (event.key !== 'Escape' || (!dirty && draft === addressUrl)) return
     event.preventDefault()
     event.stopPropagation()
     navSeq.current++
     setDirty(false)
-    setDraft(shownUrl)
+    setDraft(addressUrl)
     setError('')
   }
 
@@ -382,24 +409,26 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     if (!state.open && (!browserOwnerKey || browserOwnerKey === owner.key)) {
       return (
         <div className="v3-browser v3-browser--gate" data-testid="browser-pane-not-open">
-          <EmptyState
-            size="sm"
-            role="status"
-            title={text.notOpen}
-            action={
-              <Button
-                variant="secondary"
-                size="sm"
-                data-testid="browser-pane-open"
-                isPending={opening}
-                onPress={() => void openHere()}
-              >
-                {opening ? text.opening : text.open}
-              </Button>
-            }
-          />
-          {importButton}
-          {importStatus}
+          <div className="v3-browser__gate-main">
+            <EmptyState
+              size="sm"
+              role="status"
+              title={text.notOpen}
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="browser-pane-open"
+                  isPending={opening}
+                  onPress={() => void openHere()}
+                >
+                  {opening ? text.opening : text.open}
+                </Button>
+              }
+            />
+            {importButton}
+            {importStatus}
+          </div>
           <LocalServerList
             active={visible}
             onOpen={(url) => void openBrowser(url, { key: owner.key, takeover: true })}
@@ -480,8 +509,8 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
         <IconButton aria-label={t('browser.localServers')} tooltip={t('browser.localServers')} size="sm" data-testid="browser-pane-servers-menu">
           <Server size={14} aria-hidden="true" />
         </IconButton>
-        <Popover variant="panel" placement="bottom end" className="v3-browser__servers-pop">
-          <Dialog aria-label={t('browser.localServers')} showClose={false}>
+        <Popover variant="panel" surface="solid" placement="bottom end" className="v3-browser__servers-pop">
+          <Dialog aria-label={t('browser.localServers')} showClose={false} padding="none">
             {({ close }) => (
               <LocalServerList
                 active={visible}
@@ -633,14 +662,17 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <ArrowRight size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
-          aria-label={t('browser.reload')}
-          tooltip={t('browser.reload')}
-          data-testid="browser-pane-reload"
+          aria-label={state.loading ? t('browser.stop') : t('browser.reload')}
+          tooltip={state.loading ? t('browser.stop') : t('browser.reload')}
+          tooltipPlacement="left"
+          data-testid={state.loading ? 'browser-pane-stop' : 'browser-pane-reload'}
           onPress={() => {
-            if (controlRef.current) void window.yan.browser.reload()
+            if (!controlRef.current) return
+            if (state.loading) void window.yan.browser.stop()
+            else void window.yan.browser.reload()
           }}
         >
-          <RotateCw size={14} aria-hidden="true" />
+          {state.loading ? <X size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
         </IconButton>
 
         <form
@@ -661,7 +693,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           >
             <InputGroup>
               <InputGroupAddon align="start">
-                <Globe size={14} aria-hidden="true" />
+                {state.loading ? <Spinner size="sm" label={t('browser.loading')} /> : <Globe size={14} aria-hidden="true" />}
               </InputGroupAddon>
               <InputGroupInput
                 aria-label={t('browser.address')}
@@ -686,10 +718,10 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <ExternalLink size={14} aria-hidden="true" />
         </IconButton>
         <MenuTrigger>
-          <IconButton aria-label={`${text.viewMenu}: ${text.viewportNames[viewport]}`} tooltip={`${text.viewMenu}: ${text.viewportNames[viewport]}`} aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">
+          <IconButton aria-label={text.viewMenuValue(text.viewportNames[viewport])} tooltip={text.viewMenuValue(text.viewportNames[viewport])} tooltipPlacement="left" aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">
             <ViewportIcon size={14} aria-hidden="true" />
           </IconButton>
-          <Popover placement="bottom end">
+          <Popover placement="bottom end" surface="solid">
             <Menu aria-label={text.viewMenu}>
               <MenuSection
                 id="viewport"
@@ -733,13 +765,8 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
 
       {importStatus ? <div className="v3-browser__status">{importStatus}</div> : null}
 
-      {state.loading || state.loadError || error ? (
+      {state.loadError || error ? (
         <div className="v3-browser__status" data-testid="browser-pane-status" role="status">
-          {state.loading ? (
-            <Notice variant="hint" loading>
-              {t('browser.loading')}
-            </Notice>
-          ) : null}
           {state.loadError ? (
             <Notice
               tone="fail"
@@ -770,9 +797,14 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
                 </>
               }
             >
-              <span title={state.loadError.description}>
+              <span title={state.loadError.description} data-testid="browser-pane-error-title">
                 {t('browser.pageFailed')}
               </span>
+              {failureReason ? (
+                <span className="v3-browser__error-reason" data-testid="browser-pane-error-reason">
+                  {failureReason}
+                </span>
+              ) : null}
               <MiddleTruncate className="v3-browser__error-url" value={state.loadError.url} data-testid="browser-pane-error-url" />
             </Notice>
           ) : null}

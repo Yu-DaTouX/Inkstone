@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { userSnapshotDir } from './env.mjs'
 import { linkOrCopy, mirrorFile, pruneFiles } from './shared-files.mjs'
 
-const REAL_PI = process.env.YAN_DEBUG_USER_PI || join(homedir(), '.pi', 'agent')
+export const REAL_PI = process.env.YAN_DEBUG_USER_PI || join(homedir(), '.pi', 'agent')
 const DATA_FILES = [
   'titles.json',
   'manual-titles.json',
@@ -90,10 +90,7 @@ export function importUserData(box, { days = 7, budgetMb = 400, include = [] } =
     const sandboxed = {
       ...stripSecrets(desktop),
       remoteAccess: { enabled: false, relay: { enabled: false } },
-      fontUiCustom: undefined,
-      lastMainModel: undefined,
-      backgroundCustom: undefined,
-      backgroundCustomLight: undefined
+      lastMainModel: undefined
     }
     writeFileSync(join(box.dataDir, 'desktop.json'), JSON.stringify(sandboxed))
   }

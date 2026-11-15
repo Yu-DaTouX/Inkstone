@@ -5,9 +5,12 @@ import type { UIMessage } from '../../../../shared/ipc'
 import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, sourceItemLabel, type ContextSourceItem, type SystemPartId } from '../../state/context-sources'
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import {
+  compactionErrorText,
   compactionErrorTip,
   compactionGrowthText,
+  compactionReasonText,
   compactionReclaimText,
+  compactionStatusText,
   compactionSummary,
   compactionTokensText
 } from '../../state/compaction-view'
@@ -222,7 +225,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const ownRun = compactRun && compactRun.sessionId === sessionId ? compactRun : null
   const running = !!(session?.isStreaming || session?.isAgentRunning)
   const compacting = !!session?.isCompacting || !!ownRun?.pending
-  const compactDisabled = !sessionId || running || compacting
+  const compactDisabled = !sessionId || running || compacting || (visible && messages.length === 0)
 
   const compactNow = (): void => {
     if (!sessionId || compactDisabled) return
@@ -258,7 +261,9 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             compactionReclaimText(t, last),
             compactionGrowthText(t, last, usage.known ? usage.tokens : undefined)
           ]
-        : [compactionSummary(t, last)]
+        : last.status === 'failed'
+          ? [compactionSummary(t, last), compactionErrorText(t, last.error)]
+          : [compactionSummary(t, last)]
       ).filter(Boolean).join(' · ')
     : null
   const lastTip = last?.status === 'failed' ? compactionErrorTip(t, last.error) : undefined
@@ -266,6 +271,16 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const historyPending = visible && !!sessionId && !history
   const shownHistory = historyItems ? (showAllHistory ? historyItems : historyItems.slice(0, HISTORY_PREVIEW)) : []
   const unsettledLast = last && last.status !== 'completed' ? lastLine : null
+  const unsettledRow = (run: NonNullable<typeof last>): ReactElement => (
+    <li key="unsettled" className="wb-ctx-record-row" title={lastTip} data-status={run.status} data-testid="v3-wb-ctx-compaction">
+      <span className="wb-ctx-history-time">{compactionTime(run.endedAt ?? run.startedAt, lang)}</span>
+      <span className="wb-ctx-history-flow">
+        {[compactionReasonText(t, run), run.status === 'failed' ? compactionErrorText(t, run.error) : ''].filter(Boolean).join(' · ')}
+      </span>
+      <span className="wb-ctx-history-num wb-ctx-record-status">{compactionStatusText(t, run.status)}</span>
+      <span className="wb-ctx-history-num" />
+    </li>
+  )
   const reserve = usage.known ? contextReserve(usage) : null
   const reserveRows: Array<{ id: ContextRowId; tokens: number }> = reserve
     ? [...(reserve.buffer ? [{ id: 'buffer' as const, tokens: reserve.buffer }] : []), { id: 'free' as const, tokens: reserve.free }]
@@ -299,7 +314,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
           <span className="wb-ctxw-title">{text.windowTitle}</span>
           {modelName ? <span className="wb-ctxw-model" title={modelName}>{modelName}</span> : null}
         </div>
-        <div className="wb-ctxw-figure" title={limitNote}>
+        <div className="wb-ctxw-figure">
           <span className="wb-ctxw-number" aria-hidden>{usage.known ? `${usage.estimated || focusRow?.approx ? '≈' : ''}${shortTokens(focusRow ? focusRow.tokens : usage.tokens)}` : text.unknown}</span>
           <span className="wb-ctxw-figure-label" aria-hidden>
             {focusRow ? rowLabel(focusRow.id) : usage.known ? `/ ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}` : text.used}
@@ -315,6 +330,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             </span>
           ) : null}
         </div>
+        {limitNote ? <p className="wb-ctxw-note" data-testid="v3-wb-ctx-limit-note">{limitNote}</p> : null}
 
         {usage.known ? (
           <>
@@ -414,14 +430,13 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
 
       <div className="wb-ctx-block">
         <h4 className="wb-ctx-subtitle">{text.compaction}</h4>
-        {unsettledLast ? (
-          <p className="wb-ctx-record" title={lastTip} data-status={last?.status} data-testid="v3-wb-ctx-compaction">
-            {unsettledLast}
-          </p>
+        {unsettledLast && last && !historyItems?.length ? (
+          <ul className="wb-ctx-history">{unsettledRow(last)}</ul>
         ) : null}
         {historyItems?.length ? (
           <>
             <ul className="wb-ctx-history" data-testid="v3-wb-ctx-history">
+              {unsettledLast && last ? unsettledRow(last) : null}
               {shownHistory.map((item) => {
                 const reclaim = item.afterEstimated ? null : compactionReclaim(item)
                 return (

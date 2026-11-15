@@ -96,10 +96,11 @@ export const ListRowStatic = forwardRef<HTMLDivElement, ListRowStaticProps>(func
 export interface TreeRowProps extends Omit<ListRowProps, 'accessory' | 'description'> {
   depth?: number
   expanded?: boolean
+  selection?: 'neutral' | 'accent'
 }
 
 export const TreeRow = forwardRef<HTMLButtonElement, TreeRowProps>(function TreeRow(
-  { depth = 0, expanded, icon, trailing, children, current, muted, hoverHighlight = true, variant = 'default', className, style, type = 'button', ...rest },
+  { depth = 0, expanded, icon, trailing, children, current, muted, hoverHighlight = true, variant = 'default', selection = 'neutral', className, style, type = 'button', ...rest },
   ref
 ) {
   return (
@@ -112,7 +113,7 @@ export const TreeRow = forwardRef<HTMLButtonElement, TreeRowProps>(function Tree
       data-muted={muted ? '' : undefined}
       data-no-hover={hoverHighlight ? undefined : ''}
       style={{ ...style, '--tree-depth': depth } as CSSProperties}
-      className={cx('ui-row', 'ui-tree-row', variant === 'field' && 'ui-row--field', className)}
+      className={cx('ui-row', 'ui-tree-row', variant === 'field' && 'ui-row--field', selection === 'accent' && 'ui-row--select-accent', className)}
     >
       <span className="ui-tree-row__twist" aria-hidden="true">
         {expanded === undefined ? null : <CollapsibleChevron expanded={expanded} />}

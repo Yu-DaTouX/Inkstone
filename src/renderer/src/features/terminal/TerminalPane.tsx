@@ -614,7 +614,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         </Badge>
       ) : null}
       {exited ? (
-        <span className="term-pane-exited" data-testid="terminal-exited">
+        <span className="term-pane-exited" data-testid="terminal-exited" data-tone={activeState?.exitCode ? 'fail' : undefined}>
           {t('term.exited', { code: activeState?.exitCode === null || activeState?.exitCode === undefined ? '—' : String(activeState.exitCode) })}
         </span>
       ) : null}
@@ -812,12 +812,6 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         {!inactive && !failed && activeState?.notice ? (
           <Notice tone="fail" compact className="term-pane-note" data-testid="terminal-notice">
             {activeState.notice}
-          </Notice>
-        ) : null}
-
-        {!inactive && exited ? (
-          <Notice compact className="term-pane-note" data-testid="terminal-exited">
-            {t('term.exited', { code: activeState?.exitCode === null || activeState?.exitCode === undefined ? '—' : String(activeState.exitCode) })}
           </Notice>
         ) : null}
 

@@ -2,6 +2,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { connect as netConnect, type Socket } from 'node:net'
 import { connect as tlsConnect } from 'node:tls'
 import { isIP } from 'node:net'
+import { randomBytes } from 'node:crypto'
 import { isLinkLocalAddress, isMetadataAddress } from './address-policy'
 import {
   dialLiteral,
@@ -38,6 +39,25 @@ class ProxyRejected extends Error {
 }
 
 const HOP_HEADERS = new Set(['proxy-connection', 'proxy-authorization'])
+export const PROXY_ERROR_HEADER = 'x-yan-proxy-error'
+const PROXY_ERROR_TOKEN = randomBytes(16).toString('hex')
+
+export function proxyErrorReason(headers: Record<string, unknown> | undefined | null): string | null {
+  if (!headers) return null
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== PROXY_ERROR_HEADER) continue
+    const raw = Array.isArray(value) ? value[0] : value
+    if (typeof raw !== 'string') return null
+    const [token, reason] = raw.split(' ', 2)
+    return token === PROXY_ERROR_TOKEN && reason ? reason : null
+  }
+  return null
+}
+
+function withoutProxyMarker(headers: IncomingMessage['headers']): IncomingMessage['headers'] {
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === PROXY_ERROR_HEADER)) return headers
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== PROXY_ERROR_HEADER))
+}
 
 function assertPort(port: number): void {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new ProxyRejected('invalid-port', 400)
@@ -303,7 +323,7 @@ export class PinnedProxy {
       else res.destroy()
     })
     upstreamReq.on('response', (upstreamRes) => {
-      res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, upstreamRes.headers)
+      res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, withoutProxyMarker(upstreamRes.headers))
       upstreamRes.on('error', () => {
         upstream.destroy()
         res.destroy()
@@ -472,7 +492,7 @@ export class PinnedProxy {
         else res.destroy()
       })
       upstreamReq.on('response', (upstreamRes) => {
-        res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, upstreamRes.headers)
+        res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, withoutProxyMarker(upstreamRes.headers))
         upstreamRes.on('error', () => {
           upstream.destroy()
           res.destroy()
@@ -493,7 +513,7 @@ export class PinnedProxy {
       res.destroy()
       return
     }
-    res.writeHead(rejection.status, { 'content-type': 'text/plain; charset=utf-8', 'content-length': Buffer.byteLength(body), connection: 'close' })
+    res.writeHead(rejection.status, { 'content-type': 'text/plain; charset=utf-8', 'content-length': Buffer.byteLength(body), connection: 'close', [PROXY_ERROR_HEADER]: `${PROXY_ERROR_TOKEN} ${reason}` })
     res.end(body)
   }
 

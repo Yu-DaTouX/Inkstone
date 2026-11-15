@@ -3,7 +3,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { basename, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { GitActionExpected } from '../shared/git-actions'
 import { digestOf } from '../shared/git-actions'
 import type { GitRefOption, GitRepoState, GitStatusParse } from '../shared/git'
@@ -168,13 +168,28 @@ export interface RepoIdentity {
   name: string
 }
 
-const repoCache = new Map<string, { at: number; value: RepoIdentity | null; gitDirMtime: number }>()
+const repoCache = new Map<string, { at: number; value: RepoIdentity | null; gitDirMtime: number; marker?: boolean }>()
 const REPO_TTL = 30_000
 const REPO_CACHE_LIMIT = 64
 
-function cacheRepo(dir: string, value: RepoIdentity | null, gitDirMtime: number): void {
+export async function findGitMarker(cwd: string): Promise<string | null> {
+  let dir = resolve(cwd)
+  for (;;) {
+    const marker = join(dir, '.git')
+    if (await stat(marker).then(() => true, () => false)) return marker
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+export function forgetRepo(cwd: string): void {
+  repoCache.delete(resolve(cwd))
+}
+
+function cacheRepo(dir: string, value: RepoIdentity | null, gitDirMtime: number, marker?: boolean): void {
   repoCache.delete(dir)
-  repoCache.set(dir, { at: Date.now(), value, gitDirMtime })
+  repoCache.set(dir, { at: Date.now(), value, gitDirMtime, marker })
   while (repoCache.size > REPO_CACHE_LIMIT) {
     const oldest = repoCache.keys().next().value
     if (oldest === undefined) break
@@ -196,7 +211,7 @@ export async function resolveRepo(cwd: string): Promise<RepoIdentity | null> {
         () => -1
       )
       if (mtime === cached.gitDirMtime) return cached.value
-    } else {
+    } else if (cached.marker !== false || !(await findGitMarker(dir))) {
       return null
     }
   }
@@ -207,7 +222,7 @@ export async function resolveRepo(cwd: string): Promise<RepoIdentity | null> {
     { allowFailure: true, timeout: 8000 }
   )
   if (!res.ok) {
-    cacheRepo(dir, null, -1)
+    cacheRepo(dir, null, -1, (await findGitMarker(dir)) !== null)
     return null
   }
   const lines = res.stdout.trim().split(/\r?\n/)

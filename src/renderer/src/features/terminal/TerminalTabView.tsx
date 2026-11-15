@@ -108,6 +108,7 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
 
   const latest = useRef({ owner, visible, active, view, text, onState, onBell, onFindRequest, adopt, tabKey, linkHint, onLink, checkFile, onAddSelection })
   latest.current = { owner, visible, active, view, text, onState, onBell, onFindRequest, adopt, tabKey, linkHint, onLink, checkFile, onAddSelection }
+  const exitedRef = useRef(false)
 
   const scheduleFit = useCallback((delay = 90): void => {
     clearTimeout(fitTimer.current)
@@ -132,7 +133,7 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       if (term.options.fontSize !== options.fontSize) term.options.fontSize = options.fontSize
       if (term.options.lineHeight !== options.lineHeight) term.options.lineHeight = options.lineHeight
       if (term.options.cursorStyle !== options.cursorStyle) term.options.cursorStyle = options.cursorStyle
-      if (term.options.cursorBlink !== options.cursorBlink) term.options.cursorBlink = options.cursorBlink
+      if (!exitedRef.current && term.options.cursorBlink !== options.cursorBlink) term.options.cursorBlink = options.cursorBlink
       if (term.options.scrollback !== options.scrollback) term.options.scrollback = options.scrollback
     },
     []
@@ -262,10 +263,29 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       })
       controller.setSink({
         reset: () => term.reset(),
-        write: (data) => term.write(data)
+        write: (data) => {
+          term.write(data)
+          if (exitedRef.current) term.write('\x1b[?25l')
+        }
       })
       sessionRef.current = controller
-      const unsubscribe = controller.subscribe((next) => latest.current.onState(latest.current.tabKey, next))
+      const unsubscribe = controller.subscribe((next) => {
+        const exited = next.phase === 'exited'
+        if (exited !== exitedRef.current) {
+          exitedRef.current = exited
+          if (exited) {
+            term.options.cursorBlink = false
+            term.options.cursorInactiveStyle = 'none'
+            term.write('\x1b[?25l')
+          } else {
+            const options = terminalXtermOptions(latest.current.view)
+            term.options.cursorBlink = options.cursorBlink
+            term.options.cursorInactiveStyle = options.cursorInactiveStyle ?? 'outline'
+            term.write('\x1b[?25h')
+          }
+        }
+        latest.current.onState(latest.current.tabKey, next)
+      })
       term.onData((data) => controller.input(data))
       term.onBell(() => latest.current.onBell(latest.current.tabKey))
       controller.setOwner(current.owner, current.visible)

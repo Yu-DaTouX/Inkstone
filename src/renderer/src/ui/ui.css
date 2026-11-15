@@ -157,7 +157,7 @@
     border-color: var(--btn-primary-hover);
   }
   .ui-btn--danger[data-pressed] {
-    background: var(--fail-bg);
+    background: linear-gradient(var(--fail-bg), var(--fail-bg)), var(--surface);
   }
   .ui-btn[data-disabled] {
     opacity: 0.4;
@@ -237,7 +237,7 @@
   }
   @media (hover: hover) {
     .ui-btn--secondary:hover:not([data-disabled]):not([data-pending]) {
-      background: var(--hover);
+      background: linear-gradient(var(--hover), var(--hover)), var(--surface);
     }
     .ui-btn--primary:hover:not([data-disabled]):not([data-pending]) {
       background: var(--btn-primary-hover);
@@ -255,7 +255,7 @@
       border-color: var(--line2);
     }
     .ui-btn--danger:hover:not([data-disabled]):not([data-pending]) {
-      background: var(--fail-bg);
+      background: linear-gradient(var(--fail-bg), var(--fail-bg)), var(--surface);
     }
     .ui-btn--plain:hover:not([data-disabled]):not([data-pending]) {
       color: var(--fg);
@@ -323,6 +323,9 @@
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[data-pressed]:not([data-disabled]):not([data-pending]) {
     background: var(--press);
     color: var(--fg);
+  }
+  .ui-btn.ui-btn--secondary[data-pressed]:not([data-disabled]):not([data-pending]) {
+    background: linear-gradient(var(--press), var(--press)), var(--surface);
   }
 
   .ui-field {
@@ -683,6 +686,11 @@
       background: var(--surface-3);
     }
   }
+  .ui-float--solid {
+    background: var(--surface-3);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   .ui-tip-surface {
     border-radius: var(--r-sm);
     background: var(--tip);
@@ -950,6 +958,9 @@
     min-height: 0;
     padding: var(--s-24);
     outline: none;
+  }
+  .ui-dialog--bare {
+    padding: 0;
   }
   .ui-dialog__head {
     display: flex;

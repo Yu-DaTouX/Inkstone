@@ -12,6 +12,7 @@ export interface SyncFacts {
   behind: number
   hasRemote: boolean
   hasMessage: boolean
+  conflicted?: number
 }
 
 export type PrimaryKind = 'commit' | 'push' | 'publish' | 'up-to-date' | 'behind'
@@ -25,6 +26,7 @@ export type DisabledReason =
   | 'unborn'
   | 'diverged'
   | 'behind'
+  | 'conflict'
 
 export interface PrimaryAction {
   kind: PrimaryKind
@@ -34,6 +36,7 @@ export interface PrimaryAction {
 }
 
 export function commitPushReason(facts: SyncFacts): DisabledReason | null {
+  if (facts.conflicted) return 'conflict'
   if (facts.stagedCount === 0) return 'nothing-staged'
   if (!facts.hasMessage) return 'need-message'
   if (!facts.hasRemote) return 'no-remote'
@@ -50,6 +53,7 @@ export function primaryAction(facts: SyncFacts): PrimaryAction {
     commitAndPush: pushReason === null,
     commitPushReason: pushReason
   })
+  if (facts.conflicted) return result('commit', 'conflict')
   if (facts.stagedCount > 0) return result('commit', facts.hasMessage ? null : 'need-message')
   const dirty = facts.changedCount > 0
   const idle = (reason: DisabledReason): PrimaryAction => (dirty ? result('commit', 'nothing-staged') : result('up-to-date', reason))
@@ -251,9 +255,13 @@ function flag(char: string | undefined): boolean {
   return !!char && char !== '.' && char !== ' ' && char !== '?' && char !== '!'
 }
 
+export function isUnmerged(item: Pick<StageFacts, 'status' | 'untracked'>): boolean {
+  return !item.untracked && (/U/.test(item.status) || item.status === 'AA' || item.status === 'DD')
+}
+
 export function stageState(item: StageFacts): { staged: boolean; unstaged: boolean } {
   if (item.untracked) return { staged: false, unstaged: true }
-  const unmerged = /U/.test(item.status) || item.status === 'AA' || item.status === 'DD'
+  const unmerged = isUnmerged(item)
   const staged = item.staged ?? (unmerged || flag(item.status[0]))
   const unstaged = item.unstaged ?? (unmerged || flag(item.status[1]))
   return { staged, unstaged: unstaged || (!staged && !unstaged) }

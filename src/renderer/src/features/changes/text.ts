@@ -51,6 +51,7 @@ export interface ChangesText {
   layoutSplit: string
   splitNeedsWidth: string
   largeDiffBanner: string
+  largeDiffSome: (count: number) => string
   retry: string
   fileRenamed: (path: string) => string
   binaryGroup: (count: number) => string
@@ -111,6 +112,7 @@ export function changesText(lang: string): ChangesText {
       layoutSplit: 'Side by side',
       splitNeedsWidth: 'Needs a wider pane',
       largeDiffBanner: 'Files are collapsed for large diffs. Select a file to expand it.',
+      largeDiffSome: (count) => `Large diff: only ${count} ${count === 1 ? 'file is' : 'files are'} expanded, the rest are collapsed. Select a file to expand it.`,
       retry: 'Retry',
       fileRenamed: (path) => `Renamed from ${path}`,
       binaryGroup: (count) => `${count} binary ${count === 1 ? 'file' : 'files'}`
@@ -169,6 +171,7 @@ export function changesText(lang: string): ChangesText {
     layoutSplit: '并排',
     splitNeedsWidth: '面板更宽才能并排',
     largeDiffBanner: '改动较大，文件已全部折叠。选择文件展开查看。',
+    largeDiffSome: (count) => `改动较大，只展开了 ${count} 个文件，其余已折叠。选择文件展开查看。`,
     retry: '重试',
     fileRenamed: (path) => `重命名自 ${path}`,
     binaryGroup: (count) => `${count} 个二进制文件`

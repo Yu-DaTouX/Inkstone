@@ -548,9 +548,9 @@ function QuotaMain({ window, stale, now, plan, rail }: { window: QuotaWindow; st
   const awaiting = windowAwaitingReset(window, now)
   const tone = quotaWindowTone(window, stale, now)
   const used = Math.round(Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
-  const pace = stale || awaiting ? null : quotaPace(window, now)
+  const pace = stale || awaiting || tone === 'fail' ? null : quotaPace(window, now)
   const reset = quotaResetLine(t, window, now)
-  const forecast = stale || awaiting ? null : quotaForecastLine(t, window, now)
+  const forecast = stale || awaiting || used >= 100 || window.exceeded ? null : quotaForecastLine(t, window, now)
   const exhaust = forecast?.kind === 'exhaust' ? forecast : null
   const steady = forecast?.kind === 'steady' ? forecast : null
   const elapsedPct = pace ? Math.min(99, Math.max(1, 100 - pace.timeLeftPct)) : null

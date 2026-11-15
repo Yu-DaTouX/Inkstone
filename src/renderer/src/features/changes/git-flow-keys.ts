@@ -17,5 +17,6 @@ export const REASON_KEY: Record<DisabledReason, MessageKey> = {
   detached: 'gitflow.reason.detached',
   unborn: 'gitflow.reason.unborn',
   diverged: 'gitflow.reason.diverged',
-  behind: 'gitflow.reason.behind'
+  behind: 'gitflow.reason.behind',
+  conflict: 'gitflow.failHint.conflict'
 }

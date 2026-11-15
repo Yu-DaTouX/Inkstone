@@ -8,18 +8,20 @@ import { createSandbox, sandboxEnv, writeQuotaFixture } from './lib/sandbox.mjs'
 import { importUserData } from './lib/user-data.mjs'
 import { demoEnv, initializeDemo, prepareDemo } from './lib/demo.mjs'
 import { applyNarrowPanels } from './lib/narrow-panels.mjs'
+import { applyUserUi, composeComparison, listFrictionShots, measureUi, openFrictionSession, pickFrictionShot, readUserUi } from './lib/user-ui.mjs'
 import { initializeCards, prepareCards } from './lib/card-gallery.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
 import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
 
 const scenariosDir = join(debugDir, 'scenarios')
-const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep', 'user-days'])
+const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep', 'user-days', 'friction'])
 
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
 隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
-  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--no-quota] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N] [--default-widths]
+  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--no-quota] [--samples 1,2|all] [--user-data [--user-days 7]] [--user-ui] [--port N] [--default-widths]
       起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束；左栏、右栏、会话栏默认都用最窄宽度
+      --user-ui   界面镜像用户窗口：读用户 localStorage 副本（只取 yan: yan. inkstone. 开头的偏好，不含草稿），窗口最大化，栏宽按用户的，不套最窄宽度
       --dev       用 electron-vite dev（渲染端热更新），默认跑 out/ 构建版
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
@@ -36,11 +38,13 @@ const HELP = `砚调试工具：npm run debug -- <命令> [参数]
   ps                   看当前实例
   eval <表达式>        在当前实例渲染端求值；s 是 store 状态，如 eval "s.messages.length"
   shot [名字]          当前实例截图，存到它的运行目录
+  ui-compare [--friction 记录目录名]  当前实例切到摩擦记录里的会话并截图，与用户窗口截图（friction/*/shot.png）拼成对比图
   down                 结束当前实例（连同子进程）
 
 场景（自动起隔离实例 + 假模型，跑完自动关）
   scenario                           列出场景
-  scenario <名字> [--repeat N] [--build] [--dev]
+  scenario <名字> [--repeat N] [--build] [--dev] [--user-data] [--user-ui] [--quota]
+      --quota  同 up，给假模型配演示额度卡；场景可改写 box.quotaFixture 换额度状态
       结果写到 debug/runs/<时间>-<名字>/report.json，失败时退出码非 0
 
 界面审查（真实数据副本 + 假模型，跑任意脚本，跑完自动关）
@@ -82,7 +86,7 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   if (flags['user-data']) console.log('导入真实数据副本：' + JSON.stringify(importUserData(box, { days: flags['user-days'] ? Number(flags['user-days']) : 7 })))
   if (flags.demo) prepareDemo(box)
   if (flags.cards) prepareCards(box)
-  if (fake && label.startsWith('up') && !flags['no-quota']) writeQuotaFixture(box, runDir)
+  if (fake && (label.startsWith('up') || flags.quota) && !flags['no-quota']) writeQuotaFixture(box, runDir)
   const cdpPort = flags.port ? Number(flags.port) : await freePort()
   const app = launchApp({ ...sandboxEnv(box, { fake: !!fake, cdpPort, probe }), ...demoEnv(box) }, { dev: !!flags.dev })
   if (box.cards) {
@@ -126,7 +130,14 @@ async function cmdUp(flags) {
   if (current) throw new Error(`已有实例在跑（pid ${current.pid}，${current.runDir}），先 down`)
   const samples = samplePaths(flags.samples)
   const instance = await startInstance({ label: flags.demo ? `up-demo-${Date.now()}` : flags.cards ? 'up-cards' : flags.dev ? 'up-dev' : 'up', flags, samples })
-  if (!flags['default-widths']) {
+  if (flags['user-ui']) {
+    const cdp = await connectCdp(instance.cdpPort, { shotDir: instance.runDir })
+    try {
+      await waitStore(cdp)
+      const result = await applyUserUi(cdp, storeHelpers(cdp).until, readUserUi({ box: instance.box }))
+      console.log('界面镜像用户窗口 ' + JSON.stringify(result))
+    } finally { cdp.close() }
+  } else if (!flags['default-widths']) {
     const cdp = await connectCdp(instance.cdpPort, { shotDir: instance.runDir })
     try {
       await waitStore(cdp)
@@ -159,6 +170,23 @@ async function cmdEval(expr) {
   console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 2))
 }
 
+async function cmdUiCompare(flags) {
+  return withCurrentCdp(async (cdp, current) => {
+    const { until } = storeHelpers(cdp)
+    const viewport = await cdp.evaluate('[innerWidth, innerHeight]')
+    const friction = typeof flags.friction === 'string' ? listFrictionShots().find((item) => item.name === flags.friction) : pickFrictionShot(viewport)
+    if (!friction) throw new Error('没有可对比的摩擦记录截图')
+    const opened = await openFrictionSession(cdp, until, friction.sessionId)
+    const stamp = Date.now()
+    const instanceShot = await cdp.shot(`ui-compare-${stamp}-instance`)
+    const out = join(current.runDir, `ui-compare-${stamp}.png`)
+    await composeComparison(cdp, { userShot: friction.shot, instanceShot, out })
+    const measured = await measureUi(cdp)
+    writeFileSync(join(current.runDir, `ui-compare-${stamp}.json`), JSON.stringify({ friction, opened, measured }, null, 2))
+    return { out, friction: friction.name, frictionViewport: friction.viewport, opened, measured }
+  })
+}
+
 function cmdDown() {
   const current = readCurrent()
   if (!current) { console.log('没有正在运行的实例'); return }
@@ -175,13 +203,15 @@ async function runScenarioOnce(name, flags) {
   const need = mod.meta?.samples ?? 0
   const samples = need ? samplePaths('all').slice(0, need) : []
   if (samples.length < need) throw new Error(`场景 ${name} 需要 ${need} 个大会话样本：先 npm run debug -- samples pick`)
-  const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false, demo: !!flags.demo || !!mod.meta?.demo, anthropic: !!mod.meta?.anthropic }, samples })
+  const userUi = !!flags['user-ui'] || !!mod.meta?.userUi
+  const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false, demo: !!flags.demo || !!mod.meta?.demo, anthropic: !!mod.meta?.anthropic, 'user-data': !!flags['user-data'] || !!mod.meta?.userData }, samples })
   const observation = mod.meta?.observation === true
   const report = { scenario: name, observation, startedAt: new Date().toISOString(), checks: [], timings: {}, log: [] }
   let cdp
   try {
     cdp = await connectCdp(instance.cdpPort, { shotDir: instance.runDir })
     await waitStore(cdp)
+    if (userUi) report.userUi = await applyUserUi(cdp, storeHelpers(cdp).until, readUserUi({ box: instance.box }))
     await mod.default(scenarioContext({ cdp, fake: instance.fake, box: instance.box, runDir: instance.runDir, report }))
     const errors = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown' || (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error'))
     report.consoleErrors = errors.map((event) => (event.params.exceptionDetails?.exception?.description ?? event.params.args?.map((arg) => arg.value ?? arg.description).join(' ') ?? '').slice(0, 300))
@@ -267,6 +297,7 @@ try {
   else if (command === 'eval') await cmdEval(rest.join(' '))
   else if (command === 'shot') console.log(await withCurrentCdp((cdp) => cdp.shot(rest[0] ?? `shot-${Date.now()}`)))
   else if (command === 'down') cmdDown()
+  else if (command === 'ui-compare') console.log(JSON.stringify(await cmdUiCompare(flags), null, 2))
   else if (command === 'scenario') ok = await cmdScenario(rest[0], flags)
   else if (command === 'fake') await cmdFake(flags)
   else if (command === 'samples') cmdSamples(rest[0], flags)

@@ -1,0 +1,1957 @@
+import { createServer } from 'node:http'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { shotKit } from '../lib/ui-shots.mjs'
+import { listFrictionShots, measureUi, openFrictionSession } from '../lib/user-ui.mjs'
+
+export const meta = {
+  userData: true,
+  userUi: true,
+  observation: true,
+  description: 'UI 打磨截图：镜像用户界面（会话副本、用户偏好与栏宽、窗口最大化），按 UI_POLISH_TARGETS（默认 browser）逐项截深色+背景、浅色、窄窗、悬停、键盘焦点与空/加载/错误/内容多；输出到 UI_POLISH_OUT 或运行目录 shots/'
+}
+
+const PAGES = [
+  ['控制台 · 构建日志', '#0f172a', '#e2e8f0'],
+  ['Inkstone 文档 - 快速开始', '#fafaf9', '#1c1917'],
+  ['A very long English page title that should be truncated nicely in the tab column and tab row', '#f0f9ff', '#0c4a6e'],
+  ['本地预览 · 首页', '#fff7ed', '#7c2d12'],
+  ['GitHub · Pull request #128 修复额度页在窄窗下的换行问题', '#0d1117', '#c9d1d9'],
+  ['Storybook', '#ffffff', '#111827'],
+  ['设计稿评审 · 设置页第三版（含深浅主题对照与键盘焦点说明）', '#f5f3ff', '#3b0764'],
+  ['API Reference', '#ecfeff', '#164e63'],
+  ['监控面板', '#111111', '#a3e635'],
+  ['表单测试', '#fefce8', '#713f12'],
+  ['', '#ffffff', '#111111'],
+  ['搜索结果：electron webcontentsview bounds', '#f8fafc', '#0f172a']
+]
+
+function pageServer(title, bg, fg) {
+  return createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    const rows = Array.from({ length: 14 }, (_, i) => `<p style="margin:0 0 12px;opacity:${1 - i * 0.04}">第 ${i + 1} 段：${title || '无标题页面'} 的示例正文，用来填满页面看滚动与排版。</p>`).join('')
+    res.end(`<!doctype html><html><head><meta charset="utf-8">${title ? `<title>${title}</title>` : ''}</head><body style="margin:0;font:15px/1.6 system-ui,sans-serif;background:${bg};color:${fg}"><header style="padding:20px 28px;border-bottom:1px solid rgba(127,127,127,.25);font-size:22px;font-weight:600">${title || '（无标题）'}</header><main style="padding:20px 28px;max-width:720px">${rows}</main></body></html>`)
+  })
+}
+
+const listen = (server) => new Promise((done) => server.listen(0, '127.0.0.1', () => done(server.address().port)))
+
+async function browserTarget({ kit, ev, until, sleep, log, check, report }) {
+  const servers = []
+  const urls = []
+  for (const [title, bg, fg] of PAGES) {
+    const server = pageServer(title, bg, fg)
+    servers.push(server)
+    urls.push(`http://127.0.0.1:${await listen(server)}/`)
+  }
+  const slow = createServer((_req, res) => { setTimeout(() => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<title>slow</title>slow') }, 20000) })
+  servers.push(slow)
+  const slowUrl = `http://127.0.0.1:${await listen(slow)}/`
+  const probe = createServer()
+  const deadPort = await listen(probe)
+  await new Promise((done) => probe.close(done))
+  const deadUrl = `http://127.0.0.1:${deadPort}/`
+  const S = kit
+  const variants = async (name, { light = true, narrow = true } = {}) => {
+    await S.shot(`${name}-dark`)
+    if (light) { await S.theme('light'); await S.shot(`${name}-light`); await S.theme('dark') }
+    if (narrow) { await S.narrow(); await S.shot(`${name}-narrow`); await S.clip(`${name}-narrow-toolbar`, '.v3-browser__toolbar', 0); await S.wide() }
+  }
+  const kbd = async (selector, name) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName`)
+    await S.shot(name)
+    return active
+  }
+  const serversReady = (timeout = 15000) => until(`!!document.querySelector('[data-testid="browser-local-servers"][data-ready="1"]')`, timeout, 100)
+  const iconServers = (timeout = 15000) => until(`!!document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers"][data-icon-only="1"]')`, timeout, 100)
+  const settleServers = async () => { await serversReady(); await sleep(600) }
+  const kbdLight = async (selector, name) => { await S.theme('light'); const active = await kbd(selector, name); await ev('document.activeElement?.blur?.()'); await S.theme('dark'); return active }
+  try {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'browser', kind: 'browser' }); rp.setOpen(true); return true })()`)
+    await until(`!!document.querySelector('[data-testid="browser-pane-not-open"], [data-testid="browser-pane"]')`, 15000)
+    check('浏览器：空状态出现', await ev(`!!document.querySelector('[data-testid="browser-pane-not-open"]')`))
+    const openTop = async () => ev(`Math.round(document.querySelector('[data-testid="browser-pane-open"]')?.getBoundingClientRect().top ?? -1)`)
+    const topBefore = await openTop()
+    await settleServers()
+    const topAfter = await openTop()
+    report.gateJump = { before: topBefore, after: topAfter }
+    check('浏览器：本机服务加载前后「打开浏览器」按钮不动', Math.abs(topAfter - topBefore) <= 1, report.gateJump)
+    await variants('browser-01-empty')
+    await settleServers()
+    report.hover.push(['browser-01-empty-hover-open', await S.hover('[data-testid="browser-pane-open"]', 900)])
+    await S.shot('browser-01-empty-hover-open')
+    await S.clip('browser-01-empty-hover-open-zoom', '.v3-browser__gate-main', 12)
+    await S.unhover()
+    report.focus.push(['browser-01-empty-focus-open', await kbd('[data-testid="browser-pane-open"]', 'browser-01-empty-focus-open')])
+    await ev('document.activeElement?.blur?.()')
+    report.focus.push(['browser-01-empty-focus-open-light', await kbdLight('[data-testid="browser-pane-open"]', 'browser-01-empty-focus-open-light')])
+    const importBox = await ev(`(() => { const el = document.querySelector('.v3-browser__gate-main'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height } })()`)
+    const importPause = await S.pauseAt('window.yan.browser.loginImportStatus(importId)', () => S.setHookState('[data-testid="browser-pane-not-open"]', [false, null, 'waiting', null], 1, 'ui-polish-import'))
+    report.importWaiting = { paused: importPause?.paused ?? false, box: importBox }
+    if (importPause?.paused) {
+      await S.shotPaused('browser-01-import-waiting-dark')
+      await importPause.resume()
+    } else {
+      await importPause?.resume()
+    }
+    check('浏览器：导入中状态提示拍到', report.importWaiting.paused, report.importWaiting)
+    await sleep(600)
+
+    await S.click('[data-testid="browser-pane-open"]', 1500)
+    await until(`!!document.querySelector('[data-testid="browser-start-page"]')`, 15000)
+    await sleep(800)
+    await variants('browser-02-start')
+    await S.click('[data-testid="browser-start-engine"]', 700)
+    await S.shot('browser-02-start-engine-menu-dark')
+    await S.key('Escape')
+    report.focus.push(['browser-02-start-focus-engine', await kbd('[data-testid="browser-start-engine"]', 'browser-02-start-focus-engine')])
+
+    void ev(`window.yan.browser.navigate(${JSON.stringify(slowUrl)})`)
+    report.loadingSeen = await until('s.browserState.loading === true', 8000, 20)
+    await sleep(300)
+    await S.shot('browser-03-loading-dark')
+    await S.clip('browser-03-loading-toolbar', '.v3-browser__toolbar')
+    await S.theme('light')
+    await S.shot('browser-03-loading-light')
+    await S.theme('dark')
+    report.stop = { button: await ev(`(() => { const el = document.querySelector('[data-testid="browser-pane-stop"]'); return el ? el.getAttribute('aria-label') : null })()`) }
+    check('浏览器：加载中刷新按钮换成停止', report.stop.button === '停止' || report.stop.button === 'Stop', report.stop)
+    report.hover.push(['browser-03-loading-hover-stop', await S.hover('[data-testid="browser-pane-stop"]', 1500)])
+    await S.shot('browser-03-loading-hover-stop')
+    await S.clip('browser-03-loading-hover-stop-zoom', '.v3-browser__main', 0)
+    report.focus.push(['browser-03-loading-focus-stop', await kbd('[data-testid="browser-pane-stop"]', 'browser-03-loading-focus-stop')])
+    await S.click('[data-testid="browser-pane-stop"]', 200)
+    report.stop.stopped = await until('s.browserState.loading === false', 5000, 20)
+    report.stop.reloadBack = await until(`!!document.querySelector('[data-testid="browser-pane-reload"]')`, 3000, 20)
+    report.stop.focusKept = await ev(`document.activeElement?.getAttribute('data-testid') ?? null`)
+    check('浏览器：点停止后加载结束、按钮回到刷新', report.stop.stopped && report.stop.reloadBack, report.stop)
+    await sleep(500)
+    await S.unhover()
+    await S.clip('browser-03-stopped-toolbar', '.v3-browser__toolbar')
+    await ev('document.activeElement?.blur?.()')
+
+    await ev(`window.yan.browser.navigate(${JSON.stringify(deadUrl)})`)
+    const proxyFailed = await until('!!s.browserState.loadError', 15000)
+    await sleep(800)
+    report.proxyFailure = await ev(`({ error: window.__yanStore.getState().browserState.loadError ?? null, title: document.querySelector('[data-testid="browser-pane-error-title"]')?.textContent ?? null, nativeVisible: window.__yanStore.getState().browserNativeVisible })`)
+    check('浏览器：死端口显示砚的错误提示', proxyFailed && /端口没有服务在监听|nothing is listening/.test(report.proxyFailure.title ?? ''), report.proxyFailure)
+    check('浏览器：加载失败时原生网页层隐藏', report.proxyFailure.nativeVisible === false, report.proxyFailure)
+    await variants('browser-04-proxy-dead-port')
+    await S.clip('browser-04-proxy-dead-port-status', '.v3-browser__main', 0)
+    await ev(`window.yan.browser.navigate('https://example.invalid/')`)
+    const failed = await until('s.browserState.loadError?.url?.startsWith("https://example.invalid")', 15000)
+    check('浏览器：错误状态出现', failed)
+    await sleep(800)
+    await variants('browser-04-error')
+    await S.clip('browser-04-error-status', '.v3-browser__main', 0)
+    report.hover.push(['browser-04-error-hover-retry', await S.hover('[data-testid="browser-pane-retry"]', 900)])
+    await S.shot('browser-04-error-hover-retry')
+    await S.unhover()
+    report.focus.push(['browser-04-error-focus-retry', await kbd('[data-testid="browser-pane-retry"]', 'browser-04-error-focus-retry')])
+    await ev('document.activeElement?.blur?.()')
+
+    await ev(`window.yan.browser.navigate(${JSON.stringify(urls[0])})`)
+    await until('!s.browserState.loading && !s.browserState.loadError', 15000)
+    for (const url of urls.slice(1)) {
+      await ev(`window.yan.browser.newTab(${JSON.stringify(url)})`)
+      await sleep(250)
+    }
+    await until(`(s.browserState.tabs ?? []).length >= ${urls.length}`, 20000)
+    for (let i = 0; i < 12; i++) {
+      const server = pageServer(`额外服务 ${i + 1}`, '#ffffff', '#111111')
+      servers.push(server)
+      await listen(server)
+    }
+    await iconServers()
+    await until(`document.querySelectorAll('.v3-browser__tabcol [data-testid="browser-local-servers"] li').length >= 20`, 15000, 200)
+    await sleep(1500)
+    await S.shot('browser-05-tabs-collapsed-dark')
+    await S.theme('light')
+    await S.shot('browser-05-tabs-collapsed-light')
+    await S.theme('dark')
+    await S.narrow()
+    report.narrowServers = await iconServers()
+    await sleep(800)
+    await S.shot('browser-05-tabs-collapsed-narrow')
+    await S.clip('browser-05-tabs-collapsed-narrow-toolbar', '.v3-browser__toolbar', 0)
+    await S.wide()
+    await iconServers()
+    await S.clip('browser-05-tabs-collapsed-column', '.v3-browser__tabcol', 0)
+    report.collapsedServers = await ev(`(() => { const list = document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers-list"]'); return list ? { more: list.dataset.more ?? null, rows: list.children.length, scroll: list.scrollHeight, client: list.clientHeight } : null })()`)
+    check('浏览器：收起态服务列表可滚动且有渐隐', report.collapsedServers?.more === '1', report.collapsedServers)
+    await S.clip('browser-05-tabs-collapsed-servers', '.v3-browser__tabcol [data-testid="browser-local-servers"]', 6)
+    await ev(`(() => { const list = document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers-list"]'); if (list) list.scrollTop = Math.round(list.scrollHeight / 2 - list.clientHeight / 2); return true })()`)
+    await sleep(400)
+    report.collapsedServers.midMore = await ev(`document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers-list"]')?.dataset.more ?? null`)
+    await S.clip('browser-05-tabs-collapsed-servers-scrolled', '.v3-browser__tabcol [data-testid="browser-local-servers"]', 6)
+    await ev(`(() => { const list = document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers-list"]'); if (list) list.scrollTop = list.scrollHeight; return true })()`)
+    await sleep(400)
+    report.collapsedServers.endMore = await ev(`document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers-list"]')?.dataset.more ?? null`)
+    await S.clip('browser-05-tabs-collapsed-servers-end', '.v3-browser__tabcol [data-testid="browser-local-servers"]', 6)
+    await ev(`(() => { const list = document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers-list"]'); if (list) list.scrollTop = 0; return true })()`)
+    report.hover.push(['browser-05-tabs-peek', await S.hover('.v3-browser__tabcol [data-testid^="browser-pane-tab-select-"]', 1200)])
+    await S.shot('browser-05-tabs-peek-dark')
+    await S.unhover()
+    await sleep(600)
+    report.panelWidth = { user: await ev('window.__yanRightPanel.getState().width') }
+    if (report.panelWidth.user < WIDE_PANEL) {
+      await ev(`window.__yanRightPanel.getState().setWidth(${WIDE_PANEL})`)
+      await sleep(1200)
+      report.panelWidth.wide = await ev('window.__yanRightPanel.getState().width')
+    }
+    const pinned = await ev(`document.querySelector('[data-testid="browser-pane-tabs-toggle"]')?.getAttribute('aria-pressed')`)
+    if (pinned !== 'true') await S.click('[data-testid="browser-pane-tabs-toggle"]', 900)
+    await S.unhover()
+    await settleServers()
+    await variants('browser-06-tabs-pinned')
+    await settleServers()
+    await S.clip('browser-06-tabs-pinned-column', '.v3-browser__tabcol', 0)
+    report.hover.push(['browser-06-tabs-pinned-hover-row', await S.hover('.v3-browser__tablist [data-testid^="browser-pane-tab-select-"]', 700, 2)])
+    await S.shot('browser-06-tabs-pinned-hover-row')
+    await S.clip('browser-06-tabs-pinned-hover-row-zoom', '.v3-browser__tablist', 4)
+    await S.unhover()
+    report.hover.push(['browser-06-hover-foot-import', await S.hover('.v3-browser__tabcol-foot [data-testid="browser-pane-import"]', 1500)])
+    await S.shot('browser-06-hover-foot-import')
+    await S.unhover()
+    report.focus.push(['browser-06-focus-tab', await kbd('.v3-browser__tablist li:nth-child(2) [data-testid^="browser-pane-tab-select-"]', 'browser-06-tabs-pinned-focus-row')])
+    report.focus.push(['browser-06-focus-reload', await kbd('[data-testid="browser-pane-reload"]', 'browser-06-focus-reload')])
+    await ev('document.activeElement?.blur?.()')
+    report.focus.push(['browser-06-focus-row-light', await kbdLight('.v3-browser__tablist li:nth-child(2) [data-testid^="browser-pane-tab-select-"]', 'browser-06-tabs-pinned-focus-row-light')])
+    report.focus.push(['browser-06-focus-reload-light', await kbdLight('[data-testid="browser-pane-reload"]', 'browser-06-focus-reload-light')])
+    report.hover.push(['browser-06-hover-reload', await S.hover('[data-testid="browser-pane-reload"]', 1500)])
+    await S.shot('browser-06-hover-reload')
+    await S.clip('browser-06-hover-reload-zoom', '.v3-browser__toolbar', 0)
+    await S.unhover()
+    report.hover.push(['browser-06-hover-viewport', await S.hover('[data-testid="browser-pane-viewport-menu"]', 1500)])
+    await S.shot('browser-06-hover-viewport-tip')
+    await S.unhover()
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 800)
+    report.contrast = { viewportMenuDark: await S.textAudit('.ui-popover') }
+    await S.shot('browser-07-viewport-menu-dark')
+    await S.clip('browser-07-viewport-menu-dark-zoom', '.ui-popover', 6)
+    await S.key('Escape')
+    await S.theme('light')
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 800)
+    report.contrast.viewportMenuLight = await S.textAudit('.ui-popover')
+    await S.shot('browser-07-viewport-menu-light')
+    await S.key('Escape')
+    await S.theme('dark')
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 600)
+    await S.click('[data-testid="browser-pane-layout-horizontal"]', 1200)
+    await variants('browser-08-tabs-horizontal')
+    await S.clip('browser-08-tabs-horizontal-row', '.v3-browser__tabrow', 0)
+    await ev(`(() => { const strip = document.querySelector('[data-testid="browser-pane-htabs"]'); if (!strip) return false; const tabs = [...strip.querySelectorAll('[role="tab"]')]; const active = tabs.findIndex((n) => n.getAttribute('aria-selected') === 'true'); const pick = tabs[active > 0 ? active - 1 : active + 1]; pick?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); return !!pick })()`)
+    await sleep(500)
+    const visibleTab = await ev(`(() => { const strip = document.querySelector('[data-testid="browser-pane-htabs"]'); if (!strip) return null; const box = strip.getBoundingClientRect(); const tabs = [...strip.querySelectorAll('[role="tab"]')].filter((n) => n.getBoundingClientRect().width > 0); const index = tabs.findIndex((n) => { const r = n.getBoundingClientRect(); return r.left >= box.left && r.right <= box.right && n.getAttribute('aria-selected') !== 'true' }); return index < 0 ? null : { index, label: tabs[index].textContent.slice(0, 30) } })()`)
+    report.horizontalHover = visibleTab
+    check('浏览器：横排悬停目标在可视区内', !!visibleTab, visibleTab)
+    report.hover.push(['browser-08-tabs-horizontal-hover', await S.hover('[data-testid="browser-pane-htabs"] [role="tab"]', 1200, visibleTab?.index ?? 0)])
+    await S.shot('browser-08-tabs-horizontal-hover')
+    await S.clip('browser-08-tabs-horizontal-hover-zoom', '.v3-browser__tabrow', 0)
+    await S.unhover()
+    await sleep(300)
+    await S.hover('[data-testid="browser-pane-htabs"] [role="tab"]', 250, visibleTab?.index ?? 0)
+    await S.clip('browser-08-tabs-horizontal-hover-near', '.v3-browser__tabrow', 0)
+    await S.unhover()
+    await S.click('[data-testid="browser-pane-servers-menu"]', 600)
+    await until(`!!document.querySelector('.v3-browser__servers-pop [data-testid="browser-local-servers"][data-ready="1"]')`, 15000, 100)
+    await sleep(600)
+    report.contrast.serversPopoverDark = await S.textAudit('.v3-browser__servers-pop')
+    await S.shot('browser-09-servers-popover-dark')
+    await S.clip('browser-09-servers-popover', '.v3-browser__servers-pop', 4)
+    await S.key('Escape')
+    await until(`!document.querySelector('.v3-browser__servers-pop')`, 5000, 50)
+    await sleep(400)
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 600)
+    if (!(await until(`!!document.querySelector('[data-testid="browser-pane-layout-vertical"]')`, 3000, 50))) {
+      await S.unhover()
+      await sleep(400)
+      await S.click('[data-testid="browser-pane-viewport-menu"]', 800)
+    }
+    await S.click('[data-testid="browser-pane-layout-vertical"]', 1000)
+    if (pinned !== 'true') await S.click('[data-testid="browser-pane-tabs-toggle"]', 600)
+    if (report.panelWidth.wide) {
+      await ev(`window.__yanRightPanel.getState().setWidth(${report.panelWidth.user})`)
+      await sleep(1200)
+    }
+    await ev(`window.yan.browser.setViewport('mobile')`)
+    await sleep(1500)
+    await S.shot('browser-10-viewport-mobile-dark')
+    await ev(`window.yan.browser.setViewport('responsive')`)
+    await sleep(800)
+    report.audit.browser = await S.audit('[data-testid="browser-pane"]')
+    report.fonts = await ev(`(() => { const f = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).fontFamily.slice(0, 80) : null }; return { address: f('[data-testid="browser-pane-address"]'), code: f('.v3-stream code, .v3-stream pre'), mono: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim().slice(0, 80), ui: getComputedStyle(document.body).fontFamily.slice(0, 60) } })()`)
+    report.missedTargets = S.missed
+  } finally {
+    for (const server of servers) try { server?.close() } catch {}
+  }
+}
+
+const WIDE_PANEL = 883
+
+const buttonState = (selector) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const cs = getComputedStyle(el); return { bg: cs.backgroundColor, image: cs.backgroundImage.slice(0, 120), hover: el.matches(':hover'), pressed: el.hasAttribute('data-pressed') } })()`
+
+const BEFORE_CSS = {
+  buttons: "@layer primitives { @media (hover: hover) { .ui-btn--secondary:hover:not([data-disabled]):not([data-pending]) { background: var(--hover); } } .ui-btn.ui-btn--secondary[data-pressed]:not([data-disabled]):not([data-pending]) { background: var(--press); } }",
+  rail: "@layer primitives { @media (hover: hover) { .ui-rail-row[data-action-reveal='hover'] .ui-rail-row__value { min-width: 0; } .ui-rail-row[data-action-reveal='hover']:not([data-icon-only='1']):is(:hover, :focus-within) .ui-btn.ui-rail-row__main { padding-inline-end: calc(var(--size-btn-sm) + var(--s-2)); } } }"
+}
+
+const injectBefore = (ev, name) => process.env.UI_POLISH_BEFORE === '1' ? ev(`(() => { const style = document.createElement('style'); style.dataset.uiPolishBefore = ${JSON.stringify(name)}; style.textContent = ${JSON.stringify(BEFORE_CSS[name])}; document.head.append(style); return true })()`) : null
+
+async function buttonsTarget({ kit: S, ev, sleep, check, report }) {
+  report.buttons = {}
+  await injectBefore(ev, 'buttons')
+  await ev('window.__yanStore.getState().openSettings()')
+  await sleep(1200)
+  for (const [nav, selector, name] of [['data', '[data-testid="v3-data-backup-verify"]', 'buttons-01-data-verify'], ['about', '[data-testid="v3-about-update-check"]', 'buttons-02-about-update']]) {
+    await ev(`document.querySelector('[data-testid="v3-settings-nav-${nav}"]')?.click()`)
+    await sleep(1200)
+    await ev(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: 'center' })`)
+    await sleep(500)
+    for (const theme of ['dark', 'light']) {
+      await S.theme(theme)
+      await S.unhover()
+      const rest = await ev(buttonState(selector))
+      await S.clip(`${name}-${theme}-rest`, selector, 16)
+      await S.hover(selector, 500)
+      const hover = await ev(buttonState(selector))
+      await S.clip(`${name}-${theme}-hover`, selector, 16)
+      const r = await ev(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })()`)
+      await kitPress(S, r, async () => {
+        report.buttons[`${name}-${theme}-pressed`] = await ev(buttonState(selector))
+        await S.clip(`${name}-${theme}-pressed`, selector, 16)
+      })
+      report.buttons[`${name}-${theme}`] = { rest, hover }
+      check(`次要按钮悬停叠在原底色上（${name} ${theme}）`, /gradient/.test(hover?.image ?? '') && hover?.bg === rest?.bg, { rest, hover })
+    }
+  }
+  await S.theme('dark')
+  await S.unhover()
+  await S.key('Escape')
+  await sleep(800)
+}
+
+async function kitPress(S, point, during) {
+  const cdpCall = S.cdpCall
+  await cdpCall('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
+  await cdpCall('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 })
+  await new Promise((done) => setTimeout(done, 250))
+  await during()
+  await cdpCall('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2, button: 'left', buttons: 1 })
+  await cdpCall('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 2, y: 2, button: 'left', clickCount: 1 })
+  await new Promise((done) => setTimeout(done, 300))
+}
+
+const rowBox = (selector) => `(() => { const row = document.querySelector(${JSON.stringify(selector)}); if (!row) return null; const label = row.querySelector('.ui-rail-row__label'); const main = row.querySelector('.ui-rail-row__main'); const action = row.querySelector('.ui-rail-row__action'); const value = row.querySelector('.ui-rail-row__value'); const w = (el) => el ? Math.round(el.getBoundingClientRect().width * 10) / 10 : null; const right = (el) => el ? Math.round(el.getBoundingClientRect().right * 10) / 10 : null; const left = (el) => el ? Math.round(el.getBoundingClientRect().left * 10) / 10 : null; return { label: w(label), labelRight: right(label), labelText: label?.textContent?.slice(0, 40) ?? null, clipped: label ? label.scrollWidth > label.clientWidth : null, padEnd: main ? getComputedStyle(main).paddingRight : null, actionLeft: left(action), value: w(value) } })()`
+
+async function railTarget({ kit: S, ev, cdp, sleep, until, check, report, newSession, turn, box }) {
+  report.rail = {}
+  await injectBefore(ev, 'rail')
+  const friction = listFrictionShots().find((item) => item.viewport && item.viewport.width >= 1600 && item.sessionId)
+  if (friction) await openFrictionSession(cdp, until, friction.sessionId)
+  const rows = [['branch', '.v3-sessionbar li:has([data-testid="wb-rail-branch"])', '[data-testid="wb-rail-branch"]']]
+  const hasBranch = await until(`!!document.querySelector('[data-testid="wb-rail-branch"]')`, 8000, 100)
+  if (!hasBranch) {
+    await newSession(box.project)
+    await until(`!!document.querySelector('[data-testid="wb-rail-branch"]')`, 8000, 100)
+  }
+  await sleep(800)
+  const shootRow = async (name, rowSel) => {
+    await S.unhover()
+    const rest = await ev(rowBox(rowSel))
+    await S.clip(`${name}-rest`, rowSel, 8)
+    await S.hover(rowSel, 700)
+    const hover = await ev(rowBox(rowSel))
+    await S.clip(`${name}-hover`, rowSel, 8)
+    await S.unhover()
+    report.rail[name] = { rest, hover }
+    const noOverlap = hover?.actionLeft == null || hover.labelRight == null || hover.labelRight <= hover.actionLeft + 0.5
+    check(`概览行悬停不再多截标题（${name}）`, !!rest && !!hover && Math.abs((rest.label ?? 0) - (hover.label ?? 0)) <= 0.5 && noOverlap, { rest, hover })
+  }
+  for (const [kind, rowSel] of rows) {
+    if (await ev(`!!document.querySelector(${JSON.stringify(rowSel)})`)) await shootRow(`rail-01-${kind}`, rowSel)
+  }
+  await S.clip('rail-01-overview', '.v3-sessionbar', 0)
+  const git = (args) => spawnSync('git', ['-c', 'user.name=ui-polish', '-c', 'user.email=ui-polish@example.invalid', ...args], { cwd: box.project, encoding: 'utf8' })
+  if (git(['rev-parse', '--is-inside-work-tree']).status !== 0) {
+    git(['init', '-b', 'feature/ui-polish-overview-branch-with-a-very-long-name'])
+    git(['add', '-A'])
+    git(['commit', '-m', 'fixture', '--allow-empty'])
+  }
+  await newSession(box.project)
+  await turn('WRITES 产出文件行')
+  const outputs = await until(`document.querySelectorAll('[data-testid="wb-rail-outputs"] li').length > 0`, 15000, 100)
+  check('概览：产出文件行出现', outputs)
+  await sleep(800)
+  if (outputs) {
+    await shootRow('rail-02-output', '[data-testid="wb-rail-outputs"] li')
+    await S.theme('light')
+    await S.hover('[data-testid="wb-rail-outputs"] li', 700)
+    await S.clip('rail-02-output-hover-light', '[data-testid="wb-rail-outputs"]', 8)
+    await S.unhover()
+    await S.theme('dark')
+  }
+  const branchNow = '.v3-sessionbar li:has([data-testid="wb-rail-branch"])'
+  if (await ev(`!!document.querySelector(${JSON.stringify(branchNow)})`)) await shootRow('rail-03-branch-project', branchNow)
+  await S.clip('rail-03-overview', '.v3-sessionbar', 0)
+}
+
+function makeFixtures(base) {
+  const empty = join(base, 'empty-folder')
+  const gone = join(base, 'gone-folder')
+  const many = join(base, 'many-files')
+  mkdirSync(empty, { recursive: true })
+  mkdirSync(join(gone, 'src'), { recursive: true })
+  writeFileSync(join(gone, 'README.md'), '# gone\n')
+  mkdirSync(many, { recursive: true })
+  for (let i = 0; i < 24; i++) mkdirSync(join(many, `module-${String(i).padStart(2, '0')}`), { recursive: true })
+  const kinds = ['csv', 'json', 'md', 'ts', 'png', 'log']
+  for (let i = 0; i < 2400; i++) writeFileSync(join(many, `record-${String(i).padStart(4, '0')}-${['导出', 'snapshot', 'a-rather-long-generated-file-name-for-truncation'][i % 3]}.${kinds[i % kinds.length]}`), '')
+  const partial = join(base, 'partial-folder')
+  mkdirSync(join(partial, 'locked-dir'), { recursive: true })
+  mkdirSync(join(partial, 'open-dir'), { recursive: true })
+  writeFileSync(join(partial, 'locked-dir', 'secret.txt'), 'x\n')
+  writeFileSync(join(partial, 'open-dir', 'notes.md'), '# notes\n')
+  writeFileSync(join(partial, 'README.md'), '# partial\n')
+  return { empty, gone, many, partial }
+}
+
+async function filesTarget({ kit: S, ev, sleep, until, check, log, report, newSession, runDir }) {
+  report.files = {}
+  const fx = makeFixtures(join(runDir, 'files-fixtures'))
+  const repo = process.cwd()
+  const openFiles = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'files', kind: 'files' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="v3-files"]')`, 15000, 100)
+  }
+  const panel = '[data-testid="rp-column-0"]'
+  const variants = async (name, { light = true, narrow = true } = {}) => {
+    await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await S.clip(`${name}-light`, panel, 0); await S.theme('dark') }
+    if (narrow) { await S.narrow(); await S.shot(`${name}-narrow`); await S.wide() }
+  }
+  const row = (path) => `[data-testid="v3-files-row-${path}"]`
+  const bringRow = async (path) => {
+    if (await ev(`(() => { const el = document.querySelector(${JSON.stringify(row(path))}); if (!el) return false; el.scrollIntoView({ block: 'nearest' }); return true })()`)) { await sleep(150); return true }
+    await ev(`(() => { const el = document.querySelector('[data-testid="v3-files-tree"]'); if (el) el.scrollTop = 0; return true })()`)
+    await sleep(150)
+    for (let i = 0; i < 40; i++) {
+      const found = await ev(`(() => { const el = document.querySelector(${JSON.stringify(row(path))}); if (!el) return false; el.scrollIntoView({ block: 'center' }); return true })()`)
+      if (found) { await sleep(200); return true }
+      await ev(`(() => { const el = document.querySelector('[data-testid="v3-files-tree"]'); if (el) el.scrollTop += Math.round(el.clientHeight * 0.7); return true })()`)
+      await sleep(150)
+    }
+    return false
+  }
+  const expand = async (path) => {
+    if (!(await bringRow(path))) return false
+    if (await ev(`document.querySelector(${JSON.stringify(row(path))})?.getAttribute('aria-expanded')`) === 'true') return true
+    await S.click(row(path), 300)
+    return until(`document.querySelector(${JSON.stringify(row(path))})?.getAttribute('aria-expanded') === 'true' && !document.querySelector('[data-testid="v3-files-state-${path}"]')`, 8000, 100)
+  }
+  const filter = '[data-testid="v3-files-search-input"] input'
+  const setQuery = async (text) => {
+    await ev(`(() => { const el = document.querySelector(${JSON.stringify(filter)}); if (!el) return false; el.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+    await sleep(200)
+    if (text) await S.typeText(text, 200)
+  }
+  const resultsDone = () => until(`!!document.querySelector('[data-testid="v3-files-search-results"]:not([aria-busy="true"]), [data-testid="v3-files-search-empty"], [data-testid="v3-files-search-hint"], [data-testid="v3-files-search-pattern"], [data-testid="v3-files-search-failed"]')`, 15000, 100)
+  const mouse = async (type, point, extra = {}) => S.cdpCall('Input.dispatchMouseEvent', { type, x: point.x, y: point.y, ...extra })
+  const center = (selector, index = 0) => ev(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((n) => n.getBoundingClientRect().width > 0)[${index}]; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+  const modClick = async (selector, modifiers) => {
+    const p = await center(selector)
+    if (!p) return false
+    await mouse('mouseMoved', p, { modifiers })
+    await mouse('mousePressed', p, { button: 'left', clickCount: 1, modifiers })
+    await mouse('mouseReleased', p, { button: 'left', clickCount: 1, modifiers })
+    await sleep(300)
+    return true
+  }
+  const rightClick = async (selector) => {
+    const p = await center(selector)
+    if (!p) return false
+    await mouse('mouseMoved', p)
+    await mouse('mousePressed', p, { button: 'right', clickCount: 1 })
+    await mouse('mouseReleased', p, { button: 'right', clickCount: 1 })
+    await sleep(700)
+    return true
+  }
+
+  await newSession(repo)
+  check('文件：面板打开', await openFiles())
+  await until(`document.querySelectorAll('[data-tree-path]').length > 10`, 15000, 100)
+  await sleep(800)
+  for (const path of ['src', 'src/renderer', 'src/renderer/src', 'src/renderer/src/features', 'src/renderer/src/features/files']) {
+    if (!(await expand(path))) log('展开失败', path)
+  }
+  await bringRow('src/renderer/src/features/files')
+  await ev(`(() => { const el = document.querySelector(${JSON.stringify(row('src/renderer/src/features/files'))}); const tree = document.querySelector('[data-testid="v3-files-tree"]'); if (el && tree) tree.scrollTop += el.getBoundingClientRect().top - tree.getBoundingClientRect().top - 120; return true })()`)
+  await sleep(800)
+  await variants('files-01-tree', { narrow: false })
+  report.audit.files = await S.audit('[data-testid="v3-files"]')
+  const fileRow = row('src/renderer/src/features/files/FilesPane.tsx')
+  report.hover.push(['files-02-hover-row', await S.hover(fileRow, 700)])
+  await S.clip('files-02-hover-row', '[data-testid="v3-files-tree"]', 0)
+  await S.unhover()
+  await ev(`document.querySelector(${JSON.stringify(row('src/renderer/src/features/files/FileBreadcrumbs.tsx'))})?.focus()`)
+  await S.key('ArrowDown')
+  report.focus.push(['files-02-focus-row', await ev(`document.activeElement?.getAttribute('data-tree-path') ?? null`)])
+  await S.clip('files-02-focus-row', '[data-testid="v3-files-tree"]', 0)
+  await S.theme('light')
+  await S.clip('files-02-focus-row-light', '[data-testid="v3-files-tree"]', 0)
+  await S.theme('dark')
+  await modClick(row('src/renderer/src/features/files/files-model.ts'), 2)
+  await modClick(row('src/renderer/src/features/files/files-search.ts'), 2)
+  await modClick(row('src/renderer/src/features/files/files-text.ts'), 2)
+  report.files.selected = await ev(`document.querySelectorAll('[data-tree-path][data-selected="1"]').length`)
+  await S.unhover()
+  await S.clip('files-02-multiselect', '[data-testid="v3-files-tree"]', 0)
+  await rightClick(row('src/renderer/src/features/files/files-text.ts'))
+  report.files.menuMulti = await ev(`document.querySelector('[data-testid="v3-files-menu"]')?.getAttribute('aria-label') ?? null`)
+  await S.shot('files-03-menu-multi-dark')
+  await S.key('Escape')
+  await sleep(400)
+  await rightClick(row('src/renderer/src/features/files/FilesRowMenu.tsx'))
+  report.files.selectedAfterRightClick = await ev(`[...document.querySelectorAll('[data-tree-path][data-selected="1"]')].map((n) => n.getAttribute('data-tree-path'))`)
+  await S.clip('files-03-menu-target-tree', '[data-testid="v3-files-tree"]', 0)
+  report.files.menuSingle = await ev(`[...document.querySelectorAll('[data-testid="v3-files-menu"] [role="menuitem"]')].map((n) => n.textContent.trim())`)
+  await S.shot('files-03-menu-dark')
+  await S.clip('files-03-menu-zoom', '[data-testid="v3-files-menu"]', 8)
+  await S.hover('[data-testid="v3-files-menu"] [role="menuitem"]', 900, 1)
+  await S.shot('files-03-menu-copy-sub-dark')
+  await S.theme('light')
+  await sleep(300)
+  await S.shot('files-03-menu-copy-sub-light')
+  await S.theme('dark')
+  await S.key('Escape')
+  await S.key('Escape')
+  await sleep(400)
+  if (await ev(`!!document.querySelector('[data-testid="v3-files-preview"]:not([hidden])')`)) log('单击打开了预览')
+
+  await setQuery('button')
+  report.files.nameSearch = await resultsDone()
+  await sleep(600)
+  await variants('files-04-search-name', { narrow: false })
+  report.hover.push(['files-04-search-hover', await S.hover('.v3-files-result', 700, 2)])
+  await S.clip('files-04-search-hover', '[data-testid="v3-files-search-results"]', 0)
+  await S.unhover()
+  await S.click(filter, 300)
+  await S.key('ArrowDown')
+  report.focus.push(['files-04-search-focus', await ev(`document.activeElement?.getAttribute('data-testid') ?? null`)])
+  await S.clip('files-04-search-focus', '[data-testid="v3-files-search-results"]', 0)
+  await setQuery('')
+  await sleep(500)
+  const busyPause = await S.pauseAt('if (result.error?.code === "superseded") {', async () => {
+    await ev(`(() => { const el = document.querySelector(${JSON.stringify(filter)}); el.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, 'filesrow'); el.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+  })
+  report.files.searchBusyPaused = busyPause?.paused ?? false
+  if (busyPause?.paused) {
+    await S.shotPaused('files-04-search-busy-dark')
+  }
+  await busyPause?.resume()
+  check('文件：搜索中状态拍到', report.files.searchBusyPaused)
+  report.files.searchBusyAfter = await ev(`document.querySelector('[data-testid="v3-files-search-results"]')?.getAttribute('aria-busy') ?? 'no-results'`)
+  await resultsDone()
+  await setQuery('?useFilesSearch')
+  report.files.contentSearch = await resultsDone()
+  await sleep(800)
+  await variants('files-04-search-content', { narrow: false })
+  await setQuery('zzqqxxnomatch')
+  await resultsDone()
+  await sleep(500)
+  await S.clip('files-04-search-empty', panel, 0)
+  report.hover.push(['files-04-search-empty-hover', await S.hover('[data-testid="v3-files-search-contents"]', 600)])
+  await S.clip('files-04-search-empty-hover', panel, 0)
+  await S.unhover()
+  await setQuery('?')
+  await resultsDone()
+  await sleep(400)
+  await S.clip('files-04-search-hint', panel, 0)
+  await setQuery('?(')
+  await S.click('[data-testid="v3-files-search-regexp"]', 300)
+  await resultsDone()
+  await sleep(600)
+  await S.clip('files-04-search-pattern', panel, 0)
+  await S.click('[data-testid="v3-files-search-regexp"]', 300)
+  await setQuery('')
+  await sleep(600)
+
+  await bringRow('src/renderer/src/features/files/FilesPane.tsx')
+  await S.click(fileRow, 1500)
+  report.files.preview = await until(`!!document.querySelector('[data-testid="v3-files-preview"]:not([hidden])')`, 10000, 100)
+  await S.unhover()
+  await sleep(1200)
+  await variants('files-05-preview', { narrow: false })
+  if (await ev(`!!document.querySelector('[data-testid="v3-files-crumb-fold"]')`)) {
+    await S.click('[data-testid="v3-files-crumb-fold"]', 700)
+    await S.shot('files-05-preview-crumb-fold')
+    await S.key('Escape')
+    await sleep(300)
+  }
+  const narrowWidth = await ev(`window.__yanRightPanel.getState().width`)
+  if (!(await ev(`!!document.querySelector('[data-testid="v3-files-crumb-browse"]')`))) {
+    await ev(`(window.__yanRightPanel.getState().setWidth(883), true)`)
+    await sleep(900)
+    report.files.browseWidth = 883
+  }
+  if (await ev(`!!document.querySelector('[data-testid="v3-files-crumb-browse"]')`)) {
+    await S.click('[data-testid="v3-files-crumb-browse"]', 900)
+    report.files.browseMenu = await ev(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((n) => n.textContent.trim()).slice(0, 8)`)
+    await S.shot('files-05-preview-crumb-browse')
+    await S.key('Escape')
+    await sleep(300)
+  } else log('浏览子文件夹按钮未出现')
+  await ev(`(window.__yanRightPanel.getState().setWidth(${narrowWidth}), true)`)
+  await sleep(600)
+  report.files.crumbs = await ev(`[...document.querySelectorAll('[data-testid="v3-files-crumbs"] .v3-files-crumb')].map((n) => n.textContent)`)
+  await S.narrow()
+  await S.shot('files-05-preview-narrow')
+  await S.wide()
+  await sleep(600)
+  await openFiles()
+  report.files.treeAfterResize = await ev(`document.querySelector(${JSON.stringify(row('src'))})?.getAttribute('aria-expanded') ?? null`)
+  await S.narrow()
+  await openFiles()
+  await sleep(600)
+  await S.shot('files-01-tree-narrow')
+  if (await ev(`!!document.querySelector(${JSON.stringify(filter)})`)) {
+    await setQuery('button')
+    await resultsDone()
+    await sleep(600)
+    await S.shot('files-04-search-name-narrow')
+    await setQuery('')
+  }
+  await S.wide()
+  await sleep(600)
+
+  await newSession(fx.empty)
+  await openFiles()
+  report.files.empty = await until(`!!document.querySelector('[data-testid="v3-files-empty"]')`, 10000, 100)
+  await sleep(600)
+  await variants('files-06-empty', { narrow: false })
+
+  const loadingPause = await S.pauseAt('type: "loadOk"', async () => { await newSession(fx.many); await openFiles() }, { lineOffset: -1 })
+  report.files.loadingPaused = loadingPause?.paused ?? false
+  if (loadingPause?.paused) {
+    await S.shotPaused('files-07-loading-dark')
+  }
+  await loadingPause?.resume()
+  check('文件：加载状态拍到', report.files.loadingPaused)
+  await until(`s.session?.cwd === ${JSON.stringify(fx.many)}`, 8000)
+  await until(`document.querySelectorAll('[data-tree-path]').length > 10`, 15000, 100)
+  await sleep(600)
+  await S.clip('files-08-many-top', panel, 0)
+  await ev(`(() => { const el = document.querySelector('[data-testid="v3-files-tree"]'); if (el) el.scrollTop = el.scrollHeight; return true })()`)
+  await sleep(800)
+  report.files.partialRow = await ev(`!!document.querySelector('[data-testid="v3-files-state-root"], .v3-files-staterow')`)
+  await S.clip('files-08-many-bottom', panel, 0)
+  await S.theme('light')
+  await S.clip('files-08-many-bottom-light', panel, 0)
+  await S.theme('dark')
+
+  const denied = spawnSync('icacls', [fx.gone, '/deny', `${process.env.USERNAME}:(RD)`], { encoding: 'utf8' })
+  report.files.denied = denied.status
+  let errored = false
+  try {
+    await newSession(fx.gone)
+    await openFiles()
+    errored = await until(`!!document.querySelector('[data-testid="v3-files-error"]')`, 10000, 100)
+  } catch (error) {
+    log('读失败会话', String(error))
+  }
+  report.files.error = errored
+  check('文件：读失败状态出现', errored)
+  await sleep(600)
+  await variants('files-09-error', { narrow: false })
+  report.hover.push(['files-09-error-hover-retry', await S.hover('[data-testid="v3-files-error"] button', 700)])
+  await S.clip('files-09-error-hover-retry', panel, 0)
+  await S.unhover()
+  await ev(`document.querySelector('[data-testid="v3-files-error"] button')?.focus()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['files-09-error-focus-retry', await ev(`document.activeElement?.textContent ?? null`)])
+  await S.clip('files-09-error-focus-retry', panel, 0)
+  await ev('document.activeElement?.blur?.()')
+  spawnSync('icacls', [fx.gone, '/remove:d', process.env.USERNAME], { encoding: 'utf8' })
+
+  const lockedDir = join(fx.partial, 'locked-dir')
+  report.files.subDenied = spawnSync('icacls', [lockedDir, '/deny', `${process.env.USERNAME}:(RD)`], { encoding: 'utf8' }).status
+  try {
+    await newSession(fx.partial)
+    await openFiles()
+    await until(`!!document.querySelector(${JSON.stringify(row('locked-dir'))})`, 10000, 100)
+    await sleep(400)
+    await S.click(row('locked-dir'), 300)
+    report.files.subError = await until(`!!document.querySelector('[data-testid="v3-files-state-locked-dir"]')`, 8000, 100)
+    report.files.subErrorText = await ev(`document.querySelector('[data-testid="v3-files-state-locked-dir"]')?.textContent ?? null`)
+    await S.unhover()
+    await sleep(500)
+    await S.clip('files-10-subdir-error-panel', panel, 0)
+    await S.theme('light')
+    await S.clip('files-10-subdir-error-light', panel, 0)
+    await S.theme('dark')
+  } catch (error) {
+    log('子目录读失败', String(error))
+  }
+  spawnSync('icacls', [lockedDir, '/remove:d', process.env.USERNAME], { encoding: 'utf8' })
+  check('文件：子目录读失败行出现', !!report.files.subError)
+
+  await ev(`(window.__yanStore.setState({ peekedSessionId: 'ui-polish-no-cwd', peekedPath: 'C:/ui-polish-no-cwd.jsonl' }), true)`)
+  report.files.none = await until(`!!document.querySelector('[data-testid="v3-files-invalid"]')`, 8000, 100)
+  await sleep(500)
+  if (report.files.none) {
+    await S.clip('files-11-no-cwd-panel', panel, 0)
+    await S.theme('light')
+    await S.clip('files-11-no-cwd-light', panel, 0)
+    await S.theme('dark')
+  }
+  await ev(`(window.__yanStore.setState({ peekedSessionId: null, peekedPath: null }), true)`)
+  check('文件：无工作目录状态出现', report.files.none)
+}
+
+function makePdf(pages) {
+  const objects = []
+  const kids = pages.map((_, index) => `${3 + index * 2} 0 R`).join(' ')
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>')
+  objects.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`)
+  const font = 3 + pages.length * 2
+  pages.forEach((lines, index) => {
+    const body = lines.map((line, row) => `BT /F1 ${row === 0 ? 22 : 12} Tf 72 ${760 - row * 26} Td (${line}) Tj ET`).join('\n')
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${4 + index * 2} 0 R /Resources << /Font << /F1 ${font} 0 R >> >> >>`)
+    objects.push(`<< /Length ${Buffer.byteLength(body)} >>\nstream\n${body}\nendstream`)
+  })
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  let out = '%PDF-1.4\n'
+  const offsets = []
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(out))
+    out += `${index + 1} 0 obj\n${body}\nendobj\n`
+  })
+  const xref = Buffer.byteLength(out)
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}`
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return out
+}
+
+function makePreviewFixtures(base, repo) {
+  mkdirSync(join(base, 'docs'), { recursive: true })
+  const files = {
+    code: join(base, 'docs', 'files-model.ts'),
+    markdown: join(base, 'README.md'),
+    image: join(base, 'docs', 'screenshot.png'),
+    photo: join(base, 'docs', 'blossom.webp'),
+    pdf: join(base, 'docs', 'report.pdf'),
+    html: join(base, 'docs', 'landing.html'),
+    binary: join(base, 'docs', 'data.bin'),
+    archive: join(base, 'docs', 'bundle.zip'),
+    locked: join(base, 'docs', 'locked.txt'),
+    missing: join(base, 'docs', 'deleted-file.ts'),
+    large: join(base, 'docs', 'server.log')
+  }
+  copyFileSync(join(repo, 'src/renderer/src/features/files/files-model.ts'), files.code)
+  writeFileSync(files.markdown, '# 预览测试\n\n这是一段 **Markdown** 正文，用来看阅读模式的排版。\n\n- 列表第一项\n- 列表第二项，带 `inline code`\n\n```ts\nexport const answer = 42\n```\n\n| 列 | 值 |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n')
+  copyFileSync(join(repo, '.tmp/ui-polish/files-round-1/after/files-01-tree-dark.png'), files.image)
+  copyFileSync(join(repo, 'src/renderer/src/assets/wallpapers/blossom.webp'), files.photo)
+  writeFileSync(files.pdf, makePdf([['Inkstone preview test', 'Page one of a generated PDF.', 'Second line of body text.'], ['Page two', 'More text on the second page.']]))
+  writeFileSync(files.html, '<!doctype html><html><head><meta charset="utf-8"><title>Landing</title><style>body{font-family:system-ui;margin:0;padding:32px;background:#f6f3ee;color:#222}h1{font-size:28px}button{padding:8px 16px;border-radius:8px;border:0;background:#c2410c;color:#fff}</style></head><body><h1>Landing page</h1><p>A small HTML file for the canvas preview.</p><button>Get started</button></body></html>\n')
+  const bytes = Buffer.alloc(48 * 1024)
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 131 + 7) & 0xff
+  writeFileSync(files.binary, bytes)
+  writeFileSync(files.archive, Buffer.concat([Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18)]))
+  writeFileSync(files.locked, 'secret\n')
+  const line = (i) => `2026-11-15T10:${String(Math.floor(i / 60) % 60).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z INFO request ${i} handled in ${(i * 7) % 300}ms path=/api/items/${i}\n`
+  let big = ''
+  for (let i = 0; i < 60000; i++) big += line(i)
+  writeFileSync(files.large, big)
+  return files
+}
+
+async function previewTarget({ kit: S, ev, sleep, until, check, log, report, newSession, runDir }) {
+  report.preview = {}
+  const repo = process.cwd()
+  const base = join(runDir, 'preview-fixtures')
+  const fx = makePreviewFixtures(base, repo)
+  const panel = '[data-testid="rp-column-0"]'
+  const slash = (path) => path.replaceAll('\\', '/')
+  const settle = () => until(`!!document.querySelector('[data-testid="v3-preview"]') && !document.querySelector('[data-testid="v3-preview-loading"], [data-testid="v3-preview-pdf-loading"]')`, 15000, 100)
+  const open = async (path, wait = 1200) => {
+    const target = slash(path)
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: ${JSON.stringify('file:' + target)}, kind: 'file', path: ${JSON.stringify(target)} }); rp.setOpen(true); return true })()`)
+    const ok = await settle()
+    await S.unhover()
+    await sleep(wait)
+    return ok
+  }
+  const variants = async (name, { light = true, full = true } = {}) => {
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await S.clip(`${name}-light`, panel, 0); await S.theme('dark') }
+  }
+  const visible = (testid) => ev(`!!document.querySelector('[data-testid="${testid}"]')`)
+  const states = async () => ev(`[...document.querySelectorAll('[data-testid^="v3-preview-"], [data-testid^="v3-code-"], [data-testid^="v3-pdf-"], [data-testid^="v3-html-"], [data-testid^="v3-canvas-"]')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.getAttribute('data-testid')).filter((v, i, a) => a.indexOf(v) === i).slice(0, 30)`)
+  const width = await ev(`window.__yanRightPanel.getState().width`)
+  report.preview.panelWidth = width
+
+  await newSession(base)
+  report.preview.code = await open(fx.code)
+  report.preview.codeStates = await states()
+  await variants('preview-01-code')
+  report.audit.preview = await S.audit('[data-testid="v3-preview"]')
+  report.hover.push(['preview-01-code-hover-line', await S.hover('[data-testid="v3-code-view"] .v3-code-line', 700, 6)])
+  report.preview.commentButton = await ev(`(() => { const el = document.querySelector('[data-testid="v3-code-view"] .v3-code-line:hover .v3-code-comment'); return el ? { label: el.getAttribute('aria-label'), opacity: getComputedStyle(el).opacity } : null })()`)
+  await S.clip('preview-01-code-hover-line', panel, 0)
+  await S.unhover()
+  await ev(`(window.__yanRightPanel.getState().setWidth(883), true)`)
+  await sleep(900)
+  await S.unhover()
+  await S.clip('preview-01-code-wide', panel, 0)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(900)
+
+  report.preview.markdown = await open(fx.markdown)
+  report.preview.markdownStates = await states()
+  await variants('preview-02-markdown')
+
+  report.preview.image = await open(fx.image, 1500)
+  report.preview.imageStates = await states()
+  await variants('preview-03-image')
+  report.preview.photo = await open(fx.photo, 1500)
+  await S.clip('preview-03-photo-panel', panel, 0)
+
+  report.preview.pdf = await open(fx.pdf, 2500)
+  await until(`!!document.querySelector('[data-testid="v3-pdf-page"]')`, 15000, 100)
+  await sleep(1200)
+  report.preview.pdfStates = await states()
+  await variants('preview-04-pdf')
+
+  report.preview.html = await open(fx.html, 2500)
+  report.preview.htmlStates = await states()
+  report.preview.canvasOn = await visible('v3-html-canvas')
+  await variants('preview-05-html')
+  if (await visible('v3-preview-canvas-toggle')) {
+    await S.click('[data-testid="v3-preview-canvas-toggle"]', 2500)
+    await S.unhover()
+    report.preview.htmlToggledStates = await states()
+    await variants(`preview-05-html-${report.preview.canvasOn ? 'frame' : 'canvas'}`, { light: false })
+    await ev(`(window.__yanRightPanel.getState().setWidth(883), true)`)
+    await sleep(1500)
+    await S.unhover()
+    await S.clip(`preview-05-html-${report.preview.canvasOn ? 'frame' : 'canvas'}-wide`, panel, 0)
+    await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+    await sleep(900)
+    await S.click('[data-testid="v3-preview-canvas-toggle"]', 1500)
+  }
+
+  report.preview.binary = await open(fx.binary)
+  report.preview.binaryStates = await states()
+  await variants('preview-06-binary')
+  report.hover.push(['preview-06-binary-hover-open', await S.hover('[data-testid="v3-preview-binary"] button', 700)])
+  await S.clip('preview-06-binary-hover-open', panel, 0)
+  await S.unhover()
+  await open(fx.archive)
+  await S.clip('preview-06-archive-panel', panel, 0)
+
+  const denied = spawnSync('icacls', [fx.locked, '/deny', `${process.env.USERNAME}:(R)`], { encoding: 'utf8' })
+  report.preview.lockDenied = denied.status
+  report.preview.locked = await open(fx.locked)
+  report.preview.lockedStates = await states()
+  await variants('preview-07-unreadable')
+  spawnSync('icacls', [fx.locked, '/remove:d', process.env.USERNAME], { encoding: 'utf8' })
+  report.preview.missing = await open(fx.missing)
+  report.preview.missingStates = await states()
+  await variants('preview-07-missing', { full: false })
+
+  report.preview.large = await open(fx.large, 2000)
+  report.preview.largeStates = await states()
+  report.preview.largeAlign = await ev(`(() => { const textLeft = (el) => { if (!el) return null; const range = document.createRange(); range.selectNodeContents(el); const rects = [...range.getClientRects()]; return rects.length ? Math.round(rects[0].left * 10) / 10 : null }; const note = [...document.querySelectorAll('[data-testid="v3-code-capped"]')].find((n) => n.getBoundingClientRect().width > 0); const crumb = [...document.querySelectorAll('[data-testid="v3-preview-pathbar"] .v3-files-crumb')].find((n) => n.getBoundingClientRect().width > 0); return { note: textLeft(note), crumb: textLeft(crumb), bg: note ? getComputedStyle(note).backgroundColor : null } })()`)
+  await variants('preview-08-large')
+  report.preview.largeScrolled = await ev(`(() => { const el = [...document.querySelectorAll('.v3-code-scroller')].find((n) => n.getBoundingClientRect().width > 0); if (el) el.scrollTop = el.scrollHeight; return el ? { top: Math.round(el.scrollTop), height: el.scrollHeight } : null })()`)
+  await sleep(900)
+  await S.clip('preview-08-large-bottom', panel, 0)
+  report.preview.condensedAlign = await ev(`(() => { const vis = (sel) => [...document.querySelectorAll(sel)].find((n) => n.getBoundingClientRect().width > 0 && n.getBoundingClientRect().height > 0); const textLeft = (el) => { if (!el) return null; const range = document.createRange(); range.selectNodeContents(el); const rects = [...range.getClientRects()].filter((r) => r.width > 0); return rects.length ? Math.round(rects[0].left * 10) / 10 : null }; const nums = [...document.querySelectorAll('.v3-code-number')].filter((n) => n.getBoundingClientRect().height > 0); const widest = nums.reduce((a, n) => (n.textContent.length > (a?.textContent.length ?? 0) ? n : a), null); return { condensed: !!document.querySelector('[data-testid="v3-preview-pathbar"] .ui-condense[data-condensed]'), compact: textLeft(vis('[data-testid="v3-preview-pathbar"] .v3-preview-pathname[data-compact]')), note: textLeft(vis('[data-testid="v3-code-capped"]')), number: textLeft(widest), gutter: vis('.v3-code-gutter') ? Math.round(vis('.v3-code-gutter').getBoundingClientRect().left * 10) / 10 : null } })()`)
+
+  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await sleep(900)
+  for (const [name, path] of [['code', fx.code], ['pdf', fx.pdf], ['html', fx.html], ['binary', fx.binary], ['missing', fx.missing], ['large', fx.large]]) {
+    await open(path, name === 'pdf' || name === 'html' ? 2500 : 1200)
+    await S.clip(`preview-09-w360-${name}`, panel, 0)
+  }
+  spawnSync('icacls', [fx.locked, '/deny', `${process.env.USERNAME}:(R)`], { encoding: 'utf8' })
+  await open(fx.locked)
+  await S.clip('preview-09-w360-unreadable', panel, 0)
+  spawnSync('icacls', [fx.locked, '/remove:d', process.env.USERNAME], { encoding: 'utf8' })
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(900)
+  report.preview.emptyStates = await ev(`(() => { window.__yanRightPanel.getState().closeAll?.(); return true })()`)
+  await sleep(600)
+  check('预览：代码、图片、PDF、二进制都打开了', !!(report.preview.code && report.preview.image && report.preview.pdf && report.preview.binary))
+}
+
+async function browserFinalTarget({ kit: S, ev, until, sleep, log, check, report }) {
+  report.browserFinal = {}
+  const R = report.browserFinal
+  const servers = []
+  const urls = []
+  for (const [title, bg, fg] of PAGES.slice(0, 8)) {
+    const server = pageServer(title, bg, fg)
+    servers.push(server)
+    urls.push(`http://127.0.0.1:${await listen(server)}/`)
+  }
+  for (let i = 0; i < 12; i++) {
+    const server = pageServer(`额外服务 ${i + 1}`, '#ffffff', '#111111')
+    servers.push(server)
+    await listen(server)
+  }
+  const slow = createServer((_req, res) => { setTimeout(() => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<title>slow</title>slow') }, 20000) })
+  servers.push(slow)
+  const slowUrl = `http://127.0.0.1:${await listen(slow)}/slow-first-load`
+  const probe = createServer()
+  const deadPort = await listen(probe)
+  await new Promise((done) => probe.close(done))
+  const deadUrl = `http://127.0.0.1:${deadPort}/`
+  const left = (selector) => ev(`[...document.querySelectorAll(${JSON.stringify(selector)})].filter((n) => n.getBoundingClientRect().width > 0).slice(0, 3).map((n) => Math.round(n.getBoundingClientRect().left * 10) / 10)`)
+  try {
+    R.width = await ev('window.__yanRightPanel.getState().width')
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'browser', kind: 'browser' }); rp.setOpen(true); return true })()`)
+    await until(`!!document.querySelector('[data-testid="browser-pane-not-open"], [data-testid="browser-pane"]')`, 15000)
+    await until(`document.querySelectorAll('[data-testid="browser-local-servers"][data-ready="1"] [data-testid="browser-local-server-row"]').length >= 16`, 20000, 200)
+    await sleep(800)
+    R.gateList = await ev(`(() => { const list = document.querySelector('[data-testid="browser-local-servers-list"]'); return list ? { more: list.dataset.more ?? null, scroll: list.scrollHeight, client: list.clientHeight } : null })()`)
+    check('收尾 B4：空状态服务列表溢出时有渐隐', R.gateList?.more === '1', R.gateList)
+    const importPause = await S.pauseAt('window.yan.browser.loginImportStatus(importId)', () => S.setHookState('[data-testid="browser-pane-not-open"]', [false, null, 'waiting', null], 1, 'ui-polish-import'))
+    R.importPaused = importPause?.paused ?? false
+    if (importPause?.paused) await S.shotPaused('bf-01-import-waiting-dark')
+    await importPause?.resume()
+    await sleep(600)
+    await S.clip('bf-01-gate-servers', '[data-testid="browser-local-servers"]', 8)
+    R.gateLeft = { title: await left('[data-testid="browser-pane-not-open"] .v3-local-servers__title'), icon: await left('[data-testid="browser-pane-not-open"] [data-testid="browser-local-server-row"] .ui-rail-row__lead') }
+
+    await S.click('[data-testid="browser-pane-open"]', 1500)
+    await until(`!!document.querySelector('[data-testid="browser-start-page"]')`, 15000)
+    await sleep(600)
+    void ev(`window.yan.browser.navigate(${JSON.stringify(slowUrl)})`)
+    R.loading = await until('s.browserState.loading === true', 8000, 20)
+    await sleep(400)
+    await ev(`document.querySelector('[data-testid="browser-pane-stop"]')?.focus()`)
+    await S.key('Tab', { shift: true })
+    await S.key('Tab')
+    await sleep(900)
+    R.stopTooltip = await ev(`(() => { const tip = document.querySelector('[role="tooltip"]'); const btn = document.querySelector('[data-testid="browser-pane-stop"]'); if (!tip || !btn) return null; const t = tip.getBoundingClientRect(); const b = btn.getBoundingClientRect(); return { text: tip.textContent, tipRight: Math.round(t.right), btnLeft: Math.round(b.left), tipTop: Math.round(t.top), btnTop: Math.round(b.top) } })()`)
+    await S.shot('bf-02-stop-tooltip-dark')
+    await S.clip('bf-02-stop-tooltip-toolbar', '.v3-browser__main', 0)
+    await S.click('[data-testid="browser-pane-stop"]', 300)
+    R.stopped = await until('s.browserState.loading === false', 5000, 20)
+    await sleep(800)
+    await S.unhover()
+    R.addressAfterStop = await ev(`(() => { const el = document.querySelector('[data-testid="browser-pane-address"] input, input[data-testid="browser-pane-address"]'); return el ? el.value : null })()`)
+    R.stateUrlAfterStop = await ev('window.__yanStore.getState().browserState.url')
+    check('收尾 B3：停止首次加载后地址栏保留请求的网址', R.addressAfterStop === slowUrl, R)
+    await ev('document.activeElement?.blur?.()')
+    await S.clip('bf-03-stopped-toolbar', '.v3-browser__main', 0)
+
+    await ev(`window.yan.browser.navigate(${JSON.stringify(deadUrl)})`)
+    await until('!!s.browserState.loadError', 15000)
+    await sleep(900)
+    R.deadPort = await ev(`({ title: document.querySelector('[data-testid="browser-pane-error-title"]')?.textContent ?? null, reason: document.querySelector('[data-testid="browser-pane-error-reason"]')?.textContent ?? null, titleLines: (() => { const el = document.querySelector('[data-testid="browser-pane-error-title"]'); if (!el) return null; return Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight || '20')) })() })`)
+    R.addressAfterDead = await ev(`document.querySelector('input[data-testid="browser-pane-address"]')?.value ?? null`)
+    check('定稿 BF-1：停止后补回的网址不粘住，后续非地址栏导航时地址栏跟随新网址', R.addressAfterDead === deadUrl, { address: R.addressAfterDead, deadUrl })
+    await ev(`window.yan.browser.navigate(${JSON.stringify(urls[1])})`)
+    await until('!s.browserState.loading && !s.browserState.loadError', 15000)
+    await sleep(600)
+    R.addressAfterNext = await ev(`document.querySelector('input[data-testid="browser-pane-address"]')?.value ?? null`)
+    check('定稿 BF-1：再导航到正常网页，地址栏也跟随', R.addressAfterNext === urls[1], { address: R.addressAfterNext, url: urls[1] })
+    await S.clip('bf-04b-next-page-toolbar', '.v3-browser__toolbar', 0)
+    await ev(`window.yan.browser.navigate(${JSON.stringify(deadUrl)})`)
+    await until('!!s.browserState.loadError', 15000)
+    await sleep(600)
+    check('收尾：错误条标题只写「打不开该页面」，原因另起一行', /端口没有服务在监听|nothing is listening/.test(R.deadPort.reason ?? '') && !/监听|listening/.test(R.deadPort.title ?? ''), R.deadPort)
+    await S.shot('bf-04-dead-port-dark')
+    await S.clip('bf-04-dead-port-status', '[data-testid="browser-pane-status"]', 0)
+    await S.theme('light')
+    await S.clip('bf-04-dead-port-status-light', '[data-testid="browser-pane-status"]', 0)
+    await S.theme('dark')
+
+    await ev(`window.yan.browser.navigate(${JSON.stringify(urls[0])})`)
+    await until('!s.browserState.loading && !s.browserState.loadError', 15000)
+    for (const url of urls.slice(1)) {
+      await ev(`window.yan.browser.newTab(${JSON.stringify(url)})`)
+      await sleep(250)
+    }
+    await until(`(s.browserState.tabs ?? []).length >= ${urls.length}`, 20000)
+    await ev(`window.__yanRightPanel.getState().setWidth(${WIDE_PANEL})`)
+    await sleep(1200)
+    const pinned = await ev(`document.querySelector('[data-testid="browser-pane-tabs-toggle"]')?.getAttribute('aria-pressed')`)
+    if (pinned !== 'true') await S.click('[data-testid="browser-pane-tabs-toggle"]', 900)
+    await S.unhover()
+    await until(`!!document.querySelector('.v3-browser__tabcol [data-testid="browser-local-servers"][data-ready="1"]')`, 15000, 100)
+    await sleep(800)
+    await S.clip('bf-05-tabcol', '.v3-browser__tabcol', 0)
+    R.tabcolLeft = { title: await left('.v3-browser__tabcol-title'), tabMark: await left('.v3-browser__tablist .ui-rail-row__lead'), serversTitle: await left('.v3-browser__tabcol .v3-local-servers__title'), serverIcon: await left('.v3-browser__tabcol [data-testid="browser-local-server-row"] .ui-rail-row__lead') }
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 700)
+    await S.click('[data-testid="browser-pane-layout-horizontal"]', 1200)
+    await S.unhover()
+    await S.click('[data-testid="browser-pane-servers-menu"]', 600)
+    await until(`!!document.querySelector('.v3-browser__servers-pop [data-testid="browser-local-servers"][data-ready="1"]')`, 15000, 100)
+    await sleep(600)
+    await S.clip('bf-06-servers-popover', '.v3-browser__servers-pop', 4)
+    R.popLeft = { title: await left('.v3-browser__servers-pop .v3-local-servers__title'), icon: await left('.v3-browser__servers-pop [data-testid="browser-local-server-row"] .ui-rail-row__lead') }
+    await S.key('Escape')
+    await until(`!document.querySelector('.v3-browser__servers-pop')`, 5000, 50)
+    await sleep(400)
+    await ev(`(() => { const strip = document.querySelector('[data-testid="browser-pane-htabs"]'); if (strip) strip.scrollLeft = strip.scrollWidth; return true })()`)
+    await sleep(300)
+    await ev(`(() => { const strip = document.querySelector('[data-testid="browser-pane-htabs"]'); const tabs = [...strip.querySelectorAll('[role="tab"]')]; tabs[2]?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); return true })()`)
+    await sleep(500)
+    R.htabs = await ev(`(() => { const strip = document.querySelector('[data-testid="browser-pane-htabs"]'); const tab = strip.querySelectorAll('.ui-ptab')[2]; const s = strip.getBoundingClientRect(); const t = tab.getBoundingClientRect(); const icon = tab.querySelector('.ui-ptab__close').getBoundingClientRect(); return { stripLeft: Math.round(s.left), tabLeft: Math.round(t.left), iconLeft: Math.round(icon.left), scrollLeft: Math.round(strip.scrollLeft) } })()`)
+    check('收尾 B1：滚入后标签图标完整可见', R.htabs.iconLeft >= R.htabs.stripLeft, R.htabs)
+    await S.hover('[data-testid="browser-pane-htabs"] .ui-ptab', 300, 2)
+    await S.clip('bf-07-htabs-scrolled-hover', '.v3-browser__tabrow', 0)
+    await S.unhover()
+    await S.clip('bf-07-htabs-scrolled', '.v3-browser__tabrow', 0)
+    await ev(`document.querySelector('[data-testid="browser-pane-htabs"] [role="tab"][aria-selected="true"]')?.focus()`)
+    await S.key('Home')
+    await sleep(600)
+    R.htabsHome = await ev(`(() => { const strip = document.querySelector('[data-testid="browser-pane-htabs"]'); const tab = strip.querySelector('.ui-ptab'); const s = strip.getBoundingClientRect(); const icon = tab.querySelector('.ui-ptab__close').getBoundingClientRect(); return { stripLeft: Math.round(s.left), iconLeft: Math.round(icon.left), scrollLeft: Math.round(strip.scrollLeft) } })()`)
+    await S.clip('bf-07-htabs-home-focus', '.v3-browser__tabrow', 0)
+    await ev('document.activeElement?.blur?.()')
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 700)
+    await S.click('[data-testid="browser-pane-layout-vertical"]', 1000)
+    if (pinned !== 'true') await S.click('[data-testid="browser-pane-tabs-toggle"]', 600)
+    await ev(`window.__yanRightPanel.getState().setWidth(${R.width})`)
+    await sleep(1000)
+  } finally {
+    for (const server of servers) try { server?.close() } catch {}
+  }
+}
+
+function makeBranchFixtures(base) {
+  const run = (cwd, args) => spawnSync('git', ['-c', 'user.name=ui-polish', '-c', 'user.email=ui-polish@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8' })
+  const commit = (dir, message) => { run(dir, ['add', '-A']); run(dir, ['commit', '-q', '-m', message]) }
+  const init = (name) => {
+    const dir = join(base, name)
+    mkdirSync(dir, { recursive: true })
+    run(dir, ['init', '-q', '-b', 'main'])
+    return dir
+  }
+  const single = init('single-repo')
+  writeFileSync(join(single, 'README.md'), '# single\n')
+  commit(single, 'init')
+
+  const origin = init('origin-src')
+  writeFileSync(join(origin, 'config.ts'), "export const mode = 'main'\n")
+  writeFileSync(join(origin, 'README.md'), '# many\n')
+  commit(origin, 'init')
+  const remoteOnly = ['release/2026.11-hotfix-for-very-long-branch-names-in-the-picker', 'origin-only/docs', 'origin-only/中文分支名']
+  for (const name of remoteOnly) { run(origin, ['branch', name]) }
+  const bare = join(base, 'origin.git')
+  run(base, ['clone', '-q', '--bare', origin, bare])
+  const many = join(base, 'many-repo')
+  run(base, ['clone', '-q', bare, many])
+  const locals = []
+  for (let i = 0; i < 36; i++) locals.push(i % 6 === 0 ? `feature/ui-polish-${String(i).padStart(2, '0')}-a-really-long-branch-name-that-should-be-truncated-nicely` : `${['feature', 'fix', 'chore', 'exp'][i % 4]}/task-${String(i).padStart(2, '0')}`)
+  for (const name of locals) run(many, ['branch', name])
+  run(many, ['checkout', '-q', '-b', 'feature/conflict'])
+  writeFileSync(join(many, 'config.ts'), "export const mode = 'conflict'\n")
+  commit(many, 'conflict branch')
+  run(many, ['checkout', '-q', 'main'])
+  run(many, ['branch', 'feature/same-config'])
+  run(many, ['worktree', 'add', '-q', join(base, 'many-worktree'), 'chore/task-02'])
+  writeFileSync(join(many, 'config.ts'), "export const mode = 'dirty-local-edit'\n")
+
+  const detached = init('detached-repo')
+  writeFileSync(join(detached, 'a.ts'), 'a\n')
+  commit(detached, 'one')
+  writeFileSync(join(detached, 'a.ts'), 'b\n')
+  commit(detached, 'two')
+  run(detached, ['branch', 'feature/detached-base'])
+  run(detached, ['checkout', '-q', '--detach', 'HEAD~1'])
+  return { single, many, detached, locals, remoteOnly }
+}
+
+async function branchesTarget({ kit: S, ev, sleep, until, check, log, report, newSession }) {
+  report.branches = {}
+  const R = report.branches
+  const fx = makeBranchFixtures(mkdtempSync(join(tmpdir(), 'inkstone-ui-branches-')))
+  R.fixtures = fx.single.replace(/[\\/]single-repo$/, '')
+  check('分支：夹具不在当前仓库里', !R.fixtures.toLowerCase().startsWith(process.cwd().toLowerCase()), R.fixtures)
+  const panel = '[data-testid="rp-column-0"]'
+  const bar = '[data-testid="v3-sessionbar"]'
+  const picker = '[data-testid="git-branch-picker"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const openChanges = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'changes', kind: 'changes' }); rp.setOpen(true); return true })()`)
+    await until(`!!document.querySelector('.changes-pane')`, 15000, 100)
+    await until(`!document.querySelector('.changes-pane .ui-spinner') && !!document.querySelector('[data-testid="changes-branch"]')`, 15000, 150)
+    await sleep(1200)
+    await S.unhover()
+  }
+  const go = async (dir) => { await newSession(dir); await openChanges() }
+  const openPicker = async () => {
+    await S.click('[data-testid="changes-branch"]', 600)
+    await until(`!!document.querySelector('${picker} [role="menu"], ${picker} form')`, 10000, 150)
+    await sleep(500)
+  }
+  const closePicker = async () => {
+    for (let i = 0; i < 3 && (await ev(`!!document.querySelector('${picker}')`)); i++) await S.key('Escape', { waitMs: 400 })
+  }
+  const pickerInfo = () => ev(`(() => { const p = document.querySelector('${picker}'); if (!p) return null; const r = p.getBoundingClientRect(); const items = [...p.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]')]; const clipped = items.filter((n) => { const t = n.querySelector('[class*="label"], span'); return t && t.scrollWidth > t.clientWidth + 1 }).length; return { rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], vw: innerWidth, vh: innerHeight, items: items.length, disabled: items.filter((n) => n.getAttribute('aria-disabled') === 'true').map((n) => n.innerText.replace(/\\s+/g, ' ').slice(0, 120)), clipped, text: p.innerText.replace(/\\s+/g, ' ').slice(0, 900), head: document.querySelector('[data-testid="changes-branch"]')?.innerText ?? null } })()`)
+  const shotPicker = async (name) => {
+    await S.unhover()
+    await S.shot(`${name}-dark`)
+    await S.clip(`${name}-pop`, picker, 16)
+  }
+  const clickItem = (text) => ev(`(() => { const p = document.querySelector('${picker}'); const n = [...(p?.querySelectorAll('[role^="menuitem"]') ?? [])].find((x) => x.innerText.includes(${JSON.stringify(text)})); if (!n) return false; n.scrollIntoView({ block: 'center' }); n.click(); return true })()`)
+  const typeInto = async (selector, text) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); if ('select' in el) el.select(); return document.activeElement === el })()`)
+    if (!ok) return false
+    await S.key('Backspace', { waitMs: 100 })
+    await S.typeText(text, 400)
+    return true
+  }
+
+  await go(fx.single)
+  R.singleHead = await ev(`document.querySelector('[data-testid="changes-branch"]')?.innerText ?? null`)
+  await openPicker()
+  R.single = await pickerInfo()
+  await shotPicker('branches-01-single')
+  await closePicker()
+
+  await go(fx.many)
+  R.manyHead = await ev(`(() => { const b = document.querySelector('[data-testid="changes-branch"]'); const r = b?.getBoundingClientRect(); const label = b?.querySelector('.changes-pane__clip'); return { text: b?.innerText ?? null, width: r ? Math.round(r.width) : null, clipped: label ? label.scrollWidth > label.clientWidth : null, count: document.querySelector('.changes-pane__count')?.offsetWidth ?? null } })()`)
+  await S.clip('branches-02-many-head', panel, 0)
+  await openPicker()
+  R.many = await pickerInfo()
+  await shotPicker('branches-02-many')
+  await S.theme('light'); await sleep(400); await S.clip('branches-02-many-pop-light', picker, 16); await S.theme('dark'); await sleep(300)
+  report.hover.push(['branches-02-busy-hover', await S.hover(`${picker} [role^="menuitem"][aria-disabled="true"]`, 1200, 0)])
+  await S.clip('branches-02-busy-hover', picker, 16)
+  await S.unhover()
+  await ev(`(() => { const m = document.querySelector('${picker} [role="menu"]'); if (!m) return false; const s = [m, ...m.querySelectorAll('*')].find((n) => n.scrollHeight > n.clientHeight + 10 && /auto|scroll/.test(getComputedStyle(n).overflowY)) || m.parentElement; s.scrollTop = s.scrollHeight; return true })()`)
+  await sleep(500)
+  await S.clip('branches-03-remote-pop', picker, 16)
+  R.remote = await pickerInfo()
+  await typeInto(`${picker} input`, 'release')
+  await sleep(600)
+  R.search = await pickerInfo()
+  await S.clip('branches-04-search-pop', picker, 16)
+  await typeInto(`${picker} input`, 'zzz-none')
+  await sleep(600)
+  R.searchEmpty = await pickerInfo()
+  await S.clip('branches-04-search-empty-pop', picker, 16)
+  await typeInto(`${picker} input`, '')
+  await sleep(300)
+
+  await clickItem('新建分支')
+  await until(`!!document.querySelector('${picker} form')`, 5000, 150)
+  await sleep(400)
+  R.createDefault = await pickerInfo()
+  await S.clip('branches-05-create-pop', picker, 16)
+  for (const [shot, name] of [['branches-05-create-exists', 'main'], ['branches-05-create-dots', 'bad..name'], ['branches-05-create-space', 'has space'], ['branches-05-create-dash', '-leading']]) {
+    await typeInto(`[data-testid="git-branch-name"] input`, name)
+    await sleep(500)
+    R[shot] = await pickerInfo()
+    await S.clip(`${shot}-pop`, picker, 16)
+  }
+  await closePicker()
+
+  await openPicker()
+  R.switchConflictClicked = await clickItem('feature/conflict')
+  R.switchFailed = await until(`!!document.querySelector('${picker} .gitflow-branch__failure, ${picker} [role="alert"]')`, 15000, 200)
+  await sleep(600)
+  R.switchFailure = await pickerInfo()
+  await shotPicker('branches-06-switch-failed')
+  await S.theme('light'); await sleep(400); await S.clip('branches-06-switch-failed-pop-light', picker, 16); await S.theme('dark'); await sleep(300)
+  check('分支：切换失败拍到', R.switchFailed, R.switchFailure?.text?.slice(0, 200))
+  await closePicker()
+
+  await openPicker()
+  const switchAt = Date.now()
+  R.switchDirtyClicked = await clickItem('feature/same-config')
+  R.headUpdated = await until(`(document.querySelector('[data-testid="changes-branch"]')?.innerText ?? '').includes('same-config')`, 10000, 100)
+  R.headUpdatedMs = Date.now() - switchAt
+  await sleep(300)
+  R.afterDirtySwitch = { picker: await pickerInfo(), toast: await ev(`[...document.querySelectorAll('[role="status"], [role="alert"]')].map((n) => n.innerText.trim()).filter(Boolean).slice(0, 4)`), head: await ev(`document.querySelector('[data-testid="changes-branch"]')?.innerText ?? null`) }
+  await S.shot('branches-07-dirty-switched-dark')
+  await S.clip('branches-07-dirty-switched-panel', panel, 0)
+  await closePicker()
+
+  await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+  await sleep(1200)
+  if (await ev(`!!document.querySelector(${JSON.stringify(bar)})`)) {
+    await ev(`document.querySelector('[data-testid="wb-rail-branch"]')?.scrollIntoView({ block: 'center' })`)
+    await sleep(300)
+    await S.clip('branches-08-rail-many', bar, 0)
+    R.railMany = await ev(`document.querySelector('[data-testid="wb-rail-branch"]')?.innerText ?? null`)
+  } else R.railMany = 'no-bar'
+  await ev(`(window.__yanRightPanel.getState().setOpen(true), true)`)
+  await sleep(800)
+
+  await go(fx.detached)
+  R.detachedHead = await ev(`(() => { const b = document.querySelector('[data-testid="changes-branch"]'); const r = b?.getBoundingClientRect(); const label = b?.querySelector('.changes-pane__clip'); return { text: b?.innerText ?? null, width: r ? Math.round(r.width) : null, clipped: label ? label.scrollWidth > label.clientWidth : null } })()`)
+  await S.clip('branches-09-detached-head', panel, 0)
+  await openPicker()
+  R.detached = await pickerInfo()
+  await shotPicker('branches-09-detached')
+  await clickItem('新建分支')
+  await sleep(600)
+  R.detachedCreate = await pickerInfo()
+  await S.clip('branches-09-detached-create-pop', picker, 16)
+  await closePicker()
+  await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+  await sleep(1200)
+  if (await ev(`!!document.querySelector(${JSON.stringify(bar)})`)) {
+    await S.clip('branches-09-rail-detached', bar, 0)
+    R.railDetached = await ev(`document.querySelector('[data-testid="wb-rail-branch"]')?.innerText ?? null`)
+  }
+  await ev(`(window.__yanRightPanel.getState().setOpen(true), true)`)
+  await sleep(800)
+
+  const other = width === 869 ? 360 : 869
+  await ev(`(window.__yanRightPanel.getState().setWidth(${other}), true)`)
+  await sleep(1000)
+  await go(fx.many)
+  await openPicker()
+  R.manyOther = await pickerInfo()
+  await shotPicker(`branches-10-many-w${other}`)
+  await closePicker()
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(800)
+}
+
+function makeChangesFixtures(base, repo) {
+  const run = (cwd, args) => spawnSync('git', ['-c', 'user.name=ui-polish', '-c', 'user.email=ui-polish@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8' })
+  const init = (name) => {
+    const dir = join(base, name)
+    mkdirSync(dir, { recursive: true })
+    run(dir, ['init', '-q', '-b', 'main'])
+    return dir
+  }
+  const commit = (dir, message) => { run(dir, ['add', '-A']); run(dir, ['commit', '-q', '-m', message]) }
+  const lines = (n, tag) => Array.from({ length: n }, (_, i) => `export const value${i} = '${tag}-${i}'`).join('\n') + '\n'
+  const plain = join(base, 'not-a-repo')
+  mkdirSync(plain, { recursive: true })
+  writeFileSync(join(plain, 'notes.md'), '# notes\n')
+
+  const clean = init('clean-repo')
+  writeFileSync(join(clean, 'README.md'), '# clean\n')
+  commit(clean, 'init')
+
+  const mixed = init('mixed-repo')
+  mkdirSync(join(mixed, 'src', 'features', 'settings'), { recursive: true })
+  mkdirSync(join(mixed, 'docs'), { recursive: true })
+  writeFileSync(join(mixed, 'src', 'app.ts'), lines(60, 'app'))
+  writeFileSync(join(mixed, 'src', 'features', 'settings', 'SettingsPanelWithAVeryLongComponentName.tsx'), lines(40, 'settings'))
+  writeFileSync(join(mixed, 'src', 'old-name.ts'), lines(30, 'rename'))
+  writeFileSync(join(mixed, 'docs', 'guide.md'), '# Guide\n\nSome text.\n')
+  writeFileSync(join(mixed, 'remove-me.txt'), 'bye\n')
+  commit(mixed, 'init')
+  const app = lines(60, 'app').split('\n')
+  app.splice(10, 3, "export const changed = 'yes'", "export const another = 'line'")
+  app.splice(40, 0, '// 新增一行中文注释，看看 diff 里的中文排版', "export const added = 'new'")
+  writeFileSync(join(mixed, 'src', 'app.ts'), app.join('\n'))
+  writeFileSync(join(mixed, 'src', 'features', 'settings', 'SettingsPanelWithAVeryLongComponentName.tsx'), lines(40, 'settings').replace("'settings-5'", "'settings-five'"))
+  run(mixed, ['mv', 'src/old-name.ts', 'src/new-name.ts'])
+  run(mixed, ['rm', '-q', 'remove-me.txt'])
+  writeFileSync(join(mixed, 'docs', 'new-page.md'), '# 新页面\n\n这是新加的文档。\n')
+  run(mixed, ['add', 'docs/new-page.md'])
+  writeFileSync(join(mixed, 'untracked.log'), 'temp\n')
+
+  const many = init('many-repo')
+  for (let i = 0; i < 400; i++) {
+    const dir = join(many, 'pkg', `module-${String(Math.floor(i / 20)).padStart(2, '0')}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `file-${String(i).padStart(3, '0')}.ts`), lines(8, `m${i}`))
+  }
+  commit(many, 'init')
+  for (let i = 0; i < 400; i++) {
+    const file = join(many, 'pkg', `module-${String(Math.floor(i / 20)).padStart(2, '0')}`, `file-${String(i).padStart(3, '0')}.ts`)
+    writeFileSync(file, lines(8, `m${i}`).replace(`'m${i}-3'`, `'m${i}-three'`))
+  }
+
+  const long = init('long-repo')
+  writeFileSync(join(long, 'generated.ts'), lines(4000, 'old'))
+  commit(long, 'init')
+  writeFileSync(join(long, 'generated.ts'), lines(4000, 'new'))
+
+  const conflict = init('conflict-repo')
+  writeFileSync(join(conflict, 'config.ts'), "export const mode = 'base'\nexport const level = 1\n")
+  commit(conflict, 'init')
+  run(conflict, ['checkout', '-q', '-b', 'feature'])
+  writeFileSync(join(conflict, 'config.ts'), "export const mode = 'feature'\nexport const level = 2\n")
+  commit(conflict, 'feature')
+  run(conflict, ['checkout', '-q', 'main'])
+  writeFileSync(join(conflict, 'config.ts'), "export const mode = 'main'\nexport const level = 3\n")
+  commit(conflict, 'main change')
+  run(conflict, ['merge', 'feature'])
+
+  const binary = init('binary-repo')
+  copyFileSync(join(repo, 'resources/bot-icons/claude-rest.png'), join(binary, 'icon.png'))
+  writeFileSync(join(binary, 'data.bin'), Buffer.from([0, 1, 2, 3, 255, 254]))
+  writeFileSync(join(binary, 'README.md'), '# bin\n')
+  commit(binary, 'init')
+  copyFileSync(join(repo, 'resources/bot-icons/claude-done.png'), join(binary, 'icon.png'))
+  writeFileSync(join(binary, 'data.bin'), Buffer.from([9, 8, 7, 6, 5, 0, 0, 1]))
+  copyFileSync(join(repo, 'resources/bot-icons/codex-ask.png'), join(binary, 'new-icon.png'))
+  writeFileSync(join(binary, 'README.md'), '# bin\n\nchanged\n')
+
+  const broken = init('broken-index-repo')
+  writeFileSync(join(broken, 'a.ts'), 'a\n')
+  commit(broken, 'init')
+  writeFileSync(join(broken, 'a.ts'), 'b\n')
+  writeFileSync(join(broken, '.git', 'index'), 'this is not an index file')
+
+  const headless = init('broken-head-repo')
+  writeFileSync(join(headless, 'a.ts'), 'a\n')
+  commit(headless, 'init')
+  writeFileSync(join(headless, '.git', 'HEAD'), 'garbage\n')
+
+  return { plain, clean, mixed, many, long, conflict, binary, broken, headless }
+}
+
+async function changesTarget({ kit: S, ev, sleep, until, check, log, report, newSession, runDir }) {
+  report.changes = {}
+  const R = report.changes
+  const fx = makeChangesFixtures(mkdtempSync(join(tmpdir(), 'inkstone-ui-changes-')), process.cwd())
+  R.fixtures = fx.plain.replace(/[\\/]not-a-repo$/, '')
+  const panel = '[data-testid="rp-column-0"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const openChanges = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'changes', kind: 'changes' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('.changes-pane')`, 15000, 100)
+  }
+  const settle = async (ms = 1500) => {
+    await until(`!document.querySelector('.changes-pane .ui-notice [aria-busy="true"], .changes-pane .ui-spinner')`, 15000, 150)
+    await sleep(ms)
+    await S.unhover()
+  }
+  const variants = async (name, { light = true, full = true } = {}) => {
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await S.clip(`${name}-light`, panel, 0); await S.theme('dark') }
+  }
+  const visibleText = () => ev(`(() => { const el = document.querySelector('.changes-pane'); return el ? el.innerText.slice(0, 400) : null })()`)
+  const testids = () => ev(`[...document.querySelectorAll('.changes-pane [data-testid]')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.getAttribute('data-testid')).filter((v, i, a) => a.indexOf(v) === i).slice(0, 40)`)
+  const scrollPane = (to) => ev(`(() => { const els = [...document.querySelectorAll('.changes-pane *')].filter((n) => n.scrollHeight > n.clientHeight + 20 && /auto|scroll/.test(getComputedStyle(n).overflowY)); const el = els.sort((a, b) => b.clientHeight - a.clientHeight)[0]; if (!el) return null; el.scrollTop = ${to === 'end' ? 'el.scrollHeight' : to}; return { cls: el.className.slice(0, 60), top: Math.round(el.scrollTop), height: el.scrollHeight } })()`)
+
+  const go = async (dir) => { await newSession(dir); return openChanges() }
+  check('改动：夹具不在当前仓库里', !fx.plain.toLowerCase().startsWith(process.cwd().toLowerCase()), fx.plain)
+  check('改动：面板打开', await go(fx.plain))
+  await settle()
+  R.plain = await visibleText()
+  await variants('changes-00-not-repo', { full: false })
+
+  await go(fx.clean)
+  await settle()
+  R.clean = await visibleText()
+  await variants('changes-01-clean', { full: false })
+
+  const loadingPause = await S.pauseAt('rememberSnapshot(cacheKey, entry)', async () => { await go(fx.mixed) }, { lineOffset: -1 })
+  R.loadingPaused = loadingPause?.paused ?? false
+  if (loadingPause?.paused) await S.shotPaused('changes-02-loading-dark')
+  await loadingPause?.resume()
+  check('改动：加载状态拍到', R.loadingPaused)
+
+  await settle(2500)
+  R.mixed = await testids()
+  R.mixedText = await visibleText()
+  await variants('changes-03-mixed')
+  report.audit.changes = await S.audit('.changes-pane')
+  R.cjk = await ev(`(() => { const hosts = [...document.querySelectorAll('.changes-pane *')].filter((n) => n.shadowRoot); let node = null; for (const h of hosts) { const w = document.createTreeWalker(h.shadowRoot, NodeFilter.SHOW_TEXT); let t; while ((t = w.nextNode())) { if (/新页面/.test(t.data)) { node = t; break } } if (node) break } if (!node) return { found: false, hosts: hosts.length }; const el = node.parentElement; const cs = getComputedStyle(el); const i = node.data.indexOf('新'); const adv = []; for (let k = 0; k < 3; k++) { const r = document.createRange(); r.setStart(node, i + k); r.setEnd(node, i + k + 1); adv.push(Math.round(r.getBoundingClientRect().width * 100) / 100) } const fs = parseFloat(cs.fontSize); const probe = (family) => { const s = document.createElement('span'); s.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:' + cs.fontSize + ';font-family:' + family; s.textContent = '新页面'; document.body.appendChild(s); const w = s.getBoundingClientRect().width; s.textContent = 'abc'; const a = s.getBoundingClientRect().width; s.remove(); return { cjk3: Math.round(w * 100) / 100, latin3: Math.round(a * 100) / 100 } }; return { found: true, tag: el.tagName, fontFamily: cs.fontFamily, fontSize: fs, letterSpacing: cs.letterSpacing, wordSpacing: cs.wordSpacing, features: cs.fontFeatureSettings, eastAsian: cs.fontVariantEastAsian, kerning: cs.fontKerning, advances: adv, ratio: Math.round(adv[0] / fs * 1000) / 1000, inDoc: probe(cs.fontFamily), yahei: probe('"Microsoft YaHei UI"'), mapleLoaded: document.fonts.check(cs.fontSize + ' "Maple Mono CN"', '新'), fontMono: getComputedStyle(document.documentElement).getPropertyValue('--font-mono') } })()`)
+  report.hover.push(['changes-03-hover-row', await S.hover('.changes-file__head button', 700, 2)])
+  await S.clip('changes-03-hover-row', panel, 0)
+  await S.unhover()
+  await ev(`document.querySelectorAll('.changes-file__head button')[1]?.focus()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['changes-03-focus-row', await ev(`document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+  await S.clip('changes-03-focus-row', panel, 0)
+  await ev('document.activeElement?.blur?.()')
+  await scrollPane('end')
+  await sleep(600)
+  await S.clip('changes-03-mixed-end', panel, 0)
+  await scrollPane(0)
+  if (await ev(`!!document.querySelector('[data-testid="changes-branch"]')`)) {
+    await S.click('[data-testid="changes-branch"]', 1000)
+    R.branchPicker = await ev(`!!document.querySelector('[data-testid="git-branch-picker"]')`)
+    await S.shot('changes-04-branch-picker-dark')
+    if (await ev(`!!document.querySelector('[data-testid="git-branch-create"]')`)) {
+      await S.click('[data-testid="git-branch-create"]', 700)
+      await S.shot('changes-04-branch-create-dark')
+    }
+    await S.key('Escape')
+    await S.key('Escape')
+    await sleep(500)
+  }
+  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await sleep(1200)
+  await S.unhover()
+  await S.clip('changes-03-mixed-w360', panel, 0)
+  R.scopeNarrow = await ev(`(() => { const b = document.querySelector('.changes-pane__scope'); if (!b) return null; const icon = b.querySelector(':scope > .ui-btn__icon'); return { icon: !!icon && getComputedStyle(icon).display !== 'none', label: b.getAttribute('aria-label') } })()`)
+  report.hover.push(['changes-03-w360-scope-tip', await S.hover('.changes-pane__scope', 1400, 0)])
+  await S.clip('changes-03-w360-scope-tip', panel, 0)
+  R.scopeTip = await ev(`(() => { const tip = [...document.querySelectorAll('[role="tooltip"]')].find((n) => n.getBoundingClientRect().width > 0); if (!tip) return null; const r = tip.getBoundingClientRect(); return { text: tip.innerText.slice(0, 200), left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), vw: innerWidth } })()`)
+  await S.shot('changes-03-w360-scope-tip-full')
+  await S.unhover()
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1000)
+
+  await go(fx.many)
+  await settle(3000)
+  R.many = await visibleText()
+  R.manyBanner = await ev(`document.querySelector('.changes-pane__banner')?.textContent ?? null`)
+  await variants('changes-05-many', { light: false })
+  R.manyScroll = await scrollPane(4000)
+  await sleep(800)
+  await S.clip('changes-05-many-scrolled', panel, 0)
+
+  await go(fx.long)
+  await settle(3000)
+  R.long = await visibleText()
+  R.longBanner = await ev(`document.querySelector('.changes-pane__banner')?.textContent ?? null`)
+  await variants('changes-06-long-diff', { light: false })
+  R.longScroll = await scrollPane(6000)
+  await sleep(900)
+  await S.clip('changes-06-long-diff-scrolled', panel, 0)
+
+  await go(fx.conflict)
+  await settle(2000)
+  R.conflict = await visibleText()
+  await variants('changes-07-conflict')
+  await ev(`(() => { const el = document.querySelector('[data-testid="git-commit-message"] textarea, textarea[data-testid="git-commit-message"]'); if (!el) return false; el.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, '合并 feature'); el.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+  await sleep(500)
+  R.conflictCommit = await ev(`({ disabled: document.querySelector('[data-testid="git-primary"]')?.hasAttribute('disabled') || document.querySelector('[data-testid="git-primary"]')?.getAttribute('aria-disabled') === 'true' || document.querySelector('[data-testid="git-primary"]')?.hasAttribute('data-disabled'), reason: document.querySelector('[data-testid="git-primary-reason"]')?.textContent ?? null })`)
+  await S.clip('changes-07-conflict-commit', '[data-testid="git-commit-panel"]', 4)
+  await ev('document.activeElement?.blur?.()')
+
+  await go(fx.binary)
+  await settle(2000)
+  R.binary = await testids()
+  if (await ev(`!!document.querySelector('[data-testid="changes-binary-group"] button')`)) {
+    await S.click('[data-testid="changes-binary-group"] button', 1200)
+    await S.unhover()
+  }
+  await variants('changes-08-binary')
+
+  await go(fx.broken)
+  await settle(2000)
+  R.broken = await visibleText()
+  R.brokenRetry = await ev(`!!document.querySelector('[data-testid="changes-git-error"] button')`)
+  await variants('changes-09-git-failure-index')
+  await go(fx.headless)
+  await settle(2000)
+  R.headless = await visibleText()
+  R.headlessRetry = await ev(`!!document.querySelector('[data-testid="changes-git-error"] button')`)
+  await variants('changes-09-git-failure-head', { full: false })
+}
+
+async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn, cdp }) {
+  report.terminal = {}
+  const R = report.terminal
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-term-'))
+  writeFileSync(join(dir, 'README.md'), '# terminal fixture\n')
+  mkdirSync(join(dir, 'logs'))
+  writeFileSync(join(dir, 'logs', 'app.log'), 'x'.repeat(4096))
+  R.fixture = dir
+  check('终端：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const panel = '[data-testid="rp-column-0"]'
+  const bar = '[data-testid="v3-sessionbar"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const openTerm = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'terminal', kind: 'terminal' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="terminal-pane"]')`, 15000, 100)
+  }
+  const ready = async (ms = 2500) => {
+    await until(`!!document.querySelector('[data-testid="terminal-pane"] .xterm') && !document.querySelector('[data-testid="terminal-busy"]')`, 20000, 150)
+    await sleep(ms)
+    await S.unhover()
+  }
+  const variants = async (name, { light = true, full = true, target = panel } = {}) => {
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, target, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, target, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const paneInfo = () => ev(`(() => { const p = document.querySelector('[data-testid="terminal-pane"]'); if (!p) return null; const tabs = [...p.querySelectorAll('[data-testid^="terminal-tab-"]')].map((t) => ({ label: t.innerText.replace(/\\s+/g, ' ').trim().slice(0, 60), agent: t.getAttribute('data-agent') === '1', title: (t.getAttribute('title') || t.querySelector('[title]')?.getAttribute('title') || '').slice(0, 120) })); const ids = [...p.querySelectorAll('[data-testid]')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.getAttribute('data-testid')).filter((v, i, a) => a.indexOf(v) === i && !v.startsWith('terminal-tab-') && !v.startsWith('terminal-host-')); const head = p.closest('[data-testid="rp-column-0"]')?.querySelector('.rp-sub-title, .term-pane-bar'); return { tabs, ids, head: head ? head.innerText.replace(/\\s+/g, ' ').trim().slice(0, 200) : null, notes: [...p.querySelectorAll('.term-pane-note, .term-pane-exited, .term-pane-badge')].map((n) => n.innerText.trim()) } })()`)
+  const focusTerm = () => ev(`(() => { const host = document.querySelector('[data-testid^="terminal-host-"][data-active="1"]'); const ta = host?.querySelector('textarea'); ta?.focus(); return document.activeElement === ta })()`)
+  const typeLine = async (line, waitMs = 1500) => {
+    if (!(await focusTerm())) return false
+    await S.typeText(line, 200)
+    await S.key('Enter', { waitMs })
+    return true
+  }
+  const wheel = async (deltaY) => {
+    const r = await ev(`(() => { const host = document.querySelector('[data-testid^="terminal-host-"][data-active="1"]'); if (!host) return null; const b = host.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })()`)
+    if (!r) return false
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: r.x, y: r.y, deltaX: 0, deltaY })
+    await sleep(600)
+    return true
+  }
+
+  await newSession(dir)
+  check('终端：面板打开', await openTerm())
+  await ready()
+  R.single = await paneInfo()
+  R.edges = await ev(`(() => { const p = document.querySelector('[data-testid="terminal-pane"]'); const col = p?.closest('[data-testid="rp-column-0"]'); const host = p?.querySelector('[data-testid^="terminal-host-"][data-active="1"]'); const screen = host?.querySelector('.xterm-screen'); const tab = col?.querySelector('[data-testid="terminal-tabs"] .ui-ptab'); const tabIcon = tab?.querySelector('svg'); const bar = col?.querySelector('.term-tabbar'); const head = col?.querySelector('.rp-sub-title, .rp-tab, [role="tab"]'); const headIcon = head?.querySelector('svg'); const L = (n) => n ? Math.round(n.getBoundingClientRect().left * 10) / 10 : null; return { column: L(col), screen: L(screen), bar: L(bar), tab: L(tab), tabIcon: L(tabIcon), head: L(head), headIcon: L(headIcon), xtermPad: host?.querySelector('.xterm') ? getComputedStyle(host.querySelector('.xterm')).paddingLeft : null, bg: getComputedStyle(p).backgroundColor, viewportBg: host?.querySelector('.xterm-viewport') ? getComputedStyle(host.querySelector('.xterm-viewport')).backgroundColor : null } })()`)
+  await variants('terminal-01-single')
+
+  await ev(`document.querySelector('[data-testid="terminal-tabs"] [data-panel-tab-close]')?.click()`)
+  R.emptyShown = await until(`!!document.querySelector('[data-testid="terminal-empty"]')`, 8000, 150)
+  if (R.emptyShown) {
+    const closing = await ev(`!!document.querySelector('[data-testid="terminal-close-dialog"]')`)
+    if (closing) await S.click('[data-testid="terminal-close-confirm"]', 800)
+    await sleep(600)
+    await S.unhover()
+    R.empty = await paneInfo()
+    await variants('terminal-00-empty', { full: false })
+    await S.click('[data-testid="terminal-new-empty"]', 800)
+    await ready()
+  }
+  check('终端：空状态拍到', R.emptyShown)
+
+  R.typed = await typeLine(`1..400 | ForEach-Object { "line $_ " + ('.' * 70) }; Write-Output ('long-line-' + ('x' * 300))`, 3500)
+  await S.unhover()
+  await variants('terminal-02-long-output')
+  R.wheel = await wheel(-1500)
+  await S.clip('terminal-02-scrolled-up', panel, 0)
+  await ev(`(() => { const host = document.querySelector('[data-testid^="terminal-host-"][data-active="1"]'); host?.querySelector('textarea')?.blur(); return true })()`)
+  await S.clip('terminal-02-scrolled-up-blur', panel, 0)
+  await wheel(4000)
+
+  await S.click('[data-testid="terminal-new"]', 800)
+  await ready(1500)
+  await S.click('[data-testid="terminal-new"]', 800)
+  await ready(2500)
+  R.exitTyped = await typeLine('exit 7', 2500)
+  await sleep(1000)
+  await S.unhover()
+  R.multi = await paneInfo()
+  await variants('terminal-03-multi-exited')
+  report.hover.push(['terminal-03-tab-hover', await S.hover('[data-testid^="terminal-tab-"]', 1200, 0)])
+  await S.clip('terminal-03-tab-hover', panel, 0)
+  await S.unhover()
+
+  const res = await turn('TERMJOBS 后台任务', { timeout: 120000 })
+  R.fakeRequests = res?.requests ?? null
+  check('终端：后台任务由假模型发起', (res?.requests ?? 0) > 0, res)
+  const openTasks = `(() => { const b = document.querySelector(${JSON.stringify(bar)}); if (!b) return 'no-bar'; if (b.querySelector('[data-testid="wb-bg-tasks"]')) return 'open'; const button = [...b.querySelectorAll('button')].find((n) => /后台任务|Background tasks/.test(n.textContent || '')); if (!button) return 'no-section'; button.click(); return 'clicked' })()`
+  const showTasks = async () => {
+    await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+    await sleep(900)
+    let opened = ''
+    for (let i = 0; i < 15 && opened !== 'open' && opened !== 'no-bar'; i++) {
+      opened = await ev(openTasks)
+      if (opened !== 'open') await sleep(250)
+    }
+    await sleep(800)
+    await S.unhover()
+    return opened
+  }
+  await sleep(3000)
+  R.bgOpened = await showTasks()
+  R.sessionBar = await ev(`!!document.querySelector(${JSON.stringify(bar)})`)
+  check('终端：后台任务列表打开', R.bgOpened === 'open', R.bgOpened)
+  R.bgRunning = await ev(`document.querySelector('[data-testid="wb-bg-tasks"]')?.innerText ?? null`)
+  await variants('terminal-05-bg-running', { target: bar })
+  report.hover.push(['terminal-05-bg-row-hover', await S.hover('[data-testid="wb-bg-running"] [data-testid="wb-bg-open"]', 900, 1)])
+  await S.clip('terminal-05-bg-row-hover', bar, 0)
+  report.hover.push(['terminal-05-bg-stop-hover', await S.hover('[data-testid="wb-bg-stop"]', 1200, 0)])
+  await S.clip('terminal-05-bg-stop-hover', bar, 0)
+  await S.unhover()
+  await sleep(22000)
+  await openTerm()
+  await sleep(1500)
+  await S.unhover()
+  R.agent = await paneInfo()
+  R.activeVisible = await ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); const a = list?.querySelector('.ui-ptab[data-active="1"]'); if (!list || !a) return null; const l = list.getBoundingClientRect(); const r = a.getBoundingClientRect(); return { listLeft: Math.round(l.left), listRight: Math.round(l.right), tabLeft: Math.round(r.left), tabRight: Math.round(r.right) } })()`)
+  await variants('terminal-04-agent-tabs')
+  report.hover.push(['terminal-04-agent-tab-hover', await S.hover('[data-testid^="terminal-tab-"][data-agent="1"]', 1200, 0)])
+  await S.clip('terminal-04-agent-tab-hover', panel, 0)
+  await S.unhover()
+  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await sleep(1200)
+  R.narrow = await paneInfo()
+  R.activeVisibleNarrow = await ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); const a = list?.querySelector('.ui-ptab[data-active="1"]'); if (!list || !a) return null; const l = list.getBoundingClientRect(); const r = a.getBoundingClientRect(); return { listLeft: Math.round(l.left), listRight: Math.round(l.right), tabLeft: Math.round(r.left), tabRight: Math.round(r.right) } })()`)
+  await S.clip('terminal-04-w360', panel, 0)
+  const tabsState = () => ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); const a = list?.querySelector('.ui-ptab[data-active="1"]'); if (!list || !a) return null; const l = list.getBoundingClientRect(); const r = a.getBoundingClientRect(); return { scrollLeft: Math.round(list.scrollLeft), max: list.scrollWidth - list.clientWidth, activeInView: r.left >= l.left - 1 && r.right <= l.right + 1, listWidth: Math.round(l.width), tabWidth: Math.round(r.width), label: a.innerText.trim().slice(0, 80) } })()`)
+  const userTabs = await ev(`[...document.querySelectorAll('[data-testid="terminal-tabs"] [data-testid^="terminal-tab-"]:not([data-agent="1"])')].map((n) => n.getAttribute('data-testid'))`)
+  for (const id of userTabs ?? []) {
+    await ev(`(document.querySelector('[data-testid="${id}"] .ui-ptab__label')?.click(), true)`)
+    await sleep(900)
+    if (!(await ev(`!!document.querySelector('[data-testid="terminal-exited"]')`))) break
+  }
+  R.wheelBefore = await tabsState()
+  const listBox = await ev(`(() => { const b = document.querySelector('[data-testid="terminal-tabs"]')?.getBoundingClientRect(); return b ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null })()`)
+  if (listBox && R.wheelBefore) {
+    const delta = R.wheelBefore.scrollLeft > R.wheelBefore.max / 2 ? -600 : 600
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: listBox.x, y: listBox.y, deltaX: 0, deltaY: delta })
+    await sleep(600)
+    R.wheelAfter = await tabsState()
+    R.wheelMenu = await ev(`(() => { const a = document.querySelector('[data-testid="terminal-tabs"] .ui-ptab[data-active="1"]'); if (!a) return false; const b = a.getBoundingClientRect(); a.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 4, clientY: b.top + 4, button: 2 })); return true })()`)
+    await sleep(900)
+    R.wheelMenuShown = await ev(`!![...document.querySelectorAll('[role="menu"]')].find((n) => n.getBoundingClientRect().width > 0)`)
+    R.wheelRerender = await tabsState()
+    await S.clip('terminal-04-w360-wheel-kept', panel, 0)
+    await S.key('Escape', { waitMs: 500 })
+    check('终端：滚轮翻开标签后重渲染不拉回', !!R.wheelAfter && R.wheelAfter.scrollLeft !== R.wheelBefore.scrollLeft && R.wheelMenuShown && R.wheelRerender?.scrollLeft === R.wheelAfter.scrollLeft, { before: R.wheelBefore, after: R.wheelAfter, menu: R.wheelMenuShown, rerender: R.wheelRerender })
+  }
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1000)
+
+  const runningTab = await ev(`(() => { const tabs = [...document.querySelectorAll('[data-testid^="terminal-tab-"][data-agent="1"]')]; const t = tabs.find((n) => /dev/.test(n.innerText)) || tabs[0]; const b = t?.querySelector('[data-panel-tab-close]'); if (!b) return false; b.click(); return true })()`)
+  R.closeDialog = runningTab ? await until(`!!document.querySelector('[data-testid="terminal-close-dialog"]')`, 5000, 150) : false
+  if (R.closeDialog) {
+    await sleep(500)
+    await S.shot('terminal-07-close-confirm-dark')
+    R.closeDialogText = await ev(`document.querySelector('[data-testid="terminal-close-dialog"]')?.innerText?.slice(0, 400) ?? null`)
+    R.closeTitleChar = await ev(`(() => { const d = document.querySelector('[data-testid="terminal-close-dialog"]'); const h = d?.querySelector('h1,h2,h3,[class*="title"]'); const s = (h?.textContent ?? '').trim(); const last = s.slice(-1); const range = document.createRange(); const node = [...(h?.childNodes ?? [])].find((n) => n.nodeType === 3 && n.textContent.includes(last)); if (node) { const i = node.textContent.lastIndexOf(last); range.setStart(node, i); range.setEnd(node, i + 1) } return { text: s, code: last ? last.codePointAt(0).toString(16) : null, width: node ? Math.round(range.getBoundingClientRect().width * 10) / 10 : null, fontSize: h ? getComputedStyle(h).fontSize : null } })()`)
+    await S.click('[data-testid="terminal-close-cancel"]', 600)
+  }
+
+  R.bgOpenedLater = await showTasks()
+  if (await ev(`(() => { const b = document.querySelector('[data-testid="wb-bg-finished-toggle"]'); if (!b) return false; b.scrollIntoView({ block: 'center' }); return true })()`)) {
+    await sleep(400)
+    if ((await ev(`document.querySelector('[data-testid="wb-bg-finished-toggle"]')?.getAttribute('aria-expanded')`)) !== 'true') await S.click('[data-testid="wb-bg-finished-toggle"]', 800)
+    await ev(`document.querySelector('[data-testid="wb-bg-finished"]')?.scrollIntoView({ block: 'end' })`)
+    await sleep(400)
+    await S.unhover()
+  }
+  R.bgAll = await ev(`(() => { const root = document.querySelector('[data-testid="wb-bg-tasks"]'); if (!root) return null; return [...root.querySelectorAll('[data-testid="wb-bg-row"]')].map((row) => ({ state: row.getAttribute('data-state'), job: row.getAttribute('data-job-state'), text: row.innerText.replace(/\\s+/g, ' ').trim().slice(0, 140) })) })()`)
+  await variants('terminal-05-bg-finished', { target: bar })
+  await ev(`(() => { const b = document.querySelector(${JSON.stringify(bar)}); const s = [...(b?.querySelectorAll('*') ?? [])].filter((n) => n.scrollHeight > n.clientHeight + 20 && /auto|scroll/.test(getComputedStyle(n).overflowY)).sort((a, c) => c.clientHeight - a.clientHeight)[0]; if (s) s.scrollTop = s.scrollHeight; return !!s })()`)
+  await sleep(500)
+  await S.clip('terminal-05-bg-finished-end', bar, 0)
+  report.audit.terminalBg = await S.audit('[data-testid="wb-bg-tasks"]')
+
+  await newSession(dir)
+  await sleep(1500)
+  await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+  await sleep(900)
+  R.bgNone = await ev(`(() => { const b = document.querySelector(${JSON.stringify(bar)}); return b ? { tasks: !!b.querySelector('[data-testid="wb-bg-tasks"]'), text: b.innerText.replace(/\\s+/g, ' ').slice(0, 300) } : null })()`)
+  if (R.bgNone) await S.clip('terminal-06-bg-none', bar, 0)
+  else await S.shot('terminal-06-bg-none-dark')
+  await ev(`(window.__yanRightPanel.getState().setOpen(true), true)`)
+  await sleep(800)
+}
+
+async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn, box }) {
+  report.quota = {}
+  const R = report.quota
+  const file = box.quotaFixture
+  if (!check('额度：实例带假额度文件（--quota）', !!file && existsSync(file), file ?? null)) return
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-quota-'))
+  writeFileSync(join(dir, 'README.md'), '# quota fixture\n')
+  R.fixture = dir
+  check('额度：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const panel = '[data-testid="rp-column-0"]'
+  const bar = '[data-testid="v3-sessionbar"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  const MIN = 60_000
+  const HOUR = 60 * MIN
+  const DAY = 24 * HOUR
+  const win = (id, label, used, durationMs, leftMs, extra = {}) => ({ id, label, used, total: 100, durationMs, resetAt: Date.now() + leftMs, ...extra })
+  const card = (key, extra) => ({ key, source: 'yan', provider: 'fake', name: 'Fake', checkedAt: Date.now(), status: 'ok', windows: [], ...extra })
+  const main = (fiveHour, week, extra = {}) => card('debug:fake', { email: 'demo@example.com', plan: 'max', active: true, windows: [win('five_hour', '5 小时', fiveHour, 5 * HOUR, extra.fiveLeft ?? 3 * HOUR + 12 * MIN, fiveHour >= 100 ? { exceeded: true } : {}), win('seven_day', '本周', week, 7 * DAY, extra.weekLeft ?? 4 * DAY + 3 * HOUR, week >= 100 ? { exceeded: true } : {})], ...(extra.card ?? {}) })
+  const alt = (fiveHour, week) => card('debug:fake-alt', { name: 'Fake', label: '备用', email: 'backup-account-with-a-long-name@example.com', plan: 'plus', switchable: true, windows: [win('five_hour', '5 小时', fiveHour, 5 * HOUR, 4 * HOUR + 30 * MIN), win('seven_day', '本周', week, 7 * DAY, 6 * DAY)] })
+  const states = () => ({
+    none: [],
+    single: [main(23, 11)],
+    multi: [main(46, 31), alt(4, 62), card('debug:other', { provider: 'anthropic', name: 'Claude', email: 'me@example.com', plan: 'max', windows: [win('five_hour', '5 小时', 71, 5 * HOUR, 2 * HOUR), win('seven_day', '本周', 18, 7 * DAY, 5 * DAY)] })],
+    near: [main(88, 93, { fiveLeft: 25 * MIN, weekLeft: 20 * HOUR }), alt(12, 40)],
+    exhausted: [main(100, 76, { fiveLeft: 40 * MIN, weekLeft: 2 * DAY + 5 * HOUR, card: { status: 'limited' } }), alt(12, 40)],
+    error: [main(23, 11), card('debug:fake-err', { label: '备用', email: 'backup@example.com', status: 'error', error: 'HTTP 503：额度服务暂时不可用，稍后再试' }), card('debug:fake-exp', { label: '旧号', email: 'old@example.com', status: 'expired', hint: '登录已过期，请在 设置 → 模型 重新登录' })],
+    stale: [card('debug:fake', { email: 'demo@example.com', plan: 'max', active: true, status: 'error', error: '网络超时' })]
+  })
+  const openQuota = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'quota', kind: 'quota' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="v3-wb-quota"]')`, 15000, 100)
+  }
+  const paneInfo = () => ev(`(() => { const el = document.querySelector('[data-testid="v3-wb-quota"]'); if (!el) return null; return { text: el.innerText.replace(/\\s+/g, ' ').trim().slice(0, 700), cards: [...el.querySelectorAll('.wb-quota-card')].map((c) => ({ id: c.getAttribute('data-testid'), wins: [...c.querySelectorAll('.wb-quota-win')].map((w) => w.getAttribute('data-tone') + ':' + w.innerText.replace(/\\s+/g, ' ').trim()) })), empty: !!el.querySelector('[data-testid="v3-wb-quota-empty"]'), spinner: !!el.querySelector('.ui-spinner') } })()`)
+  const barInfo = () => ev(`(() => { const q = document.querySelector('[data-testid="wb-ov-quota"]'); return q ? q.innerText.replace(/\\s+/g, ' ').trim().slice(0, 400) : null })()`)
+  const load = async (name) => {
+    writeFileSync(file, JSON.stringify(states()[name]))
+    await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`)
+    await sleep(400)
+    await until(`!document.querySelector('[data-testid="v3-wb-quota"] .ui-spinner') && !document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.hasAttribute('disabled')`, 15000, 150)
+    await sleep(700)
+    await S.unhover()
+  }
+  const variants = async (name, { light = true, full = true, target = panel } = {}) => {
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, target, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, target, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const barClip = async (name) => {
+    await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+    await sleep(1200)
+    await ev(`document.querySelector('[data-testid="wb-ov-quota"]')?.scrollIntoView({ block: 'center' })`)
+    await sleep(400)
+    await S.unhover()
+    const info = await barInfo()
+    if (await ev(`!!document.querySelector(${JSON.stringify(bar)})`)) await S.clip(name, bar, 0)
+    else await S.shot(`${name}-full`)
+    await openQuota()
+    await sleep(500)
+    return info
+  }
+
+  await newSession(dir)
+  const first = await turn('你好', { timeout: 60000 })
+  R.firstTurn = first?.requests ?? null
+  writeFileSync(file, JSON.stringify(states().none))
+  check('额度：面板打开', await openQuota())
+  R.loading = await paneInfo()
+  await S.clip('quota-00-loading', panel, 0)
+  await sleep(800)
+  const order = [['quota-01-none', 'none'], ['quota-02-single', 'single'], ['quota-03-multi', 'multi'], ['quota-04-near', 'near'], ['quota-05-exhausted', 'exhausted'], ['quota-06-error', 'error'], ['quota-07-stale', 'stale']]
+  for (const [shot, name] of order) {
+    await load(name)
+    R[name] = await paneInfo()
+    await variants(shot, { full: name !== 'error' })
+    if (['none', 'single', 'near', 'exhausted', 'stale'].includes(name)) R[`${name}Bar`] = await barClip(`${shot}-bar`)
+    if (name === 'multi') {
+      report.hover.push(['quota-03-switch-hover', await S.hover('[data-testid="v3-wb-quota-switch"]', 1200, 0)])
+      await S.clip('quota-03-switch-hover', panel, 0)
+      report.hover.push(['quota-03-win-hover', await S.hover('.wb-quota-win', 1200, 0)])
+      await S.clip('quota-03-win-hover', panel, 0)
+      await S.unhover()
+    }
+    if (name === 'multi' || name === 'exhausted' || name === 'error') {
+      await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+      await sleep(1200)
+      await S.unhover()
+      await S.clip(`${shot}-w360`, panel, 0)
+      await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+      await sleep(900)
+    }
+  }
+  report.audit.quota = await S.audit('[data-testid="v3-wb-quota"]')
+
+  await load('exhausted')
+  await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+  await sleep(800)
+  await turn('FAILQUOTA 额度用完', { timeout: 90000 })
+  R.errorCard = await until(`!!document.querySelector('[data-testid="v3-error-card"]')`, 20000, 200)
+  await sleep(800)
+  R.errorText = await ev(`document.querySelector('[data-testid="v3-error-card"]')?.innerText?.replace(/\\s+/g, ' ').slice(0, 400) ?? null`)
+  R.errorActions = await ev(`[...document.querySelectorAll('[data-testid="v3-error-card"] [data-testid^="v3-error-"]')].map((n) => n.getAttribute('data-testid'))`)
+  await ev(`document.querySelector('[data-testid="v3-error-card"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(500)
+  await S.unhover()
+  await S.shot('quota-08-error-card-dark')
+  if (R.errorCard) await S.clip('quota-08-error-card', '[data-testid="v3-error-card"]', 24)
+  const waited = await ev(`(() => { const b = document.querySelector('[data-testid="v3-error-wait"]'); if (!b) return false; b.click(); return true })()`)
+  R.waitClicked = waited
+  R.resumeShown = await until(`!!document.querySelector('[data-testid="quota-resume-bar"]')`, 8000, 200)
+  if (!R.resumeShown) {
+    await ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ quotaResume: { sessionId: s.session?.sessionId, provider: 'fake', armedAt: Date.now(), resetAt: Date.now() + 40 * 60000 } }); return true })()`)
+    R.resumeInjected = true
+    R.resumeShown = await until(`!!document.querySelector('[data-testid="quota-resume-bar"]')`, 8000, 200)
+  }
+  check('额度：等待额度恢复的提示出现', R.resumeShown, { waited, injected: !!R.resumeInjected })
+  R.resumeState = await ev(`window.__yanStore.getState().quotaResume ?? null`)
+  R.resumeText = await ev(`document.querySelector('[data-testid="quota-resume-bar"]')?.innerText?.replace(/\\s+/g, ' ').slice(0, 300) ?? null`)
+  await ev(`document.querySelector('[data-testid="quota-resume-bar"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(600)
+  await S.unhover()
+  await S.shot('quota-09-resume-dark')
+  if (R.resumeShown) {
+    await S.clip('quota-09-resume', '[data-testid="quota-resume-bar"]', 24)
+    await S.theme('light'); await sleep(400)
+    await S.clip('quota-09-resume-light', '[data-testid="quota-resume-bar"]', 24)
+    await S.theme('dark'); await sleep(300)
+  }
+  R.resumeBar = await barClip('quota-09-resume-bar')
+  await ev(`(() => { window.__yanStore.getState().cancelQuotaResume?.(); return true })()`)
+  writeFileSync(file, JSON.stringify(states().single))
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(600)
+}
+
+async function contextTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn, fake }) {
+  report.context = {}
+  const R = report.context
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-ctx-'))
+  const rule = (i) => `- 规则 ${i}：修改前先读相关源码与调用链，保持改动最小；keep changes minimal and run the matching tests (rule ${i}).`
+  writeFileSync(join(dir, 'AGENTS.md'), `# 项目约定\n\n${Array.from({ length: 900 }, (_, i) => rule(i + 1)).join('\n')}\n`)
+  for (let i = 1; i <= 30; i++) {
+    const name = `fixture-skill-${String(i).padStart(2, '0')}`
+    mkdirSync(join(dir, '.pi', 'skills', name), { recursive: true })
+    writeFileSync(join(dir, '.pi', 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: 示例技能 ${i}，用来测试上下文面板里很多技能时的显示；fixture skill ${i} used to fill the skills list with a reasonably long description.\n---\n\n# ${name}\n\n只用于截图。\n`)
+  }
+  R.fixture = dir
+  check('上下文：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const panel = '[data-testid="rp-column-0"]'
+  const bar = '[data-testid="v3-sessionbar"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  const originalLimit = await ev('window.__yanStore.getState().settings?.autoCompactTokens ?? null')
+  R.originalLimit = originalLimit
+  const openCtx = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'context', kind: 'context' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="v3-wb-context"]')`, 15000, 100)
+  }
+  const variants = async (name, { light = true, full = true, target = panel } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, target, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, target, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const paneText = () => ev(`(() => { const el = document.querySelector('[data-testid="v3-wb-context"]'); if (!el) return null; return { tokens: el.querySelector('[data-testid="v3-wb-ctx-tokens"]')?.textContent ?? null, distance: el.querySelector('[data-testid="v3-wb-ctx-distance"]')?.textContent ?? null, tone: el.querySelector('.wb-ctxw')?.getAttribute('data-tone') ?? null, compaction: el.querySelector('[data-testid="v3-wb-ctx-compaction"]')?.textContent ?? null, history: el.querySelector('[data-testid="v3-wb-ctx-history"]')?.innerText ?? null, sources: [...el.querySelectorAll('[data-testid^="v3-wb-ctx-source-"]')].map((n) => n.getAttribute('data-testid').slice(18) + ':' + (n.querySelector('.wb-ctx-source-count')?.textContent ?? '')), compactDisabled: el.querySelector('[data-testid="v3-wb-ctx-compact"]')?.hasAttribute('disabled') || el.querySelector('[data-testid="v3-wb-ctx-compact"]')?.hasAttribute('data-disabled'), limitNote: el.querySelector('[data-testid="v3-wb-ctx-limit-note"]')?.textContent ?? null, figure: el.querySelector('.wb-ctxw-figure')?.innerText?.replace(/\\s+/g, ' ') ?? null } })()`)
+  const scrollPane = (selector) => ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.scrollIntoView({ block: 'start' }); return true })()`)
+  const barClip = async (name) => {
+    await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+    await sleep(900)
+    await S.unhover()
+    if (await ev(`!!document.querySelector(${JSON.stringify(bar)})`)) await S.clip(name, bar, 0)
+    else await S.shot(`${name}-full`)
+    await ev(`(window.__yanRightPanel.getState().setOpen(true), true)`)
+    await sleep(700)
+  }
+  const markerClip = async (name) => {
+    const found = await ev(`(() => { const el = [...document.querySelectorAll('[data-testid="v3-compaction-marker"]')].at(-1); if (!el) return false; el.scrollIntoView({ block: 'center' }); return true })()`)
+    if (!found) return false
+    await sleep(500)
+    await S.clip(name, '.v3-compaction', 24)
+    return true
+  }
+
+  await newSession(dir)
+  check('上下文：面板打开', await openCtx())
+  await ev(`window.__yanStore.getState().patchSettings({ autoCompactTokens: 100000 })`)
+  await sleep(2500)
+  R.empty = await paneText()
+  await variants('context-00-empty')
+
+  const res = await turn('先打个招呼。', { timeout: 60000 })
+  check('上下文：请求发到假模型', (res?.requests ?? 0) > 0, res)
+  await sleep(2000)
+  R.low = await paneText()
+  await variants('context-01-low')
+  await barClip('context-01-sessionbar')
+  if (await S.click('[data-testid="composer-context-meter"]', 900)) {
+    R.meterPopover = await ev(`document.querySelector('[data-testid="composer-context-popover"]')?.innerText ?? null`)
+    await S.shot('context-01-meter-popover-dark')
+    await S.key('Escape')
+  }
+
+  for (const [name, tokens] of [['context-02-mid', 50000], ['context-03-high', 80000], ['context-04-near', 96000]]) {
+    await turn(`USAGEIN=${tokens} 回一句。`, { timeout: 60000 })
+    await sleep(2000)
+    R[name] = await paneText()
+    await variants(name, { light: name !== 'context-02-mid' })
+  }
+  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await sleep(1200)
+  await S.clip('context-04-w360', panel, 0)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(900)
+  await barClip('context-04-sessionbar')
+
+  process.env.YAN_FAKE_SUMMARY_DELAY_MS = '9000'
+  const padding = '填充上下文，无关内容。'.repeat(16000)
+  const big = turn(`USAGEIN=120000 ${padding}\n收到后只回一句话。`, { timeout: 240000 })
+  R.compactingSeen = await until('!!s.session?.isCompacting', 120000, 100)
+  if (R.compactingSeen) {
+    await sleep(1200)
+    R.compacting = await paneText()
+    await variants('context-05-compacting', { light: false })
+    await markerClip('context-05-marker-running')
+  }
+  await big
+  R.compactedDone = await until('!!s.session?.lastCompaction && !s.session?.isCompacting', 120000, 200)
+  delete process.env.YAN_FAKE_SUMMARY_DELAY_MS
+  check('上下文：拍到压缩中', R.compactingSeen)
+  await sleep(2500)
+  R.after = await paneText()
+  R.lastCompaction = await ev('window.__yanStore.getState().session?.lastCompaction ?? null')
+  await variants('context-06-after')
+  await markerClip('context-06-marker-done')
+  await barClip('context-06-sessionbar')
+
+  await turn(`USAGEIN=40000 继续补充细节。${'补充说明。'.repeat(12000)}`, { timeout: 120000 })
+  await sleep(1000)
+  process.env.YAN_FAKE_SUMMARY_FAIL = '1'
+  await S.click('[data-testid="v3-wb-ctx-compact"]', 500)
+  R.failedSeen = await until(`s.session?.lastCompaction?.status === 'failed' && !s.session?.isCompacting`, 90000, 200)
+  delete process.env.YAN_FAKE_SUMMARY_FAIL
+  check('上下文：拍到压缩失败', R.failedSeen, await ev('window.__yanStore.getState().session?.lastCompaction ?? null'))
+  await sleep(1500)
+  R.failed = await paneText()
+  R.failedCompaction = await ev('window.__yanStore.getState().session?.lastCompaction ?? null')
+  await variants('context-07-failed')
+  await markerClip('context-07-marker-failed')
+  if (await ev(`(() => { const el = document.querySelector('[data-testid="v3-wb-ctx-compaction"]'); if (!el) return false; el.scrollIntoView({ block: 'center' }); return true })()`)) {
+    await sleep(500)
+    await S.unhover()
+    await S.clip('context-07-failed-history', panel, 0)
+    await S.theme('light'); await sleep(400)
+    await S.clip('context-07-failed-history-light', panel, 0)
+    await S.theme('dark'); await sleep(300)
+  }
+  report.hover.push(['context-07-failed-tip', await S.hover('[data-testid="v3-wb-ctx-compaction"]', 1500, 0)])
+  await S.clip('context-07-failed-tip', panel, 0)
+  await S.unhover()
+
+  await scrollPane('[data-testid="v3-wb-ctx-sources"]')
+  await sleep(600)
+  R.sources = await paneText()
+  await S.clip('context-08-sources', panel, 0)
+  await ev(`(() => { for (const b of document.querySelectorAll('[data-testid="v3-wb-ctx-sources"] .wb-ctx-more')) b.click(); return true })()`)
+  await sleep(800)
+  await scrollPane('[data-testid="v3-wb-ctx-source-skills"]')
+  await sleep(500)
+  await S.clip('context-08-sources-expanded', panel, 0)
+  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await sleep(1200)
+  await S.clip('context-08-w360-sources', panel, 0)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(900)
+  report.audit.context = await S.audit('[data-testid="v3-wb-context"]')
+  await ev(`window.__yanStore.getState().patchSettings({ autoCompactTokens: ${originalLimit === null ? 'undefined' : originalLimit} })`)
+}
+
+const TARGETS = { branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget,  browserfinal: browserFinalTarget,  browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget }
+
+export default async function run(ctx) {
+  const { cdp, until, sleep, log, check, report } = ctx
+  const out = process.env.UI_POLISH_OUT || ctx.out || join(ctx.runDir, 'shots')
+  const kit = shotKit(cdp, out)
+  const ev = kit.ev
+  report.focus = []
+  report.hover = []
+  report.audit = {}
+  const friction = listFrictionShots().find((item) => item.viewport && item.viewport.width >= 1600 && item.sessionId)
+  const opened = friction ? await openFrictionSession(cdp, until, friction.sessionId) : null
+  log('会话', opened ?? '（沿用启动时的会话）')
+  report.layout = await measureUi(cdp)
+  check('窗口最大化到 1600 以上宽', report.layout.viewport[0] >= 1600, report.layout)
+  const wanted = String(process.env.UI_POLISH_TARGETS || 'browser').split(',').map((item) => item.trim()).filter(Boolean)
+  const forcedWidths = Object.fromEntries(String(process.env.UI_POLISH_PANEL_WIDTH || '').split(',').map((item) => item.split(':')).filter((pair) => pair.length === 2).map(([key, value]) => [key.trim(), Number(value)]))
+  report.forcedWidths = {}
+  for (const name of wanted) {
+    const target = TARGETS[name]
+    if (!check(`目标 ${name} 存在`, !!target)) continue
+    const original = forcedWidths[name] ? await ev('window.__yanRightPanel.getState().width') : null
+    if (forcedWidths[name]) {
+      await ev(`(window.__yanRightPanel.getState().setWidth(${forcedWidths[name]}), true)`)
+      await sleep(900)
+      report.forcedWidths[name] = { user: original, used: await ev('window.__yanRightPanel.getState().width') }
+    }
+    await target({ ...ctx, kit, ev })
+    if (original) {
+      await ev(`(window.__yanRightPanel.getState().setWidth(${original}), true)`)
+      await sleep(600)
+    }
+  }
+  await kit.theme('dark')
+  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
+  check('截图数量', kit.files.length > 0, kit.files.length)
+}

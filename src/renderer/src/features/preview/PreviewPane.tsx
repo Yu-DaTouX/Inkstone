@@ -882,7 +882,7 @@ function PreviewBody({
         </Notice>
       )
     case 'problem':
-      return <ProblemView problem={view.problem} text={text} onRetry={onRetry} />
+      return <ProblemView problem={view.problem} text={text} onRetry={onRetry} onReveal={onReveal} />
     case 'text':
       return (
         <>
@@ -1069,7 +1069,7 @@ function PreviewNotes({ notes, text }: { notes: PreviewNote[]; text: PreviewText
   )
 }
 
-function ProblemView({ problem, text, onRetry }: { problem: PreviewProblem; text: PreviewText; onRetry: () => void }): ReactElement {
+function ProblemView({ problem, text, onRetry, onReveal }: { problem: PreviewProblem; text: PreviewText; onRetry: () => void; onReveal: () => void }): ReactElement {
   const title =
     problem.kind === 'missing'
       ? text.missing
@@ -1092,9 +1092,16 @@ function ProblemView({ problem, text, onRetry }: { problem: PreviewProblem; text
       description={description}
       action={
         problem.kind === 'directory' || problem.kind === 'invalid' || problem.kind === 'not_file' ? undefined : (
-          <Button size="sm" variant="secondary" onPress={onRetry}>
-            {text.retry}
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onPress={onRetry}>
+              {text.retry}
+            </Button>
+            {problem.kind === 'unreadable' ? (
+              <Button size="sm" variant="secondary" onPress={onReveal} data-testid="v3-preview-problem-reveal">
+                {text.reveal}
+              </Button>
+            ) : null}
+          </>
         )
       }
     />

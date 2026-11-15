@@ -5,6 +5,20 @@ export interface BrowserLoadFailure {
   code: number
   description: string
   url: string
+  proxyReason?: string
+}
+
+const PROXY_FAILURE_CODES: Record<string, [number, string]> = {
+  'connect-failed': [-102, 'ERR_CONNECTION_REFUSED'],
+  'connect-timeout': [-118, 'ERR_CONNECTION_TIMED_OUT'],
+  'upstream-timeout': [-118, 'ERR_CONNECTION_TIMED_OUT'],
+  'upstream-unavailable': [-130, 'ERR_PROXY_CONNECTION_FAILED'],
+  'upstream-failed': [-130, 'ERR_PROXY_CONNECTION_FAILED']
+}
+
+export function proxyLoadFailure(reason: string, url: string): BrowserLoadFailure {
+  const [code, description] = PROXY_FAILURE_CODES[reason] ?? [-2, 'ERR_FAILED']
+  return { code, description, url, proxyReason: reason }
 }
 
 export function shouldSurfaceLoadError(errorCode: number, isMainFrame: boolean): boolean {
@@ -80,6 +94,37 @@ export function isBlankAddress(url: string | undefined): boolean {
 
 export function nextAddressInput(committed: string, draft: string, dirty: boolean): string {
   return dirty ? draft : committed
+}
+
+export interface RequestedAddress {
+  tabId: string | null
+  url: string
+}
+
+export interface AddressMemory {
+  requested: RequestedAddress | null
+  restored: RequestedAddress | null
+}
+
+export interface AddressView {
+  loading: boolean
+  shownUrl: string
+  tabId: string | null
+  failed: boolean
+}
+
+export function nextAddressMemory(memory: AddressMemory, view: AddressView): AddressMemory {
+  if (view.loading) return { requested: view.shownUrl ? { tabId: view.tabId, url: view.shownUrl } : null, restored: null }
+  const restored = view.shownUrl || view.failed || memory.restored?.tabId !== view.tabId ? null : memory.restored
+  const requested = memory.requested
+  if (!requested || requested.tabId !== view.tabId || view.failed) return { requested: null, restored }
+  if (view.shownUrl) return { requested: view.shownUrl === requested.url ? requested : null, restored }
+  return { requested: null, restored: requested }
+}
+
+export function addressShown(shownUrl: string, memory: AddressMemory, tabId: string | null): string {
+  if (shownUrl) return shownUrl
+  return memory.restored && memory.restored.tabId === tabId ? memory.restored.url : ''
 }
 
 export function failureUrl(validatedUrl: string | undefined | null, fallback: string): string {

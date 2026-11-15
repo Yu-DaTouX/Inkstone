@@ -26,6 +26,7 @@ const {
   fileListLimit,
   flattenFileTree,
   isLargeDiff,
+  isLargeFile,
   sortChangeItems
 } = mod
 
@@ -50,6 +51,8 @@ assert.equal(canFitFileList(400), true)
 const file = (path, added = 0, removed = 0) => ({ path, status: 'M', untracked: false, added, removed })
 assert.equal(isLargeDiff([file('a', 2500, 2500)]), false)
 assert.equal(isLargeDiff([file('a', 2500, 2501)]), true)
+assert.equal(isLargeFile(file('a', 2500, 2500)), false)
+assert.equal(isLargeFile(file('a', 4000, 4000)), true, '单个文件超过阈值时不自动展开')
 assert.equal(isLargeDiff(Array.from({ length: LARGE_DIFF_FILES }, (_, i) => file(`f${i}.ts`))), false)
 assert.equal(isLargeDiff(Array.from({ length: LARGE_DIFF_FILES + 1 }, (_, i) => file(`f${i}.ts`))), true)
 assert.equal(isLargeDiff([{ path: 'a' }]), false)

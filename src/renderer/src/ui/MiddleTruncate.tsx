@@ -1,16 +1,40 @@
-import { useLayoutEffect, useRef, type HTMLAttributes } from 'react'
+import { useLayoutEffect, useRef, type HTMLAttributes, type ReactNode } from 'react'
 import { cx } from './cx'
+
+export interface MiddleTruncatePart {
+  text: string
+  hit: boolean
+}
 
 export interface MiddleTruncateProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   value: string
   tail?: number
   showTitle?: boolean
+  parts?: readonly MiddleTruncatePart[]
 }
 
-export function MiddleTruncate({ value, tail, showTitle = true, className, ...rest }: MiddleTruncateProps) {
+function sliceParts(parts: readonly MiddleTruncatePart[], from: number, to: number): MiddleTruncatePart[] {
+  const out: MiddleTruncatePart[] = []
+  let at = 0
+  for (const part of parts) {
+    const start = Math.max(from, at)
+    const end = Math.min(to, at + part.text.length)
+    if (end > start) out.push({ text: part.text.slice(start - at, end - at), hit: part.hit })
+    at += part.text.length
+  }
+  return out
+}
+
+function renderParts(parts: readonly MiddleTruncatePart[] | undefined, text: string, from: number): ReactNode {
+  if (!parts) return text
+  return sliceParts(parts, from, from + text.length).map((part, index) => (part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>))
+}
+
+export function MiddleTruncate({ value, tail, showTitle = true, parts, className, ...rest }: MiddleTruncateProps) {
   const split = splitForMiddleTruncate(value, tail)
   const headRef = useRef<HTMLSpanElement>(null)
   const head = split?.head
+  const partsKey = parts ? parts.map((part) => `${part.hit ? 1 : 0}${part.text.length}`).join(',') : ''
   useLayoutEffect(() => {
     const element = headRef.current
     if (!element || head === undefined) return
@@ -19,19 +43,19 @@ export function MiddleTruncate({ value, tail, showTitle = true, className, ...re
     const observer = new ResizeObserver(() => fitHead(element))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [head])
+  }, [head, partsKey])
   return (
     <span {...rest} title={showTitle ? value : rest.title} className={cx('ui-middle-truncate', className)}>
       {split ? (
         <>
           <span ref={headRef} className="ui-middle-truncate__head">
-            {split.head}
+            {renderParts(parts, split.head, 0)}
           </span>
-          <span className="ui-middle-truncate__tail">{split.tail}</span>
+          <span className="ui-middle-truncate__tail">{renderParts(parts, split.tail, split.head.length)}</span>
         </>
       ) : (
         <span key="whole" className="ui-middle-truncate__whole">
-          {value}
+          {renderParts(parts, value, 0)}
         </span>
       )}
     </span>
@@ -43,27 +67,47 @@ interface HeadFit {
   slack: number
 }
 
+function textNodes(root: HTMLElement): Text[] {
+  const nodes: Text[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text)
+  return nodes
+}
+
+function locate(nodes: readonly Text[], index: number): { node: Text; offset: number } {
+  let at = 0
+  for (const node of nodes) {
+    if (index <= at + node.length) return { node, offset: index - at }
+    at += node.length
+  }
+  const last = nodes[nodes.length - 1]
+  return { node: last, offset: last.length }
+}
+
 function measureHead(head: HTMLElement): HeadFit {
-  const text = head.firstChild
-  const overflowing = head.scrollWidth > head.clientWidth && text instanceof Text
+  const nodes = textNodes(head)
+  const overflowing = head.scrollWidth > head.clientWidth && nodes.length > 0
   let slack = 0
   if (overflowing) {
     const range = document.createRange()
     const left = head.getBoundingClientRect().left
     const width = head.clientWidth
+    const total = nodes.reduce((sum, node) => sum + node.length, 0)
     const widthTo = (end: number): number => {
-      range.setStart(text, 0)
-      range.setEnd(text, end)
+      const stop = locate(nodes, end)
+      range.setStart(nodes[0], 0)
+      range.setEnd(stop.node, stop.offset)
       return range.getBoundingClientRect().right - left
     }
     let fits = 0
-    let over = text.length
+    let over = total
     while (over - fits > 1) {
       const mid = (fits + over) >> 1
       if (widthTo(mid) <= width) fits = mid
       else over = mid
     }
-    if (/[\uD800-\uDBFF]/.test(text.data[fits - 1] ?? '')) fits -= 1
+    const before = fits > 0 ? locate(nodes, fits) : null
+    if (before && before.offset > 0 && /[\uD800-\uDBFF]/.test(before.node.data[before.offset - 1] ?? '')) fits -= 1
     slack = Math.max(0, width - widthTo(fits))
   }
   return { overflowing, slack }

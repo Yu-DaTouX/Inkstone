@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { compactionElapsedText, compactionErrorTip, compactionReasonText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
+import { compactionElapsedText, compactionErrorText, compactionErrorTip, compactionReasonText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { compactionLineModel } from './turn-lines'
@@ -28,7 +28,11 @@ export function CompactionMarker(): JSX.Element | null {
   const tokens = compactionTokensText(model.run)
   const elapsed = model.running ? compactionElapsedText(t, model.run, now) : null
   const failed = !model.running && model.run.status === 'failed'
-  const text = model.running ? compactionRunningText(t, model.run) : failed ? compactionReasonText(t, model.run) : compactionSummary(t, model.run)
+  const text = model.running
+    ? compactionRunningText(t, model.run)
+    : failed
+      ? [compactionReasonText(t, model.run), compactionErrorText(t, model.run.error)].filter(Boolean).join(' · ')
+      : compactionSummary(t, model.run)
   return (
     <div
       className="v3-compaction"

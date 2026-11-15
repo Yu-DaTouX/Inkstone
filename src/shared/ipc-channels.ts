@@ -363,6 +363,7 @@ export interface IpcChannelMap {
   'yan:browser:back': Contract<B['browser']['back']>
   'yan:browser:forward': Contract<B['browser']['forward']>
   'yan:browser:reload': Contract<B['browser']['reload']>
+  'yan:browser:stop': Contract<B['browser']['stop']>
   'yan:browser:openExternal': Contract<B['browser']['openExternal']>
   'yan:browser:releaseUserControl': Contract<B['browser']['releaseUserControl']>
   'yan:browser:openExternalChrome': Contract<B['browser']['openExternalChrome']>

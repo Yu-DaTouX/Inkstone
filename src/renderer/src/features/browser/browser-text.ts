@@ -1,5 +1,6 @@
 import type { Lang } from '../../i18n'
 import type { BrowserLoginImportStatus, BrowserSiteAddResult } from '../../../../shared/ipc'
+import type { BrowserLoadFailure } from '../../../../shared/browser-navigation'
 
 export interface BrowserText {
   inactive: string
@@ -41,6 +42,8 @@ export interface BrowserText {
   viewportNames: Record<'responsive' | 'mobile' | 'tablet' | 'desktop', string>
   expandTabs: string
   viewMenu: string
+  viewMenuValue(name: string): string
+  loadFailureReason(failure: BrowserLoadFailure): string | null
   tabsLayout: string
   tabsLayoutNames: Record<'vertical' | 'horizontal', string>
   localServersOther: (n: number) => string
@@ -50,6 +53,18 @@ export interface BrowserText {
   searchEngineInvalid: string
   save: string
   cancel: string
+}
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0'])
+
+function failureTarget(failure: BrowserLoadFailure): { host: string; port: string; local: boolean } | null {
+  try {
+    const url = new URL(failure.url)
+    const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+    return { host: url.host, port, local: LOCAL_HOSTS.has(url.hostname) || /^127\./.test(url.hostname) }
+  } catch {
+    return null
+  }
 }
 
 const ZH: BrowserText = {
@@ -105,6 +120,14 @@ const ZH: BrowserText = {
   viewportNames: { responsive: '自适应面板', mobile: '手机 375×812', tablet: '平板 768×1024', desktop: '桌面 1280×800' },
   expandTabs: '固定展开标签栏',
   viewMenu: '视图',
+  viewMenuValue: (name) => `视图：${name}`,
+  loadFailureReason: (failure) => {
+    const target = failureTarget(failure)
+    if (!failure.proxyReason || !target) return null
+    if (failure.proxyReason === 'connect-failed') return target.local ? `本机 ${target.port} 端口没有服务在监听` : `连不上 ${target.host}`
+    if (failure.proxyReason === 'connect-timeout' || failure.proxyReason === 'upstream-timeout') return `连接 ${target.host} 超时`
+    return `连接失败（${failure.proxyReason}）`
+  },
   tabsLayout: '标签布局',
   tabsLayoutNames: { vertical: '竖排标签', horizontal: '横排标签' },
   localServersOther: (n) => `其他 ${n}`,
@@ -171,6 +194,14 @@ const EN: BrowserText = {
   viewportNames: { responsive: 'Fit panel', mobile: 'Mobile 375×812', tablet: 'Tablet 768×1024', desktop: 'Desktop 1280×800' },
   expandTabs: 'Pin tabs open',
   viewMenu: 'View',
+  viewMenuValue: (name) => `View: ${name}`,
+  loadFailureReason: (failure) => {
+    const target = failureTarget(failure)
+    if (!failure.proxyReason || !target) return null
+    if (failure.proxyReason === 'connect-failed') return target.local ? `nothing is listening on local port ${target.port}` : `could not connect to ${target.host}`
+    if (failure.proxyReason === 'connect-timeout' || failure.proxyReason === 'upstream-timeout') return `connection to ${target.host} timed out`
+    return `connection failed (${failure.proxyReason})`
+  },
   tabsLayout: 'Tab layout',
   tabsLayoutNames: { vertical: 'Vertical tabs', horizontal: 'Horizontal tabs' },
   localServersOther: (n) => `Other ${n}`,

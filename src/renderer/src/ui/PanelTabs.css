@@ -45,7 +45,7 @@
     flex: none;
     align-items: center;
     gap: var(--s-2);
-    max-width: 168px;
+    max-width: min(168px, 100%);
     height: var(--size-btn-sm);
     padding: 0 var(--s-8) 0 var(--s-4);
     border-radius: var(--r-sm);
@@ -177,6 +177,7 @@
     font: inherit;
     cursor: pointer;
     outline: none;
+    scroll-margin-inline: calc(var(--s-4) + var(--size-btn-xs) + var(--s-2)) var(--s-8);
   }
   .ui-ptab:has(.ui-ptab__label:focus-visible) {
     box-shadow: var(--ring-focus);

@@ -43,7 +43,7 @@ export function lexicalJoin(root: string, rel: string): string | null {
   return abs
 }
 
-export type ScopedPathFailure = 'invalid' | 'outside_root' | 'missing' | 'root_missing'
+export type ScopedPathFailure = 'invalid' | 'outside_root' | 'missing' | 'root_missing' | 'unreadable'
 
 export type ScopedPathResult =
   | { ok: true; root: string; real: string; lexical: string }
@@ -88,8 +88,10 @@ export async function scopedPath(
   let real: string
   try {
     real = await realpath(lexical)
-  } catch {
+  } catch (error) {
     if (!isWithin(rootReal, lexical)) return { ok: false, reason: 'outside_root', root: rootReal, lexical }
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+    if (code === 'EPERM' || code === 'EACCES') return { ok: false, reason: 'unreadable', root: rootReal, lexical }
     return { ok: false, reason: 'missing', root: rootReal, lexical, creatable: await parentCreatable(rootReal, lexical) }
   }
   if (!isWithin(rootReal, real)) return { ok: false, reason: 'outside_root', root: rootReal, lexical }

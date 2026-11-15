@@ -164,12 +164,29 @@ interface Ink {
   settled: boolean
 }
 
+const USER_INPUT_GRACE_MS = 800
+
+function revealTab(node: HTMLElement, active: HTMLElement | null): number | null {
+  if (!active || node.scrollWidth <= node.clientWidth) return null
+  const box = active.getBoundingClientRect()
+  const left = box.left - node.getBoundingClientRect().left + node.scrollLeft
+  const right = left + box.width
+  const before = node.scrollLeft
+  if (left < node.scrollLeft) node.scrollLeft = left
+  else if (right > node.scrollLeft + node.clientWidth) node.scrollLeft = right - node.clientWidth
+  return node.scrollLeft === before ? null : node.scrollLeft
+}
+
+function activeTabOf(node: HTMLElement): HTMLElement | null {
+  return node.querySelector<HTMLElement>(':scope > .ui-ptab[data-active="1"]')
+}
+
 function usePanelTabInk(plain: boolean | undefined): { listRef: (node: HTMLDivElement | null) => void; ink: Ink | null } {
   const list = useRef<HTMLDivElement | null>(null)
   const [ink, setInk] = useState<Ink | null>(null)
   const measure = useCallback(() => {
     const node = list.current
-    const active = node?.querySelector<HTMLElement>(':scope > .ui-ptab[data-active="1"]')
+    const active = node ? activeTabOf(node) : null
     if (!node || !active || plain) {
       setInk((current) => (current === null ? current : null))
       return
@@ -180,17 +197,80 @@ function usePanelTabInk(plain: boolean | undefined): { listRef: (node: HTMLDivEl
       return { ...next, settled: current !== null }
     })
   }, [plain])
+  const shownActive = useRef<HTMLElement | null>(null)
+  const userScrolled = useRef(false)
+  const programTarget = useRef<number | null>(null)
+  const lastSize = useRef<{ list: number; tab: number } | null>(null)
+  const reveal = useCallback((node: HTMLElement, active: HTMLElement | null) => {
+    const target = revealTab(node, active)
+    if (target !== null) programTarget.current = target
+  }, [])
   useLayoutEffect(() => {
     measure()
+    const node = list.current
+    const active = node ? activeTabOf(node) : null
+    if (!node || active === shownActive.current) return
+    shownActive.current = active
+    userScrolled.current = false
+    lastSize.current = active ? { list: node.clientWidth, tab: active.offsetWidth } : null
+    reveal(node, active)
   })
   useLayoutEffect(() => {
     const node = list.current
     if (!node) return
-    const observer = new ResizeObserver(() => measure())
-    observer.observe(node)
-    for (const child of Array.from(node.children)) observer.observe(child)
-    return () => observer.disconnect()
-  })
+    let lastInput = -Infinity
+    const noteInput = (): void => {
+      lastInput = performance.now()
+    }
+    const notePointer = (event: PointerEvent): void => {
+      if (event.buttons) noteInput()
+    }
+    const onScroll = (): void => {
+      const target = programTarget.current
+      if (target !== null && Math.abs(node.scrollLeft - target) <= 1) {
+        programTarget.current = null
+        return
+      }
+      if (performance.now() - lastInput <= USER_INPUT_GRACE_MS) userScrolled.current = true
+    }
+    const inputs: Array<[string, EventListener]> = [
+      ['wheel', noteInput],
+      ['pointerdown', noteInput],
+      ['pointermove', notePointer as EventListener],
+      ['touchstart', noteInput],
+      ['touchmove', noteInput],
+      ['keydown', noteInput]
+    ]
+    for (const [type, listener] of inputs) node.addEventListener(type, listener, { passive: true })
+    node.addEventListener('scroll', onScroll, { passive: true })
+    const resized = new ResizeObserver(() => {
+      measure()
+      const active = activeTabOf(node)
+      if (!active) return
+      const size = { list: node.clientWidth, tab: active.offsetWidth }
+      const previous = lastSize.current
+      lastSize.current = size
+      if (previous && previous.list === size.list && previous.tab === size.tab) return
+      if (userScrolled.current) return
+      reveal(node, active)
+    })
+    resized.observe(node)
+    for (const child of Array.from(node.children)) resized.observe(child)
+    const children = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const removed of Array.from(record.removedNodes)) if (removed instanceof Element) resized.unobserve(removed)
+        for (const added of Array.from(record.addedNodes)) if (added instanceof Element) resized.observe(added)
+      }
+      if (!userScrolled.current) reveal(node, activeTabOf(node))
+    })
+    children.observe(node, { childList: true })
+    return () => {
+      for (const [type, listener] of inputs) node.removeEventListener(type, listener)
+      node.removeEventListener('scroll', onScroll)
+      resized.disconnect()
+      children.disconnect()
+    }
+  }, [measure, reveal])
   const listRef = useCallback((node: HTMLDivElement | null) => {
     list.current = node
   }, [])

@@ -214,9 +214,10 @@ const JOB_ROW_STATE: Record<TerminalJob['state'], SubagentRowState> = {
 
 function JobRow({ job, now, text, onGone }: { job: TerminalJob; now: number; text: OverviewText; onGone: () => void }): ReactElement {
   const live = isLiveTerminalJob(job)
-  const rowState: SubagentRowState = live ? (job.state === 'stopping' ? 'stopping' : 'running') : JOB_ROW_STATE[job.state]
+  const exitCode = job.state === 'exited' && typeof job.exitCode === 'number' ? job.exitCode : null
+  const rowState: SubagentRowState = live ? (job.state === 'stopping' ? 'stopping' : 'running') : exitCode ? 'failed' : JOB_ROW_STATE[job.state]
   const duration = formatDuration(Math.max(0, (job.endedAt ?? now) - job.startedAt), { minSeconds: 1 })
-  const ended = job.state === 'completed' || job.state === 'matched' ? duration : job.state === 'timeout' ? text.endedState.timeout : job.state === 'exited' ? text.endedState.exited : text.endedState.stopped
+  const ended = job.state === 'completed' || job.state === 'matched' ? duration : job.state === 'timeout' ? text.endedState.timeout : job.state === 'exited' ? (!exitCode ? text.endedState.exited : text.exitCode(exitCode)) : text.endedState.stopped
   const detail = live && job.state !== 'running' ? text.terminalJobState[job.state] : ''
   const open = (): void => {
     if (job.kind === 'bash') return

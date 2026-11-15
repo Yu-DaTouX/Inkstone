@@ -188,7 +188,11 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
   if (absolute) {
     try {
       real = await realpath(rawPath)
-    } catch {
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EPERM' || code === 'EACCES') {
+        return { ok: false, error: pick('读取失败（可能没有权限）', 'Read failed (permission may be missing)'), issue: 'unreadable', dir: dirname(rawPath) }
+      }
       return { ok: false, error: pick('文件不存在', 'File not found'), issue: 'missing', dir: dirname(rawPath) }
     }
     const rootReal = await realRoot(root)
@@ -198,6 +202,9 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
     if (!scoped.ok) {
       if (scoped.reason === 'missing') {
         return { ok: false, error: pick('文件不存在', 'File not found'), issue: 'missing', dir: dirname(scoped.lexical), ...(scoped.creatable ? { creatable: true } : {}) }
+      }
+      if (scoped.reason === 'unreadable') {
+        return { ok: false, error: pick('读取失败（可能没有权限）', 'Read failed (permission may be missing)'), issue: 'unreadable', dir: dirname(scoped.lexical) }
       }
       if (scoped.reason === 'root_missing') return { ok: false, error: pick('文件不存在', 'File not found'), issue: 'missing', dir: dirname(join(root, rawPath)) }
       return { ok: false, error: pick('路径越界', 'Path is outside the allowed folder'), issue: scoped.reason === 'invalid' ? 'invalid' : 'outside_root' }

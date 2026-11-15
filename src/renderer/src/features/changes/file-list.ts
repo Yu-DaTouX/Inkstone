@@ -31,6 +31,10 @@ export function isLargeDiff(items: readonly { added?: number; removed?: number }
   return total > LARGE_DIFF_LINES
 }
 
+export function isLargeFile(item: { added?: number; removed?: number }): boolean {
+  return (item.added ?? 0) + (item.removed ?? 0) > LARGE_DIFF_LINES
+}
+
 export const CHANGE_DIR_KEEP = 2
 
 export function distinctChangeDirs(paths: readonly string[], keep: number = CHANGE_DIR_KEEP): Map<string, string> {

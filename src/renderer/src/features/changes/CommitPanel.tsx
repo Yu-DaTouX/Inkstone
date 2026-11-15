@@ -20,7 +20,7 @@ import { useI18n } from '../../i18n'
 import type { GitRepoState } from '../../../../shared/git'
 import type { GitActionKind } from '../../../../shared/git-actions'
 import { ChangePathLabel, ChangeStatusMark } from './ChangeEntryLabel'
-import { groupByStage, primaryAction, stageState, stagedTotals, type PrimaryKind } from './git-flow'
+import { groupByStage, isUnmerged, primaryAction, stageState, stagedTotals, type PrimaryKind } from './git-flow'
 import { PRIMARY_LABEL, REASON_KEY as REASON } from './git-flow-keys'
 import type { ChangesText } from './text'
 import type { ChangeItem } from './types'
@@ -73,7 +73,8 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
     ahead: repo.ahead,
     behind: repo.behind,
     hasRemote,
-    hasMessage: message.trim().length > 0
+    hasMessage: message.trim().length > 0,
+    conflicted: items.filter(isUnmerged).length
   })
   const locked = !active || !ready || busy !== null
   const reasonText = !active

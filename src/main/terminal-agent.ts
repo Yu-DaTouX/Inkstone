@@ -1092,7 +1092,7 @@ export class TerminalAgentCommands {
       const byAgent = waited !== 'timeout' && waited !== 'matched' && interruptedAt !== undefined && this.host.now() - interruptedAt <= AGENT_INTERRUPT_GRACE_MS
       const state: TerminalNoticeState = (stopping || byAgent) && waited !== 'timeout' ? 'stopped' : waited
       const keepWatching = waited === 'timeout' && job.timeoutAsked && !stopping && !controller.signal.aborted
-      updateTerminalJob(record.id, keepWatching ? { state } : { state, endedAt: this.host.now() })
+      updateTerminalJob(record.id, keepWatching ? { state } : { state, endedAt: this.host.now(), ...this.exitOf(job.id, state) })
       if (keepWatching) void this.watchAfterTimeout(job.id, job.from, record.id, controller)
       if (byAgent || (waited === 'timeout' && !job.timeoutAsked)) return
       const output = await this.outputSince(job.id, job.from)
@@ -1116,13 +1116,17 @@ export class TerminalAgentCommands {
     return record
   }
 
+  private exitOf(id: string, state: TerminalNoticeState): { exitCode?: number | null } {
+    return state === 'exited' ? { exitCode: this.host.stream(id)?.info.exitCode ?? null } : {}
+  }
+
   private async watchAfterTimeout(id: string, from: number, jobId: string, controller: AbortController): Promise<void> {
     backgroundJobs.set(id, controller)
     try {
       const waited = await this.waitFor(id, from, { mode: 'command', timeoutMs: TERMINAL_BACKGROUND_TIMEOUT_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until: null }, controller.signal)
       const stopping = terminalJob(jobId)?.state === 'stopping' || agentInterrupts.has(id)
       const state: TerminalNoticeState = stopping || (waited !== 'completed' && waited !== 'exited' && waited !== 'timeout') ? 'stopped' : waited
-      updateTerminalJob(jobId, { state, endedAt: this.host.now() })
+      updateTerminalJob(jobId, { state, endedAt: this.host.now(), ...this.exitOf(id, state) })
     } catch {
       if (terminalJob(jobId)?.endedAt === undefined) updateTerminalJob(jobId, { state: 'stopped', endedAt: this.host.now() })
     } finally {

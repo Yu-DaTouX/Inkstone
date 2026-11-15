@@ -19,7 +19,8 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return { repo: null, error: auth.error }
-      return await runGitRead({ op: 'state', cwd: auth.cwd, light: (rawOptions as { light?: unknown } | null | undefined)?.light === true }, authorizeReadCwd)
+      const options = rawOptions as { light?: unknown; fresh?: unknown } | null | undefined
+      return await runGitRead({ op: 'state', cwd: auth.cwd, light: options?.light === true, ...(options?.fresh === true ? { fresh: true } : {}) }, authorizeReadCwd)
     } catch (error) {
       return { repo: null, error: error instanceof Error ? error.message : String(error) }
     }

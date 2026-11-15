@@ -47,6 +47,15 @@ try {
     assert.equal(noMsg.commitPushReason, 'need-message')
   }
   {
+    const p = primary({ stagedCount: 1, changedCount: 1, hasMessage: true, conflicted: 1 })
+    assert.deepEqual([p.kind, p.reason, p.commitAndPush, p.commitPushReason], ['commit', 'conflict', false, 'conflict'], '有未解决冲突时提交按钮给出冲突原因，不说「先写提交说明」')
+    assert.equal(primary({ stagedCount: 1, changedCount: 1, conflicted: 0, hasMessage: true }).reason, null, '冲突数为 0 时照常可提交')
+    assert.equal(flow.isUnmerged({ status: 'UU', untracked: false }), true)
+    assert.equal(flow.isUnmerged({ status: 'AA', untracked: false }), true)
+    assert.equal(flow.isUnmerged({ status: 'M.', untracked: false }), false)
+    assert.equal(flow.isUnmerged({ status: '??', untracked: true }), false)
+  }
+  {
     const p = primary({ ahead: 2 })
     assert.deepEqual([p.kind, p.reason], ['push', null], '提交后有未推送 → 推送')
     const dirtyAhead = primary({ ahead: 1, changedCount: 4 })

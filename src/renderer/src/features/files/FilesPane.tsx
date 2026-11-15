@@ -14,6 +14,7 @@ import {
 import { ArrowUpRight, ChevronsDownUp, Folder, FolderOpen, List, RefreshCw, Search, X } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
+import { markKeyboardModality } from '../../lib/focusModality'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import {
   Button,
@@ -180,6 +181,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
     const first = resultsRef.current?.querySelector<HTMLButtonElement>('.v3-files-result')
     if (!first) return
     event.preventDefault()
+    markKeyboardModality()
     first.focus()
   }
 
@@ -240,6 +242,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
     (row: FileTreeRow, anchor: HTMLElement): void => {
       menuAnchor.current = anchor
       const inSelection = selected.has(row.path) && selectedRows.length > 1
+      if (!selected.has(row.path)) setSelected(new Set([row.path]))
       const targets = inSelection ? selectedRows : [row]
       setMenu({ targets: targets.map((item) => ({ path: item.path, name: item.name, dir: item.dir, blocked: item.blocked })) })
     },
@@ -537,7 +540,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
           />
         ) : (
           <>
-            {status !== 'ready' ? <FilesRootState status={status} text={text} busy={!!state.loading['']} onRetry={refresh} /> : null}
+            {status !== 'ready' ? <FilesRootState status={status} reason={state.listings['']?.status} text={text} busy={!!state.loading['']} onRetry={refresh} /> : null}
             <div
               className="v3-files-scroll"
               ref={scrollRef}
@@ -632,31 +635,29 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
 
 function FilesRootState({
   status,
+  reason,
   text,
   busy,
   onRetry
 }: {
   status: FilesRootStatus
+  reason?: string
   text: FilesText
   busy: boolean
   onRetry: () => void
 }): ReactElement | null {
   if (status === 'ready') return null
   if (status === 'loading') {
-    return (
-      <div className="v3-files-block" role="status" data-testid="v3-files-loading">
-        <Spinner size="xs" label={text.loading} />
-      </div>
-    )
+    return <EmptyState className="v3-files-block" size="sm" role="status" icon={<Spinner size="sm" />} title={text.loading} data-testid="v3-files-loading" />
   }
   if (status === 'error') {
     return (
       <EmptyState
         className="v3-files-block"
         size="sm"
-        title={text.error}
+        title={reason === 'permission' ? text.permission : reason === 'missing' ? text.missing : text.error}
         action={
-          <Button size="sm" variant="ghost" isDisabled={busy} aria-label={busy ? text.listing : undefined} onPress={onRetry}>
+          <Button size="sm" variant="secondary" isDisabled={busy} aria-label={busy ? text.listing : undefined} onPress={onRetry}>
             {text.retry}
           </Button>
         }
@@ -734,6 +735,7 @@ function FilesRowView({
   return (
     <TreeRow
       className="v3-files-row"
+      selection="accent"
       role="treeitem"
       depth={row.depth}
       expanded={expandable ? !!row.open : undefined}

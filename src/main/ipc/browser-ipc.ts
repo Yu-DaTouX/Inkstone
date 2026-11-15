@@ -74,6 +74,7 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:back', (_e, sessionId?: string) => scoped(sessionId)?.back() ?? notReady())
   rawHandle('yan:browser:forward', (_e, sessionId?: string) => scoped(sessionId)?.forward() ?? notReady())
   rawHandle('yan:browser:reload', (_e, sessionId?: string) => scoped(sessionId)?.reload() ?? notReady())
+  rawHandle('yan:browser:stop', (_e, sessionId?: string) => scoped(sessionId)?.stop() ?? notReady())
   rawHandle('yan:browser:releaseUserControl', (_e, sessionId?: string) => scoped(sessionId)?.setUserControl(false) ?? CLOSED_STATE)
   rawHandle('yan:browser:openExternal', (_e, url?: string) => browserOf()?.openExternal(url) ?? notReady())
   rawHandle('yan:browser:openExternalChrome', (_e, url?: string) => browserOf()?.openExternalChrome(url) ?? notReady())

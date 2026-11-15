@@ -262,6 +262,11 @@ function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: (
 
   return (
     <div className="gitflow-branch__list">
+      {repo?.detached ? (
+        <Notice variant="hint" className="gitflow-branch__note" data-testid="git-branch-detached">
+          {t('gitflow.branch.detachedHint', { sha: repo.head?.slice(0, 7) ?? 'HEAD' })}
+        </Notice>
+      ) : null}
       <Autocomplete inputValue={query} onInputChange={setQuery}>
         <SearchField
           aria-label={t('gitflow.branch.search')}

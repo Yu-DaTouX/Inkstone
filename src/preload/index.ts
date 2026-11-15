@@ -457,6 +457,7 @@ const api: YanBridge = {
     back: (sessionId) => invoke('yan:browser:back', sessionId),
     forward: (sessionId) => invoke('yan:browser:forward', sessionId),
     reload: (sessionId) => invoke('yan:browser:reload', sessionId),
+    stop: (sessionId) => invoke('yan:browser:stop', sessionId),
     openExternal: (url, sessionId) => invoke('yan:browser:openExternal', url, sessionId),
     releaseUserControl: (sessionId) => invoke('yan:browser:releaseUserControl', sessionId),
     openExternalChrome: (url) => invoke('yan:browser:openExternalChrome', url),

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, fork } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -130,6 +130,11 @@ utimesSync(join(repo, 'evil.dat'), later, later)
 const plain = join(root, 'plain')
 mkdirSync(plain)
 const missing = join(root, 'missing')
+const brokenHead = join(root, 'broken-head')
+mkdirSync(brokenHead)
+execFileSync('git', ['init', '-q'], { cwd: brokenHead, stdio: 'ignore' })
+writeFileSync(join(brokenHead, '.git', 'HEAD'), 'garbage\n')
+mkdirSync(join(brokenHead, 'inner'))
 
 const authCalls = []
 const allow = async (cwd) => {
@@ -183,11 +188,36 @@ try {
     ['目录不存在：状态', { op: 'state', cwd: missing, light: false }],
     ['目录不存在：分支', { op: 'refs', cwd: missing }],
     ['目录不存在：改动', { op: 'changes', cwd: missing, options: {} }],
-    ['目录不存在：diff', { op: 'diff', cwd: missing, path: 'a.txt', options: {} }]
+    ['目录不存在：diff', { op: 'diff', cwd: missing, path: 'a.txt', options: {} }],
+    ['仓库数据损坏：状态', { op: 'state', cwd: brokenHead, light: true }]
   ]
   for (const [label, request] of cases) await same(`宿主与主进程逐字段相同：${label}`, request)
   ok(forks.length === 1, '多次查询只启动一个 git 宿主进程', String(forks.length))
   ok(!existsSync(marker), '宿主里的读取同样不执行仓库配置的过滤器')
+
+  const plainState = await host.runGitReadOp({ op: 'state', cwd: plain, light: true }, allow)
+  ok(plainState.repo === null && plainState.error === undefined, '不是仓库：状态不带错误，界面照旧说「不在 Git 仓库里」', JSON.stringify(plainState))
+  const late = join(root, 'late-init')
+  mkdirSync(late)
+  const lateBefore = await host.runGitReadOp({ op: 'state', cwd: late, light: true }, allow)
+  execFileSync('git', ['init', '-q'], { cwd: late, stdio: 'ignore' })
+  const lateAfter = await host.runGitReadOp({ op: 'state', cwd: late, light: true }, allow)
+  ok(lateBefore.repo === null && lateAfter.repo !== null, '「不是仓库」缓存期间目录里出现 .git，下次读取不走负缓存', JSON.stringify({ lateBefore, lateAfter: !!lateAfter.repo }))
+  const healed = join(root, 'healed')
+  mkdirSync(healed)
+  execFileSync('git', ['init', '-q'], { cwd: healed, stdio: 'ignore' })
+  const goodHead = readFileSync(join(healed, '.git', 'HEAD'), 'utf8')
+  writeFileSync(join(healed, '.git', 'HEAD'), 'garbage\n')
+  const brokenFirst = await host.runGitReadOp({ op: 'state', cwd: healed, light: true }, allow)
+  writeFileSync(join(healed, '.git', 'HEAD'), goodHead)
+  const cachedAgain = await host.runGitReadOp({ op: 'state', cwd: healed, light: true }, allow)
+  const healedRetry = await host.runGitReadOp({ op: 'state', cwd: healed, light: true, fresh: true }, allow)
+  ok(typeof brokenFirst.error === 'string' && cachedAgain.repo === null && healedRetry.repo !== null && healedRetry.error === undefined, '「重试」带 fresh 时清掉该目录的仓库与读取失败缓存', JSON.stringify({ brokenFirst: brokenFirst.error, cachedAgain: cachedAgain.error ?? null, retried: !!healedRetry.repo }))
+  for (const cwd of [brokenHead, join(brokenHead, 'inner')]) {
+    const broken = await host.runGitReadOp({ op: 'state', cwd, light: false }, allow)
+    ok(broken.repo === null && typeof broken.error === 'string' && broken.error.includes(join(brokenHead, '.git')), '仓库数据损坏：状态如实说明 .git 读不了，不说成不是仓库', JSON.stringify(broken))
+    ok(/^(无法读取|Cannot read) /.test(broken.error) && !/损坏|damaged/.test(broken.error) && /fatal/i.test(broken.error), '.git 读不了：不预设已损坏，附 git 原话', JSON.stringify(broken))
+  }
 
   const light = await host.runGitRead({ op: 'state', cwd: repo, light: true }, allow)
   ok(light.value === undefined && light.repo?.branch === 'feature' && light.repo.changedCount === 5 && light.expected === undefined, '轻量状态内容正确', JSON.stringify(light.repo))

@@ -1,6 +1,12 @@
+@property --v3-files-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 @layer patterns {
   .v3-files {
-    background: var(--surface);
+    background: var(--bg);
     color: var(--fg);
   }
 
@@ -10,10 +16,6 @@
 
   .v3-files-row {
     color: var(--fg);
-  }
-
-  .v3-files-row[data-selected='1'] {
-    background: var(--press);
   }
 
   .v3-files-row[data-highlighted='1'] {
@@ -59,10 +61,6 @@
   .v3-files-result-line,
   .v3-files-more {
     color: var(--fg3);
-  }
-
-  .v3-files-result-name[data-matched='1'] {
-    color: var(--fg2);
   }
 
   .v3-files-result-name mark {
@@ -231,6 +229,23 @@
     padding: var(--s-4) var(--s-4);
   }
 
+  @supports (animation-timeline: scroll()) {
+    .v3-files-scroll,
+    .v3-files-results {
+      -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--v3-files-fade));
+      mask-image: linear-gradient(to bottom, transparent, black var(--v3-files-fade));
+      animation: v3-files-top-fade linear both;
+      animation-timeline: scroll(self);
+      animation-range: 0 var(--s-24);
+    }
+  }
+
+  @keyframes v3-files-top-fade {
+    to {
+      --v3-files-fade: var(--s-12);
+    }
+  }
+
   .v3-files-pad {
     flex: none;
   }
@@ -271,9 +286,9 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: var(--s-6);
-    padding: var(--s-10) var(--s-12);
+    padding: var(--s-24) var(--s-12) var(--s-10);
     text-align: center;
   }
 
@@ -311,20 +326,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .v3-files-result-name-head {
-    flex: 0 9999 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .v3-files-result-name-tail {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .v3-files-result-path {
@@ -380,7 +381,7 @@
   }
 
   .v3-files-note {
-    margin: var(--s-8) var(--s-12);
+    margin: var(--s-24) var(--s-12) var(--s-8);
   }
 
   .v3-files-content-more {

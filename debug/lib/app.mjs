@@ -76,7 +76,7 @@ export async function connectCdp(port, { shotDir, timeoutMs = 60000 } = {}) {
   }
   await call('Runtime.enable')
   await call('Page.enable')
-  return { call, evaluate, shot, events, close: () => ws.close() }
+  return { call, evaluate, shot, events, port, targetId: target.id, close: () => ws.close() }
 }
 
 export function storeHelpers(cdp) {

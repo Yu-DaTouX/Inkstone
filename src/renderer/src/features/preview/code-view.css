@@ -14,9 +14,12 @@
   }
 
   .v3-code-note {
+    position: relative;
+    z-index: 1;
     flex: none;
     margin: 0;
-    padding: var(--s-4) var(--s-12);
+    padding: var(--s-4) var(--s-12) var(--s-4) var(--s-24);
+    background: var(--bg);
     color: var(--fg3);
     font-family: var(--font-ui);
     font-size: var(--t-footnote);

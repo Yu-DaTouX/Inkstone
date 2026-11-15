@@ -50,6 +50,15 @@
     background: var(--alpha-1);
     color: var(--fg);
   }
+  .ui-row.ui-row--select-accent[data-selected] {
+    background: var(--sel);
+    color: var(--fg);
+  }
+  @media (hover: hover) {
+    .ui-row.ui-row--select-accent[data-selected]:not([data-no-hover]):hover {
+      background: linear-gradient(var(--hover), var(--hover)), var(--sel);
+    }
+  }
   .ui-row:focus-visible {
     outline: none;
     box-shadow: var(--ring-focus-inset);
@@ -224,7 +233,7 @@
       transform: scale(1);
     }
     50% {
-      opacity: 0.35;
+      opacity: 0.8;
       transform: scale(0.75);
     }
   }

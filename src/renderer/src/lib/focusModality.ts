@@ -17,6 +17,10 @@ export function modalityForKey(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'm
   return null
 }
 
+export function markKeyboardModality(root: HTMLElement = document.documentElement): void {
+  if (root.dataset.focusModality !== 'keyboard') root.dataset.focusModality = 'keyboard'
+}
+
 export function installFocusModality(root: HTMLElement = document.documentElement): () => void {
   const set = (modality: FocusModality): void => {
     if (root.dataset.focusModality !== modality) root.dataset.focusModality = modality

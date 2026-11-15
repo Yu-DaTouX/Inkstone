@@ -326,6 +326,10 @@
     white-space: nowrap;
   }
 
+  .v3-preview-pathfold .v3-preview-pathname[data-compact] {
+    padding-inline-start: var(--s-12);
+  }
+
   .v3-preview-pathtools {
     flex: none;
     display: flex;
@@ -524,7 +528,7 @@
     position: relative;
     flex: none;
     background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hair, 1px) var(--line), var(--shadow-sm);
   }
 
   .v3-pdf-page-placeholder {

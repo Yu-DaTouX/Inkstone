@@ -206,6 +206,9 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
           </section>
         )
       })}
+      {!report && loading && !error ? (
+        <EmptyState size="sm" role="status" icon={<Spinner size="sm" />} title={t('quota.loading')} className="wb-note-block" data-testid="v3-wb-quota-loading" />
+      ) : null}
       {report && cards.length === 0 ? (
         <EmptyState
           className="wb-note-block"
@@ -313,7 +316,7 @@ export function QuotaCard({
             <Badge>{quotaReadAgo(t, card.checkedAt, now)}</Badge>
           </span>
         ) : null}
-        {card.status === 'expired' ? <span title={card.hint || t('quota.expiredTip')}><Badge tone="ask">{t('quota.expiredBadge')}</Badge></span> : null}
+        {card.status === 'expired' ? <Badge tone="ask">{t('quota.expiredBadge')}</Badge> : null}
         {card.status === 'limited' ? <Badge tone="fail">{t('quota.limitReached')}</Badge> : null}
         {card.switchable && !card.active ? (
           <Button size="sm" variant="secondary" isDisabled={locked} icon={busy && !confirming ? <Spinner size="xs" /> : undefined} onPress={onSwitch} data-testid="v3-wb-quota-switch">
@@ -322,7 +325,9 @@ export function QuotaCard({
         ) : null}
       </div>
 
-      {card.status === 'error' ? <p className="wb-quota-error" title={card.error ?? undefined}>{card.error}</p> : null}
+      {card.status === 'error' ? <p className="wb-quota-error" data-testid="v3-wb-quota-card-error">{card.error}</p> : null}
+      {card.status === 'expired' ? <p className="wb-quota-error" data-tone="ask" data-testid="v3-wb-quota-expired-hint">{card.hint || t('quota.expiredTip')}</p> : null}
+      {card.staleError && card.status !== 'error' ? <p className="wb-quota-error" data-tone="ask" data-testid="v3-wb-quota-stale-error">{t('quota.stale', { msg: card.staleError })}</p> : null}
 
       {card.windows.length ? (
         <div className="wb-quota-wins">

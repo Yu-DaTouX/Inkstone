@@ -1141,7 +1141,7 @@ export type MainPush = MainPushBody & {
 
 
 export interface GitBridge {
-  state(cwd: string, options?: { light?: boolean }): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
+  state(cwd: string, options?: { light?: boolean; fresh?: boolean }): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
   refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
   action(req: GitActionRequest): Promise<GitActionResult>
   remotes(cwd: string): Promise<string[]>
@@ -1820,6 +1820,7 @@ export interface YanBridge {
     back(sessionId?: string): Promise<{ ok: boolean; error?: string }>
     forward(sessionId?: string): Promise<{ ok: boolean; error?: string }>
     reload(sessionId?: string): Promise<{ ok: boolean; error?: string }>
+    stop(sessionId?: string): Promise<{ ok: boolean; error?: string }>
     openExternal(url?: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
     releaseUserControl(sessionId?: string): Promise<BrowserState>
     openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>

@@ -11,6 +11,7 @@ export interface TerminalJob {
   kind?: 'bash'
   startedAt: number
   endedAt?: number
+  exitCode?: number | null
   state: TerminalJobState
 }
 

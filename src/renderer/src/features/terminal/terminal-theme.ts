@@ -41,10 +41,10 @@ export function terminalFontFamily(): string {
 
 export function readTerminalTheme(): ITheme {
   return {
-    background: resolveColor('--sunken', '#171716'),
+    background: resolveColor('--bg', '#171716'),
     foreground: resolveColor('--fg', '#ECECE9'),
     cursor: resolveColor('--accent', '#8EA1F5'),
-    cursorAccent: resolveColor('--sunken', '#171716'),
+    cursorAccent: resolveColor('--bg', '#171716'),
     selectionBackground: resolveColor('--sel', 'rgba(142,161,245,.14)'),
     black: resolveColor('--sunken', '#171716'),
     red: resolveColor('--fail-t', '#F28383'),

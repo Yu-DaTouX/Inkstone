@@ -43,10 +43,11 @@ export interface DialogProps extends RACDialogProps {
   showClose?: boolean
   alert?: boolean
   body?: 'default' | 'flush'
+  padding?: 'default' | 'none'
 }
 
 export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
-  { title, closeLabel, showClose = true, alert = false, body = 'default', className, children, ...props },
+  { title, closeLabel, showClose = true, alert = false, body = 'default', padding = 'default', className, children, ...props },
   ref
 ) {
   const t = useOptionalT()
@@ -61,7 +62,7 @@ export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
       {...props}
       role={alert ? 'alertdialog' : props.role}
       ref={ref}
-      className={cx('ui-dialog', alert && 'ui-dialog--alert', className)}
+      className={cx('ui-dialog', alert && 'ui-dialog--alert', padding === 'none' && 'ui-dialog--bare', className)}
     >
       {(renderProps) => (
         <>

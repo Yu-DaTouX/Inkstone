@@ -557,6 +557,18 @@ try {
     await settle(died.notices)
     assert.equal(parseHostTextNotice(died.notices[0]?.text)?.state, 'exited')
     assert.equal(died.notices[0].wake, true)
+    assert.equal(listTerminalJobs()[0].exitCode, null, '终端已不在时退出码记为 null')
+
+    resetTerminalJobs()
+    const failed = setup({ respond: (_term, _command, emit) => emit('tests start\r\n') })
+    const fail = await failed.commands.run('run', { command: 'npm test', background: true, timeout: 600 })
+    const term = failed.host.terms.get(fail.summary.id)
+    term.info.alive = false
+    term.info.exitCode = 3
+    await settle(failed.notices)
+    assert.equal(parseHostTextNotice(failed.notices[0]?.text)?.state, 'exited')
+    assert.equal(listTerminalJobs()[0].state, 'exited')
+    assert.equal(listTerminalJobs()[0].exitCode, 3, '后台任务记下终端退出码，列表能显示失败')
   })
 
   await check('通知投递：回合在跑就插进当前回合，空闲时只有该叫醒的才起回合，其余留到下一回合', () => {

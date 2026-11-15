@@ -31,7 +31,22 @@ function chipsOf(root: HTMLDivElement | null): HTMLElement[] {
 
 function revealActiveChip(viewport: HTMLDivElement | null): void {
   const active = viewport?.querySelector<HTMLElement>('[data-tab-id][data-active-tab="true"]')
-  active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  if (!viewport || !active) return
+  const style = getComputedStyle(viewport)
+  const padStart = parseFloat(style.scrollPaddingInlineStart) || 0
+  const padEnd = parseFloat(style.scrollPaddingInlineEnd) || 0
+  const box = viewport.getBoundingClientRect()
+  const rect = active.getBoundingClientRect()
+  const start = rect.left - box.left + viewport.scrollLeft
+  const end = start + rect.width
+  const lead = start <= padStart ? 0 : padStart
+  const trail = end + padEnd >= viewport.scrollWidth ? 0 : padEnd
+  if (rect.width + lead + trail > viewport.clientWidth) {
+    viewport.scrollLeft = lead === 0 ? 0 : Math.max(0, start - (viewport.clientWidth - rect.width) / 2)
+    return
+  }
+  if (start - lead < viewport.scrollLeft) viewport.scrollLeft = Math.max(0, start - lead)
+  else if (end + trail > viewport.scrollLeft + viewport.clientWidth) viewport.scrollLeft = end + trail - viewport.clientWidth
 }
 
 function labelButtonOf(chip: HTMLElement | null | undefined): HTMLButtonElement | null {

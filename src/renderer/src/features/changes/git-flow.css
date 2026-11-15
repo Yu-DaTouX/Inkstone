@@ -33,9 +33,29 @@
     flex: none;
   }
 
+  .changes-pane__scope > .ui-btn__icon {
+    display: none;
+  }
+
   @container changes-head (max-width: 340px) {
     .changes-pane__viewed-head,
     .changes-pane__scope .changes-pane__clip {
+      display: none;
+    }
+
+    .changes-pane__scope > .ui-btn__icon {
+      display: inline-flex;
+    }
+
+    .changes-pane__branch {
+      flex-shrink: 1;
+    }
+
+    .changes-pane__title > .changes-pane__scope {
+      flex: none;
+    }
+
+    .changes-pane__title > .changes-pane__count {
       display: none;
     }
   }

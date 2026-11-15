@@ -121,6 +121,7 @@ export const FAKE_TRIGGERS = {
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
   BROWSERLOOP: '用 yan browser 连续导航（BROWSERURL1=<地址> BROWSERURL2=<地址> 轮流，BROWSERSTEPS<n> 步，默认 8），中间夹慢命令，用来看标签按会话归属与 agent 一轮内保持焦点',
   DEVSERVER: '在会话终端里起一个本地 http 服务（DEVSCRIPT=<脚本路径> DEVPORT=<端口>），再用 yan browser open 打开它，用来看本地服务发现与停止',
+  TERMJOBS: '用 yan terminal run --background 起 5 个后台任务：长跑、约 20 秒后正常结束、约 20 秒后 exit 3、很长的只读命令、--timeout 5 超时，用来看后台任务列表与终端标签',
   BGTERMINAL: '用 yan terminal run --background 在后台跑一条 12 秒的命令（BGSECONDS<n> 改秒数；含 BGBUSY 时接着跑 11 步各 2 秒的 bash），看后台任务面板与结束后的宿主通知',
   TERMINAL: '用 yan terminal run 在会话终端里跑一条快命令、一条慢命令，再 list 一次，看终端面板自动打开与 agent 提示（含 DANGER 时改为一条要审批的删除注册表命令）',
   NARRATE: '仅 fake-anthropic/fake-narration（场景 meta.anthropic 打开）：三步，每步先思考，再以签名为 narration 的思考块写进度说明（第三步没有），再调用 bash，最后流出短答案，用来看旁白改判为正文',
@@ -335,6 +336,18 @@ async function respond(res, text, done, requestNo) {
         await streamText(`服务第 ${done + 1} 步。`, 20, 0)
         await callTool('bash', steps[done])
       } else await streamText('服务已起。', 20, 10)
+    } else if (text.includes('TERMJOBS')) {
+      const steps = [
+        { command: `yan terminal run --command 'Write-Output "dev server ready on 5173"; Start-Sleep -Seconds 900' --background --title dev`, description: '后台长任务' },
+        { command: `yan terminal run --command 'Write-Output "build start"; Start-Sleep -Seconds 20; Write-Output "build ok"' --background`, description: '后台短任务' },
+        { command: `yan terminal run --command 'Write-Output "tests start"; Start-Sleep -Seconds 20; exit 3' --background`, description: '后台失败任务' },
+        { command: `yan terminal run --command 'Get-ChildItem -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 } | Sort-Object Length -Descending | Select-Object -First 20 FullName, Length, LastWriteTime | Format-Table -AutoSize; Start-Sleep -Seconds 900' --background`, description: '很长的后台命令' },
+        { command: `yan terminal run --command 'Write-Output "waiting for port"; Start-Sleep -Seconds 900' --background --timeout 5`, description: '会超时的后台任务' }
+      ]
+      if (done < steps.length) {
+        await streamText(`后台第 ${done + 1} 步。`, 20, 0)
+        await callTool('bash', steps[done])
+      } else await streamText('后台任务都起来了。', 20, 10)
     } else if (text.includes('BGTERMINAL')) {
       if (done < 1) {
         await streamText('把长命令放到后台。', 20, 0)
@@ -494,6 +507,11 @@ export function startFakeModel(port = 0) {
       const summaryDelay = Number(process.env.YAN_FAKE_SUMMARY_DELAY_MS)
       const requestDelay = Number(process.env.YAN_FAKE_REQUEST_DELAY_MS)
       if (text.startsWith('Stop here. Do not call any tool')) { if (summaryDelay > 0) await sleep(summaryDelay) } else if (requestDelay > 0) await sleep(requestDelay)
+      if ((text.startsWith('Stop here. Do not call any tool') || text.startsWith('<conversation>')) && process.env.YAN_FAKE_SUMMARY_FAIL) {
+        res.writeHead(502, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { message: 'fake summary failure (YAN_FAKE_SUMMARY_FAIL)' } }))
+        return
+      }
       const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
       const flakyKey = text.slice(0, 40)
       if (failTag === 'FAILQUOTA') {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { Globe, RotateCw } from '../../ui/icons'
+import { RotateCw, Server } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { Button, CollapsibleChevron, IconButton, Notice, RailRow, SiteIcon, StopButton } from '../../ui'
 import type { LocalServerInfo } from '../../../../shared/local-servers'
@@ -16,9 +16,9 @@ interface LocalServerListProps {
   onOpen: (url: string) => void
 }
 
-function ServerFavicon({ url }: { url: string }): ReactElement {
+function ServerFavicon({ url, mark }: { url: string; mark: string }): ReactElement {
   const [failed, setFailed] = useState(false)
-  if (failed) return <Globe size={14} aria-hidden="true" />
+  if (failed) return <SiteIcon name={mark} variant="outline" className="v3-local-servers__mark" />
   return (
     <img
       className="v3-local-servers__favicon"
@@ -42,12 +42,17 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
   const [otherOpen, setOtherOpen] = useState(false)
   const alive = useRef(true)
   const [stopping, setStopping] = useState<number | null>(null)
+  const [ready, setReady] = useState(false)
+  const [listEl, setListEl] = useState<HTMLUListElement | null>(null)
+  const [more, setMore] = useState(false)
+  const [moreAbove, setMoreAbove] = useState(false)
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true)
     const snapshot = await window.yan.browser.localServers().catch(() => null)
     if (!alive.current) return
     setRefreshing(false)
+    setReady(true)
     if (snapshot) setServers(snapshot.servers ?? [])
   }, [])
 
@@ -74,25 +79,46 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
     }
   }, [active, load])
 
+  useEffect(() => {
+    if (!listEl) return
+    const measure = (): void => {
+      setMore(listEl.scrollTop + listEl.clientHeight < listEl.scrollHeight - 1)
+      setMoreAbove(listEl.scrollTop > 1)
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(listEl)
+    listEl.addEventListener('scroll', measure, { passive: true })
+    return () => {
+      observer?.disconnect()
+      listEl.removeEventListener('scroll', measure)
+    }
+  }, [listEl, servers, otherOpen])
+
   const groups = groupLocalServers(servers)
 
   if (iconOnly) {
     if (groups.main.length === 0) return null
     return (
-      <ul className="v3-local-servers v3-local-servers__list" data-compact="1" data-icon-only="1" data-testid="browser-local-servers-list">
-        {groups.main.map((server) => (
-          <RailRow
-            key={server.url}
-            iconOnly
-            label={`${server.title || server.processName || t('browser.localServersListening')} · ${server.host}:${server.port}`}
-            icon={<SiteIcon name={localServerMarkName(server)} className="v3-local-servers__mark" />}
-            title={server.url}
-            data-testid="browser-local-server-row"
-            buttonProps={{ 'data-testid': 'browser-local-server-open' }}
-            onPress={() => onOpen(server.url)}
-          />
-        ))}
-      </ul>
+      <div className="v3-local-servers" data-compact="1" data-icon-only="1" data-ready="1" data-testid="browser-local-servers">
+        <span className="v3-local-servers__glyph" aria-hidden="true">
+          <Server size={14} />
+        </span>
+        <ul ref={setListEl} className="v3-local-servers__list" aria-label={t('browser.localServers')} data-more={more ? '1' : undefined} data-more-above={moreAbove ? '1' : undefined} data-testid="browser-local-servers-list">
+          {groups.main.map((server) => (
+            <RailRow
+              key={server.url}
+              iconOnly
+              label={`${server.title || server.processName || t('browser.localServersListening')} · ${server.host}:${server.port}`}
+              icon={<SiteIcon name={localServerMarkName(server)} variant="outline" className="v3-local-servers__mark" />}
+              title={server.url}
+              data-testid="browser-local-server-row"
+              buttonProps={{ 'data-testid': 'browser-local-server-open' }}
+              onPress={() => onOpen(server.url)}
+            />
+          ))}
+        </ul>
+      </div>
     )
   }
 
@@ -100,7 +126,7 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
     <RailRow
       key={server.url}
       label={server.title || server.processName || t('browser.localServersListening')}
-      icon={<ServerFavicon url={server.url} />}
+      icon={<ServerFavicon url={server.url} mark={localServerMarkName(server)} />}
       value={compact ? `:${server.port}` : `${server.host}:${server.port}`}
       title={`${server.title || server.processName || ''}\n${server.host}:${server.port}\n${server.url}`.trim()}
       action={
@@ -121,7 +147,7 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
   )
 
   return (
-    <div className="v3-local-servers" data-compact={compact ? '1' : undefined} data-testid="browser-local-servers">
+    <div className="v3-local-servers" data-compact={compact ? '1' : undefined} data-ready={ready ? '1' : undefined} data-testid="browser-local-servers">
       <div className="v3-local-servers__head">
         <span className="v3-local-servers__title">{t('browser.localServers')}</span>
         <IconButton
@@ -140,7 +166,7 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
           {t('browser.localServersEmpty')}
         </Notice>
       ) : (
-        <ul className="v3-local-servers__list" data-testid="browser-local-servers-list">
+        <ul ref={setListEl} className="v3-local-servers__list" data-more={more ? '1' : undefined} data-more-above={moreAbove ? '1' : undefined} data-testid="browser-local-servers-list">
           {groups.main.map(row)}
           {groups.other.length > 0 ? (
             <li className="v3-local-servers__other">

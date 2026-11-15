@@ -88,15 +88,14 @@ export function ContextWindowMeter(props: {
         <div className="t3-ctx-popover__body">
           <div className="t3-ctx-popover__head">
             <div className="t3-ctx-popover__title">
-              {usage.cappedByAutoCompact ? t("ctx.toAutoCompact") : t("ctx.window")}
+              {usage.cappedByAutoCompact ? t("ctx.autoCompactLimit") : t("ctx.window")}
             </div>
             {usage.maxTokens !== null && usedPercentage ? (
               <div className="t3-ctx-popover__usage">
                 <span>{usedPercentage}</span>
                 <span className="t3-ctx-popover__dot">·</span>
                 <span>
-                  {usedTokens}/
-                  {formatContextWindowTokens(usage.maxTokens ?? null)}
+                  {`${usedTokens} / ${formatContextWindowTokens(usage.maxTokens ?? null)}`}
                 </span>
               </div>
             ) : (
@@ -121,8 +120,8 @@ export function ContextWindowMeter(props: {
             </div>
           ) : null}
           {usage.cappedByAutoCompact && usage.modelWindow !== null ? (
-            <div className="t3-ctx-popover__row">
-              <span>{t("ctx.window")}</span>
+            <div className="t3-ctx-popover__row" data-testid="composer-context-model-window">
+              <span>{t("ctx.modelWindow")}</span>
               <span className="t3-ctx-popover__value">
                 {formatContextWindowTokens(usage.modelWindow)}
               </span>

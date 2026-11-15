@@ -467,7 +467,7 @@ async function run() {
       globalThis.__V3_HOOKS = makeHookRuntime()
       const shownProps = { owner, gitSource: reviewFixtures() }
       const shownTree = await flush(globalThis.__V3_HOOKS, ChangesPane, shownProps)
-      assert.deepEqual(expandedDiffs(shownTree, ChangesFileDiff), ['a.test.ts'], '大改动只展开第一个文本 diff')
+      assert.deepEqual(expandedDiffs(shownTree, ChangesFileDiff), ['b.ts'], '大改动只展开一个文本 diff；第一个文件自身超过阈值（6000 行）时不自动展开，轮到下一个')
 
       storage.set('inkstone.changes.hideTestFiles', '1')
       globalThis.__V3_HOOKS = makeHookRuntime()

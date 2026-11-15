@@ -21,6 +21,11 @@
   .ui-site-icon[data-tone='3'] { --site-tone: var(--ask); }
   .ui-site-icon[data-tone='4'] { --site-tone: var(--del); }
   .ui-site-icon[data-tone='5'] { --site-tone: var(--run); }
+  .ui-site-icon[data-variant='outline'] {
+    background: transparent;
+    box-shadow: var(--ring-line);
+    color: var(--fg3);
+  }
   .ui-site-icon__fallback { transition: opacity var(--dur-base) var(--ease); }
   .ui-site-icon > img {
     position: absolute;

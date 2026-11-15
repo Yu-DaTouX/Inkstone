@@ -1,6 +1,6 @@
 import { Fragment, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import { Folder } from '../../ui/icons'
-import { Button, EmptyState, ListRow, Notice, Spinner } from '../../ui'
+import { Button, EmptyState, ListRow, MiddleTruncate, Notice, Spinner } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { splitForMiddleTruncate } from '../../ui/MiddleTruncate'
 import { toAbsolutePath } from './files-model'
@@ -30,37 +30,15 @@ function Highlighted({ parts }: { parts: readonly HighlightPart[] }): ReactEleme
   )
 }
 
-function sliceParts(parts: readonly HighlightPart[], from: number, to: number): HighlightPart[] {
-  const out: HighlightPart[] = []
-  let at = 0
-  for (const part of parts) {
-    const start = Math.max(from, at)
-    const end = Math.min(to, at + part.text.length)
-    if (end > start) out.push({ text: part.text.slice(start - at, end - at), hit: part.hit })
-    at += part.text.length
-  }
-  return out
-}
-
 function ResultName({ name, parts }: { name: string; parts: readonly HighlightPart[] }): ReactElement {
   const split = splitForMiddleTruncate(name)
-  if (!split) return <Highlighted parts={parts} />
   let firstHit = 0
   for (const part of parts) {
     if (part.hit) break
     firstHit += part.text.length
   }
-  const cut = firstHit > 0 && firstHit < split.head.length ? firstHit : split.head.length
-  return (
-    <>
-      <span className="v3-files-result-name-head">
-        <Highlighted parts={sliceParts(parts, 0, cut)} />
-      </span>
-      <span className="v3-files-result-name-tail">
-        <Highlighted parts={sliceParts(parts, cut, name.length)} />
-      </span>
-    </>
-  )
+  const cut = split && firstHit > 0 && firstHit < split.head.length ? firstHit : split?.head.length
+  return <MiddleTruncate value={name} parts={parts} tail={cut === undefined ? undefined : name.length - cut} showTitle={false} />
 }
 
 function failureText(text: FilesText, search: FilesSearchState): string {
@@ -109,7 +87,7 @@ export function FilesSearchResults({
   }
   if (search.phase !== 'done' && !search.rows.length) {
     return (
-      <EmptyState className="v3-files-note" size="sm" role="status" icon={<Spinner size="xs" />} title={text.searching} data-testid="v3-files-search-busy" />
+      <EmptyState className="v3-files-note" size="sm" role="status" icon={<Spinner size="sm" />} title={text.searching} data-testid="v3-files-search-busy" />
     )
   }
   if (search.failed) {
@@ -120,7 +98,7 @@ export function FilesSearchResults({
         role="alert"
         title={failureText(text, search)}
         action={
-          <Button size="sm" variant="ghost" onPress={onRetry} data-testid="v3-files-search-retry">
+          <Button size="sm" variant="secondary" onPress={onRetry} data-testid="v3-files-search-retry">
             {text.retry}
           </Button>
         }
@@ -138,7 +116,7 @@ export function FilesSearchResults({
         size="sm"
         title={text.searchEmpty}
         action={
-          <Button size="sm" variant="ghost" onPress={onSearchContents} data-testid="v3-files-search-contents">
+          <Button size="sm" variant="secondary" onPress={onSearchContents} data-testid="v3-files-search-contents">
             {text.searchInContents}
           </Button>
         }
@@ -222,7 +200,6 @@ export function FilesSearchResults({
             </Fragment>
           )
         }
-        const matched = row.nameParts.some((part) => part.hit)
         return (
           <ListRow
             key={row.key}
@@ -236,7 +213,7 @@ export function FilesSearchResults({
             onClick={() => onOpen(row)}
           >
             <span className="v3-files-result-body">
-              <span className="v3-files-result-name" data-matched={matched ? '1' : undefined}>
+              <span className="v3-files-result-name">
                 <ResultName name={row.name} parts={row.nameParts} />
               </span>
               {row.parent ? <span className="v3-files-result-path">{row.parent}</span> : null}

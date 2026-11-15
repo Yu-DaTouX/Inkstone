@@ -38,7 +38,7 @@ export interface ChangesQuery {
 }
 
 export interface ChangesGitSource {
-  state(cwd: string): Promise<GitStateView>
+  state(cwd: string, options?: { fresh?: boolean }): Promise<GitStateView>
   untracked(cwd: string): Promise<string[]>
   entries?(cwd: string): Promise<GitStatusEntry[]>
   changes?(cwd: string, query: ChangesQuery): Promise<ChangesSnapshot>

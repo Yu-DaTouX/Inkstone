@@ -255,6 +255,12 @@
     .ui-rail-row[data-action-reveal='hover']:is(:hover, :focus-within) .ui-rail-row__value {
       visibility: hidden;
     }
+    .ui-rail-row[data-action-reveal='hover'] .ui-rail-row__value {
+      min-width: calc(var(--size-btn-sm) - var(--s-12));
+    }
+    .ui-rail-row[data-action-reveal='hover']:not([data-icon-only='1']):not(:has(.ui-rail-row__value)):is(:hover, :focus-within) .ui-btn.ui-rail-row__main {
+      padding-inline-end: calc(var(--size-btn-sm) + var(--s-2));
+    }
   }
 
   .ui-btn.ui-rail-row__main[data-disabled] .ui-rail-row__label {

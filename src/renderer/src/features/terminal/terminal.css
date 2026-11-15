@@ -6,7 +6,7 @@
     min-width: 0;
     min-height: 0;
     height: 100%;
-    background: var(--sunken);
+    background: var(--bg);
     container-type: inline-size;
   }
 
@@ -36,6 +36,10 @@
   .term-pane-exited {
     flex: none;
     color: var(--fg3);
+  }
+
+  .term-pane-exited[data-tone='fail'] {
+    color: var(--fail-t);
   }
 
   .term-tabbar {
@@ -103,20 +107,20 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: var(--s-8);
     min-width: 0;
     padding: var(--s-16);
-    background: var(--sunken);
+    background: var(--bg);
   }
 
   .term-pane-host .xterm {
     height: 100%;
-    padding: var(--s-4) var(--s-6);
+    padding: var(--s-4) var(--s-8) var(--s-4) var(--s-12);
   }
 
   .term-pane-host .xterm .xterm-viewport {
-    background-color: var(--sunken) !important;
+    background-color: var(--bg) !important;
   }
 
   .term-pane-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {

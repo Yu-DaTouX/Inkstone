@@ -1,6 +1,6 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, GitBranch, List, RefreshCw } from '../../ui/icons'
+import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, FolderGit2, GitBranch, GitCommitHorizontal, GitMerge, List, RefreshCw } from '../../ui/icons'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitChangesScope, GitStatusEntry } from '../../../../shared/git'
 import {
@@ -47,7 +47,7 @@ import {
 import { ChangesFileDiff } from './ChangesFileDiff'
 import { CreatePullRequestButton } from '../github/CreatePullRequest'
 import { ChangesBinaryGroup } from './ChangesBinaryGroup'
-import { buildFileTree, createLimitedQueue, distinctChangeDirs, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
+import { buildFileTree, createLimitedQueue, distinctChangeDirs, flattenFileTree, isCompactPane, isLargeDiff, isLargeFile, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
 import { useChangesAutoRefresh } from './use-changes-autorefresh'
 import { patchLineCounts } from './patch-line-counts'
@@ -107,10 +107,10 @@ function writeLayout(mode: DiffViewMode): void {
 
 function defaultGitSource(): ChangesGitSource {
   const source: ChangesGitSource = {
-    async state(cwd: string): Promise<GitStateView> {
+    async state(cwd: string, options?: { fresh?: boolean }): Promise<GitStateView> {
       const git = bridge()
       if (!git) return { repo: null, error: uiText('state.error.gitUnavailable') }
-      const res = await git.state(cwd)
+      const res = await git.state(cwd, options?.fresh ? { fresh: true } : undefined)
       return { repo: res.repo, expected: res.expected, error: res.error }
     },
     async untracked(cwd: string): Promise<string[]> {
@@ -200,6 +200,8 @@ type ListOutcome =
 
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
 
+const SCOPE_ICONS: Record<ChangesScopeKind, typeof FolderGit2> = { working: FolderGit2, branch: GitMerge, commit: GitCommitHorizontal }
+
 interface ChangesSnapshotEntry {
   stateRes: GitStateView
   listRes: ListOutcome
@@ -225,7 +227,7 @@ function rememberSnapshot(key: string, entry: ChangesSnapshotEntry): void {
   }
 }
 
-async function fetchSnapshot(source: ChangesGitSource, cwd: string, request: GitChangesScope | null): Promise<ChangesSnapshotEntry> {
+async function fetchSnapshot(source: ChangesGitSource, cwd: string, request: GitChangesScope | null, fresh = false): Promise<ChangesSnapshotEntry> {
   const listPromise: Promise<ListOutcome> = (async (): Promise<ListOutcome> => {
     try {
       if (source.changes) {
@@ -258,7 +260,7 @@ async function fetchSnapshot(source: ChangesGitSource, cwd: string, request: Git
     }
   })()
   const [stateRes, listRes] = await Promise.all([
-    source.state(cwd).catch((e: unknown): GitStateView => ({ repo: null, error: e instanceof Error ? e.message : String(e) })),
+    source.state(cwd, fresh ? { fresh: true } : undefined).catch((e: unknown): GitStateView => ({ repo: null, error: e instanceof Error ? e.message : String(e) })),
     listPromise
   ])
   return { stateRes, listRes }
@@ -285,6 +287,7 @@ function firstTextDiffPath(items: readonly ChangeItem[], patches: Record<string,
     if (hideTests && isTestFilePath(item.path)) continue
     const kind = resolvePatchSource(item.path, patches[item.path]).kind
     if (kind !== 'inline' && kind !== 'fetch') continue
+    if (isLargeFile(item)) continue
     if ((item.added ?? 1) + (item.removed ?? 1) > 0) return item.path
     fallback ??= item.path
   }
@@ -310,6 +313,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
 
   const [tick, setTick] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [probed, setProbed] = useState(false)
   const [repo, setRepo] = useState<GitStateView['repo']>(null)
   const [expected, setExpected] = useState<GitActionExpected | undefined>(undefined)
   const [error, setError] = useState('')
@@ -340,6 +344,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
   const [viewed, setViewed] = useState(readViewedFiles)
 
   const seqRef = useRef(0)
+  const freshRef = useRef(false)
   const initRef = useRef('')
   const lastOwnerRef = useRef(ownerId)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -372,6 +377,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
     let alive = true
     const cacheKey = gitSource ? null : snapshotCacheKey(cwd, scopeKey({ kind: scopeKind, sha: scopeSha }))
     const apply = (stateRes: GitStateView, listRes: ListOutcome): void => {
+      setProbed(true)
       setRepo(stateRes.repo)
       setExpected(stateRes.expected)
       setError(stateRes.error ?? '')
@@ -411,7 +417,9 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
       setError('')
       setListError('')
     }
-    void fetchSnapshot(source, cwd, request)
+    const fresh = freshRef.current
+    freshRef.current = false
+    void fetchSnapshot(source, cwd, request, fresh)
       .then((entry) => {
         if (!alive || seq !== seqRef.current) return
         if (cacheKey) rememberSnapshot(cacheKey, entry)
@@ -463,6 +471,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
   )
   const diffItems = useMemo(() => shownItems.filter((item) => !binaryPaths.has(item.path)), [shownItems, binaryPaths])
   const binaryItems = useMemo(() => shownItems.filter((item) => binaryPaths.has(item.path)), [shownItems, binaryPaths])
+  const openCount = useMemo(() => diffItems.filter((item) => expanded.has(item.path)).length, [diffItems, expanded])
+  const largeBanner = !large || (openCount > 0 && openCount >= diffItems.length) ? '' : openCount > 0 ? text.largeDiffSome(openCount) : text.largeDiffBanner
   const narrow = fileList.paneWidth > 0 && fileList.paneWidth < 560
   const mode: DiffViewMode = layout === 'split' && narrow ? 'unified' : layout
 
@@ -591,6 +601,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
 
   const refresh = useCallback((): void => {
     clearRunner()
+    freshRef.current = true
     setTick((n) => n + 1)
   }, [clearRunner])
 
@@ -674,7 +685,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
     commit: text.scopeCommit
   }
 
-  const branchLabel = repo ? (repo.detached ? text.detached : repo.branch ?? text.noBranch) : ''
+  const branchLabel = repo ? (repo.detached ? [text.detached, repo.head?.slice(0, 7)].filter(Boolean).join(' ') : repo.branch ?? text.noBranch) : ''
   const changeCount = repo ? (scope.kind === 'working' ? repo.changedCount : items.length) : null
   const countLabel =
     changeCount === null ? '' : `${changeCount} ${text.changed}${repo?.unborn ? ` \u00b7 ${text.unborn}` : ''}`
@@ -699,9 +710,28 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
     return meta.added !== null && meta.removed !== null ? { added: meta.added, removed: meta.removed } : null
   }, [items, patches, meta.added, meta.removed])
 
-  const scopeMenu = source.changes ? (
+  const ScopeIcon = SCOPE_ICONS[scope.kind]
+  const notRepo = probed && !loading && !repo && !error
+  const scopeMenu = source.changes && !notRepo ? (
     <MenuTrigger>
-      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope">
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label={`${text.scopeLabel} ${scopeLabels[scope.kind]}`}
+        tooltip={
+          repo?.root ? (
+            <>
+              {scopeLabels[scope.kind]}
+              <br />
+              {repo.root}
+            </>
+          ) : (
+            scopeLabels[scope.kind]
+          )
+        }
+        className="changes-pane__scope"
+        icon={<ScopeIcon size={14} />}
+      >
         <span className="changes-pane__clip">{scopeLabels[scope.kind]}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </Button>
@@ -1023,13 +1053,21 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
         </div>
       ) : null}
       {loading && !repo ? (
-        <Notice variant="hint" icon={<Spinner size="xs" />} className="changes-pane__hint">
-          {text.loading}
-        </Notice>
+        <EmptyState size="sm" role="status" icon={<Spinner size="sm" />} title={text.loading} className="changes-pane__empty" data-testid="changes-loading" />
       ) : null}
       {!loading && problem ? (
         error ? (
-          <Notice tone="fail" compact className="changes-pane__hint">
+          <Notice
+            tone="fail"
+            compact
+            className="changes-pane__hint"
+            data-testid="changes-git-error"
+            action={
+              <Button size="xs" onPress={refresh}>
+                {text.retry}
+              </Button>
+            }
+          >
             {problem}
           </Notice>
         ) : (
@@ -1182,7 +1220,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
                 />
               ) : null}
               <div className="changes-pane__main" ref={scrollerRef} tabIndex={-1}>
-                {large ? hint(text.largeDiffBanner, undefined, 'changes-pane__banner') : null}
+                {largeBanner ? hint(largeBanner, undefined, 'changes-pane__banner') : null}
                 {diffItems.map((item) => (
                   <ChangesFileDiff
                     key={item.path}

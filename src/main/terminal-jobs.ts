@@ -36,7 +36,7 @@ export function terminalJob(id: string): TerminalJob | undefined {
   return jobs.get(id)
 }
 
-export function updateTerminalJob(id: string, patch: Partial<Pick<TerminalJob, 'state' | 'endedAt'>>): void {
+export function updateTerminalJob(id: string, patch: Partial<Pick<TerminalJob, 'state' | 'endedAt' | 'exitCode'>>): void {
   const job = jobs.get(id)
   if (!job) return
   Object.assign(job, patch)
