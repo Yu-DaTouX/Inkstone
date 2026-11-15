@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 56c6e87ecc12c6b4af3ea5e19292b90c81c9d71e8778836ec207b06401f63c74 */
+/* source-sha256: 7d599acb3864ac1bd75a0b9bace63e6750b61fb090815d248ef3d5abb429de45 */
 var active = "zh-CN";
 var resolver = null;
 function uiLang() {

@@ -236,6 +236,26 @@ function verify(label) {
     bad(`${label} RPC 握手失败：${e.message}`)
     return false
   }
+
+  try {
+    const session = join(testDir, 'export-check.jsonl')
+    const html = join(testDir, 'export-check.html')
+    const header = { type: 'session', version: 3, id: randomUUID(), timestamp: new Date().toISOString(), cwd: testDir }
+    const message = { type: 'message', id: 'export01', parentId: null, timestamp: new Date().toISOString(), message: { role: 'user', content: 'export check', timestamp: Date.now() } }
+    writeFileSync(session, `${JSON.stringify(header)}\n${JSON.stringify(message)}\n`)
+    execFileSync(process.execPath, [cli, '--export', session, html], {
+      encoding: 'utf8',
+      timeout: 60000,
+      env,
+      cwd: testDir,
+      windowsHide: true
+    })
+    if (!existsSync(html) || !statSync(html).size) throw new Error('没有生成 HTML')
+    ok(`${label} HTML 导出 → ${mb(statSync(html).size)}`)
+  } catch (e) {
+    bad(`${label} HTML 导出失败（dist/core/export-html 等按需资源可能缺失）：${e.message}`)
+    return false
+  }
   return true
 }
 
@@ -303,14 +323,6 @@ mkdirSync(DEST, { recursive: true })
 
 const dist = copyDist(piRoot)
 ok(`dist（bundle + 资产）：${dist.files} 个文件，${mb(dist.bytes)}`)
-
-for (const rel of ['template.js', join('vendor', 'marked.min.js')]) {
-  const from = join(piRoot, 'dist', 'core', 'export-html', rel)
-  if (existsSync(from) && !existsSync(join(DEST, 'dist', 'core', 'export-html', rel))) {
-    bad(`HTML 导出缺文件：dist/core/export-html/${rel}`)
-    process.exit(1)
-  }
-}
 
 const codemodeDoc = join(piRoot, 'docs', 'codemode.md')
 if (existsSync(codemodeDoc)) {

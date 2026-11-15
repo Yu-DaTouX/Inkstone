@@ -1,9 +1,7 @@
 import { readdir } from 'node:fs/promises'
-import { legacyScripts } from './test-legacy-scripts.mjs'
 
 export const excludedScripts = {
   'test-unit': 'the-harness-itself',
-  'test-unit-legacy': 'legacy-harness',
   'test-live': 'live-harness',
   'test-packaged': 'needs-packaged-release',
   'test-upgrade-read': 'needs-packaged-release',
@@ -49,17 +47,13 @@ export const serialScripts = {
 
 export async function discoverTests(directory = 'scripts') {
   const names = (await readdir(directory)).filter((name) => /^test-.*\.mjs$/.test(name)).map((name) => name.slice(0, -4)).sort()
-  for (const name of legacyScripts) {
-    if (!names.includes(name)) throw new Error(`兼容清单指向不存在的测试：${name}`)
-    if (Object.hasOwn(excludedScripts, name)) throw new Error(`测试重复分类：${name}`)
-  }
   for (const name of Object.keys(serialScripts)) {
     if (!names.includes(name)) throw new Error(`串行名单指向不存在的测试：${name}`)
     if (Object.hasOwn(excludedScripts, name)) throw new Error(`测试重复分类：${name}`)
   }
   return names.map((name) => ({
     name,
-    kind: legacyScripts.has(name) ? 'legacy' : Object.hasOwn(excludedScripts, name) ? 'excluded' : 'standalone',
+    kind: Object.hasOwn(excludedScripts, name) ? 'excluded' : 'standalone',
     reason: excludedScripts[name],
     serial: Object.hasOwn(serialScripts, name)
   }))
@@ -81,11 +75,11 @@ export function selectTests(catalog, prefixes) {
 export function executionPlan(selected, filtered) {
   if (filtered) {
     const blocked = selected.filter((test) => test.kind !== 'standalone')
-    if (blocked.length) throw new Error(blocked.map((test) => `${test.name}: ${test.reason ?? '尚未独立，仍由完整 test:unit 执行'}`).join('\n'))
+    if (blocked.length) throw new Error(blocked.map((test) => `${test.name}: ${test.reason}`).join('\n'))
   }
   const standalone = selected.filter((test) => test.kind === 'standalone')
   const parallel = standalone.filter((test) => !test.serial).map((test) => test.name)
   const serial = standalone.filter((test) => test.serial).map((test) => test.name)
   if (!parallel.length && !serial.length) throw new Error('没有可运行的独立测试')
-  return { parallel, serial, legacy: !filtered }
+  return { parallel, serial }
 }

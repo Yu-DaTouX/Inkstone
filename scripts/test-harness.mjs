@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { discoverTests, selectTests, executionPlan, excludedScripts, serialScripts } from './lib/test-catalog.mjs'
-import { legacyScripts } from './lib/test-legacy-scripts.mjs'
 import { createTestSandbox } from './lib/test-env.mjs'
 import { runTestProcess, runTestPool } from './lib/test-process.mjs'
 import { runSuite } from './lib/test-suite.mjs'
@@ -31,28 +30,28 @@ await runSuite(import.meta.url, async (ok) => {
     ok(true, '已有匹配不能掩盖另一个拼错的前缀')
     assert.throws(() => selectTests(catalog, ['../queue']), /无效/)
     ok(true, '拒绝路径和通配符输入')
-    assert.throws(() => executionPlan(selectTests(catalog, ['custom-provider']), true), /尚未独立/)
-    ok(true, '未迁移套件不会空跑，也不会偷偷变成全量测试')
-    for (const prefix of ['cc-delegation-live', 'packaged', 'browser-frame-network', 'comfyui-video']) {
-      assert.throws(() => executionPlan(selectTests(catalog, [prefix]), true))
-      ok(true, `${prefix} 不进入定向单测`)
+    for (const prefix of ['custom-provider', 'danger-guard']) {
+      const single = executionPlan(selectTests(catalog, [prefix]), true)
+      ok(single.parallel.includes(`test-${prefix}`) && !single.serial.includes(`test-${prefix}`), `${prefix} 可以定向单跑`)
     }
+    for (const prefix of ['cc-delegation-live', 'packaged', 'browser-frame-network', 'comfyui-video']) {
+      assert.throws(() => executionPlan(selectTests(catalog, [prefix]), true), new RegExp(excludedScripts[`test-${prefix}`]))
+      ok(true, `${prefix} 不进入定向单测，并说明原因`)
+    }
+    ok(catalog.every((test) => test.kind === (Object.hasOwn(excludedScripts, test.name) ? 'excluded' : 'standalone')), '目录只有独立和排除两类')
     const plan = executionPlan(catalog, false)
-    ok(plan.legacy && plan.parallel.length > 0, '完整入口保留一次兼容套件')
-    ok(!plan.parallel.some((name) => legacyScripts.has(name) || Object.hasOwn(excludedScripts, name)), '完整扫描不重复运行兼容项和有门槛的测试')
+    ok(plan.parallel.length > 0 && Object.keys(plan).sort().join() === 'parallel,serial', '完整入口只运行独立脚本')
+    ok(plan.parallel.length + plan.serial.length === catalog.filter((test) => test.kind === 'standalone').length, '完整入口不漏跑任何独立脚本')
+    ok(!plan.parallel.some((name) => Object.hasOwn(excludedScripts, name)), '完整扫描不运行有门槛的测试')
     ok(plan.serial.length > 0 && plan.serial.every((name) => Object.hasOwn(serialScripts, name) && !plan.parallel.includes(name)), '串行名单里的独立脚本只进串行道，不进并行池')
-    ok(!plan.serial.some((name) => legacyScripts.has(name) || Object.hasOwn(excludedScripts, name)), '串行道不含兼容项和有门槛的测试')
+    ok(!plan.serial.some((name) => Object.hasOwn(excludedScripts, name)), '串行道不含有门槛的测试')
     ok(catalog.filter((test) => test.serial).every((test) => Object.hasOwn(serialScripts, test.name)) && catalog.some((test) => test.serial && test.kind === 'standalone'), '目录标出串行脚本')
     const timing = executionPlan(selectTests(catalog, ['stream-loop-detector']), true)
-    ok(timing.parallel.length === 0 && timing.serial.join() === 'test-stream-loop-detector' && !timing.legacy, '定向运行串行脚本只走串行道')
+    ok(timing.parallel.length === 0 && timing.serial.join() === 'test-stream-loop-detector', '定向运行串行脚本只走串行道')
     assert.throws(() => executionPlan([], true), /没有可运行/)
     ok(Object.keys(serialScripts).every((name) => catalog.some((test) => test.name === name)), '串行名单都指向存在的测试')
-    const source = await readFile('scripts/test-unit-legacy.mjs', 'utf8')
-    const referenced = new Set([...source.matchAll(/\.\/(test-[a-z0-9-]+)\.mjs/g)].map((match) => match[1]))
-    assert.deepEqual([...referenced].sort(), [...legacyScripts].sort())
-    ok(true, '兼容清单与真实调用一致，避免漏跑或双跑')
-    for (const name of ['test-queue-items', 'test-queue-draft-images', 'test-agents-doc']) {
-      ok(plan.parallel.includes(name) && !legacyScripts.has(name), `${name} 单跑和全跑走同一份入口`)
+    for (const name of ['test-queue-items', 'test-queue-draft-images', 'test-agents-doc', 'test-custom-provider', 'test-danger-guard']) {
+      ok(plan.parallel.includes(name), `${name} 单跑和全跑走同一份入口`)
     }
 
     const sandbox = createTestSandbox({ PATH: 'keep', YAN_CLI_TOKEN: 'drop', PI_PROBE: 'drop', FAKE_API_KEY: 'drop', FAKE_TOKEN: 'drop', ELECTRON_RUN_AS_NODE: '1', ELECTRON_RENDERER_URL: 'drop' })
@@ -126,8 +125,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(!noMatch.ok && noMatch.tail.includes('没有匹配'), 'CLI 零匹配返回非零退出码')
     const badOption = await run(await cliFixture('bad-option', ['--wat']))
     ok(!badOption.ok && badOption.tail.includes('未知选项'), 'CLI 拼错参数不会退回全量执行')
-    const legacyOnly = await run(await cliFixture('legacy', ['custom-provider']))
-    ok(!legacyOnly.ok && legacyOnly.tail.includes('尚未独立'), 'CLI 明确拒绝未迁移定向套件')
+    const excludedOnly = await run(await cliFixture('excluded', ['packaged']))
+    ok(!excludedOnly.ok && excludedOnly.tail.includes(excludedScripts['test-packaged']), 'CLI 明确拒绝有门槛的定向套件并说明原因')
+    const listedAll = await run(await cliFixture('list-split', ['custom-provider', 'danger-guard', 'packaged', '--list']))
+    ok(listedAll.ok && /standalone\s+test-custom-provider/.test(listedAll.tail) && /standalone\s+test-danger-guard/.test(listedAll.tail) && /excluded\s+test-packaged/.test(listedAll.tail) && !listedAll.tail.includes('legacy'), '--list 只标独立或排除')
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 3 })
   }
