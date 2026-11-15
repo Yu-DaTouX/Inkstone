@@ -50,6 +50,8 @@ class QuestionAlertService : Service() {
     val token = intent?.getStringExtra(EXTRA_TOKEN)
     val relay = intent?.let { relayConfig(it) }
     if (baseUrl.isNullOrBlank() || token.isNullOrBlank() || !manager.areNotificationsEnabled()) {
+      promoteToForeground(ongoingNotification("砚", "已停止"))
+      stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
       return START_NOT_STICKY
     }
@@ -67,11 +69,9 @@ class QuestionAlertService : Service() {
     lastHubAt = 0L
 
     ongoingKey = ""
-    val ongoing = ongoingNotification("砚", "连接中")
-    if (Build.VERSION.SDK_INT >= 29) {
-      startForeground(SERVICE_ID, ongoing, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
-    } else {
-      startForeground(SERVICE_ID, ongoing)
+    if (!promoteToForeground(ongoingNotification("砚", "连接中"))) {
+      stopSelf()
+      return START_NOT_STICKY
     }
 
     running = true
@@ -79,6 +79,18 @@ class QuestionAlertService : Service() {
     val current = generation
     worker = Thread({ monitor(baseUrl, token, relay, current) }, "InkstoneQuestionAlerts").also { it.start() }
     return START_REDELIVER_INTENT
+  }
+
+  private fun promoteToForeground(notification: Notification): Boolean = try {
+    if (Build.VERSION.SDK_INT >= 29) {
+      startForeground(SERVICE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+    } else {
+      startForeground(SERVICE_ID, notification)
+    }
+    true
+  } catch (error: Exception) {
+    Log.w(TAG, "startForeground: ${error.message}")
+    false
   }
 
   private fun relayConfig(intent: Intent): RelayConfig? {

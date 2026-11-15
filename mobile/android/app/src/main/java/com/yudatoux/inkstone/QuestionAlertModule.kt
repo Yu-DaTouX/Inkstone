@@ -36,6 +36,10 @@ class QuestionAlertModule(private val context: ReactApplicationContext) : ReactC
   @ReactMethod
   fun start(baseUrl: String, token: String, relay: ReadableMap?, promise: Promise) {
     try {
+      if (baseUrl.isBlank() || token.isBlank() || !context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+        promise.resolve(false)
+        return
+      }
       val intent = Intent(context, QuestionAlertService::class.java).apply {
         putExtra(QuestionAlertService.EXTRA_BASE_URL, baseUrl)
         putExtra(QuestionAlertService.EXTRA_TOKEN, token)

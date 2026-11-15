@@ -53,11 +53,17 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
 }
 
 type Target = { baseUrl: string; relay?: RelayConfig }
+type ClientRequestInit = { method?: 'GET' | 'POST'; token?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number; upload?: boolean }
+
+function uploadTimedOut(timeoutMs: number): RemoteHttpError {
+  const seconds = Math.round(timeoutMs / 1000)
+  return new RemoteHttpError(0, pick(`上传超时：${seconds} 秒内没传完图片或语音，网络可能太慢；可换个网络或少带几张图再试`, `Upload timed out: images or audio did not finish uploading within ${seconds}s. The network may be too slow; try a better connection or fewer images.`))
+}
 
 async function request<T>(
   target: string | Target,
   path: string,
-  init: { method?: 'GET' | 'POST'; token?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number } = {}
+  init: ClientRequestInit = {}
 ): Promise<T> {
   const { baseUrl, relay } = typeof target === 'string' ? { baseUrl: target, relay: undefined } : target
   if (relay) return relayRequest<T>(relay, path, init)
@@ -77,6 +83,7 @@ async function request<T>(
     return json as T
   } catch (error) {
     if (error instanceof RemoteHttpError) throw error
+    if ((error as { name?: string })?.name === 'AbortError' && init.upload && init.timeoutMs) throw uploadTimedOut(init.timeoutMs)
     if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, pick('连接超时：请确认电脑上的砚在运行、手机与电脑在同一个 Tailscale 网络里', 'Timed out. Check that Inkstone is running on the desktop and both devices share a Tailscale network.'))
     throw new RemoteHttpError(0, pick('连不上电脑：请确认地址、端口，以及 Tailscale 已连接', 'Cannot reach the desktop. Check the address, port and Tailscale.'))
   } finally {
@@ -95,7 +102,7 @@ function requestHeaders(init: { token?: string; body?: unknown; idempotencyKey?:
 async function relayRequest<T>(
   relay: RelayConfig,
   path: string,
-  init: { method?: 'GET' | 'POST'; token?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number }
+  init: ClientRequestInit
 ): Promise<T> {
   try {
     const res = await RelayTunnel.for(relay).request(init.method ?? 'GET', path, {
@@ -114,6 +121,7 @@ async function relayRequest<T>(
     return json as T
   } catch (error) {
     if (error instanceof RemoteHttpError) throw error
+    if (error instanceof RelayError && error.timedOut && init.upload && init.timeoutMs) throw uploadTimedOut(init.timeoutMs)
     throw new RemoteHttpError(0, error instanceof RelayError ? error.message : pick('经中继连不上电脑：请确认电脑上的砚在运行并开启了中继接入', 'Cannot reach the desktop via relay. Check that Inkstone is running with relay enabled.'))
   }
 }
@@ -299,6 +307,13 @@ export interface HistoryPage {
 
 const SLOW_REQUEST_MS = 60_000
 const COMPACT_REQUEST_MS = 180_000
+const UPLOAD_FREE_BYTES = 64 * 1024
+const UPLOAD_BYTES_PER_SECOND = 32 * 1024
+const UPLOAD_MAX_MS = 180_000
+
+function uploadTimeoutMs(bytes: number): number {
+  return Math.min(UPLOAD_MAX_MS, Math.max(SLOW_REQUEST_MS, 30_000 + Math.ceil(bytes / UPLOAD_BYTES_PER_SECOND) * 1000))
+}
 
 export class RemoteClient {
   readonly historyCache = new HistoryCache()
@@ -310,6 +325,11 @@ export class RemoteClient {
 
   private post<T>(path: string, body: unknown, key: string, timeoutMs?: number): Promise<T> {
     return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key, timeoutMs })
+  }
+
+  private upload<T>(path: string, body: unknown, key: string, bytes: number): Promise<T> {
+    if (bytes <= UPLOAD_FREE_BYTES) return this.post<T>(path, body, key)
+    return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key, timeoutMs: uploadTimeoutMs(bytes), upload: true })
   }
 
   info(): Promise<RemoteInfo> {
@@ -385,7 +405,8 @@ export class RemoteClient {
   }
 
   send(sessionId: string, text: string, key = idempotencyKey(), images?: RemoteImageInput[], mode?: 'steer' | 'followUp'): Promise<unknown> {
-    return this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images, ...(mode ? { mode } : {}) }, key)
+    const bytes = text.length + (images ?? []).reduce((sum, image) => sum + image.data.length, 0)
+    return this.upload(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images, ...(mode ? { mode } : {}) }, key, bytes)
   }
 
   async revokeSelf(): Promise<void> {
@@ -417,7 +438,7 @@ export class RemoteClient {
   }
 
   async transcribe(wav: string): Promise<string> {
-    return (await this.post<{ data: { text: string } }>('/remote/v1/voice/transcribe', { wav }, idempotencyKey())).data.text
+    return (await this.upload<{ data: { text: string } }>('/remote/v1/voice/transcribe', { wav }, idempotencyKey(), Math.max(wav.length, UPLOAD_FREE_BYTES + 1))).data.text
   }
 
   async newSession(projectId?: string, key = idempotencyKey()): Promise<{ sessionId?: string }> {

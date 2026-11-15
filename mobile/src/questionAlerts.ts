@@ -31,6 +31,8 @@ export async function startQuestionAlerts(connection: Connection, requestPermiss
       })
       if (result !== PermissionsAndroid.RESULTS.GRANTED) return false
     }
+  } else if (!(await alerts.status()).enabled) {
+    return false
   }
   const config = connection.relay
   const relay = config ? { join: [...(config.direct ?? []), ...(config.join ? [config.join] : [])].join('\n'), hostKey: config.hostKey, clientKey: config.clientKey, clientPub: relayClientPublicKey(config.clientKey) } : null

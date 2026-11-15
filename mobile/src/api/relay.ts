@@ -378,7 +378,7 @@ type Pending = {
 }
 
 export class RelayError extends Error {
-  constructor(message: string, readonly denied = false) {
+  constructor(message: string, readonly denied = false, readonly timedOut = false) {
     super(message)
     this.name = 'RelayError'
   }
@@ -597,7 +597,7 @@ export class RelayTunnel {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         void this.send({ t: 'abort', id }).catch(() => undefined)
-        reject(new RelayError(pick('连接超时：请确认电脑上的砚在运行', 'Timed out. Check that Inkstone is running on the desktop.')))
+        reject(new RelayError(pick('连接超时：请确认电脑上的砚在运行', 'Timed out. Check that Inkstone is running on the desktop.'), false, true))
       }, init.timeoutMs ?? 20_000)
       this.pending.set(id, {
         resolve: (r) => { clearTimeout(timer); resolve(r) },
