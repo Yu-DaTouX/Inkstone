@@ -1,5 +1,5 @@
 import type { QuotaWindow } from './ipc'
-import { classifyModelError } from './model-errors'
+import { classifyModelError, isQuotaBalanceText } from './model-errors'
 
 export { QUOTA_RESUME_PROMPT } from './host-notice-text'
 
@@ -10,7 +10,7 @@ export const RESET_GRACE_MS = 5_000
 export function isQuotaWaitError(errorText: unknown): boolean {
   const info = classifyModelError(errorText)
   if (info.kind !== 'quota' || info.quotaScope !== 'usage') return false
-  return !/insufficient[ _](?:balance|funds|credit)|balance|credit|funds|extra usage|余额|充值/i.test(info.text)
+  return !isQuotaBalanceText(info.text)
 }
 
 export function isRateLimitError(errorText: unknown): boolean {

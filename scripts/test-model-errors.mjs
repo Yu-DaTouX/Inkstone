@@ -71,6 +71,41 @@ export async function runModelErrorTests(ok, modules) {
   ok(!/降低并发/.test(windowNotice) && !/请求频率/.test(windowNotice), '额度用尽不误报成请求频率限流')
   ok(shared.classifyModelError('429 Too Many Requests').quotaScope === 'rate', '429 仍归入频率限流')
 
+  const openaiQuotaMessage = 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.'
+  for (const raw of [
+    `429 ${openaiQuotaMessage}`,
+    `429 {"error":{"message":"${openaiQuotaMessage}","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}`,
+    { status: 429, error: { code: 'insufficient_quota', message: openaiQuotaMessage } },
+    '429 insufficient_quota',
+    'Error code: 429 - insufficient_quota'
+  ]) {
+    const label = typeof raw === 'string' ? raw.slice(0, 48) : JSON.stringify(raw).slice(0, 48)
+    const info = shared.classifyModelError(raw)
+    ok(info.kind === 'quota' && info.quotaScope === 'usage', `OpenAI insufficient_quota 不归入频率限流：${label}`, [info.kind, info.quotaScope])
+    ok(shared.modelErrorCause(raw) === 'quotaBalance', `OpenAI insufficient_quota → quotaBalance：${label}`, shared.modelErrorCause(raw))
+    ok(/充值/.test(shared.modelErrorNotice(raw)), `OpenAI insufficient_quota 提示充值或换模型：${label}`)
+  }
+  for (const raw of [
+    '429 {"error":{"message":"Rate limit reached for gpt-4o in organization org-x on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.","type":"requests","param":null,"code":"rate_limit_exceeded"}}',
+    '429 Rate limit reached for default-gpt-3.5-turbo in organization org-x on requests per min. Limit: 3 / min. Please try again in 20s. Please add a payment method to your account to increase your rate limit. Visit https://platform.openai.com/account/billing to add a payment method.',
+    'rate_limit_exceeded',
+    '429 Too Many Requests',
+    'Too many requests per minute'
+  ]) {
+    ok(shared.modelErrorCause(raw) === 'quotaRate', `真正的限流仍是 quotaRate：${raw.slice(0, 48)}`, shared.modelErrorCause(raw))
+  }
+  for (const [raw, cause] of [
+    ['400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}', 'quotaBalance'],
+    ['402 Insufficient Balance', 'quotaBalance'],
+    ['insufficient balance', 'quotaBalance'],
+    ['402 This request requires more credits, or fewer max_tokens.', 'quotaBalance'],
+    ['400 Third-party apps now draw from your extra usage, not your plan limits.', 'quotaBalance'],
+    ['429 配额已用尽', 'quotaUsage'],
+    ['You have hit your ChatGPT usage limit (plus plan). Try again in ~76 min.', 'quotaUsage']
+  ]) {
+    ok(shared.modelErrorCause(raw) === cause, `已有额度文案分类不变：${raw.slice(0, 48)} → ${cause}`, shared.modelErrorCause(raw))
+  }
+
   for (const [raw, expected] of [
     ['terminated', /响应流意外中断/],
     ['insufficient balance', /余额/],

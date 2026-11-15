@@ -298,6 +298,10 @@ async function main() {
     ok(usage && usage.kind === 'quota' && usage.quotaScope === 'usage', '额度用尽认成 quota/usage', usage && [usage.kind, usage.quotaScope])
     ok(usage && !usage.actions.includes('retry') && usage.actions.includes('model'), '额度用尽不给重试，只给换模型', usage && usage.actions)
 
+    const balance = lib.errorCardModel(notice('429 You exceeded your current quota, please check your plan and billing details.'))
+    ok(balance && balance.kind === 'quota' && balance.quotaScope === 'usage', 'OpenAI insufficient_quota 不认成限流', balance && [balance.kind, balance.quotaScope])
+    ok(balance && !balance.actions.includes('retry') && !balance.actions.includes('wait') && balance.actions.includes('model'), 'OpenAI insufficient_quota 只给换模型', balance && balance.actions)
+
     const auth = lib.errorCardModel(notice('401 unauthorized invalid api key'))
     ok(auth && auth.kind === 'auth' && auth.actions.length === 1 && auth.actions[0] === 'model', '认证失败只给换模型', auth && auth.actions)
 

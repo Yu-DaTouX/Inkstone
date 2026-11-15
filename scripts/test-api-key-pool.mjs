@@ -121,8 +121,8 @@ export async function runApiKeyPoolTests(ok) {
 
     await build({ entryPoints: ['src/shared/model-errors.ts'], outfile: 'out/test/model-errors-failover.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
     const errors = await import(pathToFileURL(fileURLToPath(new URL('../out/test/model-errors-failover.mjs', import.meta.url))).href + `?t=${Date.now()}`)
-    for (const text of ['401 Incorrect API key provided', 'Unauthorized', 'invalid_api_key', '402 insufficient balance', 'You exceeded your current quota, please check your plan and billing details']) ok(errors.apiKeyLooksUnusable(text), `Key 不可用：${text}`)
-    for (const text of ['429 Too Many Requests', 'rate limit exceeded', '403 insufficient permissions for this model', '502 Bad Gateway', 'connection reset', '']) ok(!errors.apiKeyLooksUnusable(text), `不切 Key：${text}`)
+    for (const text of ['401 Incorrect API key provided', 'Unauthorized', 'invalid_api_key', '402 insufficient balance', 'You exceeded your current quota, please check your plan and billing details', '429 You exceeded your current quota, please check your plan and billing details.', '429 insufficient_quota']) ok(errors.apiKeyLooksUnusable(text), `Key 不可用：${text}`)
+    for (const text of ['429 Too Many Requests', 'rate limit exceeded', '429 Rate limit reached for gpt-4o on requests per min (RPM) rate_limit_exceeded', '403 insufficient permissions for this model', '502 Bad Gateway', 'connection reset', '']) ok(!errors.apiKeyLooksUnusable(text), `不切 Key：${text}`)
 
     await writeFile(storePath, '{bad json')
     ok(!(await pool.addApiKey('deepseek', 'sk-z')).ok, '列表文件损坏时拒绝写入，保护已存的 key')

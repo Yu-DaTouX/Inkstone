@@ -115,6 +115,7 @@ export const FAKE_TRIGGERS = {
   PHONE: '用 yan phone 依次查设备、读界面、按 Home 键（PHONEDEV=<序列号> 指定设备），用来验证手机操控走通 CLI 与宿主',
   MULTIASK: '一次只有一个多选字段的表单提问，自填答案走主输入框，用来看表单题接到输入框',
   KEYFAILOVER: '当前 Key 是 bad-key 时返回 401，换 Key 后正常回答，用来验证 Key 故障转移',
+  KEYQUOTA: '当前 Key 是 broke-key 时返回 429 insufficient_quota，换 Key 后正常回答，用来验证余额不足时的 Key 故障转移',
   'USAGEIN=<n>': '消息以 USAGEIN=<n> 开头时，把这一次响应的 input tokens 报成 n（USAGEOUT=<n> 报 output tokens），用来触发自动压缩阈值',
   CRASHBASH: '跑一条 60 秒的 bash，用来测进程被杀后的历史与续接',
   SECRETASK: '先问密码，再用 bash 读密文环境变量，最后回答模型是否收到过测试密文，用来验证密文不进上下文',
@@ -515,6 +516,11 @@ export function startFakeModel(port = 0) {
       const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
       const flakyKey = text.slice(0, 40)
       if (failTag === 'FAILQUOTA') {
+        res.writeHead(429, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { type: 'insufficient_quota', code: 'insufficient_quota', message: 'You exceeded your current quota, please check your plan and billing details.' } }))
+        return
+      }
+      if (text.includes('KEYQUOTA') && String(req.headers.authorization ?? '').includes('broke-key')) {
         res.writeHead(429, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ error: { type: 'insufficient_quota', code: 'insufficient_quota', message: 'You exceeded your current quota, please check your plan and billing details.' } }))
         return

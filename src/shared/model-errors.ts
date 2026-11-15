@@ -52,10 +52,14 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
 
 const QUOTA_USAGE_RE = /usage limit|extra usage|plan limits?|session limit|used all|free requests?|requests for today|weekly limit|hourly limit|5[ _-]?hour|five[ _-]?hour|resets?\s+(?:at|in)\b|额度|配额|余额|balance|credit|funds|套餐|用量上限/i
 const QUOTA_RATE_RE = /rate[ _-]?limit|too many requests|resource_exhausted|requests?\s+per\s+(?:minute|second|hour)|concurren|限流|频率|并发/i
-const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit)|balance|credit|funds|extra usage|余额|充值/i
+const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit|quota)|exceeded your current quota|billing details|balance|credit|funds|extra usage|余额|充值/i
+
+export function isQuotaBalanceText(text: string): boolean {
+  return QUOTA_BALANCE_RE.test(text)
+}
 
 function quotaScopeOf(text: string): ModelErrorQuotaScope {
-  if (QUOTA_USAGE_RE.test(text)) return 'usage'
+  if (QUOTA_USAGE_RE.test(text) || QUOTA_BALANCE_RE.test(text)) return 'usage'
   if (QUOTA_RATE_RE.test(text) || /\b429\b/.test(text)) return 'rate'
   return 'usage'
 }
