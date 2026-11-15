@@ -95,6 +95,7 @@ export interface ApprovalReceipt {
   kind: ApprovalKind
   tool: string
   title: string
+  reasons?: string[]
   choice: ApprovalChoice
   feedback?: string
   reviewer?: 'model'

@@ -202,6 +202,11 @@ export type SessionTextKey =
   | 'approvalDeniedReason'
   | 'approvalReviewAllowed'
   | 'approvalReviewDenied'
+  | 'approvalReviewing'
+  | 'approvalReviewingHint'
+  | 'approvalMoreReasons'
+  | 'subagentReviewAllowed'
+  | 'subagentReviewDenied'
   | 'approvalSummary'
   | 'processThinking1'
   | 'processThinking'
@@ -491,6 +496,11 @@ const ZH: Record<SessionTextKey, string> = {
   approvalDeniedReason: '理由：{reason}',
   approvalReviewAllowed: '你没回应，模型审阅后放行',
   approvalReviewDenied: '你没回应，模型审阅后拦下',
+  approvalReviewing: '模型审阅中…',
+  approvalReviewingHint: '你 1 分钟内没有回应，正在交给模型审阅这次操作；审阅完成后这里换成结论。',
+  approvalMoreReasons: '{title} 等 {n} 项',
+  subagentReviewAllowed: '模型审阅放行',
+  subagentReviewDenied: '模型审阅拦下',
   approvalSummary: '审批 {n} 次：允许 {ok} · 拒绝 {no}',
   processThinking1: '1 段思考',
   processThinking: '{n} 段思考',
@@ -781,6 +791,11 @@ const EN: Record<SessionTextKey, string> = {
   approvalDeniedReason: 'Reason: {reason}',
   approvalReviewAllowed: 'No answer; allowed after model review',
   approvalReviewDenied: 'No answer; blocked after model review',
+  approvalReviewing: 'Model reviewing…',
+  approvalReviewingHint: 'You did not answer within 1 minute, so a model is reviewing this operation. The result will replace this card.',
+  approvalMoreReasons: '{title} and {more} more',
+  subagentReviewAllowed: 'Allowed by model review',
+  subagentReviewDenied: 'Blocked by model review',
   approvalSummary: '{n} approvals: {ok} allowed · {no} denied',
   processThinking1: '1 thought',
   processThinking: '{n} thoughts',

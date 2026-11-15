@@ -789,6 +789,11 @@ const approvals = new ApprovalBroker({
     refreshTaskbar()
   },
   update: (request) => push({ ch: 'approval', payload: request }),
+  review: (request) => {
+    runsHost?.resolveApproval(request.id)
+    push({ ch: 'approval-review', payload: request })
+  },
+  reviewDone: (id) => push({ ch: 'approval-review-done', payload: { id } }),
   publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot }),
   record: (request, answer) => {
     const update = approvalLog.record(request, answer)
@@ -803,6 +808,7 @@ function recordDangerReview(sessionId: string | undefined, review: ModelReviewRe
   } catch (error) {
     reportMainError('danger-review-record', error)
   }
+  approvals.reviewed(review.toolCallId, review.subagentId)
 }
 
 async function askLargeDownloadApproval(download: LargeDownload): Promise<boolean> {

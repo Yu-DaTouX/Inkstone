@@ -12,6 +12,7 @@ import { ApprovalLedger, sameOwner, type ApprovalAnswerIdentity } from './approv
 import { ApprovalSessionGrants } from './approval-session-grants'
 
 export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
+export const APPROVAL_REVIEW_WAIT_MS = 2 * 60 * 1000
 
 export type ApprovalOutcome = ApprovalAnswer | 'timeout' | null
 
@@ -27,6 +28,8 @@ export interface ApprovalBrokerDeps {
   open(request: ApprovalRequest): void
   close(id: string): void
   update?(request: ApprovalRequest): void
+  review?(request: ApprovalRequest): void
+  reviewDone?(id: string): void
   publish?(snapshot: ApprovalSnapshot): void
   record?(request: ApprovalRequest, answer: ApprovalAnswer): void
 }
@@ -42,6 +45,7 @@ export class ApprovalBroker {
   private readonly ledger = new ApprovalLedger()
   private readonly waiters = new Map<string, Waiter>()
   private readonly grants = new ApprovalSessionGrants()
+  private readonly reviews = new Map<string, { request: ApprovalRequest; timer: ReturnType<typeof setTimeout> }>()
 
   constructor(private readonly deps: ApprovalBrokerDeps) {}
 
@@ -62,7 +66,7 @@ export class ApprovalBroker {
     const held = this.ledger.hold(id, Date.now() + APPROVAL_HOLD_MAX_MS)
     if (!held) return false
     clearTimeout(waiter.timer)
-    waiter.timer = setTimeout(() => this.settle(id, 'timeout'), APPROVAL_HOLD_MAX_MS)
+    waiter.timer = setTimeout(() => this.expire(id), APPROVAL_HOLD_MAX_MS)
     this.deps.update?.(held)
     this.publish()
     return true
@@ -77,7 +81,7 @@ export class ApprovalBroker {
     if (!request) return Promise.resolve(null)
     return new Promise((resolve) => {
       const timer = timeoutMs
-        ? setTimeout(() => this.settle(request.id, 'timeout'), timeoutMs)
+        ? setTimeout(() => this.expire(request.id), timeoutMs)
         : setTimeout(() => this.settle(request.id, null), APPROVAL_TIMEOUT_MS)
       const onAbort = signal ? () => { this.settle(request.id, null) } : undefined
       this.waiters.set(request.id, { resolve, timer, signal, onAbort })
@@ -103,6 +107,7 @@ export class ApprovalBroker {
   }
 
   cancel(match: (request: ApprovalRequest) => boolean): number {
+    this.endReviews(match)
     return this.settleAll(this.ledger.expire(match))
   }
 
@@ -113,12 +118,25 @@ export class ApprovalBroker {
 
   activate(runId: string, owner: ApprovalOwner): number {
     this.grants.clearOtherOwners(`run:${runId}`, owner)
+    this.endReviews((request) => request.runId === runId && !request.subagentId && !!request.owner && !sameOwner(request.owner, owner))
     return this.settleAll(this.ledger.activate(`run:${runId}`, owner))
   }
 
   retire(runId: string, owner?: ApprovalOwner): number {
     this.grants.clear(`run:${runId}`, owner)
+    this.endReviews((request) => request.runId === runId && !request.subagentId && (!owner || sameOwner(request.owner, owner)))
     return this.settleAll(this.ledger.retire(`run:${runId}`, owner))
+  }
+
+  reviewed(toolCallId: string, subagentId?: string): boolean {
+    const found = [...this.reviews.values()].find(({ request }) => request.toolCallId === toolCallId && (request.subagentId ?? '') === (subagentId ?? ''))
+    if (!found) return false
+    this.endReview(found.request.id)
+    return true
+  }
+
+  reviewing(): ApprovalRequest[] {
+    return [...this.reviews.values()].map(({ request }) => request)
   }
 
   forgetSubagent(subagentId: string): void {
@@ -131,6 +149,28 @@ export class ApprovalBroker {
 
   snapshot(): ApprovalSnapshot {
     return this.ledger.snapshot()
+  }
+
+  private expire(id: string): void {
+    const request = this.ledger.get(id)
+    if (request?.phase === 'pending' && request.onTimeout === 'review' && request.toolCallId && this.waiters.has(id)) {
+      const shown: ApprovalRequest = { ...request, held: false }
+      this.reviews.set(id, { request: shown, timer: setTimeout(() => this.endReview(id), APPROVAL_REVIEW_WAIT_MS) })
+      this.deps.review?.(shown)
+    }
+    this.settle(id, 'timeout')
+  }
+
+  private endReview(id: string): void {
+    const entry = this.reviews.get(id)
+    if (!entry) return
+    clearTimeout(entry.timer)
+    this.reviews.delete(id)
+    this.deps.reviewDone?.(id)
+  }
+
+  private endReviews(match: (request: ApprovalRequest) => boolean): void {
+    for (const { request } of [...this.reviews.values()]) if (match(request)) this.endReview(request.id)
   }
 
   private settleAll(ids: string[]): number {

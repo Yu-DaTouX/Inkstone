@@ -6,6 +6,7 @@ import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { ComposerBanner } from '../../t3/components/chat/ComposerBanner'
 import { ApprovalCard } from './ApprovalCard'
+import { ApprovalReviewCard } from './ApprovalReviewCard'
 import { BrowserHandoffCard } from './BrowserHandoffCard'
 import { QuestionCard } from './QuestionCard'
 import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
@@ -68,9 +69,11 @@ export function AskDock(): JSX.Element | null {
         approval.subagentId && approvalSubagentParent ? [{ id: approval.subagentId, parentSessionId: approvalSubagentParent }] : [],
         view
       ))
+  const review = useStore((s) => s.approvalReviews.find((item) => viewActive || approvalMatchesView(item, item.subagentId ? s.subagents.map((run) => ({ id: run.id, parentSessionId: run.parentSessionId ?? undefined })) : [], view)))
   const showQuestion = viewActive && asking
   const showHandoff = viewActive && handoff
-  const shown = showApproval || showQuestion || showHandoff
+  const showReview = !showApproval && !!review
+  const shown = showApproval || showReview || showQuestion || showHandoff
   const lastHeight = useRef(0)
   const wasShown = useRef(false)
   const [leaving, setLeaving] = useState<number | null>(null)
@@ -131,6 +134,7 @@ export function AskDock(): JSX.Element | null {
       <span className="ask-dock-edge" aria-hidden="true" />
       <div className="ask-dock-list">
         {showApproval ? <ApprovalCard /> : null}
+        {showReview && review ? <ApprovalReviewCard request={review} /> : null}
         {showQuestion ? <QuestionCard /> : null}
         {showHandoff ? <BrowserHandoffCard sessionId={view.sessionId} /> : null}
       </div>

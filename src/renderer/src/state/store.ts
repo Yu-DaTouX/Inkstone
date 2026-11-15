@@ -195,6 +195,7 @@ export interface Store {
   runners: RunnerStatus[]
   sessionRuntimes: SessionRuntimeMap
   approvals: ApprovalRequest[]
+  approvalReviews: ApprovalRequest[]
 
   bootstrap: () => Promise<void>
   syncRunners: () => Promise<void>

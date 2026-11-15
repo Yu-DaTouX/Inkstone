@@ -15,6 +15,7 @@ import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { Icon } from './Icon'
+import { localizeApprovalText } from './approval-reason-text'
 import { useSmoothHeight } from './smooth-height'
 import { SubagentBot } from './SubagentBot'
 import { SubagentStateIcon } from './SubagentState'
@@ -192,6 +193,18 @@ function useAwaitingApproval(runId: string): boolean {
   return useStore((s) => s.approvals.some((request) => request.subagentId === runId))
 }
 
+function useModelReviews(run: Pick<SubagentRun, 'id' | 'parentSessionId'>): { allowed: number; denied: number; detail: string } | null {
+  const tt = useSessionText()
+  const { lang } = useI18n()
+  const allowed = useStore((s) => (run.parentSessionId ? s.approvalLogs?.[run.parentSessionId] ?? [] : []).filter((item) => item.reviewer === 'model' && item.subagentId === run.id && item.choice !== 'deny').length)
+  const denied = useStore((s) => (run.parentSessionId ? s.approvalLogs?.[run.parentSessionId] ?? [] : []).filter((item) => item.reviewer === 'model' && item.subagentId === run.id && item.choice === 'deny').length)
+  const detail = useStore((s) => (run.parentSessionId ? s.approvalLogs?.[run.parentSessionId] ?? [] : [])
+    .filter((item) => item.reviewer === 'model' && item.subagentId === run.id)
+    .map((item) => `${tt(item.choice === 'deny' ? 'subagentReviewDenied' : 'subagentReviewAllowed')} · ${localizeApprovalText(item.title, lang)}${item.feedback ? ` \u2014 ${item.feedback}` : ''}`)
+    .join('\n'))
+  return allowed + denied ? { allowed, denied, detail } : null
+}
+
 function focusRow(list: HTMLElement, index: number): void {
   list.querySelectorAll<HTMLElement>(SUBAGENT_ITEM)[index]?.focus()
 }
@@ -319,6 +332,7 @@ const SubagentRow = memo(function SubagentRow({ run, snapshot, index = 0 }: { ru
   const row = useSubagentRow(run)
   const selected = useSubagentPaneOpen(run.id)
   const awaiting = useAwaitingApproval(run.id)
+  const reviews = useModelReviews(run)
   const status = awaiting ? tt('awaitApproval') : phaseStatus
   const { name: modelName, think: modelTail } = useSubagentModelParts(run)
   const live = row.state === 'starting' || row.state === 'running'
@@ -362,6 +376,18 @@ const SubagentRow = memo(function SubagentRow({ run, snapshot, index = 0 }: { ru
           data-testid="v3-subagent-review-badge"
         >
           {t('sa.reviewBadge')}
+        </Badge>
+      ) : null}
+      {reviews ? (
+        <Badge
+          tone={reviews.denied ? 'stall' : 'ok'}
+          className="v3-sa-review"
+          style={{ flex: 'none' }}
+          title={reviews.detail}
+          data-testid="v3-subagent-model-review"
+          data-denied={reviews.denied || undefined}
+        >
+          {tt(reviews.denied ? 'subagentReviewDenied' : 'subagentReviewAllowed')}{reviews.allowed + reviews.denied > 1 ? ` ×${reviews.allowed + reviews.denied}` : ''}
         </Badge>
       ) : null}
       {modelName || modelTail ? (

@@ -306,6 +306,12 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
     case 'approval-close':
       set({ approvals: _s.approvals.filter((item) => item.id !== m.payload.id) })
       break
+    case 'approval-review':
+      set({ approvalReviews: [..._s.approvalReviews.filter((item) => item.id !== m.payload.id), m.payload] })
+      break
+    case 'approval-review-done':
+      set({ approvalReviews: _s.approvalReviews.filter((item) => item.id !== m.payload.id) })
+      break
     case 'title':
       document.title = m.payload.trim() || ctx.t('state.appName')
       break

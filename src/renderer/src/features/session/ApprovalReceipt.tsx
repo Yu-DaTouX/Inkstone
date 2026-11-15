@@ -15,6 +15,18 @@ const RECEIPT_STATUS: Record<ApprovalChoice, { tone: CardStatusTone; key: Sessio
   deny: { tone: 'muted', key: 'approvalDenied', icon: 'deny' }
 }
 
+type SessionTextFn = ReturnType<typeof useSessionText>
+
+function receiptTitle(approval: Pick<ApprovalReceiptRecord, 'title' | 'reasons'>, lang: string, tt: SessionTextFn): string {
+  const title = localizeApprovalText(approval.title, lang)
+  const n = approval.reasons?.length ?? 0
+  return n > 1 ? tt('approvalMoreReasons', { title, n, more: n - 1 }) : title
+}
+
+function receiptReasons(approval: Pick<ApprovalReceiptRecord, 'title' | 'reasons'>, lang: string): string {
+  return (approval.reasons?.length ? approval.reasons : [approval.title]).map((reason) => localizeApprovalText(reason, lang)).join('\n')
+}
+
 function statusOf(approval: ApprovalReceiptRecord): (typeof RECEIPT_STATUS)[ApprovalChoice] {
   const base = RECEIPT_STATUS[approval.choice]
   if (approval.reviewer !== 'model') return base
@@ -31,11 +43,11 @@ export function TurnApprovalLine({ approvals }: { approvals: readonly ApprovalRe
   const mixed = !single && denied > 0 && denied < approvals.length
   const status = mixed ? { ...RECEIPT_STATUS.once, tone: 'muted' as const, icon: 'shield' as const } : single ? statusOf(last) : RECEIPT_STATUS[denied === approvals.length ? 'deny' : 'once']
   const label = single ? tt(status.key) : tt('approvalSummary', { n: approvals.length, ok: approvals.length - denied, no: denied })
-  const detail = approvals.map((approval) => `${tt(statusOf(approval).key)} · ${localizeApprovalText(approval.title, lang)}${approval.feedback ? ` \u2014 ${approval.feedback}` : ''}`).join('\n')
+  const detail = approvals.map((approval) => `${tt(statusOf(approval).key)} · ${approval.reasons?.length ? approval.reasons.map((reason) => localizeApprovalText(reason, lang)).join(lang === 'en-US' ? '; ' : '；') : localizeApprovalText(approval.title, lang)}${approval.feedback ? ` \u2014 ${approval.feedback}` : ''}`).join('\n')
   return (
     <div className="v3-approval-line" data-choice={single ? last.choice : undefined} data-reviewer={single ? last.reviewer : undefined} data-testid="v3-turn-approval-line" title={detail}>
       <CardStatus tone={status.tone} icon={<Icon name={status.icon} size={13} />}>{label}</CardStatus>
-      {single && last.title ? <span className="v3-approval-line-title">{localizeApprovalText(last.title, lang)}</span> : null}
+      {single && last.title ? <span className="v3-approval-line-title">{receiptTitle(last, lang, tt)}</span> : null}
       {single && last.feedback ? <span className="v3-approval-line-reason">{tt('approvalDeniedReason', { reason: last.feedback })}</span> : null}
       <CardTime at={last.at} className="v3-approval-line-time" />
     </div>
@@ -51,7 +63,7 @@ export function ApprovalReceipt({ approval }: { approval: ApprovalReceiptRecord 
     <Card receipt padding="none" className="v3-approval-receipt" data-fresh={fresh ? '' : undefined} data-choice={approval.choice} data-reviewer={approval.reviewer} data-testid="v3-approval-receipt">
       <CardHead className="v3-approval-receipt-head">
         <CardStatus tone={status.tone} icon={<Icon name={status.icon} size={14} />}>{tt(status.key)}</CardStatus>
-        {approval.title ? <CardTitle className="v3-approval-receipt-title">{localizeApprovalText(approval.title, lang)}</CardTitle> : null}
+        {approval.title ? <CardTitle className="v3-approval-receipt-title" title={receiptReasons(approval, lang)}>{receiptTitle(approval, lang, tt)}</CardTitle> : null}
         <CardMeta><CardTime at={approval.at} /></CardMeta>
       </CardHead>
       {approval.feedback ? <div className="v3-approval-receipt-reason">{tt('approvalDeniedReason', { reason: approval.feedback })}</div> : null}

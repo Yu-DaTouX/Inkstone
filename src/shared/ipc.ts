@@ -1090,6 +1090,8 @@ export type MainPushBody =
   | { ch: 'todos'; payload: SessionTodo[] }
   | { ch: 'approval'; payload: ApprovalRequest }
   | { ch: 'approval-close'; payload: { id: string } }
+  | { ch: 'approval-review'; payload: ApprovalRequest }
+  | { ch: 'approval-review-done'; payload: { id: string } }
   | { ch: 'approval-snapshot'; payload: ApprovalSnapshot }
   | { ch: 'git-install'; payload: GitInstallProgress }
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }

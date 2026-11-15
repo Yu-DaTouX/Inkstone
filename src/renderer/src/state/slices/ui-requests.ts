@@ -4,11 +4,12 @@ import type { Store } from '../store'
 import { runtimeForState } from './runtime'
 import { pushNotice, type SliceContext } from './shared'
 
-export type UiRequestsSlice = Pick<Store, 'approvals' | 'uiRequests' | 'questionLogs' | 'approvalLogs' | 'uiCollapsed' | 'uiDrafts' | 'answerApproval' | 'answerUi' | 'setUiCollapsed' | 'setUiDraft' | 'extendUi' | 'startUiTimer' | 'dismissRequest'>
+export type UiRequestsSlice = Pick<Store, 'approvals' | 'approvalReviews' | 'uiRequests' | 'questionLogs' | 'approvalLogs' | 'uiCollapsed' | 'uiDrafts' | 'answerApproval' | 'answerUi' | 'setUiCollapsed' | 'setUiDraft' | 'extendUi' | 'startUiTimer' | 'dismissRequest'>
 
 export function createUiRequestsSlice({ set, get }: SliceContext): UiRequestsSlice {
   return {
   approvals: [],
+  approvalReviews: [],
   uiRequests: [],
   questionLogs: {},
   approvalLogs: {},

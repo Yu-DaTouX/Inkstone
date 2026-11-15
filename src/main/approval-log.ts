@@ -8,6 +8,7 @@ import { YAN_DIR } from './paths'
 const PER_SESSION_LIMIT = 200
 const TEXT_LIMIT = 200
 const QUARANTINE_LIMIT = 32
+const REASONS_LIMIT = 8
 const KINDS: readonly ApprovalKind[] = ['permission', 'delete', 'danger', 'outside', 'consent', 'move']
 
 interface ApprovalLogDocument {
@@ -20,6 +21,7 @@ export interface ModelReviewReceiptInput {
   subagentId?: string
   tool: string
   title: string
+  reasons?: string[]
   allowed: boolean
   reason?: string
   askedAt?: number
@@ -50,6 +52,11 @@ function time(value: unknown): number | null {
   return Number.isFinite(at) && at > 0 ? Math.floor(at) : null
 }
 
+function reasonList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => text(item)).filter(Boolean).slice(0, REASONS_LIMIT)
+}
+
 function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
   if (!raw || typeof raw !== 'object') return null
   const value = raw as Record<string, unknown>
@@ -61,6 +68,7 @@ function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
   const subagentId = text(value.subagentId)
   const reviewer = value.reviewer === 'model' ? 'model' : undefined
   const feedback = value.choice === 'deny' || reviewer ? normalizeApprovalFeedback(value.feedback) : undefined
+  const reasons = reasonList(value.reasons)
   return {
     id,
     toolCallId,
@@ -68,6 +76,7 @@ function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
     kind,
     tool: text(value.tool, 40),
     title: text(value.title),
+    ...(reasons.length > 1 ? { reasons } : {}),
     choice: value.choice,
     ...(feedback ? { feedback } : {}),
     ...(reviewer ? { reviewer } : {}),
@@ -98,6 +107,7 @@ export function approvalReceiptOf(request: ApprovalRequest, answer: ApprovalAnsw
     kind: request.kind,
     tool: request.tool,
     title: approvalHeadline(request),
+    ...(request.kind === 'danger' ? { reasons: request.reasons } : {}),
     choice: answer.choice,
     feedback: answer.feedback,
     askedAt: request.createdAt,
@@ -129,6 +139,7 @@ export class ApprovalLogStore {
       kind: 'danger',
       tool: review.tool,
       title: review.title,
+      reasons: review.reasons,
       choice: review.allowed ? 'once' : 'deny',
       feedback: review.reason,
       reviewer: 'model',

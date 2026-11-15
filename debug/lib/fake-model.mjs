@@ -111,6 +111,9 @@ export const FAKE_TRIGGERS = {
   WRITES: '用 write 工具新建两个文件（notes/a.md、notes/b.md），再流出一句答复，用来看运行结束时的改动卡',
   FAIL: '返回 502，用来看模型错误与重试；FAILQUOTA 429 额度用完，FAILAUTH 401，FAILHTML 503 网关错页，FAILNET 断开连接，FAILHANG 不响应，FAILFLAKY 前两次 502 之后成功，FAILMID 流到一半断开',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
+  APPROVALMULTI: '一次同时命中三条危险规则的 bash（强推不存在的分支、丢弃不存在的 stash、删除不存在的注册表项），用来看审批卡多原因与回执「等 N 项」',
+  SUBAPPROVAL: '用 yan subagent start 派一个假模型子代理，子代理跑一条要审批的删除注册表命令（含 REVIEWALLOW 时子代理那次审阅放行），用来看子代理审批、审阅回执进主流和子代理行的审阅徽章',
+  'REVIEWSLOW<n>': '与 APPROVAL 类触发词同用：守卫超时后的模型审阅先等 n 秒（缺省 20）再回，用来看「模型审阅中」卡片',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
   PHONE: '用 yan phone 依次查设备、读界面、按 Home 键（PHONEDEV=<序列号> 指定设备），用来验证手机操控走通 CLI 与宿主',
   MULTIASK: '一次只有一个多选字段的表单提问，自填答案走主输入框，用来看表单题接到输入框',
@@ -239,6 +242,7 @@ async function respond(res, text, done, requestNo) {
     await callTool('bash', { command: stormCommand(dir, tag, step + 1, lines), description: `storm ${tag} ${step + 1}` })
   }
   try {
+    if (text.includes('<pending-action>') && text.includes('REVIEWSLOW')) await sleep(Number(/REVIEWSLOW(\d+)/.exec(text)?.[1] ?? 20) * 1000)
     if (text.includes('<pending-action>')) await streamText(text.includes('REVIEWALLOW') ? '{"decision":"allow","reason":"用户明确要求了这个操作"}' : '{"decision":"deny","reason":"用户没有要求删除注册表项"}', 20, 5)
     else if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
     else if (text.includes('[砚宿主通知：工作流')) await streamText('工作流的结果收到了。', 20, 10)
@@ -316,6 +320,16 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('BIGOUT')) {
       if (done < 1) await callTool('bash', { command: 'for i in $(seq 1 6000); do echo "line $i ................................................................"; if [ $((i % 400)) -eq 0 ]; then sleep 0.25; fi; done', description: 'long output' })
       else await streamText('长输出结束。', 20, 10)
+    } else if (text.includes('SUBAPPROVALCHILD')) {
+      if (done < 1) await callTool('bash', { command: 'reg delete "HKCU\\Software\\InkstoneSubagentApproval" /f', description: 'subagent approval probe' })
+      else await streamText('子代理的审批测试结束。', 20, 10)
+    } else if (text.includes('SUBAPPROVAL')) {
+      const allow = text.includes('REVIEWALLOW') ? ' REVIEWALLOW' : ''
+      if (done < 1) await callTool('bash', { command: `yan subagent start --task "SUBAPPROVALCHILD${allow} 删除测试用的注册表项" --title "审批子代理" --model fake/fake-model`, description: 'start approval subagent' })
+      else await streamText('子代理已派出，等它回报。', 20, 10)
+    } else if (text.includes('APPROVALMULTI')) {
+      if (done < 1) await callTool('bash', { command: 'git push --force origin inkstone-approval-probe; git stash drop "stash@{99}"; reg delete "HKCU\\Software\\InkstoneApprovalTest" /f', description: 'multi-reason approval probe' })
+      else await streamText('多原因审批测试结束。', 20, 10)
     } else if (text.includes('APPROVAL')) {
       if (done < 1) await callTool('bash', { command: 'reg delete "HKCU\\Software\\InkstoneApprovalTest" /f', description: 'approval probe' })
       else await streamText('审批测试结束。', 20, 10)

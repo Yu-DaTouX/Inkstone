@@ -25,6 +25,7 @@ export function dangerReviewOf(params: Record<string, unknown>): ModelReviewRece
     toolCallId,
     tool,
     title: (reasons[0] ?? tool).slice(0, 200),
+    ...(reasons.length > 1 ? { reasons: reasons.slice(0, 8).map((item) => item.slice(0, 200)) } : {}),
     allowed: params.allowed === true,
     ...(reason ? { reason } : {}),
     ...(Number.isFinite(askedAt) && askedAt > 0 ? { askedAt } : {})
