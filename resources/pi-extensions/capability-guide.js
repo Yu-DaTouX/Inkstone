@@ -32,6 +32,7 @@ const GUIDE_LINES = [
   PHONE_GROUP,
   SEARCH_GROUP,
   '- subagent: delegate work to other agents; read skill subagent first',
+  '- model: one direct model call without tools (translate or rewrite given text, second opinion); batches use `model()` in `yan workflow`',
   '- image: generate images; artifact: attach an existing file to this reply',
   '- file: recoverable delete; session: move this session to another folder; operations: look up an operation\'s result',
   '- capabilities: find installed commands, skills and MCP tools when unsure a capability exists',
