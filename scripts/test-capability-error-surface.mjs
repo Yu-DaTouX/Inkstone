@@ -138,9 +138,9 @@ try {
     handlers: { async run() { return { summary: { ran: true } } } }
   })
   const backedEndpoint = await backed.start({ sessionId: 's', projectId: 'p' })
-  const backedRpc = async (command, params) => (await fetch(backedEndpoint.url, {
+  const backedRpc = async (command, params, headers = {}) => (await fetch(backedEndpoint.url, {
     method: 'POST',
-    headers: { authorization: `Bearer ${backedEndpoint.token}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${backedEndpoint.token}`, 'content-type': 'application/json', ...headers },
     body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, sessionId: 's', projectId: 'p', command, params })
   })).json()
   try {
@@ -148,7 +148,7 @@ try {
     assert.equal(viaCli.ok, false)
     assert.equal(viaCli.code, 'command_use_tool', '有工具的会话里命令行入口返回指向工具的提示')
     assert.match(viaCli.hint, /todos tool/)
-    const viaTool = await backedRpc('tasks.apply', { items: [], toolCall: { id: 'tc-1', cwd: '', subagent: false } })
+    const viaTool = await backedRpc('tasks.apply', { items: [], toolCall: { id: 'tc-1', cwd: '', subagent: false } }, { 'x-yan-tool-token': backedEndpoint.toolToken })
     assert.equal(viaTool.ok, true, '工具自己的调用照常放行')
     assert.equal((await backedRpc('search.query', {})).ok, true, '未登记的命令不受影响')
   } finally {

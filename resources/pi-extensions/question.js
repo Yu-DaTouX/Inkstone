@@ -9,13 +9,29 @@ export const CLI_GUIDANCE = `${WHEN_TO_ASK} Ask with \`yan question ask\` (at mo
 
 const FIELD_KINDS = ['choice', 'multi', 'text', 'date', 'number', 'range', 'secret']
 
-const SECRET_NOUN = /password|passphrase|passcode|api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|secret[ _-]?key|private[ _-]?key|credential|\botp\b|verification code|2fa code|密码|口令|密钥|令牌|验证码|凭据|凭证/i
-const SECRET_ASK = /provide|enter|paste|type|share|send|give|what(?:'s| is)|tell me|need|提供|输入|告诉|发给|发我|给我|填写|粘贴|是什么|是多少|需要/i
+const SECRET_NOUN = /password|passphrase|passcode|api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|\btoken\b|\bsecrets?\b|private[ _-]?key|(?:licen[cs]e|product|activation)[ _-]?key|bearer|credential|\botp\b|\bpin\b(?! (?:the|a|an|it|this|that|these|those|them|to|down)\b)|verification code|(?:2fa|mfa|totp)[ _-]?codes?|(?:recovery|backup)[ _-]?codes?|connection[ _-]?strings?|密码|口令|密钥|令牌|验证码|恢复码|连接串|连接字符串|凭据|凭证/i
+const SECRET_ACRONYM = /\bPAT\b/
+const ACCOUNT_FACTOR = /\b(?:MFA|2FA)\b/i
+const SERVICE_KEY = /\b(?!(?:The|A|An|This|That|These|Those|Your|My|Our|Their|Its|Which|What|Whose|Any|Each|Every|Some|No|One|Same|New|Old|Main|Default|Next|Last|First|Enter|Return|Shift|Tab|Space|Esc|Escape|Ctrl|Control|Alt|Option|Cmd|Command|Delete|Backspace|Home|End|Insert|Windows|Win|Fn|F\d{1,2}|Public|Primary|Foreign|Sort|Partition|Composite|Unique|Hot|Arrow)\b)[A-Z][A-Za-z0-9]*(?:[ _-]API)?[ _-][Kk]ey\b/
+const NOT_SECRET = new RegExp(`(?:${SECRET_NOUN.source})[ _-]?(?:managers?|polic(?:y|ies)|rotation|rules?|requirements?|strength|complexity|length|format|reset|recovery|fields?|files?|storage|store|vault|management|expir\\w*|hash\\w*|generators?|settings?|schemes?|types?|limits?|counts?|usage|budget|window|策略|管理器|管理|规则|强度|长度|格式|重置|找回|字段|文件|存储|保管)(?![ _-]?(?:(?:codes?|tokens?|keys?)\\b|码|令牌|密钥))`, 'gi')
+const SECRET_ASK = /\b(?:provide|enter|paste|share|send|give)|what(?:'s| is)|tell me|提供|输入|告诉|发给|发我|给我|填写|粘贴|是什么|是多少/i
+const STRONG_ASK = /\b(?:provide|enter|paste|input|share|send|give|submit)|提供|输入|粘贴|填写|发给|发我|给我/i
 const MIN_MASKED_CHARS = 4
+
+function secretMentions(text) {
+  const value = String(text ?? '').replace(NOT_SECRET, ' ')
+  return { plain: SECRET_NOUN.test(value) || SECRET_ACRONYM.test(value), strong: ACCOUNT_FACTOR.test(value) || SERVICE_KEY.test(value) }
+}
+
+function mentionsSecret(text) {
+  const found = secretMentions(text)
+  return found.plain || found.strong
+}
 
 export function asksForSecret(text) {
   const value = String(text ?? '')
-  return SECRET_NOUN.test(value) && SECRET_ASK.test(value)
+  const found = secretMentions(value)
+  return (found.plain && SECRET_ASK.test(value)) || (found.strong && STRONG_ASK.test(value))
 }
 
 export function protectSecretRequest(params) {
@@ -23,7 +39,7 @@ export function protectSecretRequest(params) {
   if (Array.isArray(source.fields)) {
     return {
       ...source,
-      fields: source.fields.map((field) => (field?.kind === 'text' || field?.kind === undefined) && SECRET_NOUN.test(String(field?.label ?? ''))
+      fields: source.fields.map((field) => (field?.kind === 'text' || field?.kind === undefined) && mentionsSecret(`${field?.label ?? ''} ${field?.placeholder ?? ''}`)
         ? { ...field, kind: 'secret', detected: true }
         : field)
     }

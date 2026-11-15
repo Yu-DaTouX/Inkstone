@@ -69,7 +69,7 @@ export async function runRemoteApprovalTests(ok) {
   ok(formRequest?.form?.length === 2 && formRequest.message === '合同选哪一方', '表单问题在待答列表里保留字段与问题正文')
   ok((await asked.answerUiRemotely(formRequest.id, { value: JSON.stringify({ side: '甲', note: '快' }) })).ok, '手机端可以提交表单答案')
   ok((await formAsk).value === '{"side":"甲","note":"快"}', '表单答案原样交回提问方')
-  ok(questionToolCallId({ toolCall: { id: 'call_n' } }) === 'call_n' && questionToolCallId({ toolCallId: 'call_f' }) === 'call_f' && questionToolCallId({}) === undefined, 'toolCallId 从 toolCall.id 或 toolCallId 取得')
+  ok(questionToolCallId({ toolCall: { id: 'call_n' } }) === 'call_n' && questionToolCallId({ toolCallId: 'call_f' }) === undefined && questionToolCallId({}) === undefined, 'toolCallId 只从工具通道的 toolCall.id 取得')
 }
 
 await runSuite(import.meta.url, async (ok) => {

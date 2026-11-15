@@ -88,6 +88,16 @@ try {
   assert.equal(question.protectSecretRequest({ question: '请提供密码', options: ['A', 'B'] }).fields, undefined, '有选项的问题不改')
   const secretForm = question.protectSecretRequest({ question: 'Q', fields: [{ name: 'pw', label: '数据库密码', kind: 'text' }, { name: 'host', label: '主机', kind: 'text' }] })
   assert.deepEqual(secretForm.fields.map((f) => f.kind), ['secret', 'text'], '表单里只转标签是秘密的文本字段')
+  for (const text of ['What is the client secret?', 'Please paste your GitHub token', 'Enter your PIN', 'Enter your pin', 'Please paste the OpenAI key', 'Paste the bearer token', 'Give me the license key', '请提供数据库的 token', '请输入你的 PAT', 'Please provide the Anthropic key', '请输入 PIN 码', 'Enter the password reset code', 'Enter one of your recovery codes', 'Please paste the database connection string', '请粘贴数据库连接串', 'Enter the MFA code', 'Paste your MFA secret', '请输入 2FA 验证码']) {
+    assert.equal(question.asksForSecret(text), true, `识别为索要密文：${text}`)
+  }
+  for (const text of ['Which password manager do you use? Tell me', 'What is the API key rotation policy? I need to know', 'Should I pin the dependency version? Tell me', 'What is the token limit for this model?', 'Press the Enter key or tell me to stop?', 'What is the primary key of the users table?', 'What is the key difference? Tell me', 'Please tell me the secretary name', '请告诉我密码策略写在哪里', 'Which Redis key do you need?', 'Do we need MFA on this account?', 'What is the Redis key prefix? Tell me', 'Which pin is wired to the LED? Should I pin the version?', 'Can you pin the package and tell me?', 'What type of password do you need?', 'Which Redis key is in the data center?', '需要给这个账户开 MFA 吗？', 'What is the connection string format? Tell me']) {
+    assert.equal(question.asksForSecret(text), false, `不误判为索要密文：${text}`)
+  }
+  const placeholderForm = question.protectSecretRequest({ question: 'Q', fields: [{ name: 'login', label: 'Login', kind: 'text', placeholder: 'your password' }, { name: 'user', label: 'User', kind: 'text', placeholder: 'name' }] })
+  assert.deepEqual(placeholderForm.fields.map((f) => f.kind), ['secret', 'text'], '表单字段的 placeholder 也参与识别')
+  const policyForm = question.protectSecretRequest({ question: 'Q', fields: [{ name: 'policy', label: 'Password policy', kind: 'text' }, { name: 'tok', label: 'GitHub token', kind: 'text' }] })
+  assert.deepEqual(policyForm.fields.map((f) => f.kind), ['text', 'secret'], '密码策略之类的字段不转，token 字段转')
 
   const held = {}
   const store = question.createSecretStore(held)

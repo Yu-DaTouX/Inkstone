@@ -423,6 +423,7 @@ export class AgentController extends EventEmitter {
   private nativeRuntime: NativeSessionRuntime | null = null
   private nativeBranchView = false
   private nativeSessionExtension?: string
+  private hostToolTokenExtension?: string
   private push: Push
   private cwd: string
   private piBin?: string
@@ -728,6 +729,7 @@ export class AgentController extends EventEmitter {
     contextUsageExtension?: string
     imageLabelsExtension?: string
     nativeSessionExtension?: string
+    hostToolTokenExtension?: string
     repeatGuardExtension?: string
     bundledSkills?: string[]
     userSkills?: () => Promise<string[]>
@@ -811,6 +813,7 @@ export class AgentController extends EventEmitter {
     this.contextUsageExtension = opts.contextUsageExtension
     this.imageLabelsExtension = opts.imageLabelsExtension
     this.nativeSessionExtension = opts.nativeSessionExtension
+    this.hostToolTokenExtension = opts.hostToolTokenExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
     this.userSkills = opts.userSkills
@@ -852,7 +855,7 @@ export class AgentController extends EventEmitter {
         toolBacked: this.toolBackedCommands(),
         ...(opts.preserveResult ? { preserveResult: opts.preserveResult } : {})
       })
-      const { url, token } = await server.start({
+      const { url, token, toolToken } = await server.start({
         sessionId: opts.sessionId,
         projectId: opts.projectId
       })
@@ -871,6 +874,7 @@ export class AgentController extends EventEmitter {
       this.yanCliEnv = {
         url,
         token,
+        toolToken,
         sessionId: opts.sessionId,
         projectId: opts.projectId,
         binDir: launcher.binDir
@@ -969,6 +973,7 @@ export class AgentController extends EventEmitter {
       piBin: this.piBin,
       args: agentOwnedPiArgs([
         '--no-extensions',
+        ...(this.hostToolTokenExtension ? ['--extension', this.hostToolTokenExtension] : []),
         ...(this.nativeSessionExtension ? ['--extension', this.nativeSessionExtension] : []),
         ...(nativeTools && this.codemodeExtension ? ['--extension', this.codemodeExtension] : []),
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
@@ -1028,6 +1033,7 @@ export class AgentController extends EventEmitter {
           ? {
               YAN_CLI_URL: this.yanCliEnv.url,
               YAN_CLI_TOKEN: this.yanCliEnv.token,
+              ...(this.yanCliEnv.toolToken && this.hostToolTokenExtension && Object.keys(this.toolBackedCommands()).length ? { YAN_TOOL_TOKEN: this.yanCliEnv.toolToken } : {}),
               PATH: `${this.yanCliEnv.binDir}${delimiter}${androidEnv.PATH ?? process.env.PATH ?? ''}`
             }
           : {})
@@ -4202,7 +4208,7 @@ export class AgentController extends EventEmitter {
       cwd: options.cwd,
       piBin: options.piBin,
       args: [...(options.args ?? [])],
-      env: { ...(options.env ?? {}) },
+      env: Object.fromEntries(Object.entries(options.env ?? {}).filter(([key]) => key !== 'YAN_TOOL_TOKEN')),
       sessionFile: state.sessionFile,
       model: `${state.model.provider}/${state.model.id}`,
       thinkingLevel: state.thinkingLevel || undefined,

@@ -651,6 +651,7 @@ const YAN_THIN_EXTENSION_FILES = {
   contextUsageExtension: 'context-usage.js',
   imageLabelsExtension: 'image-labels.js',
   nativeSessionExtension: 'native-session-bridge.js',
+  hostToolTokenExtension: 'host-tool-token.js',
   repeatGuardExtension: 'repeat-guard.js',
   dangerGuardExtension: 'danger-guard.js'
 } as const

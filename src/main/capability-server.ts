@@ -17,6 +17,7 @@ const CAPABILITY_OPS_PRUNE_INTERVAL_MS = 10 * 60 * 1000
 export interface YanCliEnv {
   url: string
   token: string
+  toolToken?: string
   sessionId: string
   projectId: string
   binDir: string
@@ -167,6 +168,12 @@ function isToolCall(params: Record<string, unknown>): boolean {
   return !!call && typeof call === 'object' && typeof (call as { id?: unknown }).id === 'string' && (call as { id: string }).id !== ''
 }
 
+function sameSecret(given: string, expected: string): boolean {
+  const got = Buffer.from(given)
+  const want = Buffer.from(expected)
+  return got.length === want.length && timingSafeEqual(got, want)
+}
+
 function shapeOf(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) {
     return {
@@ -220,6 +227,7 @@ export class CapabilityServer {
   private generation = 0
   private readonly pending = new Set<AbortController>()
   private token = ''
+  private toolToken = ''
   private port = 0
   private ctx: CapabilityContext | null = null
   private ops: Array<{ id: string; command: string; at: number; ok: boolean; error?: string; resultFile?: string; resultBytes?: number }> = []
@@ -243,11 +251,12 @@ export class CapabilityServer {
     return this.server !== null
   }
 
-  async start(ctx: CapabilityContext): Promise<{ url: string; token: string }> {
+  async start(ctx: CapabilityContext): Promise<{ url: string; token: string; toolToken: string }> {
     if (this.server || this.ctx) throw new Error(pick('一个能力服务实例只服务一个会话', 'A capability server instance serves only one session'))
 
     this.ctx = ctx
     this.token = randomUUID()
+    this.toolToken = randomUUID()
     await mkdir(this.opsDir, { recursive: true })
     await this.pruneOps()
     if (this.ctx !== ctx || this.server) throw new Error(pick('能力服务启动期间已停止', 'Capability server stopped during startup'))
@@ -266,7 +275,7 @@ export class CapabilityServer {
     })
 
     this.port = await listenOnFetchablePort(this.server)
-    return { url: this.url, token: this.token }
+    return { url: this.url, token: this.token, toolToken: this.toolToken }
   }
 
   private get url(): string {
@@ -279,6 +288,7 @@ export class CapabilityServer {
     this.server = null
     this.ctx = null
     this.token = ''
+    this.toolToken = ''
     this.ops = []
     const pending = [...this.pending]
     this.pending.clear()
@@ -401,10 +411,12 @@ export class CapabilityServer {
       return
     }
 
-    const params =
+    const fromTool = this.checkToolToken(req.headers['x-yan-tool-token'])
+    const rawParams =
       body.params && typeof body.params === 'object'
         ? (body.params as Record<string, unknown>)
         : {}
+    const params = fromTool || !('toolCall' in rawParams) ? rawParams : Object.fromEntries(Object.entries(rawParams).filter(([key]) => key !== 'toolCall'))
 
     const toolHint = this.toolBacked[command]
     if (toolHint && !isToolCall(params)) {
@@ -434,7 +446,7 @@ export class CapabilityServer {
         summary: out.summary,
         resultFile: file?.path,
         resultBytes: file?.bytes,
-        ...('secrets' in out && out.secrets ? { secrets: out.secrets } : {}),
+        ...(fromTool && 'secrets' in out && out.secrets ? { secrets: out.secrets } : {}),
         ...(!file && out.data !== undefined ? { resultError: '结果文件没能写盘，完整结果丢失；摘要仍然有效，需要完整内容时重新执行这条命令' } : {})
       })
     } catch (err) {
@@ -491,10 +503,11 @@ export class CapabilityServer {
   private checkToken(header: string | undefined): boolean {
     const prefix = 'Bearer '
     if (!this.token || !header?.startsWith(prefix)) return false
-    const got = Buffer.from(header.slice(prefix.length))
-    const want = Buffer.from(this.token)
-    if (got.length !== want.length) return false
-    return timingSafeEqual(got, want)
+    return sameSecret(header.slice(prefix.length), this.token)
+  }
+
+  private checkToolToken(header: string | string[] | undefined): boolean {
+    return !!this.toolToken && typeof header === 'string' && sameSecret(header, this.toolToken)
   }
 
   private async writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data'>): Promise<{ path: string; bytes: number } | null> {

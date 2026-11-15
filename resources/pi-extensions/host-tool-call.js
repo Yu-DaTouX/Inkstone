@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { takeHostToolToken } from './host-tool-token.js'
 
 export function hostToolsAvailable(env = process.env) {
   return !!(env.YAN_RUNNER_ID && env.YAN_CLI_URL && env.YAN_CLI_TOKEN && env.YAN_SESSION_ID && env.YAN_PROJECT_ID)
@@ -17,13 +18,18 @@ export function readResult(path) {
   }
 }
 
+function toolTokenHeader(env) {
+  const token = env.YAN_TOOL_TOKEN || takeHostToolToken()
+  return typeof token === 'string' && token ? { 'x-yan-tool-token': token } : {}
+}
+
 export async function callHostTool({ command, params, toolCallId, cwd, signal, env = process.env, fetchImpl = fetch }) {
   if (!hostToolsAvailable(env)) return { ok: false, error: 'Inkstone host endpoint is not ready' }
   let response
   try {
     response = await fetchImpl(env.YAN_CLI_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YAN_CLI_TOKEN}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YAN_CLI_TOKEN}`, ...toolTokenHeader(env) },
       body: JSON.stringify({
         apiVersion: 1,
         command,

@@ -885,6 +885,8 @@ try {
   })
 }
 
+if (payload && typeof payload === 'object') delete payload.secrets
+
 if (payload?.ok && typeof flags.output === 'string' && typeof payload.resultFile === 'string') {
   try {
     const { copyFileSync, constants } = await import('node:fs')

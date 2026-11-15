@@ -17,8 +17,7 @@ type PendingHostUi = {
 }
 
 export function questionToolCallId(params: Record<string, unknown>): string | undefined {
-  const nested = params.toolCall && typeof params.toolCall === 'object' ? (params.toolCall as { id?: unknown }).id : undefined
-  const id = typeof nested === 'string' && nested ? nested : params.toolCallId
+  const id = params.toolCall && typeof params.toolCall === 'object' ? (params.toolCall as { id?: unknown }).id : undefined
   return typeof id === 'string' && id ? id.slice(0, 200) : undefined
 }
 
