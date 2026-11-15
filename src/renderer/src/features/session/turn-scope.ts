@@ -12,6 +12,12 @@ export interface TurnScope {
 
 export const TurnScopeContext = createContext<TurnScope | null>(null)
 
+const NO_MESSAGES: readonly UIMessage[] = []
+
+export function subagentTurnScope(runId: string, cwd: string): TurnScope {
+  return { messages: NO_MESSAGES, session: null, cwd, view: { sessionId: null, sessionFile: null, key: `subagent:${runId}` } }
+}
+
 export function useTurnScope(): TurnScope | null {
   return useContext(TurnScopeContext)
 }

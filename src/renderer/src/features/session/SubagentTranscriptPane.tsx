@@ -29,6 +29,7 @@ import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSub
 import { subagentNeighbor, subagentSessionPeers } from './subagent-list'
 import { turnModelLabel } from './turn-model-label'
 import { TurnView } from './TurnView'
+import { TurnScopeContext, subagentTurnScope } from './turn-scope'
 import { useSessionText } from './text'
 import './subagent-pane.css'
 
@@ -185,6 +186,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const turns = useMemo(() => subagentTranscriptTurns(shown, approvalLog), [shown, approvalLog])
   const errorInTranscript = turns.some((turn) => turn.kind === 'assistant' && !!turn.error && !turn.errorRecovered)
   const scope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [run.id] }), [run.id])
+  const turnScope = useMemo(() => subagentTurnScope(run.id, run.cwd), [run.id, run.cwd])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const streamRef = useRef<HTMLDivElement>(null)
@@ -338,11 +340,13 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
               </div>
             </div>
           </article>
-          {turns.map((turn) => (
-            <div key={turn.id} className="v3-stream-row">
-              <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} tail={turn === turns[turns.length - 1]} readOnly />
-            </div>
-          ))}
+          <TurnScopeContext.Provider value={turnScope}>
+            {turns.map((turn) => (
+              <div key={turn.id} className="v3-stream-row">
+                <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} tail={turn === turns[turns.length - 1]} readOnly />
+              </div>
+            ))}
+          </TurnScopeContext.Provider>
           {turns.length === 0 && model.live ? <p className="sa-pane-wait" role="status"><Spinner size="sm" />{t('sa.waitingMessages')}</p> : null}
           {model.error && !errorInTranscript ? (
             <Notice tone="fail" compact data-testid="v3-subagent-error">

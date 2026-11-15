@@ -47,6 +47,10 @@ export function roundRunningOf(input: {
   return input.runnerRunning || input.isStreaming === true || input.isCompacting === true
 }
 
+export function holdsSendDuringCompaction(session: { isCompacting?: boolean; compaction?: unknown } | null | undefined): boolean {
+  return session?.isCompacting === true || !!session?.compaction
+}
+
 export function viewRunnerRunning(state: {
   runners: ReadonlyArray<{ id: string; runId?: string; sessionId?: string; running: boolean }>
   activeRunnerId: string | null

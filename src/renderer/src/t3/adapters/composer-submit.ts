@@ -7,7 +7,7 @@ import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { composerStoreActions } from '../../lib/composer-store-send'
 import { submitComposerInput } from '../../lib/composer-submit'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
-import { roundRunningOf, viewRunnerRunning } from '../../features/composer/composer-keys'
+import { holdsSendDuringCompaction, roundRunningOf, viewRunnerRunning } from '../../features/composer/composer-keys'
 import { composerLocalCommand } from '../../features/composer/composer-layout'
 import { hasComposerText } from '../../features/composer/composer-text'
 import { fileReferencePath } from '../../features/composer/file-refs'
@@ -159,9 +159,13 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
           cleared = true
           return
         }
-        const sending = roundRunning
-          ? send(outgoing, images.length ? images : undefined, mode)
-          : send(outgoing, images.length ? images : undefined)
+        const held = holdsSendDuringCompaction(useStore.getState().session)
+        if (held) useStore.getState().holdSend(outgoing, images.length ? images : undefined)
+        const sending = held
+          ? Promise.resolve(true)
+          : roundRunning
+            ? send(outgoing, images.length ? images : undefined, mode)
+            : send(outgoing, images.length ? images : undefined)
         portsRef.current.clearText()
         useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
         cleared = true
