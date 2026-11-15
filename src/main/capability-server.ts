@@ -117,6 +117,7 @@ export const KNOWN_COMMANDS = new Set([
   'workflow.pause',
   'workflow.resume',
   'workflow.stop',
+  'model.ask',
   'browser.api',
   'browser.run',
   'browser.navigate',

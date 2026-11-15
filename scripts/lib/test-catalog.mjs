@@ -21,7 +21,8 @@ export const excludedScripts = {
   'test-browser-popup-live': 'needs-direct-chromium-connection-without-pinned-guard',
   'test-comfyui-video': 'helper-module-of-test-comfyui-plugin',
   'test-comfyui-workflows': 'helper-module-of-test-comfyui-plugin',
-  'test-comfyui-idle': 'helper-module-of-test-comfyui-plugin'
+  'test-comfyui-idle': 'helper-module-of-test-comfyui-plugin',
+  'test-fake-model-workflow-e2e': 'spawns-pi-runtime-against-local-fake-model'
 }
 
 export const serialScripts = {

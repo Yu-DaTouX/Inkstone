@@ -18,6 +18,28 @@ export interface WorkflowAgentView {
   error?: string
 }
 
+export interface WorkflowModelStats {
+  total: number
+  done: number
+  cached: number
+  failed: number
+  stopped: number
+  running: number
+  queued: number
+  waitingQuota?: boolean
+  phases?: WorkflowModelPhaseStat[]
+}
+
+export interface WorkflowModelPhaseStat {
+  title: string
+  total: number
+  done: number
+  failed: number
+  stopped: number
+  running: number
+  queued: number
+}
+
 export interface WorkflowRunView {
   id: string
   sessionId?: string
@@ -33,7 +55,9 @@ export interface WorkflowRunView {
   endedAt?: number
   attempt: number
   concurrency: number
+  modelConcurrency?: number
   agents: WorkflowAgentView[]
+  models?: WorkflowModelStats
   logs: string[]
   error?: string
   dir: string
@@ -58,8 +82,18 @@ export const WORKFLOW_LIMITS = {
   maxItems: 1000,
   schemaRetries: 3,
   largeAgents: 25,
-  maxLogs: 20
+  maxLogs: 20,
+  maxModels: 5000,
+  defaultModelConcurrency: 8,
+  maxModelConcurrency: 32,
+  defaultModelTimeoutMinutes: 5,
+  defaultModelRetries: 1,
+  maxModelPromptChars: 2_000_000
 } as const
+
+export function emptyModelStats(): WorkflowModelStats {
+  return { total: 0, done: 0, cached: 0, failed: 0, stopped: 0, running: 0, queued: 0 }
+}
 
 export const WORKFLOW_ID = /^wf-[0-9a-f]{8}$/
 
@@ -86,7 +120,7 @@ export function isLargeWorkflow(run: Pick<WorkflowRunView, 'agents'>): boolean {
   return run.agents.length > WORKFLOW_LIMITS.largeAgents
 }
 
-export function workflowPhaseStats(run: Pick<WorkflowRunView, 'agents' | 'declaredPhases'>): WorkflowPhaseStat[] {
+export function workflowPhaseStats(run: Pick<WorkflowRunView, 'agents' | 'declaredPhases'> & Partial<Pick<WorkflowRunView, 'models'>>): WorkflowPhaseStat[] {
   const order: string[] = []
   const stats = new Map<string, WorkflowPhaseStat>()
   const ensure = (title: string): WorkflowPhaseStat => {
@@ -109,6 +143,15 @@ export function workflowPhaseStats(run: Pick<WorkflowRunView, 'agents' | 'declar
     }
     else if (agent.status === 'running') stat.running += 1
     else stat.queued += 1
+  }
+  for (const part of run.models?.phases ?? []) {
+    const stat = ensure(part.title)
+    stat.total += part.total
+    stat.done += part.done
+    stat.failed += part.failed + part.stopped
+    stat.stopped += part.stopped
+    stat.running += part.running
+    stat.queued += part.queued
   }
   return order.map((title) => stats.get(title)!).filter((stat) => stat.title !== '' || stat.total > 0)
 }

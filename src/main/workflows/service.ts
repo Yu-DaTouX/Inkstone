@@ -16,7 +16,8 @@ import {
 import { pick } from '../../shared/ui-lang'
 import { CapabilityCommandError, type CapabilityCommandResult } from '../capability-server'
 import type { NoticeTarget } from '../subagent-notify'
-import { readJournal } from './journal'
+import { readJournal, readModelJournal, type JournalEntry } from './journal'
+import type { WorkflowModelHost } from './model-lane'
 import { buildWorkflowNotice, createWorkflowNotifier, type WorkflowNotifier, type WorkflowWorktree } from './notice'
 import { WorkflowRunner, type WorkflowOutcome } from './runner'
 import { checkWorkflowScript } from './script'
@@ -38,6 +39,7 @@ export interface WorkflowServiceDeps {
   subagentCommand(command: string, params: Record<string, unknown>, context: WorkflowContext): Promise<{ data?: unknown; summary: Record<string, unknown> }>
   getSubagent(id: string): Promise<SubagentRun | undefined>
   runningSubagents(): number
+  modelHost?: WorkflowModelHost
   findTarget(run: WorkflowRunView): NoticeTarget | null
   push(view: WorkflowRunView): void
   now?(): number
@@ -83,6 +85,10 @@ function intParam(value: unknown, name: string, min: number, max: number): numbe
   const number = typeof value === 'number' ? value : Number(value)
   if (!Number.isInteger(number) || number < min || number > max) throw new CapabilityCommandError('workflow_param_invalid', `${name} 必须是 ${min}–${max} 的整数`)
   return number
+}
+
+function modelConcurrencyOf(params: Record<string, unknown>): number | undefined {
+  return intParam(params.modelConcurrency ?? params['model-concurrency'], 'model-concurrency', 1, WORKFLOW_LIMITS.maxModelConcurrency)
 }
 
 function argsJsonOf(value: unknown): string | undefined {
@@ -262,6 +268,7 @@ export class WorkflowService {
     if (!checked.ok) throw new CapabilityCommandError('workflow_script_invalid', checked.error)
     const argsJson = argsJsonOf(params.args)
     const concurrency = intParam(params.concurrency, 'concurrency', 1, WORKFLOW_LIMITS.maxConcurrency) ?? WORKFLOW_LIMITS.defaultConcurrency
+    const modelConcurrency = modelConcurrencyOf(params) ?? WORKFLOW_LIMITS.defaultModelConcurrency
     const id = `wf-${randomBytes(4).toString('hex')}`
     const recordContext: WorkflowContext = { ...context }
     const dir = this.dirOf({ context: recordContext }, id)
@@ -285,6 +292,7 @@ export class WorkflowService {
         startedAt: this.now(),
         attempt: 1,
         concurrency,
+        modelConcurrency,
         agents: [],
         logs: [],
         dir
@@ -292,7 +300,7 @@ export class WorkflowService {
     }
     this.records.set(id, record)
     await this.persist(record)
-    this.launch(record, checked.code, new Map())
+    this.launch(record, checked.code, new Map(), new Map())
     const view = this.viewOf(record)
     return {
       data: view,
@@ -304,6 +312,7 @@ export class WorkflowService {
         status: view.status,
         phases: view.declaredPhases,
         concurrency,
+        modelConcurrency,
         dir,
         note: '工作流在后台运行，结束时宿主会把最终答案作为通知发给你；不要 sleep 轮询，继续做不依赖它的事，或结束本轮'
       }
@@ -319,7 +328,7 @@ export class WorkflowService {
     }
   }
 
-  private launch(record: WorkflowRecord, code: string, previous: ReturnType<typeof readJournal>): void {
+  private launch(record: WorkflowRecord, code: string, previous: Map<number, JournalEntry>, previousModels: Map<number, JournalEntry>): void {
     const id = record.view.id
     const subagentContext = (): WorkflowContext => ({ ...record.context, parentMessageId: workflowAnchor(id) })
     const runner = new WorkflowRunner({
@@ -330,8 +339,13 @@ export class WorkflowService {
       attempt: record.view.attempt,
       concurrency: record.view.concurrency,
       previous,
+      previousModels,
       slots: this.slots,
       now: this.now,
+      root: record.context.cwd,
+      ...(record.context.model ? { defaultModel: record.context.model } : {}),
+      modelConcurrency: record.view.modelConcurrency ?? WORKFLOW_LIMITS.defaultModelConcurrency,
+      ...(this.deps.modelHost ? { modelHost: this.deps.modelHost } : {}),
       host: {
         start: async (params) => {
           const out = await this.deps.subagentCommand('subagent.start', params, subagentContext())
@@ -360,6 +374,7 @@ export class WorkflowService {
     if (this.runners.get(record.view.id) !== runner) return
     record.view.agents = runner.agents.filter(Boolean).map((agent) => ({ ...agent }))
     record.view.logs = [...runner.logs]
+    if (runner.models.total) record.view.models = runner.models
     record.view.status = outcome.status
     record.view.endedAt = this.now()
     if (outcome.status === 'failed') record.view.error = outcome.error
@@ -390,9 +405,10 @@ export class WorkflowService {
 
   private viewOf(record: WorkflowRecord): WorkflowRunView {
     const runner = this.runners.get(record.view.id)
-    if (!runner || runner.done) return { ...record.view, agents: record.view.agents.map((agent) => ({ ...agent })), logs: [...record.view.logs] }
+    if (!runner || runner.done) return { ...record.view, agents: record.view.agents.map((agent) => ({ ...agent })), logs: [...record.view.logs], ...(record.view.models ? { models: { ...record.view.models } } : {}) }
     const status: WorkflowStatus = runner.paused ? 'paused' : 'running'
-    return { ...record.view, status, agents: runner.agents.filter(Boolean).map((agent) => ({ ...agent })), logs: [...runner.logs] }
+    const models = runner.models
+    return { ...record.view, status, agents: runner.agents.filter(Boolean).map((agent) => ({ ...agent })), logs: [...runner.logs], ...(models.total ? { models } : {}) }
   }
 
   private schedulePush(record: WorkflowRecord, now = false): void {
@@ -403,6 +419,7 @@ export class WorkflowService {
       if (isLiveWorkflow(view.status)) {
         record.view.agents = view.agents
         record.view.logs = view.logs
+        if (view.models) record.view.models = view.models
         record.view.status = view.status
         void this.persist(record)
       }
@@ -472,6 +489,7 @@ export class WorkflowService {
             raw.view.status = 'interrupted'
             raw.view.error = '应用退出时工作流还在运行；没有自动续跑，需要时用 yan workflow resume 续跑'
             raw.view.agents = raw.view.agents.map((agent) => (agent.status === 'running' || agent.status === 'queued' ? { ...agent, status: 'stopped' } : agent))
+            if (raw.view.models) raw.view.models = { ...raw.view.models, stopped: raw.view.models.stopped + raw.view.models.running + raw.view.models.queued, running: 0, queued: 0, waitingQuota: undefined, phases: raw.view.models.phases?.map((phase) => ({ ...phase, stopped: phase.stopped + phase.running + phase.queued, running: 0, queued: 0 })) }
             this.records.set(id, raw)
             await this.persist(raw)
           } else this.records.set(id, raw)
@@ -536,26 +554,34 @@ export class WorkflowService {
       else record.argsJson = argsJson
     }
     const concurrency = intParam(params.concurrency, 'concurrency', 1, WORKFLOW_LIMITS.maxConcurrency)
-    let previous: ReturnType<typeof readJournal>
+    const modelConcurrency = modelConcurrencyOf(params)
+    let previous: Map<number, JournalEntry>
+    let previousModels: Map<number, JournalEntry>
     try {
-      previous = readJournal(await readFile(join(record.view.dir, JOURNAL_FILE), 'utf8'))
+      const text = await readFile(join(record.view.dir, JOURNAL_FILE), 'utf8')
+      previous = readJournal(text)
+      previousModels = readModelJournal(text)
     } catch {
       previous = new Map()
+      previousModels = new Map()
     }
     record.view.name = checked.meta.name
     record.view.description = checked.meta.description
     record.view.declaredPhases = checked.meta.phases ?? []
     record.view.attempt += 1
     if (concurrency) record.view.concurrency = concurrency
+    if (modelConcurrency) record.view.modelConcurrency = modelConcurrency
     record.view.status = 'running'
     record.view.agents = []
     record.view.logs = []
+    delete record.view.models
     delete record.view.endedAt
     delete record.view.error
     delete record.notified
     await this.persist(record)
-    this.launch(record, checked.code, previous)
+    this.launch(record, checked.code, previous, previousModels)
     const reusable = [...previous.values()].filter((entry) => entry.status === 'done').length
+    const reusableModels = [...previousModels.values()].filter((entry) => entry.status === 'done').length
     return {
       data: this.viewOf(record),
       summary: {
@@ -565,7 +591,8 @@ export class WorkflowService {
         status: 'running',
         attempt: record.view.attempt,
         savedResults: reusable,
-        note: '已按运行记录续跑：序号和提示词都没变的已完成调用直接返回保存的结果，从第一个变化、失败或被停的调用起重跑；结束时宿主会通知你'
+        ...(reusableModels ? { savedModelResults: reusableModels } : {}),
+        note: '已按运行记录续跑：agent() 中序号和提示词都没变的已完成调用直接返回保存的结果，从第一个变化、失败或被停的调用起重跑；model() 逐个比对，提示词与选项没变的已完成调用直接返回，失败或被停的重调；结束时宿主会通知你'
       }
     }
   }
@@ -580,7 +607,7 @@ export class WorkflowService {
         count: views.length,
         runs: views.map((view) => {
           const totals = workflowTotals(view)
-          return { id: view.id, name: view.name, status: view.status, agents: totals.total, done: totals.done, failed: totals.failed }
+          return { id: view.id, name: view.name, status: view.status, agents: totals.total, done: totals.done, failed: totals.failed, ...(view.models ? { models: view.models.total, modelsDone: view.models.done + view.models.cached, modelsFailed: view.models.failed + view.models.stopped } : {}) }
         })
       }
     }
@@ -613,6 +640,7 @@ export class WorkflowService {
         running: totals.running,
         queued: totals.queued,
         failed: totals.failed,
+        ...(view.models ? { models: view.models } : {}),
         phases: workflowPhaseStats(view).map((phase) => ({ title: phase.title || '—', done: phase.done, total: phase.total })),
         ...(view.logs.length ? { latestLog: view.logs[view.logs.length - 1] } : {}),
         ...(view.error ? { error: view.error } : {}),

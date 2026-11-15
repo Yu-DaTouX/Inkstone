@@ -44,6 +44,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan subagent stop --id <子代理ID>
   yan workflow run --file <脚本.js> [--args <JSON>]   后台运行编排脚本，每个 agent() 是一个子代理（yan workflow --help）
   yan workflow get --id <运行ID> [--final]
+  yan model ask --request-file req.json   不经子代理直接调一次模型（翻译一段、第二意见；不带工具），见 yan model --help
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan terminal <动作> [选项]    本会话的终端（用户可见）：查看、运行命令、交互（yan terminal --help）
   yan phone <动作> [选项]       经 adb 操控连着的安卓手机：读界面、截图、点按、滑动、输入（yan phone --help）
@@ -338,11 +339,12 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 `,
   workflow: `yan workflow <动作> [选项]
 
-把一段 JS 编排脚本交给宿主在后台运行；脚本里每个 agent() 是一个子代理（和 yan subagent start 派出的一样）。
+把一段 JS 编排脚本交给宿主在后台运行；脚本里每个 agent() 是一个子代理（和 yan subagent start 派出的一样），
+model() 不派子代理、直接调一次模型（批量翻译、改写），readText / writeText / listFiles 读写会话项目内的文件。
 脚本写法、限制和常用模式见 subagent 技能目录里的 workflow.md。
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  run    --file <脚本.js> [--args <JSON>] [--concurrency <1–24>]
+  run    --file <脚本.js> [--args <JSON>] [--concurrency <1–24>] [--model-concurrency <1–32>]
          校验 meta 和语法后在后台启动，立刻返回运行 ID；也可 --request-file run.json
          run.json：{"file":"audit.js","args":{"dir":"src/routes"},"concurrency":8}
          结束时宿主把最终答案（脚本 return 的值）作为通知发给你，附运行目录和待处置的 worktree 子代理；不要 sleep 轮询
@@ -350,9 +352,10 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   get    --id <运行ID> [--final] 状态、各阶段进度、最新 log 与错误；摘要里的结果只取前 400 字，
                                --final 直接把最终结果全文打到 stdout
   pause  --id <运行ID>           不再派新的子代理，已在跑的照常跑完
-  resume --id <运行ID> [--file <新脚本>] [--args <JSON>]
+  resume --id <运行ID> [--file <新脚本>] [--args <JSON>] [--model-concurrency <1–32>]
                                暂停的：继续派；停止、失败、中断（应用重启）或已完成的：按运行记录重放续跑——
-                               序号和提示词都没变的已完成调用直接返回保存的结果，从第一个变化、失败或被停的调用起全部重跑
+                               agent()：序号和提示词都没变的已完成调用直接返回保存的结果，从第一个变化、失败或被停的调用起全部重跑；
+                               model()：逐个比对，提示词与选项没变的已完成调用直接返回，只重调失败或被停的
   stop   --id <运行ID>           停掉这次运行的全部子代理并结束运行（不发完成通知）
 
 说明：
@@ -360,9 +363,34 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
     子代理 ID、状态、结果）、result.json；可以改 script.js 后 resume，或用 --file 换成新脚本；
   · 单次运行默认同时 8 个子代理（--concurrency 最多 24），和其他子代理共用全应用 24 个名额，满了自动排队；
     单次运行最多 200 个 agent() 调用，单次 parallel() / pipeline() 最多 1000 项，超限报错、不悄悄截断；
+  · model() 不占子代理名额，单独限并发（默认 8，--model-concurrency 最多 32），单次运行最多 5000 个；
+    额度用尽且 30 分钟内重置时暂停该模型的调用等额度，否则失败并带原始报错；
   · 子代理的工具调用照常过权限检查；运行中不能向用户提问，需要中途签字时拆成几个工作流分别跑；
   · worktree 子代理的改动脚本里不合并，运行结束后由你审阅 yan subagent merge / discard；
   · 应用重启后运行停在原地（状态 interrupted），不自动续跑；用户点停止或你 stop 的也一样用 resume 续跑。
+`,
+  model: `yan model ask --request-file req.json
+
+不经子代理、不带工具，直接调一次模型拿回文本（翻译一段、要第二意见、改写一段话）。
+材料能一次给全、不需要模型自己读文件或跑命令时用它；要读代码、跑命令的活仍派子代理。
+批量调用写工作流脚本用 model()（见 subagent 技能目录里的 workflow.md），不要在 bash 里循环调这个命令。
+
+req.json（UTF-8 JSON）：
+  {"prompt":"把下面这段译成英文：……"}                      短提示词直接写
+  {"promptFile":"segments/001.txt","system":"你是专业译者，只输出译文",
+   "model":"provider/model-id","thinking":"off","timeoutMinutes":5,"outFile":"out/001.txt"}
+  字段：
+    prompt | promptFile   二选一；promptFile 是项目内的文本文件（单文件 4MB 以内），长材料用它
+    model                 不写时用当前会话的模型；写完整「供应商/模型」
+    system                系统提示词
+    thinking              off / minimal / low / medium / high / xhigh / max，默认 off
+    schema                要求交回 JSON 时写 JSON Schema（写法同工作流的 schema）；结果里的 json 是校验过的对象，不合格报 model_schema_failed
+    timeoutMinutes        1–30，默认 5
+    outFile               把结果写到项目内文件（自动建目录，原子写入；带 schema 时写 JSON）
+  promptFile / outFile 只能在会话项目目录以内（不跟随指向项目外的链接，不碰 .git）；相对路径按当前目录算。
+
+结果：stdout 回模型、用量、前 400 字预览；全文在 resultFile 的 text（带 schema 时还有 json）。
+模型报错（额度、限流、余额、鉴权）原样报出，这个命令不自动重试、不等额度。
 `,
   search: `yan search <动作> [选项]
 
@@ -580,6 +608,10 @@ const GROUP_SPECS = {
       stop: ['id']
     }
   },
+  model: {
+    actions: ['ask'],
+    required: {}
+  },
   artifact: {
     actions: ['attach', 'preview', 'export-video', 'export-image', 'style'],
     required: { attach: ['path'], preview: ['path'], 'export-video': ['path'], 'export-image': ['path'] }
@@ -791,6 +823,25 @@ if (positional[0] === 'workflow' && (positional[1] === 'run' || positional[1] ==
   let scriptPath = params.file.trim()
   if (process.platform === 'win32') scriptPath = scriptPath.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:')
   params.file = resolvePath(process.cwd(), scriptPath)
+}
+
+if (positional[0] === 'model' && positional[1] === 'ask') {
+  for (const [flag, key] of [['prompt-file', 'promptFile'], ['out-file', 'outFile']]) {
+    if (params[flag] !== undefined && params[key] === undefined) {
+      params[key] = params[flag]
+      delete params[flag]
+    }
+    if (typeof params[key] === 'string' && params[key].trim()) {
+      let localPath = params[key].trim()
+      if (process.platform === 'win32') localPath = localPath.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:')
+      if (!/^[\\/]{2}/.test(localPath)) params[key] = resolvePath(process.cwd(), localPath)
+    }
+  }
+  const hasPrompt = typeof params.prompt === 'string' && params.prompt.trim()
+  const hasFile = typeof params.promptFile === 'string' && params.promptFile.trim()
+  if (!hasPrompt && !hasFile) {
+    fail(EXIT.usage, 'model ask 缺少 prompt 或 promptFile', { detail: '用 yan model --help 看请求文件写法' })
+  }
 }
 
 if (positional[0] === 'browser' && ['navigate', 'open', 'new-tab'].includes(positional[1])) {

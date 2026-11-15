@@ -254,7 +254,8 @@ export interface SubagentCommandHost {
   run(
     command: string,
     params: Record<string, unknown>,
-    context: SubagentCommandContext
+    context: SubagentCommandContext,
+    signal?: AbortSignal
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
@@ -1407,7 +1408,7 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('phone.')) {
       return this.phoneCommands.run(command.slice('phone.'.length), params, signal)
     }
-    if (command.startsWith('subagent.') || command.startsWith('workflow.')) {
+    if (command.startsWith('subagent.') || command.startsWith('workflow.') || command.startsWith('model.')) {
       if (!this.subagentHost) {
         throw new CapabilityCommandError('subagent_unavailable', '子代理宿主入口当前不可用')
       }
@@ -1420,7 +1421,7 @@ export class AgentController extends EventEmitter {
         parentGeneration: this.capabilityOpts?.runnerGeneration,
         parentMessageId: this.latestAssistantMessageId(),
         projectId: this.capabilityOpts?.projectId
-      })
+      }, signal)
     }
     if (command === 'capabilities.search') {
       return this.acquisition.runCapabilitiesSearch(params)

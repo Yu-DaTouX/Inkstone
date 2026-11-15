@@ -115,10 +115,14 @@ function WorkflowCard({ run }: { run: WorkflowRunView }): JSX.Element {
   const latestLog = run.logs.length ? run.logs[run.logs.length - 1] : ''
   const statusText = t(STATUS_KEY[run.status])
   const tone = STATUS_TONE[run.status]
+  const models = run.models
   const counts = [
-    t('wf.counts', { done: totals.done, total: totals.total }),
+    totals.total || !models?.total ? t('wf.counts', { done: totals.done, total: totals.total }) : null,
     totals.failed ? t('wf.failedCount', { n: totals.failed }) : null,
-    totals.queued && live ? t('wf.queuedCount', { n: totals.queued }) : null
+    totals.queued && live ? t('wf.queuedCount', { n: totals.queued }) : null,
+    models?.total ? t('wf.modelCounts', { done: models.done + models.cached, total: models.total }) : null,
+    models && models.failed + models.stopped ? t('wf.modelFailed', { n: models.failed + models.stopped }) : null,
+    models?.waitingQuota && live ? t('wf.modelQuota') : null
   ].filter(Boolean).join(' · ')
 
   const act = async (action: 'pause' | 'resume' | 'stop'): Promise<void> => {

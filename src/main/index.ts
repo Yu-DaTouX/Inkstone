@@ -94,7 +94,10 @@ import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
 import { BundledPlugins } from './bundled-plugins'
-import { completePluginText } from './plugin-completion'
+import { appModelRuntime, completePluginText } from './plugin-completion'
+import { callModel } from './model-call'
+import { runModelAsk } from './model-ask'
+import { decideQuotaResume } from '../shared/quota-resume'
 import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { isSessionFileInSessionsDir, onSessionPurged, SESSIONS_DIR } from './sessions'
@@ -509,6 +512,13 @@ const workflowService: WorkflowService = new WorkflowService({
   subagentCommand: (command, params, context) => subagentService.capabilityHost.run(command, params, context),
   getSubagent: async (id) => (await subagentService.get()).getFull(id),
   runningSubagents: () => subagentService.current()?.runningCount ?? 0,
+  modelHost: {
+    call: async (req) => callModel(req, await appModelRuntime()),
+    quota: async (model) => {
+      const info = await subagentQuotaWatch.check(model).catch(() => null)
+      return info?.windows.length ? decideQuotaResume(info.windows, Date.now()) : null
+    }
+  },
   findTarget: (run) => (runners ? findNoticeTarget({ parentSessionId: run.sessionId, parentRunId: run.parentRunId, parentGeneration: run.parentGeneration }, runners) : null),
   push: (view) => push({ ch: 'workflow', payload: view })
 })
@@ -2185,7 +2195,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         ...yanThinExtensions(),
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
-        subagentHost: { run: (command, params, context) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : subagentService.capabilityHost.run(command, params, context) },
+        subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context) },
         switchSpareAccount: switchToSpareAccount,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         providerExtensions: launchResources().providers,

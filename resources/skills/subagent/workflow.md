@@ -1,6 +1,6 @@
 # 工作流：用脚本编排子 Agent
 
-工作流是一段 JavaScript 编排脚本：你写好脚本，用 `yan workflow run --file <脚本.js>` 交给宿主在后台运行。脚本里每个 `agent()` 是一个子 Agent（和 `yan subagent start` 派出的一样：独立进程、可换模型、可只读或进 worktree）。中间结果留在脚本变量里，运行结束时宿主只把脚本 `return` 的值作为一条通知发给你，你的上下文不会被几十份报告刷满。
+工作流是一段 JavaScript 编排脚本：你写好脚本，用 `yan workflow run --file <脚本.js>` 交给宿主在后台运行。脚本里每个 `agent()` 是一个子 Agent（和 `yan subagent start` 派出的一样：独立进程、可换模型、可只读或进 worktree）。脚本里的 `model()` 不派子 Agent，直接调一次模型拿回文本（没有工具、没有自检），适合批量翻译、改写、分类这类材料能一次给全的活；`readText` / `writeText` / `listFiles` 读写会话项目目录里的文件。中间结果留在脚本变量里，运行结束时宿主只把脚本 `return` 的值作为一条通知发给你，你的上下文不会被几十份报告刷满。
 
 适合：一个清单逐项处理（几十个文件逐个审计、批量迁移）、要对抗复核的结论、要多轮查找直到没有新发现的问题、要从几个角度出方案再比较的难题。一两个子任务直接用 `yan subagent start`；闲聊和小改动自己做。
 
@@ -62,6 +62,10 @@ return claims.filter((c, i) => (verdicts[i] ?? []).filter((v) => v && v.refuted 
 | 名称 | 作用 |
 | --- | --- |
 | `agent(prompt, opts)` | 派一个子 Agent，返回它的最终报告（字符串）；带 `schema` 时返回校验过的 JSON。被停止时返回 `null`；失败时抛错 |
+| `model(prompt, opts)` | 不派子 Agent，直接调一次模型，返回回复文本；带 `schema` 时返回校验过的 JSON。被停止时返回 `null`；失败时抛错（错误里是模型的原始报错） |
+| `readText(path)` | 读项目内的文本文件（UTF-8，单文件 4MB 以内），返回字符串 |
+| `writeText(path, text)` | 写项目内的文件（自动建父目录、原子替换，单文件 4MB 以内），返回 `{ path, bytes }` |
+| `listFiles(dir?, glob?)` | 列项目内某个目录下的文件（递归，跳过 `.git` 和符号链接/目录联接），返回按名称排序的项目相对路径 |
 | `parallel(tasks)` | 同时跑一组（元素是 `agent()` 返回的 Promise，或返回 Promise 的函数），等全部结束；失败或被停的位置是 `null` |
 | `pipeline(items, fn)` | 每个元素跑一次 `fn(item, index)`，结果按原顺序排列；失败或被停的位置是 `null` |
 | `phase(title)` | 之后派的子 Agent 归到这个阶段（运行卡上的阶段条） |
@@ -80,7 +84,56 @@ return claims.filter((c, i) => (verdicts[i] ?? []).filter((v) => v && v.refuted 
 | `goal` / `deliverables` / `sources` / `boundary` | 任务输入，同 `yan subagent start` 的 brief |
 | `schema` | 要它交回的 JSON 结构（见下） |
 
+`model()` 的选项：
+
+| 选项 | 说明 |
+| --- | --- |
+| `model` | 不写时用发起工作流的会话当时的模型；写完整「供应商/模型」 |
+| `system` | 系统提示词（例如「你是专业译者，只输出译文」） |
+| `thinking` | off / minimal / low / medium / high / xhigh / max，默认 off |
+| `schema` | 要它交回的 JSON 结构，和 `agent()` 同一套写法与校验；输出取最后一个 ```json 代码块（没有代码块时取整段）解析后校验，不合格这次调用就失败，不续接 |
+| `label` | journal 和报错里显示的短名，例如文件名 |
+| `timeoutMinutes` | 1–30，默认 5；到点取消这次调用（按超时处理） |
+| `retries` | 0–5，默认 1：只对超时、限流和 5xx/网络中断重试；鉴权、余额、请求错误、schema 不合格不重试 |
+
 直接 `await agent(...)` 的调用失败会抛错，不捕获时整个运行以失败结束；放进 `parallel()` / `pipeline()` 里的失败变成 `null`，所以结果要先 `.filter(Boolean)` 再用。
+
+## model() 还是 agent()
+
+- 用 `model()`：材料能一次放进提示词、不需要模型自己读文件或跑命令——翻译、改写、摘要、分类、抽取字段、给一段代码第二意见。脚本自己用 `readText` 把材料读进来、`writeText` 写出结果。每次调用只是一个请求，没有子 Agent 的启动、自检和汇报开销，也不占子 Agent 名额。
+- 仍用 `agent()`：要它自己探索代码、读多个文件、跑命令或测试、改代码，或结论需要它边查边验证。
+- 两者可以混用：例如 `agent()` 侦察出清单，`model()` 逐项处理，最后再派一个只读 `agent()` 抽查。
+
+## 批量翻译示例
+
+```js
+export const meta = {
+  name: 'translate-segments',
+  description: '把 segments/ 下的分段逐个译成英文，写到 out/，返回失败清单',
+  phases: ['翻译']
+}
+
+const SYSTEM = '你是专业译者。把用户给的中文译成自然的英文，保留 Markdown 格式与占位符，只输出译文。'
+const { src = 'segments', out = 'out', from = 0, count = 4000 } = args ?? {}
+const files = await listFiles(src, '**/*.txt')
+const todo = files.slice(from, from + count)
+const failed = []
+phase('翻译')
+for (let i = 0; i < todo.length; i += 1000) {
+  const batch = todo.slice(i, i + 1000)
+  const done = await pipeline(batch, async (file) => {
+    const text = await readText(file)
+    const english = await model(text, { system: SYSTEM, label: file })
+    await writeText(out + file.slice(src.length), english)
+    return file
+  })
+  batch.forEach((file, k) => { if (!done[k]) failed.push(file) })
+  log(`已处理 ${Math.min(i + 1000, todo.length)}/${todo.length}，失败 ${failed.length}`)
+}
+return { total: todo.length, ok: todo.length - failed.length, failed }
+```
+
+`yan workflow run --file .tmp/translate.js --args '{"from":0,"count":4000}' --model-concurrency 16`。单次运行最多 5000 个 `model()`，更多段落就按 `from` / `count` 分几次运行，或者一次调用里放几段（让模型按编号分隔输出，或用 `schema` 要回一个数组）。失败的段落在返回值里；同一个运行 `resume` 时已完成的直接沿用、只重调失败的。
 
 ## 结构化输出（schema）
 
@@ -90,11 +143,13 @@ schema 只支持 `type`（object / array / string / number / integer / boolean /
 
 ## 限制
 
-- 脚本不能读写文件、跑命令、联网，也不能 `import` / `import()`；这些交给子 Agent，脚本只做编排。
+- 脚本只能用 `readText` / `writeText` / `listFiles` 读写**发起会话的项目目录以内**的文件：路径按项目目录解析，`..`、项目外的绝对路径、别的盘符、UNC 与设备路径、指向项目外的符号链接或目录联接、`.git` 目录、NTFS 备用数据流（`a.txt:x`）、Windows 设备名都会被拒；单文件读写各 4MB。这些写入不经过危险操作确认，所以只放在项目内。跑命令、联网、`import` / `import()` 仍不行，交给子 Agent。
+- 文件读写的错误会抛给脚本（可以 `try/catch`；放在 `pipeline` 里就是 `null`），不会让运行直接失败。
 - `Date.now()`、`Math.random()`、无参数的 `new Date()`（以及 `Date()`）会让运行失败：续跑时要按同样的顺序重放 `agent()` 调用。需要时间戳或随机种子就从 `args` 传进来。
-- `agent()` 的参数不合法（未知选项、类型不对、schema 不支持）也会让整个运行失败，不会悄悄变成 `null`。
-- 单次运行最多 200 个 `agent()` 调用；单次 `parallel()` / `pipeline()` 最多 1000 项。超了直接报错，不会悄悄截断；更大的活拆成几次运行。
-- 单次运行默认同时跑 8 个子 Agent（`--concurrency` 最多 24），和全应用其他子 Agent 共用 24 个名额，满了自动排队。
+- `agent()` / `model()` 的参数不合法（未知选项、类型不对、schema 不支持）也会让整个运行失败，不会悄悄变成 `null`。
+- 单次运行最多 200 个 `agent()` 调用、5000 个 `model()` 调用；单次 `parallel()` / `pipeline()` 最多 1000 项。超了直接报错，不会悄悄截断；更大的活拆成几次运行。
+- 单次运行默认同时跑 8 个子 Agent（`--concurrency` 最多 24），和全应用其他子 Agent 共用 24 个名额，满了自动排队。`model()` 不占这些名额，单独限并发：默认同时 8 个（`--model-concurrency` 最多 32）。
+- `model()` 撞上额度用尽（不是余额不足）时，和子 Agent 一样等额度：查得到重置时间且在 30 分钟内，就暂停这个模型的所有 `model()` 调用、到点再试（不算重试次数）；查不到重置时间或超过 30 分钟就失败，错误里带原始报错。余额不足、鉴权失败直接失败。`model()` 不自动换号。
 - 运行中不能向用户提问。需要用户中途拍板时，拆成几个工作流分别跑，中间停下来问。
 - 子 Agent 的每次工具调用照常过权限检查。
 - 脚本里不合并 worktree：运行结束的通知会列出有改动的 worktree 子 Agent，由你看过补丁后 `yan subagent merge --id <ID>` 或 `discard`。
@@ -102,12 +157,13 @@ schema 只支持 `type`（object / array / string / number / integer / boolean /
 
 ## 续跑
 
-运行记录在 `<数据目录>/workflows/runs/<会话ID>/<运行ID>/`：`script.js`、`journal.jsonl`（每次 `agent()` 的序号、提示词哈希、子 Agent ID、状态、结果）、`result.json`。
+运行记录在 `<数据目录>/workflows/runs/<会话ID>/<运行ID>/`：`script.js`、`journal.jsonl`（每次 `agent()` / `model()` 的序号、提示词哈希、状态、结果，子 Agent ID 或 token 用量；每次 `readText` / `writeText` / `listFiles` 的路径与字节数，不存全文）、`result.json`。
 
 `yan workflow resume --id <ID> [--file <改过的脚本>] [--args <JSON>]` 按调用顺序重放：
 
 - 序号和提示词（连同 schema、模型、只读等选项）都没变、上次已完成的调用，直接返回保存的结果，不再派子 Agent。
 - 遇到第一个变了、上次失败、或停止时还在跑的调用，从它开始往后**全部**重跑，包括后面上次已完成的。比如依次派了 A、B、C、D，B 失败：续跑时 A 直接返回，B、C、D 重跑。把脚本改成先派 C 再派 B：A 直接返回，C、B、D 重跑。
+- `model()` 单独按自己的序号逐个比对：序号和提示词哈希（含 `model`、`system`、`thinking`、`schema`，不含 `label`、`timeoutMinutes`、`retries`）都没变的已完成调用直接返回保存的结果；序号变了但同样的提示词上次已完成的也直接沿用；失败或被停的重调。它没有副作用，所以不会因为前面某个调用失败而把后面已完成的全部重调，也不影响 `agent()` 的重放。`readText` 读到的内容进了提示词，文件改了对应调用就会重调。
 - 暂停的运行 `resume` 只是继续派；应用重启后运行停在原地（状态 interrupted），不会自动续跑。
 - 上一次的子 Agent 还没退出时不能续跑，等它们结束。
 

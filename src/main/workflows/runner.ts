@@ -1,8 +1,11 @@
+import { pick } from '../../shared/ui-lang'
 import { Worker } from 'node:worker_threads'
 import type { SubagentRun } from '../../shared/ipc'
-import { WORKFLOW_LIMITS, type WorkflowAgentView } from '../../shared/workflows'
+import { WORKFLOW_LIMITS, emptyModelStats, type WorkflowAgentView, type WorkflowModelStats } from '../../shared/workflows'
 import { promptHash, subagentStartParams, type WorkflowAgentOptions } from './agent-options'
-import { JournalWriter, Replay, type JournalEntry } from './journal'
+import { JournalWriter, ModelReplay, Replay, type JournalEntry } from './journal'
+import { WorkflowModelLane, type WorkflowModelHost } from './model-lane'
+import type { WorkflowModelOptions } from './model-options'
 import type { HostToWorker, WorkerToHost } from './protocol'
 import type { AgentReply } from './sandbox'
 import { extractJson, schemaCorrection, validateJson } from './schema'
@@ -28,7 +31,14 @@ export interface WorkflowRunnerOptions {
   attempt: number
   concurrency: number
   previous: Map<number, JournalEntry>
+  previousModels?: Map<number, JournalEntry>
   host: WorkflowSubagentHost
+  modelHost?: WorkflowModelHost
+  defaultModel?: string
+  modelConcurrency?: number
+  maxModels?: number
+  modelBackoffMs?: number
+  root?: string
   slots: SlotGate
   maxAgents?: number
   maxItems?: number
@@ -88,11 +98,31 @@ export class WorkflowRunner {
   private finished = false
   private stopping: Promise<void> | null = null
   private readonly now: () => number
+  private readonly lane: WorkflowModelLane
 
   constructor(private readonly opts: WorkflowRunnerOptions) {
     this.journal = new JournalWriter(opts.journalFile)
     this.replay = new Replay(opts.previous)
     this.now = opts.now ?? Date.now
+    this.lane = new WorkflowModelLane({
+      host: opts.modelHost,
+      replay: new ModelReplay(opts.previousModels ?? new Map()),
+      journal: this.journal,
+      attempt: opts.attempt,
+      concurrency: opts.modelConcurrency ?? WORKFLOW_LIMITS.defaultModelConcurrency,
+      defaultModel: opts.defaultModel,
+      backoffMs: opts.modelBackoffMs,
+      signal: this.abort.signal,
+      now: this.now,
+      phase: () => this.phase,
+      blocked: () => this.finished || this.paused,
+      reply: (seq, reply) => this.replyModel(seq, reply),
+      onChange: () => opts.onChange()
+    })
+  }
+
+  get models(): WorkflowModelStats {
+    return this.lane ? this.lane.stats() : emptyModelStats()
   }
 
   get done(): boolean {
@@ -109,7 +139,9 @@ export class WorkflowRunner {
         code: this.opts.code,
         argsJson: this.opts.argsJson,
         maxAgents: this.opts.maxAgents ?? WORKFLOW_LIMITS.maxAgents,
-        maxItems: this.opts.maxItems ?? WORKFLOW_LIMITS.maxItems
+        maxItems: this.opts.maxItems ?? WORKFLOW_LIMITS.maxItems,
+        maxModels: this.opts.maxModels ?? WORKFLOW_LIMITS.maxModels,
+        ...(this.opts.root ? { root: this.opts.root } : {})
       },
       resourceLimits: { maxOldGenerationSizeMb: 256 }
     })
@@ -132,6 +164,7 @@ export class WorkflowRunner {
     this.paused = false
     this.opts.onChange()
     this.pump()
+    this.lane.pump()
   }
 
   stop(): Promise<void> {
@@ -143,6 +176,12 @@ export class WorkflowRunner {
     switch (message.type) {
       case 'agent':
         this.onAgent(message.seq, message.prompt, message.options)
+        break
+      case 'model':
+        this.onModel(message.seq, message.prompt, message.options)
+        break
+      case 'io':
+        if (message.line && typeof message.line === 'object') void this.journal.append({ ...message.line, kind: 'io', attempt: this.opts.attempt, at: this.now() })
         break
       case 'phase':
         this.phase = message.title
@@ -172,6 +211,24 @@ export class WorkflowRunner {
       this.worker.postMessage(message)
     } catch {
     }
+  }
+
+  private replyModel(seq: number, reply: AgentReply): void {
+    if (this.finished || !this.worker) return
+    const message: HostToWorker = { type: 'model-result', seq, reply }
+    try {
+      this.worker.postMessage(message)
+    } catch {
+    }
+  }
+
+  private onModel(seq: number, prompt: string, options: WorkflowModelOptions): void {
+    const maxModels = this.opts.maxModels ?? WORKFLOW_LIMITS.maxModels
+    if (!Number.isInteger(seq) || seq < 0 || seq >= maxModels) {
+      void this.end({ status: 'failed', error: pick(`超过单次运行最多 ${maxModels} 个 model() 调用的上限`, `Over the limit of ${maxModels} model() calls per run`) })
+      return
+    }
+    this.lane.add(seq, prompt, options)
   }
 
   private onAgent(seq: number, prompt: string, options: WorkflowAgentOptions): void {
@@ -328,6 +385,7 @@ export class WorkflowRunner {
     this.worker = null
     this.stopping = (async () => {
       if (worker) await worker.terminate().catch(() => undefined)
+      await this.lane.stop()
       for (const job of queued) job.view.status = 'stopped'
       await Promise.all(live.map(async (job) => {
         const id = this.subagents.get(job.seq)
