@@ -1103,7 +1103,6 @@
   "ctx.hint.summary": "压缩后保留的对话摘要",
   "ctx.hint.approx": "按请求内容估算",
   "ctx.list.deferred": "延迟",
-  "ctx.list.open": "打开 {path}",
   "acct.active": "使用中",
   "acct.switch": "切换",
   "acct.switched": "已切换到 {name}，当前回合结束后生效",

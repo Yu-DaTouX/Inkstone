@@ -1103,7 +1103,6 @@
   "ctx.hint.summary": "Conversation summary kept after compaction",
   "ctx.hint.approx": "Estimated from the request",
   "ctx.list.deferred": "deferred",
-  "ctx.list.open": "Open {path}",
   "acct.active": "In use",
   "acct.switch": "Switch",
   "acct.switched": "Switched to {name}; takes effect after the current turn",

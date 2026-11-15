@@ -59,48 +59,20 @@ check('预设：周日时下周一就是明早，两者合并；周一当天下�
   const sunday = local(2026, 3, 8, 10)
   const monday = local(2026, 3, 9, 10)
   const sundayOptions = snooze.resolveSnoozeOptions(sunday)
-  assert.equal(snooze.pickSnoozeOption('next-monday', sunday), undefined)
+  assert.equal(sundayOptions.find((o) => o.id === 'next-monday'), undefined)
   assert.equal(
     sundayOptions.find((o) => o.id === 'tomorrow-morning').until,
     local(2026, 3, 9, 9),
     '周日看到的明早就是下周一'
   )
-  assert.equal(snooze.pickSnoozeOption('next-monday', monday).until, local(2026, 3, 16, 9), '周一当天不指向当天')
+  assert.equal(snooze.resolveSnoozeOptions(monday).find((o) => o.id === 'next-monday').until, local(2026, 3, 16, 9), '周一当天不指向当天')
 })
 
 check('预设：1 小时后严格晚于当前时间，未知 id 返回 undefined', () => {
   const now = local(2026, 3, 5, 23, 30)
-  const option = snooze.pickSnoozeOption('in-1h', now)
+  const option = snooze.resolveSnoozeOptions(now).find((o) => o.id === 'in-1h')
   assert.ok(option.until > now)
-  assert.equal(snooze.pickSnoozeOption('nope', now), undefined)
-})
-
-check('分组：snooze 中的会话不在正常列表，到点的会话算醒来', () => {
-  const now = local(2026, 3, 5, 12)
-  const sessions = [
-    { id: 'a' },
-    { id: 'b', snoozedUntil: now + HOUR },
-    { id: 'c', snoozedUntil: now - 1 },
-    { id: 'd', snoozedUntil: now }
-  ]
-  assert.equal(snooze.isSnoozed(sessions[3], now), false, '只看未来，到点就不再算 snooze')
-})
-
-
-check('自定义：解析本地日期时间，过去的与格式不对的都不接受', () => {
-  const now = local(2026, 3, 5, 12)
-  assert.equal(snooze.customSnoozeUntil('2026-03-05', '13:00', now), local(2026, 3, 5, 13))
-  assert.equal(snooze.customSnoozeUntil('2026-03-05', '11:00', now), null, '过去的时间不接受')
-  assert.equal(snooze.customSnoozeUntil('2026-03-05', '12:00', now), null, '同一分钟不接受')
-  assert.equal(snooze.customSnoozeUntil('2026/03/05', '13:00', now), null)
-  assert.equal(snooze.customSnoozeUntil('2026-03-05', '25:00', now), null)
-  assert.equal(snooze.customSnoozeUntil('2026-02-30', '09:00', now), null, '不存在的日期不静默进位')
-})
-
-check('自定义：日期与时间输入框回填本地值', () => {
-  const at = local(2026, 3, 5, 9, 5)
-  assert.equal(snooze.localDateValue(at), '2026-03-05')
-  assert.equal(snooze.localTimeValue(at), '09:05')
+  assert.equal(snooze.resolveSnoozeOptions(now).find((o) => o.id === 'nope'), undefined)
 })
 
 check('格式化器：按 locale 与同日/跨日选项复用，不跨选项串用', () => {

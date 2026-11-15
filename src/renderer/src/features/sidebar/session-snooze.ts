@@ -8,10 +8,6 @@ export interface SnoozeOption {
   labelKey: MessageKey
 }
 
-export interface Snoozable {
-  snoozedUntil?: number
-}
-
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
 const EVENING_HOUR = 18
@@ -55,33 +51,6 @@ export function resolveSnoozeOptions(now: number): SnoozeOption[] {
     options.push(option)
   }
   return options.sort((a, b) => a.until - b.until)
-}
-
-export function pickSnoozeOption(id: string, now: number): SnoozeOption | undefined {
-  return resolveSnoozeOptions(now).find((option) => option.id === id)
-}
-
-export function isSnoozed(session: Snoozable, now: number): boolean {
-  return typeof session.snoozedUntil === 'number' && session.snoozedUntil > now
-}
-
-export function localDateValue(at: number): string {
-  const date = new Date(at)
-  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-export function localTimeValue(at: number): string {
-  const date = new Date(at)
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-}
-
-export function customSnoozeUntil(date: string, time: string, now: number): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null
-  const wake = new Date(`${date}T${time}:00`)
-  const at = wake.getTime()
-  if (!Number.isFinite(at)) return null
-  if (localDateValue(at) !== date || localTimeValue(at) !== time) return null
-  return at > now ? at : null
 }
 
 const wakeFormatters = new Map<string, Intl.DateTimeFormat>()
