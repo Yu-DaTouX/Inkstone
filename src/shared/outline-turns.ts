@@ -34,7 +34,7 @@ export function createOutlineProjector(): (messages: UIMessage[], streamingId?: 
         assistant: reply?.response?.text ?? '',
         msgId: user.id,
         index,
-        failed: !!reply && (reply.terminalReason === 'failed' || !!reply.error || reply.tools.some((call) => call.status === 'error' && !call.cancelled)),
+        failed: !!reply && (reply.terminalReason === 'failed' || (!!reply.error && !reply.errorRecovered)),
         timestamp: user.msg.timestamp,
         elapsedMs: reply?.elapsedMs,
         steps: reply?.tools.length ?? 0
