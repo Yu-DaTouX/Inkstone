@@ -47,7 +47,8 @@ const INHERITED_APP_ENV = /^(YAN_|ELECTRON_RUN_AS_NODE$|ELECTRON_RENDERER_URL$|P
 
 export function cleanEnv(extra = {}) {
   const env = {}
-  for (const [key, value] of Object.entries(process.env)) if (!INHERITED_APP_ENV.test(key)) env[key] = value
+  const replaced = new Set(Object.keys(extra).map((key) => key.toUpperCase()))
+  for (const [key, value] of Object.entries(process.env)) if (!INHERITED_APP_ENV.test(key) && !replaced.has(key.toUpperCase())) env[key] = value
   return { ...env, ...extra }
 }
 

@@ -18,7 +18,8 @@ const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bu
 
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
-隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
+隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁；主目录与 AppData 指向运行目录下的 home/，
+  不读真实的 ~/.agents/skills、~/.codex、~/.claude、gh、git 凭据与 ssh 密钥，PATH 去掉 adb，YAN_DEBUG_REAL_DEVICES=1 时保留真机）
   up [--demo] [--cards] [--dev] [--build] [--no-fake] [--no-quota] [--samples 1,2|all] [--user-data [--user-days 7]] [--user-ui] [--port N] [--default-widths]
       起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束；左栏、右栏、会话栏默认都用最窄宽度
       --user-ui   界面镜像用户窗口：读用户 localStorage 副本（只取 yan: yan. inkstone. 开头的偏好，不含草稿），窗口最大化，栏宽按用户的，不套最窄宽度

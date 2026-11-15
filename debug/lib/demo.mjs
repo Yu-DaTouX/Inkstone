@@ -4,6 +4,7 @@ import { delimiter, join } from 'node:path'
 import { createDemoRepos, demoFile } from './demo-repos.mjs'
 import { seedDemoGh } from './demo-state.mjs'
 import { storeHelpers } from './app.mjs'
+import { instancePath, pathKey as envPathKey } from './isolated-home.mjs'
 
 const readJson = path => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return {} } }
 
@@ -93,6 +94,6 @@ export async function initializeDemo(cdp, box) {
 
 export function demoEnv(box) {
   if (!box.demo) return {}
-  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') || 'PATH'
-  return { GIT_ALLOW_PROTOCOL: 'file', GIT_TERMINAL_PROMPT: '0', YAN_DEBUG_GH_SCRIPT: join(import.meta.dirname, 'demo-gh.mjs'), YAN_DEBUG_GH_STATE: box.demo.stateFile, ...(process.env.YAN_DEBUG_GH_FAILURE ? { YAN_DEBUG_GH_FAILURE: process.env.YAN_DEBUG_GH_FAILURE } : {}), [pathKey]: join(box.demo.dir, 'bin') + delimiter + (process.env[pathKey] || '') }
+  const pathKey = envPathKey()
+  return { GIT_ALLOW_PROTOCOL: 'file', GIT_TERMINAL_PROMPT: '0', YAN_DEBUG_GH_SCRIPT: join(import.meta.dirname, 'demo-gh.mjs'), YAN_DEBUG_GH_STATE: box.demo.stateFile, ...(process.env.YAN_DEBUG_GH_FAILURE ? { YAN_DEBUG_GH_FAILURE: process.env.YAN_DEBUG_GH_FAILURE } : {}), [pathKey]: join(box.demo.dir, 'bin') + delimiter + instancePath() }
 }

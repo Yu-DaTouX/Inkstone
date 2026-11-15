@@ -2,27 +2,29 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { fixtureRoot, userSnapshotDir } from './env.mjs'
+import { cleanEnv, fixtureRoot, userSnapshotDir } from './env.mjs'
+import { createIsolatedHome, isolatedProcessEnv } from './isolated-home.mjs'
 import { restoreSample } from './sessions.mjs'
 import { linkOrCopy, linkTree, mirrorTree } from './shared-files.mjs'
 
 const FIXTURE_TASKS = ['40-ledger-incident', '30-async-refactor', '50-expr-lang', '10-cache-bugs', '20-csv-spec']
 
-function gitInit(dir) {
-  const git = (...args) => spawnSync('git', ['-c', 'user.name=Inkstone Debug', '-c', 'user.email=debug@inkstone.invalid', ...args], { cwd: dir, stdio: 'ignore', windowsHide: true })
+function gitInit(dir, home) {
+  const env = cleanEnv(isolatedProcessEnv(home))
+  const git = (...args) => spawnSync('git', ['-c', 'user.name=Inkstone Debug', '-c', 'user.email=debug@inkstone.invalid', ...args], { cwd: dir, env, stdio: 'ignore', windowsHide: true })
   git('init', '-q', '-b', 'main')
   git('add', '-A')
   git('commit', '-q', '-m', 'fixture')
 }
 
-function seedProjects(root) {
+function seedProjects(root, home) {
   const projects = []
   for (const task of FIXTURE_TASKS) {
     const source = join(fixtureRoot, task, 'fixture')
     if (!existsSync(source)) continue
     const target = join(root, task.replace(/^\d+-/, ''))
     cpSync(source, target, { recursive: true, filter: (path) => !/[\\/](node_modules|\.git)([\\/]|$)/.test(path) })
-    gitInit(target)
+    gitInit(target, home)
     projects.push(target)
   }
   return projects
@@ -37,17 +39,19 @@ export function createSandbox(runDir, { fakePort, samples = [], demo = false, an
     userData: join(runDir, 'electron'),
     downloads: join(runDir, 'downloads'),
     androidSdk: join(runDir, 'android-sdk'),
+    home: join(runDir, 'home'),
     project: join(runDir, 'project'),
     projects: [],
     samples: []
   }
   for (const dir of [box.piDir, box.sessionsDir, box.dataDir, box.userData, box.downloads, box.androidSdk]) mkdirSync(dir, { recursive: true })
-  box.projects = demo ? [] : seedProjects(join(runDir, 'projects'))
+  createIsolatedHome(box.home)
+  box.projects = demo ? [] : seedProjects(join(runDir, 'projects'), box.home)
   if (box.projects.length > 0) box.project = box.projects[0]
   else if (!demo) {
     mkdirSync(box.project, { recursive: true })
     writeFileSync(join(box.project, 'README.md'), '# debug fixture\n')
-    gitInit(box.project)
+    gitInit(box.project, box.home)
     box.projects = [box.project]
   }
   writeFileSync(join(box.dataDir, 'desktop.json'), JSON.stringify({ cwd: box.project, recentCwds: box.projects }))
@@ -89,6 +93,7 @@ export function writeQuotaFixture(box, runDir) {
 
 export function sandboxEnv(box, { fake = false, cdpPort, probe } = {}) {
   return {
+    ...(box.home ? isolatedProcessEnv(box.home) : {}),
     YAN_PI_DIR: box.piDir,
     YAN_DATA_DIR: box.dataDir,
     YAN_USER_DATA: box.userData,
