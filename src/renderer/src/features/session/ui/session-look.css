@@ -79,8 +79,8 @@
   .v3-code pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-code code { color: var(--fg); background: none; }
 
-  .v3-msg.streaming :is(.v3-md-image, .v3-md-table-wrap tr, .v3-code, .katex-display, .v3-mermaid-svg) { animation: v3-fade-in var(--dur-base) var(--ease) both; }
-  .v3-msg.streaming .v3-code [class^='hljs-'] { animation: v3-code-color var(--dur-base) var(--ease) both; }
+  .v3-msg.streaming :is(.v3-md-image, .v3-md-table-wrap tr, .v3-code, .katex-display, .v3-mermaid-svg) { animation: v3-fade-in var(--dur-base) var(--ease) backwards; }
+  .v3-msg.streaming .v3-code [class^='hljs-'] { animation: v3-code-color var(--dur-base) var(--ease) backwards; }
   @keyframes v3-fade-in { from { opacity: 0; } }
   @keyframes v3-code-color { from { color: var(--fg); } }
   @media (prefers-reduced-motion: reduce) {

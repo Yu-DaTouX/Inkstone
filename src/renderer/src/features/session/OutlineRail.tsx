@@ -5,6 +5,7 @@ import { CONTROL_ICON_SIZE, IconButton } from '../../ui'
 import type { UIMessage } from '../../../../shared/ipc'
 import { createOutlineProjector, type OutlineTurn } from '../../../../shared/outline-turns'
 import { clampTurn, MINIMAP_MIN_TURNS, MINIMAP_PAGE_STEP, minimapIndexAt, minimapTopPercent, turnLine, turnPreview, valueTextLine, type TurnPreview, type TurnRange } from './outline-minimap'
+import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
 import './rail.css'
 
 const READING_LINE_RATIO = 0.25
@@ -271,7 +272,7 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
       paint(scan.range ?? (bandRef.current.first >= 0 ? bandRef.current : undefined), scan.current >= 0 ? scan.current : currentRef.current)
     }
     const schedule = (): void => {
-      if (!frame) frame = requestAnimationFrame(update)
+      if (!frame) frame = requestClockFrame(update)
       window.clearTimeout(precisionTimer)
       precisionTimer = window.setTimeout(refine, PRECISION_DELAY_MS)
     }
@@ -319,7 +320,7 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
       host.removeEventListener('scroll', onScroll, { capture: true })
       root.removeEventListener('wheel', onWheel)
       resize.disconnect()
-      if (frame) cancelAnimationFrame(frame)
+      if (frame) cancelClockFrame(frame)
       window.clearTimeout(precisionTimer)
       scheduleRef.current = undefined
       currentElRef.current = null

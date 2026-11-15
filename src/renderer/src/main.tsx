@@ -16,6 +16,7 @@ import { installDeepLinkNavigation } from './features/deeplink/navigation'
 import { installBrowserPreloadRecovery } from './lib/preload-recovery'
 import { installIdlePrefetch } from './lib/idle-prefetch'
 import { installFrictionRecorder } from './features/friction/install'
+import { installFrameClock } from './lib/frame-clock'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -54,6 +55,8 @@ useStore.subscribe(prepareSoundOnce)
 installBrowserPreloadRecovery()
 
 installMotionPreferenceReporter()
+
+installFrameClock()
 
 installFocusModality()
 

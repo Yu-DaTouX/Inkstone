@@ -1,3 +1,5 @@
+import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
+
 const BLANK_LIMIT_OF_VIEWPORT = 0.5
 const USER_TOGGLE_PAUSE_MS = 700
 
@@ -78,7 +80,7 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   }
   const onScroll = (): void => {
     if (frame) return
-    frame = requestAnimationFrame(() => {
+    frame = requestClockFrame(() => {
       frame = 0
       sync()
     })
@@ -87,7 +89,7 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   scroller.addEventListener('scroll', onScroll, { passive: true })
   scroller.addEventListener('click', onToggle, true)
   return () => {
-    cancelAnimationFrame(frame)
+    cancelClockFrame(frame)
     clearTimeout(resume)
     scroller.removeEventListener('scroll', onScroll)
     scroller.removeEventListener('click', onToggle, true)

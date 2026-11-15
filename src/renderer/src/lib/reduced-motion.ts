@@ -1,6 +1,5 @@
 const SYSTEM_QUERY = '(prefers-reduced-motion: reduce)'
 export const REDUCED_MOTION_EVENT = 'yan:reduced-motion'
-export const CAPPED_FRAME_MS = 1000 / 60 - 4
 
 let systemMedia: MediaQueryList | null = null
 

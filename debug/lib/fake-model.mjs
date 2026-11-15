@@ -263,18 +263,18 @@ async function respond(res, text, done, requestNo) {
       if (done < 1) await callTool('bash', { command: `yan subagent send --id ${/SUBRESUME=(sub-[0-9a-f]+)/.exec(text)[1]} --message "请继续补充一句结论"`, description: 'resume subagent' })
       else await streamText('已续派。', 20, 10)
     } else if (text.includes('SUBSTORM')) {
-      if (done < 40) await stormStep('sub', stormTag(text, 'SUBSTORM'), done, 60)
+      if (done < Number(/SUBSTEPS(\d+)/.exec(text)?.[1] ?? 40)) await stormStep('sub', stormTag(text, 'SUBSTORM'), done, 60)
       else await streamText('子任务四十步完成。', 20, 10)
     } else if (text.includes('SUBAGENTS')) {
       const count = Number(/SUBAGENTS(\d+)/.exec(text)?.[1] ?? 4)
       const pad = Number(/SUBPAD(\d+)/.exec(text)?.[1] ?? 0)
-      const subTask = `${text.includes('SUBBAD') ? 'FAILNET' : 'SUBSTORM'}-sub$i ${text.includes('SUBLONG') ? 'SUBLONG ' : ''}压测子任务`
+      const subTask = `${text.includes('SUBBAD') ? 'FAILNET' : 'SUBSTORM'}-sub$i ${text.includes('SUBLONG') ? 'SUBLONG ' : ''}${/SUBSTEPS\d+/.exec(text)?.[0] ?? ''} 压测子任务`
       const startAll = pad > 0
         ? `pad=$(head -c ${pad} /dev/zero | tr '\\0' x); for i in $(seq 1 ${count}); do printf '{"task":"%s %s","title":"压测%s","model":"fake/fake-model"}' "${subTask}" "$pad" "$i" > .subpad-$i.json; yan subagent start --request-file .subpad-$i.json; done`
         : `for i in $(seq 1 ${count}); do yan subagent start --task "${subTask}" --title "压测$i" --model fake/fake-model; done`
       if (done < 1) await callTool('bash', { command: startAll, description: 'start subagents' })
       else if (text.includes('THENREST')) await streamText('子代理都派出去了，等它们做完再汇总。', 20, 10)
-      else if (done < 61) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
+      else if (done < Number(/FGSTEPS(\d+)/.exec(text)?.[1] ?? 60) + 1) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
       else await streamText(longText(), 24, 8)
     } else if (text.includes('CAMSHOT')) {
       const steps = Number(/STEPS(\d+)/.exec(text)?.[1] ?? 6)

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { Dithering, HalftoneDots, ImageDithering } from '@paper-design/shaders-react'
-import { CAPPED_FRAME_MS, prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
+import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
+import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
 import type { HomeEffectParams, HomeFlowStyle, HomeImageEffect, HomeInk } from './home-background'
 import { FlowHalftone, FlowImageDither } from './FlowImageDither'
 
@@ -77,8 +78,7 @@ function useShaderClock(id: string, speed: number): void {
     let raf = 0
     let last = 0
     const tick = (now: number): void => {
-      raf = requestAnimationFrame(tick)
-      if (last && now - last < CAPPED_FRAME_MS) return
+      raf = requestClockFrame(tick)
       if (last) frame.current += Math.min(100, now - last) * speed
       last = now
       if (!host?.isConnected) host = document.querySelector<PaperHost>(selector)
@@ -88,9 +88,9 @@ function useShaderClock(id: string, speed: number): void {
       const active = document.visibilityState !== 'hidden' && document.hasFocus()
       if (active && !raf) {
         last = 0
-        raf = requestAnimationFrame(tick)
+        raf = requestClockFrame(tick)
       } else if (!active && raf) {
-        cancelAnimationFrame(raf)
+        cancelClockFrame(raf)
         raf = 0
       }
     }
@@ -99,7 +99,7 @@ function useShaderClock(id: string, speed: number): void {
     window.addEventListener('blur', apply)
     document.addEventListener('visibilitychange', apply)
     return () => {
-      cancelAnimationFrame(raf)
+      cancelClockFrame(raf)
       window.removeEventListener('focus', apply)
       window.removeEventListener('blur', apply)
       document.removeEventListener('visibilitychange', apply)

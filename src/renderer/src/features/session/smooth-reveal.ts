@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CAPPED_FRAME_MS, prefersReducedMotion } from '../../lib/reduced-motion'
+import { prefersReducedMotion } from '../../lib/reduced-motion'
+import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
 
 export const REVEAL_DRAIN_MS = 160
 export const MAX_DRAIN_MS = 700
@@ -196,10 +197,6 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
     }
     let raf = 0
     const tick = (now: number): void => {
-      if (stateRef.current && now - stateRef.current.at < CAPPED_FRAME_MS) {
-        raf = requestAnimationFrame(tick)
-        return
-      }
       const current = textRef.current
       const state = stateRef.current ?? startReveal(Math.min(shownRef.current, current.length), now)
       const cap = burstRef.current.burst ? typeRate(current.slice(Math.floor(state.shown))) : Infinity
@@ -211,10 +208,10 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
         remember(id, current, next)
         setShown(next)
       }
-      raf = requestAnimationFrame(tick)
+      raf = requestClockFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    raf = requestClockFrame(tick)
+    return () => cancelClockFrame(raf)
   }, [animate, id])
 
   if (!animate) {

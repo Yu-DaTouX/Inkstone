@@ -1,5 +1,6 @@
 import type { ModelBrand } from '../../../../shared/model-brand'
 import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
+import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
 import {
   BLEND_SECONDS,
   BOT_FORMS,
@@ -54,10 +55,12 @@ interface BotEntry {
   shown: BotPose | null
   visible: boolean
   dirty: boolean
+  moved: boolean
 }
 
-const FRAME_GAP_MS = 25
+const FRAME_GAP_MS = 1000 / 30
 const BLURRED_GAP_MS = 120
+const PACE_SLACK_MS = 1000 / 120
 
 const entries = new Set<BotEntry>()
 const byCanvas = new WeakMap<Element, BotEntry>()
@@ -69,7 +72,7 @@ let unsubscribeReduced: (() => void) | null = null
 let reduced = false
 let theme: Theme = 'light'
 let frame = 0
-let pacing = 0
+let nextPaint = 0
 let focused = true
 
 function now(): number {
@@ -175,27 +178,33 @@ function paint(entry: BotEntry, t: number): void {
   drawBot(entry.ctx, lookOf(entry.brand), entry.canvas.height, pose, entry.corner)
 }
 
-function tick(): void {
+function tick(stamp: number): void {
   frame = 0
   if (document.hidden) return
+  const gap = focused ? FRAME_GAP_MS : BLURRED_GAP_MS
+  const paced = stamp >= nextPaint - PACE_SLACK_MS
+  if (paced) nextPaint = stamp - nextPaint > gap ? stamp + gap : nextPaint + gap
   const t = now()
   let again = false
   for (const entry of entries) {
     if (entry.tool.look) trackTool(entry, t)
     if (!entry.visible) continue
     const active = moving(entry, t)
-    if (active || entry.dirty) paint(entry, t)
-    entry.dirty = active
+    if (paintDue(entry, active, paced)) paint(entry, t)
     again ||= active
   }
-  if (again) pacing = window.setTimeout(() => {
-    pacing = 0
-    schedule()
-  }, focused ? FRAME_GAP_MS : BLURRED_GAP_MS)
+  if (again) schedule()
+}
+
+export function paintDue(entry: { dirty: boolean; moved: boolean }, active: boolean, paced: boolean): boolean {
+  const due = entry.dirty || (active ? paced : entry.moved)
+  entry.dirty = false
+  if (due) entry.moved = active
+  return due
 }
 
 function schedule(): void {
-  if (!frame && !pacing) frame = requestAnimationFrame(tick)
+  if (!frame) frame = requestClockFrame(tick)
 }
 
 function onReducedChange(): void {
@@ -255,13 +264,11 @@ function stop(): void {
   document.removeEventListener('visibilitychange', onVisibility)
   window.removeEventListener('blur', onBlur)
   window.removeEventListener('focus', onFocus)
-  if (frame) cancelAnimationFrame(frame)
-  if (pacing) window.clearTimeout(pacing)
+  if (frame) cancelClockFrame(frame)
   unsubscribeReduced = null
   themeObserver = null
   observer = null
   frame = 0
-  pacing = 0
 }
 
 function resize(entry: BotEntry): void {
@@ -289,7 +296,8 @@ export function mountBot(canvas: HTMLCanvasElement, options: BotOptions): BotHan
     from: null,
     shown: null,
     visible: false,
-    dirty: true
+    dirty: true,
+    moved: false
   }
   entry.tool = followTool(IDLE_TOOL, toolOf(entry), t)
   resize(entry)

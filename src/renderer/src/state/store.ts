@@ -38,6 +38,7 @@ import { playSound } from '../lib/sound'
 import type { BrowserOpenTarget } from '../features/browser/browser-open'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
+import { cancelClockFrame, requestClockFrame } from '../lib/frame-clock'
 import { SubagentPatchBatch, applySubagentPatches } from './subagent-patch-batch'
 import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
 import {
@@ -401,10 +402,11 @@ let approvalChanges = new Map<string, ApprovalRequest | null>()
 
 const pendingMessagePatches = new MessagePatchBatch()
 const pendingRuntimePushes: MainPush[] = []
-const messagePatchFlush = createFrameFlush(() => flushPendingMessagePatches())
+const clockFrames = { request: requestClockFrame, cancel: cancelClockFrame }
+const messagePatchFlush = createFrameFlush(() => flushPendingMessagePatches(), clockFrames)
 const pendingSubagentPatches = new SubagentPatchBatch()
 let subagentResync: Promise<void> | null = null
-const subagentPatchFlush = createFrameFlush(() => flushPendingSubagentPatches())
+const subagentPatchFlush = createFrameFlush(() => flushPendingSubagentPatches(), clockFrames)
 
 function flushPendingSubagentPatches(): void {
   subagentPatchFlush.cancel()

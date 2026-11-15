@@ -16,7 +16,7 @@ import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { Button } from '../../ui'
 import { motionAllowed } from '../../ui/motion-hooks'
-import { CAPPED_FRAME_MS } from '../../lib/reduced-motion'
+import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
 import { ChevronDown } from '../../ui/icons'
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { useSessionViewSource, type SessionPaneBinding } from './session-view-source'
@@ -441,7 +441,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const followGlideRef = useRef(0)
   const followBottom = useCallback((box: HTMLElement, instant = false) => {
     if (instant || !tailRunningRef.current && performance.now() - followRunRef.current.endedAt > END_GLIDE_MS || prefersReducedMotion()) {
-      cancelAnimationFrame(followGlideRef.current)
+      cancelClockFrame(followGlideRef.current)
       followGlideRef.current = 0
       pinBottom(box)
       return
@@ -451,18 +451,14 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     const step = (now: number): void => {
       followGlideRef.current = 0
       if (!stickRef.current || settlingRef.current || !box.isConnected) return
-      if (now - last < CAPPED_FRAME_MS) {
-        followGlideRef.current = requestAnimationFrame(step)
-        return
-      }
       const gap = box.scrollHeight - box.clientHeight - box.scrollTop
       if (gap <= 0.5) return
       const dt = Math.min(FOLLOW_FRAME_CAP_MS, Math.max(0, now - last))
       last = now
       box.scrollTop += Math.min(gap, Math.max(1, gap * (1 - Math.exp(-dt / followTau(gap)))))
-      followGlideRef.current = requestAnimationFrame(step)
+      followGlideRef.current = requestClockFrame(step)
     }
-    followGlideRef.current = requestAnimationFrame(step)
+    followGlideRef.current = requestClockFrame(step)
   }, [])
 
   const setStickNow = useCallback((value: boolean) => {
@@ -505,7 +501,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   const onScroll = useCallback(() => {
     if (scrollFrameRef.current) return
-    scrollFrameRef.current = requestAnimationFrame(() => {
+    scrollFrameRef.current = requestClockFrame(() => {
       scrollFrameRef.current = 0
       if (settlingRef.current) return
       readScroll()
@@ -513,9 +509,9 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   }, [readScroll])
 
   useEffect(() => () => {
-    cancelAnimationFrame(scrollFrameRef.current)
+    cancelClockFrame(scrollFrameRef.current)
     scrollFrameRef.current = 0
-    cancelAnimationFrame(followGlideRef.current)
+    cancelClockFrame(followGlideRef.current)
     followGlideRef.current = 0
     clearTimeout(virtualRecordTimerRef.current)
     virtualRecordTimerRef.current = 0
@@ -547,7 +543,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   const onVirtualScroll = useCallback(() => {
     if (scrollFrameRef.current) return
-    scrollFrameRef.current = requestAnimationFrame(() => {
+    scrollFrameRef.current = requestClockFrame(() => {
       scrollFrameRef.current = 0
       readVirtualScroll()
       const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')

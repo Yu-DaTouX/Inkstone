@@ -69,7 +69,8 @@ export const PROBES = `(() => {
   window.__yanRuns?.subscribe(() => { pa.runUpdates[pa.phase] = (pa.runUpdates[pa.phase] ?? 0) + 1; window.__pendingKeys?.add('runs-v3') });
   new PerformanceObserver((list) => { for (const e of list.getEntries()) pa.tasks.push({ p: pa.phase, s: e.startTime, d: e.duration }) }).observe({ type: 'longtask', buffered: true });
   let last = performance.now();
-  const tick = (now) => { const f = pa.frames[pa.phase] ??= { n: 0, over33: 0, over50: 0, max: 0 }; const gap = now - last; f.n++; if (gap > 33) f.over33++; if (gap > 50) f.over50++; if (gap > f.max) f.max = Math.round(gap); last = now; requestAnimationFrame(tick) };
+  const tick = (now) => { if (pa.rafOff) { pa.rafIdle = true; return } const f = pa.frames[pa.phase] ??= { n: 0, over33: 0, over50: 0, max: 0 }; const gap = now - last; f.n++; if (gap > 33) f.over33++; if (gap > 50) f.over50++; if (gap > f.max) f.max = Math.round(gap); last = now; requestAnimationFrame(tick) };
+  pa.resumeRaf = () => { pa.rafOff = false; if (pa.rafIdle) { pa.rafIdle = false; last = performance.now(); requestAnimationFrame(tick) } };
   requestAnimationFrame(tick);
   (async () => {
     while (!pa.stop) {

@@ -1,4 +1,5 @@
 import { prefersReducedMotion } from '../lib/reduced-motion'
+import { driveAnimation } from '../lib/frame-clock'
 
 export const SHIMMER_WINDOW_PX = 44
 const SWEEP_MS = 1100
@@ -70,6 +71,7 @@ function apply({ el, win, hi, width, hiWidth: nextWidth }: SweepPlan, startTime:
     hi.animate([{ transform: `translateX(${SHIMMER_WINDOW_PX}px)` }, { transform: `translateX(${-width}px)` }], timing)
   ]
   if (startTime !== null) for (const animation of animations) animation.startTime = startTime
+  for (const animation of animations) driveAnimation(animation)
   owned.set(el, animations)
   return animations
 }
@@ -121,5 +123,5 @@ export function joinShimmer(el: HTMLElement): () => void {
 
 export function sweepOnce(el: HTMLElement): void {
   if (reducedMotion() || document.visibilityState !== 'visible') return
-  el.animate([{ transform: 'translateX(-100%)' }, { transform: 'translateX(300%)' }], { duration: 650, easing: EASING })
+  driveAnimation(el.animate([{ transform: 'translateX(-100%)' }, { transform: 'translateX(300%)' }], { duration: 650, easing: EASING }))
 }

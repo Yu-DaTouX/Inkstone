@@ -16,6 +16,7 @@ import { cx } from './cx'
 import { createListMotion, type ListMotion } from './list-motion'
 import { motionAllowed, motionMs, usePresence } from './motion-hooks'
 import { compensatedScrollTop, condenseStep } from './motion-model'
+import { cancelClockFrame, requestClockFrame } from '../lib/frame-clock'
 import './Motion.css'
 
 function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
@@ -50,12 +51,12 @@ export function AnimatedHeight({ holdHeight = false, className, style, children,
       setBox((current) => (current.height === next ? current : { height: next, clipping: current.height !== null && motionAllowed() }))
     }
     const measureAfterPaint = (): void => {
-      cancelAnimationFrame(first)
-      cancelAnimationFrame(second)
+      cancelClockFrame(first)
+      cancelClockFrame(second)
       measure()
-      first = requestAnimationFrame(() => {
+      first = requestClockFrame(() => {
         measure()
-        second = requestAnimationFrame(measure)
+        second = requestClockFrame(measure)
       })
     }
     measureAfterPaint()
@@ -63,8 +64,8 @@ export function AnimatedHeight({ holdHeight = false, className, style, children,
     observer.observe(element)
     return () => {
       observer.disconnect()
-      cancelAnimationFrame(first)
-      cancelAnimationFrame(second)
+      cancelClockFrame(first)
+      cancelClockFrame(second)
     }
   }, [holdHeight])
 
