@@ -102,6 +102,22 @@ export interface ApprovalReceipt {
   at: number
 }
 
+export const OUTSIDE_WRITE_REASON = '写入项目之外的路径：'
+
+const COMMAND_APPROVAL_TOOLS: readonly string[] = ['bash', 'powershell', 'terminal']
+
+export function approvalBindsCommand(request: { kind?: string; tool?: string; reasons?: readonly string[] }): boolean {
+  if (!COMMAND_APPROVAL_TOOLS.includes(request.tool ?? '')) return false
+  if (request.kind === 'danger') return true
+  return request.kind === 'outside' && (request.reasons ?? []).some((reason) => !reason.startsWith(OUTSIDE_WRITE_REASON))
+}
+
+export function approvalSessionGrantable(request: { kind?: string; tool?: string; reasons?: readonly string[]; cwd?: string; rememberDirs?: readonly string[] }): boolean {
+  if (request.kind === 'move') return false
+  if (request.kind === 'outside' && !request.rememberDirs?.length) return false
+  return !approvalBindsCommand(request) || !!request.cwd?.trim()
+}
+
 const HEADLINE_MAX = 80
 
 export function approvalHeadline(request: Pick<ApprovalRequest, 'kind' | 'title' | 'reasons'>): string {

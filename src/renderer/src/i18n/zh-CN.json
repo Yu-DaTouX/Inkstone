@@ -320,6 +320,8 @@
   "approval.once": "允许这一次",
   "approval.allowBatch": "这一批全部允许",
   "approval.session": "在此会话中允许",
+  "approval.sessionCommand": "在此会话中允许这条命令",
+  "approval.sessionCommandTip": "本会话内在同一目录再次运行完全相同的命令时不再询问；命令有任何改动或换了目录都会重新询问",
   "approval.rememberDirs": "允许并记住目录",
   "approval.feedback": "说明理由",
   "approval.feedbackTip": "拒绝这次操作，并把理由告诉模型；理由可不填",

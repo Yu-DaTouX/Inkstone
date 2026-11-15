@@ -320,6 +320,8 @@
   "approval.once": "Allow once",
   "approval.allowBatch": "Allow this batch",
   "approval.session": "Allow in this session",
+  "approval.sessionCommand": "Allow this command in this session",
+  "approval.sessionCommandTip": "Running exactly this command again in the same folder won't ask again in this session; any change to the command or folder asks again",
   "approval.rememberDirs": "Allow and remember folders",
   "approval.feedback": "Add reason",
   "approval.feedbackTip": "Deny this action and tell the model why; the reason is optional",

@@ -4,7 +4,7 @@ import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
 import { localizeApprovalText } from './approval-reason-text'
-import { approvalHeadline, type ApprovalAnswerIdentity, type ApprovalChoice, type ApprovalRequest } from '../../../../shared/approval'
+import { approvalBindsCommand, approvalHeadline, type ApprovalAnswerIdentity, type ApprovalChoice, type ApprovalRequest } from '../../../../shared/approval'
 import { Button, Kbd } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
@@ -422,8 +422,12 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
             {t('approval.allowBatch')}
           </Button>
         ) : null}
-        {current.kind !== 'move' ? (
-          <Button data-testid="v3-approval-session" isDisabled={allowBlocked} onPress={clickOnly(() => answer('session'))}>{t('approval.session')}</Button>
+        {current.kind !== 'move' && (!approvalBindsCommand(current) || current.cwd.trim()) ? (
+          approvalBindsCommand(current) ? (
+            <Button data-testid="v3-approval-session" title={t('approval.sessionCommandTip')} isDisabled={allowBlocked} onPress={clickOnly(() => answer('session'))}>{t('approval.sessionCommand')}</Button>
+          ) : (
+            <Button data-testid="v3-approval-session" isDisabled={allowBlocked} onPress={clickOnly(() => answer('session'))}>{t('approval.session')}</Button>
+          )
         ) : null}
         <Button variant="primary" data-testid="v3-approval-once" aria-keyshortcuts="Control+Enter Alt+Y" isDisabled={allowBlocked} onPress={clickOnly(() => answer('once'))}>
           {t('approval.once')}

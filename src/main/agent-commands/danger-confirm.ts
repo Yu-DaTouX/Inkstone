@@ -37,7 +37,7 @@ export function runDangerReviewCommand(host: Pick<DangerConfirmHost, 'recordDang
   return { summary: { kind: 'danger-review', recorded: !!review } }
 }
 
-export async function runDangerConfirmCommand(host: DangerConfirmHost, params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+export async function runDangerConfirmCommand(host: DangerConfirmHost, params: Record<string, unknown>, origin?: { cwd: string | null }): Promise<CapabilityCommandResult> {
   const critical = params.critical === true
   if ((await host.permissionMode()) === 'all' && !critical) return { summary: { kind: 'danger-confirm', allowed: true, decision: 'auto' } }
   const tool = typeof params.tool === 'string' ? params.tool.slice(0, 40) : 'tool'
@@ -52,7 +52,7 @@ export async function runDangerConfirmCommand(host: DangerConfirmHost, params: R
   const outsideTruncated = rawOutside.length > APPROVAL_TARGETS_MAX || rawOutside.some((d) => d.length > 500) || params.outsideTruncated === true
   const kind = params.kind === 'permission' || params.kind === 'delete' ? params.kind : undefined
   const toolCallId = typeof params.toolCallId === 'string' && params.toolCallId ? params.toolCallId.slice(0, 200) : undefined
-  const answer = await host.confirmDanger({ tool, detail, reasons, cwd: host.cwd(), owner: host.approvalOwner(), ...(toolCallId ? { toolCallId } : {}), ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}), ...(outsideTruncated ? { outsideTruncated } : {}), timeoutMs: DANGER_CONFIRM_TIMEOUT_MS, onTimeout: critical || tool === 'terminal' ? 'deny' : 'review' })
+  const answer = await host.confirmDanger({ tool, detail, reasons, cwd: origin ? origin.cwd ?? '' : host.cwd(), owner: host.approvalOwner(), ...(toolCallId ? { toolCallId } : {}), ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}), ...(outsideTruncated ? { outsideTruncated } : {}), timeoutMs: DANGER_CONFIRM_TIMEOUT_MS, onTimeout: critical || tool === 'terminal' ? 'deny' : 'review' })
   const decision = answer?.decision ?? 'no-answer'
   return {
     data: { decision },

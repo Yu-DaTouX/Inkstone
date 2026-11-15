@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { ApprovalOwner, ApprovalRequest } from '../shared/approval'
+import { approvalBindsCommand, approvalSessionGrantable, OUTSIDE_WRITE_REASON, type ApprovalOwner, type ApprovalRequest } from '../shared/approval'
 import { sameOwner } from './approval-ledger'
 
 interface ScopeGrants {
@@ -7,23 +7,24 @@ interface ScopeGrants {
   sessions: Map<string, Set<string>>
 }
 
-type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId' | 'detail'>>
+type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId' | 'detail' | 'cwd'>>
 
-const OUTSIDE_WRITE_REASON = '写入项目之外的路径：'
+function commandIdentity(request: GrantFields): string {
+  if (!approvalBindsCommand(request)) return ''
+  return createHash('sha256').update(`${(request.detail ?? '').trim()}\u0000${(request.cwd ?? '').trim()}`).digest('hex')
+}
 
 function operationClass(request: GrantFields): string {
   if (request.kind === 'consent') return `${request.title ?? ''}\u0000${request.danger ?? ''}`
   if (request.kind === 'danger' || request.kind === 'delete' || request.kind === 'outside') {
     const reasons = (request.reasons ?? []).filter((reason) => request.kind !== 'outside' || !reason.startsWith(OUTSIDE_WRITE_REASON))
-    const command = request.kind === 'danger' && (request.tool === 'bash' || request.tool === 'powershell') ? createHash('sha256').update(request.detail ?? '').digest('hex') : ''
-    return `${request.title ?? ''}\u0000${[...reasons].sort().join('\n')}\u0000${request.danger ?? ''}\u0000${command}`
+    return `${request.title ?? ''}\u0000${[...reasons].sort().join('\n')}\u0000${request.danger ?? ''}\u0000${commandIdentity(request)}`
   }
   return ''
 }
 
 export function sessionGrantKey(request: GrantFields): string | null {
-  if (request.kind === 'move') return null
-  if (request.kind === 'outside' && !request.rememberDirs?.length) return null
+  if (!approvalSessionGrantable(request)) return null
   const dirs = [...(request.rememberDirs ?? [])].sort().join('\n')
   return `${request.kind}\u0000${request.tool}\u0000${dirs}\u0000${operationClass(request)}`
 }

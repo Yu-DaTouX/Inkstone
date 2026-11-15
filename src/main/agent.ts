@@ -524,7 +524,7 @@ export class AgentController extends EventEmitter {
     cwd: () => this.cwd,
     turnSignal: () => this.terminalTurnStop.signal,
     confirm: async (request) => {
-      const result = await runDangerConfirmCommand(this.commandHost, { tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs, ...(request.critical ? { critical: true } : {}) })
+      const result = await runDangerConfirmCommand(this.commandHost, { tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs, ...(request.critical ? { critical: true } : {}) }, { cwd: request.cwd })
       const feedback = result.summary.feedback
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
     },

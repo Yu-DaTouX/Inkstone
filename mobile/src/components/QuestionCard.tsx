@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { RemoteAnswer, RemotePendingQuestion } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
+import { approvalBindsCommand } from '../../../src/shared/approval'
 import { idempotencyKey, RemoteHttpError } from '../api/client'
 import { SpeechInputButton } from './SpeechInputButton'
 import { QuestionForm } from './QuestionForm'
@@ -67,7 +68,8 @@ export function QuestionCard({
   }
   const send = (answer: RemoteAnswer) => submit(JSON.stringify(answer), (key) => onAnswer(answer, key))
   const decide = (confirmed: boolean, scope?: 'session') => submit(`approval:${confirmed}:${scope ?? 'once'}`, (key) => client.approve(question, confirmed, key, scope).finally(() => refresh()))
-  const sessionScope = !!approval && question.id.startsWith('approval:') && approval.kind !== 'move'
+  const commandScope = !!approval && approvalBindsCommand(approval)
+  const sessionScope = !!approval && question.id.startsWith('approval:') && approval.kind !== 'move' && (!commandScope || !!approval.cwd?.trim())
 
   const tone = approval || question.sensitive ? p.warn : p.accent
   return (
@@ -91,7 +93,7 @@ export function QuestionCard({
             <Button label={pick('拒绝', 'Deny')} busy={busy} style={styles.flex} onPress={() => void decide(false)} />
             <Button label={pick('允许这一次', 'Allow once')} variant="primary" busy={busy} style={styles.flex} onPress={() => void decide(true)} />
           </View>
-          {sessionScope && !compact ? <Button label={pick('本会话内都允许', 'Allow for this session')} busy={busy} onPress={() => void decide(true, 'session')} /> : null}
+          {sessionScope && !compact ? <Button label={commandScope ? pick('本会话内允许这条命令', 'Allow this command for this session') : pick('本会话内都允许', 'Allow for this session')} busy={busy} onPress={() => void decide(true, 'session')} /> : null}
         </View>
       ) : question.sensitive ? (
         <View style={styles.actions}>
