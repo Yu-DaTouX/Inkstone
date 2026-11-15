@@ -4,7 +4,7 @@ import { PROBES, RENDER_HOOK, RENDER_START, RENDER_TAKE, SUMMARY, useRealWindow 
 import { cpuByKind, memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
 import { startProfile, stopProfile } from '../lib/cpu-profile.mjs'
 
-export const meta = { description: '子代理群压测：一个后台会话跑 STORM，当前会话派 20 个假模型子代理（SUBLONG，每步流出约 20KB 长文）后继续 STORM；分阶段量渲染进程主线程忙碌比例、长帧、每秒 store 写入与 IPC 推送条数和字节、各进程 CPU，抓 CPU 剖面列热点（YAN_SWARM_PANEL_ONLY=1 只测记录面板），统计组件渲染次数，再打开一个子代理记录面板看它是否流畅更新，并核对渲染端子代理记录与主进程一致（YAN_SWARM_COUNT 改子代理数，YAN_SWARM_MS 改每段时长，YAN_SWARM_LONG=0 关长文）' }
+export const meta = { description: '子代理群压测：一个后台会话跑 STORM，当前会话派 20 个假模型子代理（SUBLONG，每步流出约 20KB 长文）后继续 STORM；分阶段量渲染进程主线程忙碌比例、长帧、每秒 store 写入与 IPC 推送条数和字节、各进程 CPU，抓 CPU 剖面列热点（YAN_SWARM_PANEL_ONLY=1 只测记录面板），统计组件渲染次数，再打开一个子代理记录面板看它是否流畅更新，并核对渲染端子代理记录与主进程一致（YAN_SWARM_COUNT 改子代理数，YAN_SWARM_MS 改每段时长，YAN_SWARM_LONG=0 关长文，YAN_SWARM_TASK_PAD=<n> 给每个子代理的任务文本补 n 个字符）' }
 
 const PUSH_COUNTER = `(() => {
   if (window.__pushRec) return
@@ -62,7 +62,8 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   const count = Math.max(1, Math.min(24, Number(process.env.YAN_SWARM_COUNT ?? 20)))
   const windowMs = Math.max(3000, Number(process.env.YAN_SWARM_MS ?? 10000))
   const long = process.env.YAN_SWARM_LONG !== '0'
-  report.variant = { count, windowMs, long }
+  const taskPad = Math.max(0, Number(process.env.YAN_SWARM_TASK_PAD ?? 0))
+  report.variant = { count, windowMs, long, taskPad }
   const marker = box.userData
   await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: RENDER_HOOK })
   report.viewport = await useRealWindow(cdp, sleep)
@@ -97,7 +98,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     const summary = await ev(SUMMARY(name))
     const pushes = await ev(`window.__pushRec.by[${JSON.stringify(name)}] ?? {}`)
     const sec = ms / 1000
-    const perSec = Object.fromEntries(Object.entries(pushes).sort((a, b) => b[1].n - a[1].n).map(([ch, c]) => [ch, { perSec: Math.round(c.n / sec), kbPerSec: c.sampled ? Math.round((c.bytes / c.sampled) * c.n / sec / 1024) : 0 }]))
+    const perSec = Object.fromEntries(Object.entries(pushes).sort((a, b) => b[1].n - a[1].n).map(([ch, c]) => [ch, { perSec: Math.round(c.n / sec), kbPerSec: c.sampled ? Math.round((c.bytes / c.sampled) * c.n / sec / 1024) : 0, avgBytes: c.sampled ? Math.round(c.bytes / c.sampled) : 0 }]))
     const busy = {}
     for (const key of ['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration']) busy[key] = Math.round((after[key] - before[key]) * 1000)
     const result = {
@@ -131,7 +132,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   await waitFor(`${running} && !!s.session?.sessionId`, 30000, 20)
   const bgId = await state('s.session.sessionId')
   await newSession(foreground)
-  await ev(`window.__yanStore.getState().send(${JSON.stringify(`SUBAGENTS${count}-FG ${long ? 'SUBLONG ' : ''}当前会话派子代理后继续`)})`)
+  await ev(`window.__yanStore.getState().send(${JSON.stringify(`SUBAGENTS${count}-FG ${long ? 'SUBLONG ' : ''}${taskPad ? `SUBPAD${taskPad} ` : ''}当前会话派子代理后继续`)})`)
   await waitFor(`${running} && !!s.session?.sessionId`, 30000, 20)
   const fgId = await state('s.session.sessionId')
   report.sessions = { bgId, fgId }

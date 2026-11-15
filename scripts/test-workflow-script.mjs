@@ -4,7 +4,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const script = await compile('src/main/workflows/script.ts')
   const options = await compile('src/main/workflows/agent-options.ts')
   const { checkWorkflowScript, validateMeta, forbiddenImportAt } = script
-  const { normalizeAgentCall, promptHash, subagentStartParams, MAX_PROMPT_CHARS } = options
+  const { normalizeAgentCall, promptHash, subagentStartParams } = options
+  const longPrompt = '很长的工作流任务说明。'.repeat(20_000)
   const throws = (fn, pattern) => {
     try {
       fn()
@@ -62,13 +63,14 @@ return r
   ok(call.prompt === '看一下' && call.options.thinking === 'high' && call.options.deliverables.length === 1, '选项规范化', JSON.stringify(call))
   ok(throws(() => normalizeAgentCall('x', { stallMs: 1 }), /不认识的选项：stallMs/), '未知选项报错')
   ok(throws(() => normalizeAgentCall('', {}), /prompt/), '空 prompt 报错')
-  ok(throws(() => normalizeAgentCall('x'.repeat(MAX_PROMPT_CHARS + 1), {}), /12000/), '超长 prompt 报错')
+  ok(normalizeAgentCall(longPrompt, {}).prompt === longPrompt, '很长的 prompt 也能作为工作流 agent() 的任务')
   ok(throws(() => normalizeAgentCall('x', { readOnly: true, isolation: 'worktree' }), /不能同时用/), 'readOnly 与 worktree 冲突报错')
   ok(throws(() => normalizeAgentCall('x', { isolation: 'docker' }), /isolation/), '不支持的 isolation 报错')
   ok(throws(() => normalizeAgentCall('x', { timeoutMinutes: 0 }), /1–60/) && throws(() => normalizeAgentCall('x', { timeoutMinutes: 61 }), /1–60/), 'timeoutMinutes 超范围报错')
   ok(throws(() => normalizeAgentCall('x', { thinking: 'ultra' }), /thinking/), '不认识的 thinking 报错')
   ok(throws(() => normalizeAgentCall('x', { schema: { type: 'object', minProperties: 1 } }), /minProperties 不支持/), 'schema 不支持的关键字报错')
-  ok(throws(() => normalizeAgentCall('x'.repeat(MAX_PROMPT_CHARS - 20), { schema: { type: 'object' } }), /schema 说明/), 'prompt 加 schema 说明超过子代理任务上限时报错')
+  const longWithSchema = normalizeAgentCall(longPrompt, { schema: { type: 'object' } })
+  ok(longWithSchema.prompt === longPrompt && subagentStartParams(longWithSchema.prompt, longWithSchema.options).task.startsWith(longPrompt), '很长的 prompt 加 schema 说明也能作为子代理任务')
   ok(normalizeAgentCall('x', { isolation: 'none' }).options.isolation === undefined, "isolation: 'none' 等于不隔离")
 
   const params = subagentStartParams('看一下', { label: 'L', model: 'm', thinking: 'low', isolation: 'worktree', timeoutMinutes: 9, goal: 'g', sources: ['s'], deliverables: ['d'], boundary: 'b' })

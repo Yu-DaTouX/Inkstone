@@ -5,8 +5,6 @@ import { IconButton, Notice, TextArea } from '../../ui'
 import type { SubagentRun } from '../../../../shared/ipc'
 import { subagentComposerMode } from './subagent-composer'
 
-const MAX_CHARS = 12_000
-
 export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | null {
   const t = useT()
   const [text, setText] = useState('')
@@ -64,7 +62,6 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
           placeholder={shortPlaceholder}
           rows={1}
           value={text}
-          maxLength={MAX_CHARS}
           isDisabled={sending}
           onChange={setText}
           className="sa-composer-field"

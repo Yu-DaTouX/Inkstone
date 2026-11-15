@@ -108,6 +108,18 @@ try {
   await rm(gitDir, { recursive: true, force: true })
   await rm(plainDir, { recursive: true, force: true })
 
+  const longTask = '很长的子代理任务说明。'.repeat(20_000)
+  const longCalls = []
+  service.get = async () => ({
+    setContext() {},
+    hasActiveWriter: () => false,
+    start: async (task) => { longCalls.push(['start', task]); return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task } } },
+    send: async (_id, message) => { longCalls.push(['send', message]); return { ok: true, delivery: 'queued', run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't' } } }
+  })
+  await service.run('subagent.start', { task: longTask, isolation: 'none' }, context)
+  await service.run('subagent.send', { id: 'sub-a1b2c3d4', message: longTask }, context)
+  assert.deepEqual(longCalls.map(([kind, text]) => [kind, text.length]), [['start', longTask.length], ['send', longTask.length]], '很长的任务文本能启动、能续派，不按长度拒绝或截断')
+
   const finished = { id: 'sub-a1b2c3d4', status: 'done', task: 't', parentSessionId: 'p', isolation: 'shared-cwd', startedAt: 1, endedAt: 2, review: 'none', transcript: [{ id: 'm1', role: 'assistant', text: '最终结论全文' }], deliverables: [], toolCalls: 0 }
   service.get = async () => ({ setContext() {}, get: () => finished, getFull: async () => finished })
   const plain = await service.run('subagent.get', { id: finished.id }, context)

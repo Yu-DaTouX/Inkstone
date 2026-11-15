@@ -127,6 +127,7 @@ import { WorkflowService } from './workflows/service'
 import { registerWorkflowsIpc } from './ipc/workflows-ipc'
 import { createSubagentNoticeStore } from './subagent-notice-store'
 import { buildSubagentOvertimeNotice } from '../shared/subagent-notice'
+import { SubagentPushTracker } from '../shared/subagent-push'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
@@ -478,11 +479,12 @@ const subagentService: SubagentService = new SubagentService({
   },
   onPatch: (patch) => {
     flushSubagentRuns()
-    push({ ch: 'subagent-patch', payload: patch })
+    push({ ch: 'subagent-patch', payload: subagentPushes.patch(patch) })
   },
   onRemove: (id) => {
     pendingSubagentRuns.delete(id)
     flushSubagentRuns()
+    subagentPushes.forget(id)
     push({ ch: 'subagent-remove', payload: id })
     refreshTaskbar()
   },
@@ -2057,6 +2059,7 @@ function flushRestoreNotice(): void {
 }
 
 const pendingSubagentRuns = new Map<string, { run: SubagentRun; patches: SubagentPatch[] | null }>()
+const subagentPushes = new SubagentPushTracker()
 let subagentFlushTimer: ReturnType<typeof setTimeout> | null = null
 
 function flushSubagentRuns(): void {
@@ -2069,10 +2072,10 @@ function flushSubagentRuns(): void {
   pendingSubagentRuns.clear()
   for (const { run, patches } of runs) {
     if (!patches) {
-      push({ ch: 'subagent', payload: run })
+      push({ ch: 'subagent', payload: subagentPushes.run(run) })
       continue
     }
-    for (const patch of patches) push({ ch: 'subagent-patch', payload: patch })
+    for (const patch of patches) push({ ch: 'subagent-patch', payload: subagentPushes.patch(patch) })
     remoteAccess?.publish({ ch: 'subagent', payload: run })
   }
 }

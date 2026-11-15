@@ -40,9 +40,13 @@ export function runSubagentBriefTests(ok, mod) {
       'x'
     )
     ok(!tooMany.ok && /最多/.test(tooMany.error), '超过条数上限：如实报错，不静默截断')
-    const tooLong = parseSubagentBrief({ goal: 'x'.repeat(SUBAGENT_BRIEF_LIMITS.maxGoal + 1) }, 'x')
-    ok(!tooLong.ok, '目标超长：拒掉')
-    ok(parseSubagentBrief(undefined, 'x'.repeat(12_000)).ok, '没有 brief 时任务文本整段当目标，上限和派子代理的任务文本一致（12000），不再被 4000 卡住')
+    const longText = '长任务说明。'.repeat(40_000)
+    const longGoal = parseSubagentBrief({ goal: longText }, 'x')
+    ok(longGoal.ok && longGoal.brief.goal === longText, '很长的目标原样保留，不设长度上限')
+    const longTask = parseSubagentBrief(undefined, longText)
+    ok(longTask.ok && longTask.brief.goal === longText, '没有 brief 时很长的任务文本整段当目标')
+    ok(!('maxGoal' in SUBAGENT_BRIEF_LIMITS) && SUBAGENT_BRIEF_LIMITS.maxBoundary === 2000 && SUBAGENT_BRIEF_LIMITS.maxItem === 500 && SUBAGENT_BRIEF_LIMITS.maxTitle === 40, '只取消目标上限，标题、边界、条目上限不变')
+    ok(!parseSubagentBrief({ boundary: 'x'.repeat(SUBAGENT_BRIEF_LIMITS.maxBoundary + 1) }, 'x').ok, '边界说明超长仍然拒掉')
 
     const prompt = briefPrompt(full.brief, '查一下这两个模块的错误处理')
     ok(prompt.startsWith('摸清两个模块的错误处理是否一致'), 'prompt 从目标开始')

@@ -43,6 +43,8 @@ export type SessionTextKey =
   | 'subagentInterject'
   | 'subagentInterjectClose'
   | 'subagentBrief'
+  | 'subagentBriefMore'
+  | 'subagentBriefLess'
   | 'subagentGone'
   | 'subagentElapsed'
   | 'compactionTitle'
@@ -330,6 +332,8 @@ const ZH: Record<SessionTextKey, string> = {
   subagentInterject: '插话',
   subagentInterjectClose: '收起',
   subagentBrief: '简报',
+  subagentBriefMore: '展开完整任务（共 {n} 字）',
+  subagentBriefLess: '收起任务',
   subagentGone: '任务已经结束，无需停止',
   subagentElapsed: '耗时',
   compactionTitle: '上下文已压缩',
@@ -618,6 +622,8 @@ const EN: Record<SessionTextKey, string> = {
   subagentInterject: 'Interject',
   subagentInterjectClose: 'Close',
   subagentBrief: 'Brief',
+  subagentBriefMore: 'Show the full task ({n} characters)',
+  subagentBriefLess: 'Collapse task',
   subagentGone: 'The task already ended; nothing to stop',
   subagentElapsed: 'Elapsed',
   compactionTitle: 'Context compacted',

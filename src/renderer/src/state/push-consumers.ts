@@ -6,6 +6,7 @@ import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } f
 import { noteTerminalAgent } from '../features/terminal/terminal-agent-activity'
 import { useTerminalJobs } from './terminal-jobs'
 import { useWorkflows } from './workflows'
+import { mergeSubagentRunPush } from '../../../shared/subagent-push'
 
 export interface PushContext {
   get(): Store
@@ -15,6 +16,7 @@ export interface PushContext {
   applyBrowserVisibility(): void
   revealBrowser(): void
   revealTerminal(owner: string, terminalId: string): void
+  resyncSubagents(): void
   t(key: MessageKey, vars?: TVars): string
 }
 
@@ -258,8 +260,12 @@ export function consumeSubagentPush(m: MainPush, s: Store, ctx: PushContext): bo
   const { set } = ctx
   switch (m.ch) {
     case 'subagent': {
-      const run = m.payload
-      const idx = s.subagents.findIndex((r) => r.id === run.id)
+      const idx = s.subagents.findIndex((r) => r.id === m.payload.id)
+      const run = mergeSubagentRunPush(idx >= 0 ? s.subagents[idx] : undefined, m.payload)
+      if (!run) {
+        ctx.resyncSubagents()
+        break
+      }
       set({
         subagents:
           idx >= 0

@@ -1032,14 +1032,8 @@ export type MessagePatch = Partial<UIMessage> & {
 export type { SubagentBrief, SubagentResult } from './subagent-brief'
 export type { SubagentReviewState, SubagentDiffSummary, SubagentUsageTotals, SubagentEndReason, SubagentStopResult, SubagentRun, SubagentQuotaWait, SubagentRecovery } from './subagent-run'
 import type { SubagentStopResult, SubagentRun } from './subagent-run'
-
-export interface SubagentPatch {
-  id: string
-  run: SubagentRun
-  transcriptFrom: number
-  textFrom?: number
-  thinkingFrom?: number
-}
+import type { SubagentPatch, SubagentRunPush } from './subagent-push'
+export type { SubagentPatch, SubagentRunPush } from './subagent-push'
 
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
@@ -1085,7 +1079,7 @@ export type MainPushBody =
   | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
   | { ch: 'artifact'; payload: { messageId: string; artifact: AssistantArtifact } }
   | { ch: 'tool'; payload: ToolPatch }
-  | { ch: 'subagent'; payload: SubagentRun }
+  | { ch: 'subagent'; payload: SubagentRunPush }
   | { ch: 'subagent-patch'; payload: SubagentPatch }
   | { ch: 'subagent-remove'; payload: string }
   | { ch: 'workflow'; payload: import('./workflows').WorkflowRunView }

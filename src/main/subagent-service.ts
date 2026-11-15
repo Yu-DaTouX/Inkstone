@@ -11,7 +11,7 @@ import type { PreservedOutputs } from './subagent-isolation'
 import { forkContextError, sideQuestionForkSource, type SubagentForkSource } from './subagent-fork'
 import { pick } from '../shared/ui-lang'
 import { normalizeSubagentId } from '../shared/subagent-id'
-import { SUBAGENT_TASK_MAX_CHARS, writtenPaths } from '../shared/subagent-brief'
+import { writtenPaths } from '../shared/subagent-brief'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { markSubagentResultRead } from './subagent-notify'
 
@@ -257,12 +257,6 @@ export class SubagentService {
           'subagent start 需要 task'
         )
       }
-      if (task.length > SUBAGENT_TASK_MAX_CHARS) {
-        throw new CapabilityCommandError(
-          'subagent_task_too_long',
-          `子代理任务不能超过 ${SUBAGENT_TASK_MAX_CHARS} 个字符`
-        )
-      }
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
       const readOnlyArgs = [params.readOnly, params['read-only']].filter((value) => value !== undefined)
       if (readOnlyArgs.some((value) => value !== true && value !== false && value !== 'true' && value !== 'false')) {
@@ -370,9 +364,6 @@ export class SubagentService {
       const message = typeof params.message === 'string' ? params.message.trim() : ''
       if (!message) {
         throw new CapabilityCommandError('subagent_message_required', 'subagent send 需要 message')
-      }
-      if (message.length > 12_000) {
-        throw new CapabilityCommandError('subagent_message_too_long', '追加信息不能超过 12000 个字符')
       }
       const rawMode = typeof params.mode === 'string' ? params.mode.trim().toLowerCase() : ''
       if (rawMode && rawMode !== 'steer' && rawMode !== 'follow-up' && rawMode !== 'followup') {

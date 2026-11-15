@@ -415,8 +415,13 @@ function flushPendingSubagentPatches(): void {
     stale = out.stale
     return out.runs === state.subagents ? state : { subagents: out.runs }
   })
-  if (stale && !subagentResync) subagentResync = useStore.getState().loadSubagents().finally(() => { subagentResync = null })
+  if (stale) resyncSubagents()
 }
+
+function resyncSubagents(): void {
+  if (!subagentResync) subagentResync = useStore.getState().loadSubagents().finally(() => { subagentResync = null })
+}
+
 const VIEW_RESYNC_GAP_MS = 3000
 let viewResyncTimer: ReturnType<typeof setTimeout> | null = null
 let viewResyncAt = 0
@@ -755,7 +760,7 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
-    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(get, false), revealTerminal: (owner: string, terminalId: string) => revealTerminalPane(get, owner, terminalId), t: uiText }
+    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(get, false), revealTerminal: (owner: string, terminalId: string) => revealTerminalPane(get, owner, terminalId), resyncSubagents, t: uiText }
     if (consumeShellPush(m, s, ctx) || consumeQuestionPush(m, s, ctx) || consumeSubagentPush(m, s, ctx) || consumeTaskStatePush(m, s, ctx)) return
 
     switch (m.ch) {

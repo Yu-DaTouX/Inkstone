@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { THINKING_LEVELS } from '../../shared/thinking-levels'
-import { SUBAGENT_TASK_MAX_CHARS } from '../../shared/subagent-brief'
 import { schemaInstruction, schemaProblem, type JsonSchema } from './schema'
 
 export interface WorkflowAgentOptions {
@@ -18,7 +17,6 @@ export interface WorkflowAgentOptions {
 }
 
 const KNOWN = new Set(['label', 'model', 'thinking', 'readOnly', 'isolation', 'timeoutMinutes', 'goal', 'deliverables', 'sources', 'boundary', 'schema'])
-export const MAX_PROMPT_CHARS = SUBAGENT_TASK_MAX_CHARS
 
 function text(value: unknown, name: string, max: number): string | undefined {
   if (value === undefined || value === null) return undefined
@@ -37,7 +35,6 @@ function list(value: unknown, name: string): string[] | undefined {
 
 export function normalizeAgentCall(prompt: unknown, raw: unknown): { prompt: string; options: WorkflowAgentOptions } {
   if (typeof prompt !== 'string' || !prompt.trim()) throw new TypeError('agent(prompt, options) 的 prompt 必须是非空字符串')
-  if (prompt.length > MAX_PROMPT_CHARS) throw new RangeError(`agent() 的 prompt 超过 ${MAX_PROMPT_CHARS} 字符`)
   if (raw !== undefined && raw !== null && (typeof raw !== 'object' || Array.isArray(raw))) throw new TypeError('agent() 的第二个参数必须是选项对象')
   const box = (raw ?? {}) as Record<string, unknown>
   const unknown = Object.keys(box).find((key) => !KNOWN.has(key))
@@ -76,8 +73,6 @@ export function normalizeAgentCall(prompt: unknown, raw: unknown): { prompt: str
     const problem = schemaProblem(box.schema)
     if (problem) throw new TypeError(`agent() 的 schema 有问题：${problem}`)
     options.schema = JSON.parse(JSON.stringify(box.schema)) as JsonSchema
-    const total = prompt.trim().length + schemaInstruction(options.schema).length
-    if (total > MAX_PROMPT_CHARS) throw new RangeError(`agent() 的 prompt 加上 schema 说明共 ${total} 字符，超过子代理任务上限 ${MAX_PROMPT_CHARS}；缩短 prompt 或 schema`)
   }
   return { prompt: prompt.trim(), options }
 }

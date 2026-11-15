@@ -24,6 +24,7 @@ import { SubagentStateIcon } from './SubagentState'
 import { SubagentReview } from './SubagentReview'
 import { SubagentComposer } from './SubagentComposer'
 import { forwardedText } from './subagent-composer'
+import { foldBrief } from './subagent-brief-fold'
 import { SUBAGENT_CARD_BOT, compactTaskPaths, subagentTitle, useSubagentView } from './SubagentLine'
 import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSubagentRow } from './subagent-actions'
 import { subagentNeighbor, subagentSessionPeers } from './subagent-list'
@@ -182,6 +183,9 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const canRetry = model.terminal && RETRYABLE.has(model.outcomeKey) && !!currentSessionId && run.parentSessionId === currentSessionId && !run.fork && !run.brief
   const canDismiss = run.status === 'error' && !isDismissed(run) && run.review !== 'pending' && run.review !== 'conflict'
   const brief = subagentBriefText(run)
+  const briefFold = useMemo(() => foldBrief(brief), [brief])
+  const [briefOpen, setBriefOpen] = useState(false)
+  const briefFolded = !!briefFold && !briefOpen
   const shown = useFullTranscript(run)
   const turns = useMemo(() => subagentTranscriptTurns(shown, approvalLog), [shown, approvalLog])
   const errorInTranscript = turns.some((turn) => turn.kind === 'assistant' && !!turn.error && !turn.errorRecovered)
@@ -336,8 +340,19 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           <article className="v3-msg user sa-pane-brief" aria-label={tt('subagentBrief')} data-testid="v3-subagent-brief">
             <div className="v3-user-body">
               <div className="v3-bubble">
-                <span className="v3-bubble-text">{brief}</span>
+                <span className="v3-bubble-text" data-folded={briefFolded || undefined} data-testid="v3-subagent-brief-text">{briefFold && !briefOpen ? `${briefFold.preview}…` : brief}</span>
               </div>
+              {briefFold ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-expanded={briefOpen}
+                  onPress={() => setBriefOpen((open) => !open)}
+                  data-testid="v3-subagent-brief-toggle"
+                >
+                  {briefOpen ? tt('subagentBriefLess') : tt('subagentBriefMore', { n: briefFold.total })}
+                </Button>
+              ) : null}
             </div>
           </article>
           <TurnScopeContext.Provider value={turnScope}>

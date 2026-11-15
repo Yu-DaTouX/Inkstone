@@ -7,11 +7,8 @@ export interface SubagentBrief {
   timeoutMinutes?: number
 }
 
-export const SUBAGENT_TASK_MAX_CHARS = 12_000
-
 export const SUBAGENT_BRIEF_LIMITS = {
   maxTitle: 40,
-  maxGoal: SUBAGENT_TASK_MAX_CHARS,
   maxBoundary: 2000,
   maxDeliverables: 8,
   maxSources: 20,
@@ -55,9 +52,6 @@ export function parseSubagentBrief(
   const goalRaw = typeof box.goal === 'string' ? box.goal.trim() : ''
   const goal = goalRaw || fallbackGoal.trim()
   if (!goal) return { ok: false, error: '任务输入缺少目标（goal），也没有可用的任务描述' }
-  if (charLength(goal) > SUBAGENT_BRIEF_LIMITS.maxGoal) {
-    return { ok: false, error: `目标超过 ${SUBAGENT_BRIEF_LIMITS.maxGoal} 字符` }
-  }
   const deliverables = listOf(box.deliverables, '交付物', SUBAGENT_BRIEF_LIMITS.maxDeliverables)
   if (!deliverables.ok) return deliverables
   const sources = listOf(box.sources, '来源', SUBAGENT_BRIEF_LIMITS.maxSources)

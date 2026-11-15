@@ -128,7 +128,7 @@ export const FAKE_TRIGGERS = {
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
   'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
   'SUBRESUME=<子代理 id>': '用 yan subagent send 续派指定子代理一条消息，再回一句，用来看续派后的归属与显示',
-  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个；含 SUBBAD 时子代理的模型请求断网；含 SUBLONG 时子代理每步多流出约 20KB 长文），再按 STORM 跑 60 步；含 THENREST 时派完只回一句话就结束本轮',
+  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个；含 SUBBAD 时子代理的模型请求断网；含 SUBLONG 时子代理每步多流出约 20KB 长文；含 SUBPAD<n> 时任务文本末尾补 n 个字符并经 --request-file 派发），再按 STORM 跑 60 步；含 THENREST 时派完只回一句话就结束本轮',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash；含 SUBLONG 时每步叙述后再流出约 20KB 长文',
   '<subagent-notification': '子代理完成回传只回一句，避免再次触发',
   WFDEMO: '用 yan workflow run 跑项目里的 wf-demo.js（场景预先放好；WFCONC<n> 改并发，默认 4），再回一句，用来看工作流运行卡',
@@ -261,7 +261,12 @@ async function respond(res, text, done, requestNo) {
       else await streamText('子任务四十步完成。', 20, 10)
     } else if (text.includes('SUBAGENTS')) {
       const count = Number(/SUBAGENTS(\d+)/.exec(text)?.[1] ?? 4)
-      if (done < 1) await callTool('bash', { command: `for i in $(seq 1 ${count}); do yan subagent start --task "${text.includes('SUBBAD') ? 'FAILNET' : 'SUBSTORM'}-sub$i ${text.includes('SUBLONG') ? 'SUBLONG ' : ''}压测子任务" --title "压测$i" --model fake/fake-model; done`, description: 'start subagents' })
+      const pad = Number(/SUBPAD(\d+)/.exec(text)?.[1] ?? 0)
+      const subTask = `${text.includes('SUBBAD') ? 'FAILNET' : 'SUBSTORM'}-sub$i ${text.includes('SUBLONG') ? 'SUBLONG ' : ''}压测子任务`
+      const startAll = pad > 0
+        ? `pad=$(head -c ${pad} /dev/zero | tr '\\0' x); for i in $(seq 1 ${count}); do printf '{"task":"%s %s","title":"压测%s","model":"fake/fake-model"}' "${subTask}" "$pad" "$i" > .subpad-$i.json; yan subagent start --request-file .subpad-$i.json; done`
+        : `for i in $(seq 1 ${count}); do yan subagent start --task "${subTask}" --title "压测$i" --model fake/fake-model; done`
+      if (done < 1) await callTool('bash', { command: startAll, description: 'start subagents' })
       else if (text.includes('THENREST')) await streamText('子代理都派出去了，等它们做完再汇总。', 20, 10)
       else if (done < 61) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
       else await streamText(longText(), 24, 8)

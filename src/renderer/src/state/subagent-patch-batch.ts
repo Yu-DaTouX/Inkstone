@@ -1,5 +1,6 @@
 import type { SubagentPatch, SubagentRun } from '../../../shared/ipc'
 import { mergeSubagentTranscript } from '../../../shared/subagent-patch'
+import { mergeSubagentRunPush } from '../../../shared/subagent-push'
 
 export class SubagentPatchBatch {
   private readonly pending = new Map<string, SubagentPatch[]>()
@@ -37,7 +38,7 @@ export function applySubagentPatches(runs: SubagentRun[], patches: ReadonlyMap<s
       transcript = merged
     }
     changed = true
-    return { ...list[list.length - 1].run, transcript }
+    return mergeSubagentRunPush(run, { ...list[list.length - 1].run, transcript }) ?? run
   })
   if (!stale && patches.size > 0) {
     const known = new Set(runs.map((run) => run.id))
