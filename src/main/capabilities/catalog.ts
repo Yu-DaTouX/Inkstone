@@ -86,6 +86,13 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan workflow --help'
   ),
   builtin(
+    'model.ask',
+    '直接调用模型',
+    '不派子代理、不带工具，直接调一次模型（翻译或改写一段给全的材料、要第二意见）；批量调用在 yan workflow 脚本里用 model()。',
+    'external-action',
+    'yan model ask --request-file req.json'
+  ),
+  builtin(
     'browser',
     '内置浏览器自动化',
     '在内置浏览器里导航 / 观察页面 / 点击 / 输入 / 截图等（含标签页、下载与接入本机 Chrome）；\n' +
