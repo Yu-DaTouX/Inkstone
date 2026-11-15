@@ -3959,6 +3959,7 @@ export class AgentController extends EventEmitter {
 
   private async cycleModelNow(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
     if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
+    if (this.shouldDeferModelSwitch()) return this.deferCycleModel(dir)
     const steps = dir === 1 ? 1 : (await this.nativeCycleLength()) - 1
     if (steps < 1) return { ok: false, error: pick('只有一个可用模型', 'Only one model is available') }
     this.loopGuardContinuationVersion += 1
@@ -3974,9 +3975,38 @@ export class AgentController extends EventEmitter {
     return { ok: true, to: landed?.name || landed?.id }
   }
 
+  private async deferCycleModel(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
+    const models = await this.listModels()
+    const scoped = this.nativeRuntime ? (await this.nativeRuntime.getScopedModels()).scopedModels : []
+    const available = new Map(models.map(model => [`${model.provider}/${model.id}`, model]))
+    const cycle = scoped.length
+      ? scoped.flatMap(item => {
+          const model = available.get(item.key)
+          return model ? [{ model, thinkingLevel: item.thinkingLevel }] : []
+        })
+      : models.map(model => ({ model, thinkingLevel: undefined as string | undefined }))
+    const index = cycle.findIndex(item => modelKeyOf(item.model) === modelKeyOf(this.state?.model))
+    if (!cycle.length || (index !== -1 && cycle.length === 1)) return { ok: false, error: pick('只有一个可用模型', 'Only one model is available') }
+    const next = cycle[index === -1 ? (dir === 1 ? 0 : cycle.length - 1) : (index + dir + cycle.length) % cycle.length]!
+    this.loopGuardContinuationVersion += 1
+    const res = await this.deferModelSwitch({ provider: next.model.provider, modelId: next.model.id, ...(next.thinkingLevel ? { thinkingLevel: next.thinkingLevel } : {}) })
+    return res.ok ? { ok: true, to: next.model.name || next.model.id } : res
+  }
+
+  private async deferCycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }> {
+    const state = this.state
+    const levels = state?.availableThinkingLevels ?? []
+    if (!state?.model?.reasoning || !levels.length) return { ok: false, error: pick('当前模型不支持思考', 'The current model does not support thinking') }
+    const next = levels[(levels.indexOf(state.thinkingLevel) + 1) % levels.length]!
+    this.loopGuardContinuationVersion += 1
+    const res = await this.deferModelSwitch({ thinkingLevel: next })
+    return res.ok ? { ok: true, to: next } : res
+  }
+
   async cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }> {
     return this.enqueueCapabilityChange(async () => {
       if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
+      if (this.shouldDeferModelSwitch()) return this.deferCycleThinking()
       const res = await this.rpc.command<{ level?: string } | null>('cycle_thinking_level')
       if (!res.success) return { ok: false, error: res.error }
       const level = res.data?.level

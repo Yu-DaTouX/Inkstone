@@ -39,6 +39,14 @@ agent.rpc = { command: async (type, payload) => {
     native.model = payload.modelId === 'a' ? a : b
   }
   if (type === 'set_thinking_level') native.thinkingLevel = payload.level
+  if (type === 'cycle_model') {
+    native.model = native.model.id === 'a' ? b : a
+    return { success: true, data: { model: native.model, thinkingLevel: native.thinkingLevel } }
+  }
+  if (type === 'cycle_thinking_level') {
+    native.thinkingLevel = levels[(levels.indexOf(native.thinkingLevel) + 1) % levels.length]
+    return { success: true, data: { level: native.thinkingLevel } }
+  }
   if (type === 'prompt') prompts.push(payload)
   const data = type === 'get_state' ? { ...native }
     : type === 'get_available_thinking_levels' ? { levels }
@@ -94,6 +102,21 @@ await agent.applyDeferredModelSwitch()
 check('下一条消息发送前应用待切换项', native.model.id === 'b' && !agent.getState().pendingModelChange && await readPending('one') === null)
 await agent.setThinking('medium')
 check('空闲时切换直接生效，不显示等待', agent.getState().thinkingLevel === 'medium' && !agent.getState().pendingModelChange)
+const idleCycle = await agent.cycleModel()
+check('空闲时快捷键切模型直接生效', idleCycle.ok && native.model.id === 'a' && !agent.getState().pendingModelChange)
+await agent.cycleModelBack()
+agent.agentRunning = true
+const cycled = await agent.cycleModel()
+check('运行中快捷键切模型延后生效', cycled.ok && cycled.to === 'Model A' && native.model.id === 'b' && agent.getState().model?.id === 'a' && agent.getState().pendingModelChange?.previousModel?.id === 'b')
+check('快捷键延后的模型写给扩展', (await readPending('one'))?.id === 'a')
+const thought = await agent.cycleThinking()
+check('运行中快捷键切思考档延后生效', thought.ok && thought.to === 'high' && native.thinkingLevel === 'medium' && agent.getState().thinkingLevel === 'high')
+check('快捷键延后的档位与模型一起写给扩展', (await readPending('one'))?.id === 'a' && (await readPending('one'))?.thinkingLevel === 'high')
+const cycledBack = await agent.cycleModelBack()
+check('快捷键从待生效目标继续循环', cycledBack.ok && cycledBack.to === 'Model B' && native.model.id === 'b' && agent.getState().model?.id === 'b' && !(await readPending('one'))?.id)
+for (let i = 0; i < 4; i += 1) await agent.cycleThinking()
+check('快捷键循环回原档位后取消待切换', native.thinkingLevel === 'medium' && agent.getState().thinkingLevel === 'medium' && !agent.getState().pendingModelChange && await readPending('one') === null)
+agent.agentRunning = false
 agent.agentRunning = true
 await agent.setModel('fixture', 'a')
 agent.agentRunning = false
