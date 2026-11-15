@@ -30,15 +30,29 @@ export function isBroadTarget(raw) {
   return false
 }
 
-const SEGMENT_SPLIT = /&&|\|\||[;&|\n]/
-
 function heredocDelimiter(text, at) {
   const match = /^<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1/.exec(text.slice(at))
   return match ? { tag: match[2], length: match[0].length, quoted: match[1] !== '' } : null
 }
 
-export function splitSegments(command) {
+function endsWindowsPath(current, next) {
+  if (!/[;&|]/.test(next ?? '')) return false
+  const word = (/\S*$/.exec(current)?.[0] ?? '').replace(/^["']/, '')
+  return /^[a-z]:/i.test(word) || word.includes('\\')
+}
+
+function dialectOf(head) {
+  if (head === 'powershell' || head === 'pwsh') return 'powershell'
+  return head === 'cmd' ? 'cmd' : 'posix'
+}
+
+function toolDialect(toolName) {
+  return String(toolName ?? '') === 'powershell' ? 'powershell' : 'posix'
+}
+
+export function splitSegments(command, dialect = 'posix') {
   const text = String(command ?? '')
+  const escapes = dialect === 'posix'
   const parts = []
   let current = ''
   let quote = null
@@ -48,7 +62,7 @@ export function splitSegments(command) {
     const ch = text[i]
     if (quote) {
       current += ch
-      if (ch === '\\' && quote === '"' && i + 1 < text.length) current += text[++i]
+      if (escapes && ch === '\\' && quote === '"' && i + 1 < text.length) current += text[++i]
       else if (ch === quote) quote = null
       continue
     }
@@ -63,7 +77,7 @@ export function splitSegments(command) {
       flush('\n')
       continue
     }
-    if (ch === '\\' && i + 1 < text.length) { current += ch + text[++i]; continue }
+    if (escapes && ch === '\\' && i + 1 < text.length && !endsWindowsPath(current, text[i + 1])) { current += ch + text[++i]; continue }
     if (ch === "'" || ch === '"') { quote = ch; current += ch; continue }
     if (ch === '$' && text[i + 1] === '(') {
       const end = closingParen(text, i + 1)
@@ -216,11 +230,70 @@ function driveRootTarget(raw) {
   return /^[a-z]:[\\/]?$/i.test(text) ? `${text.slice(0, 2)}/` : raw
 }
 
+const PS_PATH_COLON = /^-(?:path|literalpath|lp|pspath):(.+)$/i
+
+function recursiveDeleteArgs(cmd) {
+  const cmdFlag = cmd.head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
+  return cmd.args.flatMap((a) => {
+    const colon = PS_PATH_COLON.exec(a)
+    if (colon) return [colon[1]]
+    return !cmdFlag.test(a) && !/^-{1,2}\w/.test(a) ? [a] : []
+  }).map(driveRootTarget)
+}
+
+function riskyDeleteTarget(targets, cwd, base, filtered = false) {
+  return targets.find((target) => (!filtered && isBroadTarget(target) && !deletesInsideAllowedFolder(target, cwd, base)) || deletesOutsideProject(target, cwd, base)) ?? null
+}
+
 function recursiveDeleteTarget(cmd, cwd, base = cwd) {
   if (!isRecursiveDelete(cmd)) return null
-  const cmdFlag = cmd.head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
-  const targets = cmd.args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a)).map(driveRootTarget)
-  return targets.find((target) => (isBroadTarget(target) && !deletesInsideAllowedFolder(target, cwd, base)) || deletesOutsideProject(target, cwd, base)) ?? null
+  return riskyDeleteTarget(recursiveDeleteArgs(cmd), cwd, base)
+}
+
+const LISTING_CHILDREN = new Set(['get-childitem', 'gci', 'ls', 'dir'])
+const LISTING_SELF = new Set(['get-item', 'gi'])
+const LISTING_FILTERS = new Set(['-filter', '-include', '-exclude'])
+const LISTING_PATHS = new Set(['-path', '-literalpath', '-lp'])
+const LISTING_VALUED = new Set(['-depth', '-attributes', '-stream', '-credential'])
+
+function pipedSegments(command) {
+  const pieces = String(command).split(/(&&|\|\||[;&|\n])/)
+  const out = []
+  for (let i = 0; i < pieces.length; i += 2) out.push({ text: pieces[i], upstream: pieces[i - 1] === '|' ? pieces[i - 2] : null })
+  return out
+}
+
+function listingTargets(text) {
+  const { head, args } = deleteCommand(text)
+  const children = LISTING_CHILDREN.has(head)
+  if (!children && !LISTING_SELF.has(head)) return null
+  const targets = []
+  let filtered = false
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    const colon = /^(-[a-z]+):(.*)$/i.exec(arg)
+    const name = (colon ? colon[1] : arg).toLowerCase()
+    if (LISTING_FILTERS.has(name)) { filtered = true; if (!colon) i += 1; continue }
+    if (LISTING_PATHS.has(name)) {
+      const value = colon ? colon[2] : args[++i]
+      if (value !== undefined) targets.push(...value.split(',').filter(Boolean))
+      continue
+    }
+    if (LISTING_VALUED.has(name)) { if (!colon) i += 1; continue }
+    if (/^\d?[<>]/.test(arg) || /^-/.test(arg)) continue
+    targets.push(...arg.split(',').filter(Boolean))
+  }
+  const list = targets.length ? targets : ['.']
+  return { targets: list, children, filtered: filtered || list.some((target) => /[*?]/.test(target)) }
+}
+
+function pipedDeleteReason(cmd, upstream, cwd, base) {
+  if (upstream === null || cmd.stdinArgs || !DELETE_HEADS.has(cmd.head) || !isRecursiveDelete(cmd) || recursiveDeleteArgs(cmd).length) return null
+  const listing = listingTargets(upstream)
+  if (!listing) return '递归删除的目标来自管道输入，砚无法判断范围'
+  const hit = riskyDeleteTarget(listing.targets.map(driveRootTarget), cwd, base, listing.filtered)
+  if (!hit) return null
+  return isBroadTarget(hit) ? `递归删除大范围目录：${hit}` : `递归删除项目之外的目录：${hit}`
 }
 
 const POWER_COMMANDS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'stop-computer', 'restart-computer'])
@@ -277,11 +350,13 @@ function shellBody(segment) {
   return POSIX_SHELLS.has(head) ? posixBody(rest, text) : ''
 }
 
-const GIT_PREFIX = String.raw`\bgit\s+(?:(?:-C|-c|--git-dir|--work-tree|--namespace)(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)\s+|-\S+\s+)*`
+const NETWORK_EXEC = '把网络内容直接交给 shell 执行'
+const GIT_PREFIX = String.raw`\bgit(?:\.exe|\.cmd)?["']?\s+(?:(?:-C|-c|--git-dir|--work-tree|--namespace)(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)\s+|-\S+\s+)*`
 const gitRule = (rest) => new RegExp(GIT_PREFIX + rest, 'i')
 
 const COMMAND_RULES = [
-  { re: gitRule(String.raw`push\b[^;&|\n]*\s(?:--force(?!-with-lease)\b|-f\b|--mirror\b)`), label: 'Git 强制推送，会覆盖远端历史' },
+  { re: gitRule(String.raw`push\b[^;&|\n]*\s(?:--force\b|-[a-z]*f[a-z]*\b|--mirror\b|["']?\+[^\s"']+)`), label: 'Git 强制推送，会覆盖远端历史' },
+  { re: gitRule(String.raw`push\b[^;&|\n]*\s(?:--delete\b|-[a-z]*d[a-z]*\b|--prune\b|["']?:[^\s"']+)`), label: 'Git 删除远端分支或标签' },
   { re: gitRule(String.raw`reset\b[^;&|\n]*--hard\b`), label: 'git reset --hard，会丢弃未提交的改动' },
   { re: gitRule(String.raw`clean\b[^;&|\n]*\s(?:-[a-z]*f|--force\b)`), label: 'git clean -f，会永久删除未跟踪的文件' },
   { re: gitRule(String.raw`checkout\b[^;&|\n]*(?:\s--\s+\.|\s\.)(?:\s|$)`), label: '还原整个工作区，会丢弃未提交的改动' },
@@ -289,7 +364,12 @@ const COMMAND_RULES = [
   { re: gitRule(String.raw`stash\s+(?:clear|drop)\b`), label: '删除 Git stash 里暂存的改动' },
   { re: /\b(?:drop\s+(?:database|schema|table)|truncate\s+table)\b/i, label: '删除数据库或数据表' },
   { re: /\b(?:mkfs(?:\.\w+)?|diskpart|fdisk|shred|format-volume|clear-disk|initialize-disk|remove-partition)\b|\bdd\s+[^;&|\n]*\bof=\/dev\/|\bformat\s+[a-z]:/i, label: '格式化或直接写磁盘' },
-  { re: /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(?:sudo\s+)?(?:\S*[\\/])?(?:sh|bash|zsh|iex|invoke-expression|powershell|pwsh)\b/i, label: '把网络内容直接交给 shell 执行' },
+  { re: /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(?:sudo\s+)?(?:\S*[\\/])?(?:sh|bash|zsh|iex|invoke-expression|powershell|pwsh)\b/i, label: NETWORK_EXEC },
+  { re: /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(?:sudo\s+)?(?:\S*[\\/])?(?:python[\d.]*|node|perl|ruby|php)(?:\.exe)?(?:\s+-)?\s*(?:$|[;&|)\n])/i, label: NETWORK_EXEC },
+  { re: /(?:\b(?:iex|invoke-expression)\b|\[scriptblock\]::create\b)[^\n]*(?:\b(?:iwr|irm|curl|wget|invoke-webrequest|invoke-restmethod)\b|\.download(?:string|data)\b|net\.webclient\b)/i, label: NETWORK_EXEC },
+  { re: /(?:\b(?:sh|bash|zsh|dash|ksh|source)|(?:^|[\s;&|(])\.)\s+(?:-\S+\s+)*<\(\s*(?:sudo\s+)?(?:curl|wget)\b/i, label: NETWORK_EXEC },
+  { re: /\b(?:sh|bash|zsh|dash|ksh)(?:\.exe)?\s+(?:-\S+\s+)*-[a-z]*c\s+["']?(?:\$\(|`)\s*(?:sudo\s+)?(?:curl|wget)\b/i, label: NETWORK_EXEC },
+  { re: /\beval\s+["']?(?:\$\(|`)\s*(?:curl|wget)\b/i, label: NETWORK_EXEC },
   { re: /\bchmod\s+-R\b[^;&|\n]*\s\/(?:\s|$)|\bchown\s+-R\b[^;&|\n]*\s\/(?:\s|$)/i, label: '递归修改根目录的权限或属主' },
   { re: /\breg(?:\.exe)?\s+delete\b/i, label: '删除注册表项' },
   { re: /\bnpm\s+publish\b/i, label: '发布 npm 包（对外发布）' }
@@ -310,6 +390,19 @@ function normalizePath(p) {
   const drive = match?.[1] ?? ''
   const rest = match?.[2] ?? ''
   return drive + (rest ? posix.normalize(rest) : '')
+}
+
+function windowsAliases(p) {
+  if (process.platform !== 'win32') return [p]
+  const trimmed = p.split('/').map((s) => (/[^. ]/.test(s) ? s.replace(/[. ]+$/, '') : s)).join('/')
+  return trimmed === p ? [p] : [p, trimmed]
+}
+
+function sensitiveOutside(normalized, cwd) {
+  const root = canonicalRoot(cwd || process.cwd())
+  if (normalized === root || normalized.startsWith(`${root}/`)) return false
+  const home = normalizePath(homedir()).replace(/\/$/, '')
+  return windowsAliases(normalized).some((p) => SENSITIVE_PATH.test(p) || (p.startsWith(`${home}/`) && SENSITIVE_PATH.test(p.slice(home.length))))
 }
 
 function physicalPath(normalized) {
@@ -358,29 +451,31 @@ function isAbsolutePath(p) {
   return /^(?:[a-z]:)?[\\/]/i.test(p) || /^[a-z]:/i.test(p)
 }
 
-function scanCommand(command, reasons, depth = 0, cwd = '', base = cwd) {
+function scanCommand(command, reasons, depth = 0, cwd = '', base = cwd, dialect = 'posix') {
   if (depth < MAX_SHELL_DEPTH) {
-    for (const inner of substitutions(command)) scanCommand(inner, reasons, depth + 1, cwd, base)
+    for (const inner of substitutions(command)) scanCommand(inner, reasons, depth + 1, cwd, base, dialect)
   }
-  for (const segment of command.split(SEGMENT_SPLIT)) {
+  for (const { text: segment, upstream } of pipedSegments(command)) {
     const cmd = commandOf(segment)
     const hit = recursiveDeleteTarget(cmd, cwd, base)
     if (hit) reasons.push(isBroadTarget(hit) ? `递归删除大范围目录：${hit}` : `递归删除项目之外的目录：${hit}`)
     if (cmd.stdinArgs && isRecursiveDelete(cmd)) reasons.push('递归删除的目标来自管道输入，砚无法判断范围')
+    const piped = pipedDeleteReason(cmd, upstream, cwd, base)
+    if (piped) reasons.push(piped)
     if (POWER_COMMANDS.has(cmd.head)) reasons.push('关机或重启')
     const encoded = encodedPowerShell(cmd)
     if (encoded === '') reasons.push('PowerShell 编码命令无法解读，砚无法检查其中的操作')
     else if (encoded !== null) {
       const inner = []
-      if (depth < MAX_SHELL_DEPTH) scanCommand(encoded, inner, depth + 1, cwd, base)
+      if (depth < MAX_SHELL_DEPTH) scanCommand(encoded, inner, depth + 1, cwd, base, 'powershell')
       else inner.push('命令嵌套层数过多，砚无法检查最内层的操作')
       if (inner.length) reasons.push(...inner, `PowerShell 编码命令，解码后为：${encoded.slice(0, 300)}`)
     }
     const wrapped = shellBody(segment)
-    if (wrapped && depth < MAX_SHELL_DEPTH) scanCommand(unwrapShellBody(wrapped), reasons, depth + 1, cwd, base)
+    if (wrapped && depth < MAX_SHELL_DEPTH) scanCommand(unwrapShellBody(wrapped), reasons, depth + 1, cwd, base, dialectOf(cmd.head))
     else if (wrapped) reasons.push('命令嵌套层数过多，砚无法检查最内层的操作')
   }
-  const ruleSource = ruleText(command)
+  const ruleSource = ruleText(command, dialect)
   for (const rule of COMMAND_RULES) if (rule.re.test(ruleSource)) reasons.push(rule.label)
 }
 
@@ -434,6 +529,8 @@ function deleteTargets({ head, args }) {
     const out = []
     for (let i = 0; i < plain.length; i++) {
       const lower = plain[i].toLowerCase()
+      const colon = PS_PATH_COLON.exec(plain[i])
+      if (colon) { out.push(colon[1]); continue }
       if (PS_DELETE_PATH.has(lower)) { if (plain[i + 1] !== undefined) out.push(plain[++i]); continue }
       if (PS_DELETE_VALUED.has(lower)) { i += 1; continue }
       if (/^-/.test(plain[i])) continue
@@ -443,9 +540,12 @@ function deleteTargets({ head, args }) {
   }
   const flag = head === 'rm' ? /^-/ : /^(?:-|\/[a-z]$)/i
   let rest = false
-  return plain.filter((arg) => {
-    if (arg === '--') { rest = true; return false }
-    return rest || !flag.test(arg)
+  return plain.flatMap((arg) => {
+    if (arg === '--') { rest = true; return [] }
+    if (rest) return [arg]
+    const colon = PS_PATH_COLON.exec(arg)
+    if (colon) return [colon[1]]
+    return flag.test(arg) ? [] : [arg]
   })
 }
 
@@ -535,7 +635,7 @@ function absoluteFrom(folder, base) {
 function comparable(path) {
   const normalized = normalizePath(path)
   const physical = physicalPath(normalized)
-  return [...new Set([normalized, physical].map((p) => (p.length > 1 && !/^[a-z]:\/$/.test(p) ? p.replace(/\/+$/, '') : p)))]
+  return [...new Set([normalized, physical].flatMap(windowsAliases).map((p) => (p.length > 1 && !/^[a-z]:\/$/.test(p) ? p.replace(/\/+$/, '') : p)))]
 }
 
 function ancestorOrEqual(parent, child) {
@@ -597,17 +697,25 @@ function criticalTarget(raw, { base, cwd, vars, recursive, head }) {
   return null
 }
 
-function scanCritical(command, reasons, depth, cwd, start) {
+function pipedCriticalTargets(cmd, targets, upstream, recursive) {
+  if (upstream === null || cmd.stdinArgs || !recursive || targets.length) return []
+  const listing = listingTargets(upstream)
+  if (!listing || listing.filtered) return []
+  return listing.targets.map((target) => (listing.children ? `${target.replace(/[\\/]+$/, '')}/*` : target))
+}
+
+function scanCritical(command, reasons, depth, cwd, start, dialect = 'posix') {
   if (depth < MAX_SHELL_DEPTH) {
-    for (const inner of substitutions(command)) scanCritical(inner, reasons, depth + 1, cwd, start)
+    for (const inner of substitutions(command)) scanCritical(inner, reasons, depth + 1, cwd, start, dialect)
   }
   const vars = assignedVariables(command)
   let base = start
-  for (const segment of command.split(SEGMENT_SPLIT)) {
+  for (const { text: segment, upstream } of pipedSegments(command)) {
     const cmd = deleteCommand(segment)
     if (DELETE_HEADS.has(cmd.head)) {
       const recursive = isRecursiveDelete(cmd)
-      for (const raw of deleteTargets(cmd)) {
+      const targets = deleteTargets(cmd)
+      for (const raw of [...targets, ...pipedCriticalTargets(cmd, targets, upstream, recursive)]) {
         const hit = criticalTarget(raw, { base, cwd, vars, recursive, head: cmd.head })
         if (hit) reasons.push(hit)
       }
@@ -617,15 +725,15 @@ function scanCritical(command, reasons, depth, cwd, start) {
     const encoded = encodedPowerShell(plain)
     if (encoded === '') reasons.push('PowerShell 编码命令无法解读，无法排除删除关键位置')
     else if (encoded !== null) {
-      if (depth < MAX_SHELL_DEPTH) scanCritical(encoded, reasons, depth + 1, cwd, base)
+      if (depth < MAX_SHELL_DEPTH) scanCritical(encoded, reasons, depth + 1, cwd, base, 'powershell')
       else reasons.push(CRITICAL_TOO_DEEP)
     }
     const wrapped = shellBody(segment)
-    if (wrapped && depth < MAX_SHELL_DEPTH) scanCritical(unwrapShellBody(wrapped), reasons, depth + 1, cwd, base)
+    if (wrapped && depth < MAX_SHELL_DEPTH) scanCritical(unwrapShellBody(wrapped), reasons, depth + 1, cwd, base, dialectOf(plain.head))
     else if (wrapped) reasons.push(CRITICAL_TOO_DEEP)
     if (LOCATION_COMMANDS.has(plain.head)) base = nextLocation(plain, base)
   }
-  if (DISK_WIPE.test(ruleText(command))) reasons.push('格式化或擦除磁盘')
+  if (DISK_WIPE.test(ruleText(command, dialect))) reasons.push('格式化或擦除磁盘')
 }
 
 const CREDENTIAL_REASON = '访问 pi 与砚保存的模型凭据：'
@@ -645,7 +753,7 @@ export function credentialAccess(toolName, input, cwd) {
   }
   if (name !== 'read') return []
   const raw = fileToolPath(input?.path ?? input?.file_path ?? input?.filePath)
-  return typeof raw === 'string' && raw.trim() && resolveTarget(raw, cwd) === file ? [`${CREDENTIAL_REASON}${file}`] : []
+  return typeof raw === 'string' && raw.trim() && windowsAliases(resolveTarget(raw, cwd)).includes(file) ? [`${CREDENTIAL_REASON}${file}`] : []
 }
 
 export function criticalDanger(toolName, input, cwd, options = {}) {
@@ -656,7 +764,7 @@ export function criticalDanger(toolName, input, cwd, options = {}) {
   if (!command.trim() || hostScansTerminalInput(command)) return []
   const root = cwd || process.cwd()
   const reasons = []
-  scanCritical(command, reasons, 0, root, options.base === undefined ? canonicalRoot(root) : options.base)
+  scanCritical(command, reasons, 0, root, options.base === undefined ? canonicalRoot(root) : options.base, toolDialect(name))
   return [...new Set([...reasons, ...secrets])]
 }
 
@@ -674,8 +782,8 @@ function searchesText({ head, args }) {
   return head === 'git' && args.find((arg) => !/^-/.test(arg)) === 'grep'
 }
 
-export function ruleText(command) {
-  return splitSegments(command).map(({ text, sep }) => (searchesText(commandOf(text.replace(/^\s*[({]+/, ''))) ? '' : text) + sep).join('')
+export function ruleText(command, dialect = 'posix') {
+  return splitSegments(command, dialect).map(({ text, sep }) => (searchesText(commandOf(text.replace(/^\s*[({]+/, ''))) ? '' : text) + sep).join('')
 }
 
 export function hostScansTerminalInput(command) {
@@ -690,9 +798,11 @@ export function detectDanger(toolName, input, cwd, options = {}) {
   const name = String(toolName ?? '')
   if (name === 'bash' || name === 'powershell') {
     const command = String(input?.command ?? '')
-    if (!hostScansTerminalInput(command)) scanCommand(command, reasons, 0, cwd, options.base === undefined ? cwd : options.base)
-    for (const { target } of shellWrites(command, cwd, 0, options.base === undefined ? undefined : { base: options.base, vars: new Map() })) {
+    const dialect = toolDialect(name)
+    if (!hostScansTerminalInput(command)) scanCommand(command, reasons, 0, cwd, options.base === undefined ? cwd : options.base, dialect)
+    for (const { target } of shellWrites(command, cwd, 0, options.base === undefined ? undefined : { base: options.base, vars: new Map() }, dialect)) {
       if (touchesHostConfig(target, cwd)) reasons.push(`${HOST_CONFIG_REASON}${target}`)
+      if (target && sensitiveOutside(target, cwd)) reasons.push(`修改项目之外的系统或凭证文件：${target}`)
     }
     if (/\bsudo\b/i.test(command) && reasons.length === 0 && /\brm\b/i.test(command)) reasons.push('以管理员身份删除文件')
   } else if (FILE_TOOLS.has(name)) {
@@ -701,14 +811,8 @@ export function detectDanger(toolName, input, cwd, options = {}) {
       const base = cwd || process.cwd()
       const abs = isAbsolutePath(raw) ? raw : `${String(base).replace(/[\\/]+$/, '')}/${raw}`
       const normalized = physicalPath(normalizePath(abs))
-      const root = physicalPath(normalizePath(base)).replace(/\/$/, '')
-      const inside = normalized === root || normalized.startsWith(`${root}/`)
       if (touchesHostConfig(normalized, base)) reasons.push(`${HOST_CONFIG_REASON}${normalized}`)
-      const home = normalizePath(homedir()).replace(/\/$/, '')
-      const shown = normalized.startsWith(`${home}/`) ? `~${normalized.slice(home.length)}` : normalized
-      if (!inside && (SENSITIVE_PATH.test(normalized) || SENSITIVE_PATH.test(shown.replace(/^~/, '')))) {
-        reasons.push(`修改项目之外的系统或凭证文件：${abs}`)
-      }
+      if (sensitiveOutside(normalized, base)) reasons.push(`修改项目之外的系统或凭证文件：${abs}`)
     }
   }
   reasons.push(...credentialAccess(name, input, cwd))
@@ -753,7 +857,7 @@ const WRITE_COMMANDS_ALL_ARGS = new Set([
   'rm', 'rmdir', 'del', 'erase', 'rd', 'mkdir', 'md', 'touch', 'chmod', 'chown', 'mv', 'move', 'ren', 'rename',
   'remove-item', 'ri', 'new-item', 'ni', 'move-item', 'mi', 'rename-item', 'rni', 'set-content', 'sc', 'add-content', 'ac', 'out-file', 'clear-content'
 ])
-const WRITE_COMMANDS_LAST_ARG = new Set(['cp', 'copy', 'xcopy', 'robocopy', 'ln', 'install', 'copy-item', 'ci', 'cpi'])
+const WRITE_COMMANDS_LAST_ARG = new Set(['cp', 'copy', 'xcopy', 'robocopy', 'ln', 'install', 'copy-item', 'ci', 'cpi', 'rsync', 'scp'])
 const PS_PATH_FLAGS = new Set(['-path', '-literalpath', '-filepath', '-destination', '-name'])
 const PS_VALUE_AFTER_PATH = new Set(['set-content', 'sc', 'add-content', 'ac', 'out-file'])
 
@@ -800,7 +904,7 @@ function hostConfigAreas() {
 function touchesHostConfig(target, cwd) {
   if (!target) return false
   const { roots, outputs } = hostConfigAreas()
-  if (!isInside(target, roots) || isInside(target, outputs)) return false
+  if (!windowsAliases(target).some((t) => isInside(t, roots) && !isInside(t, outputs))) return false
   return !isInside(canonicalRoot(cwd || process.cwd()), roots)
 }
 
@@ -847,21 +951,87 @@ function nextLocation({ head, args }, base) {
   return resolveTarget(cleaned, base ?? '')
 }
 
+function psColonValues(args, names) {
+  return args.flatMap((arg) => {
+    const colon = /^(-[a-z]+):(.+)$/i.exec(arg)
+    return colon && names.includes(colon[1].toLowerCase()) ? [colon[2]] : []
+  })
+}
+
+function psFlagValues(args, names) {
+  return [...flagValues(args, names, { ignoreCase: true }), ...psColonValues(args, names)]
+}
+
+function withoutRedirects(args) {
+  const out = []
+  for (let i = 0; i < args.length; i++) {
+    if (/^\d?(?:>{1,2}|<)&?$/.test(args[i])) { i += 1; continue }
+    if (/^\d?[<>]/.test(args[i])) continue
+    out.push(args[i])
+  }
+  return out
+}
+
+function inPlaceTargets(head, raw) {
+  const args = withoutRedirects(raw)
+  const cluster = head === 'sed' ? /^-[nrEsuz]*i/ : /^-[anpslwWTtUuXv]*i/
+  const inPlace = args.some((arg) => (head === 'sed' && /^--in-place(?:=|$)/.test(arg)) || cluster.test(arg))
+  if (!inPlace) return []
+  const files = []
+  let script = false
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === '--') { files.push(...args.slice(i + 1)); break }
+    if (/^--(?:expression|file)=/.test(arg)) { script = true; continue }
+    if (['--expression', '--file', '--line-length'].includes(arg)) { script ||= arg !== '--line-length'; i += 1; continue }
+    if (/^-[a-zA-Z]/.test(arg)) {
+      const letters = arg.slice(1).split('i')[0]
+      const takesScript = head === 'sed' ? /^[a-zA-Z]*[ef]$/.test(letters) : /[eE]$/.test(letters)
+      if (takesScript && !arg.slice(1).includes('i')) { script = true; i += 1 }
+      else if (head === 'sed' && /^[a-zA-Z]*l$/.test(letters) && !arg.slice(1).includes('i')) i += 1
+      continue
+    }
+    if (/^-/.test(arg)) continue
+    files.push(arg)
+  }
+  return script ? files : files.slice(1)
+}
+
 function toolWriteTargets(head, args) {
+  if (head === 'sed' || head === 'perl') return inPlaceTargets(head, args)
+  if (head === 'dd') return args.filter((arg) => /^of=./i.test(arg)).map((arg) => arg.slice(3))
+  if (head === 'truncate') {
+    const files = []
+    for (let i = 0; i < args.length; i++) {
+      if (['-s', '--size', '-r', '--reference'].includes(args[i])) { i += 1; continue }
+      if (!/^-/.test(args[i]) && !/^\d?[<>]/.test(args[i])) files.push(args[i])
+    }
+    return files
+  }
+  if (['7z', '7za', '7zr'].includes(head)) {
+    const verb = String(args[0] ?? '').toLowerCase()
+    const outputs = args.filter((arg) => /^-o./i.test(arg)).map((arg) => arg.slice(2))
+    if (['a', 'u', 'd', 'rn'].includes(verb)) return [args.slice(1).find((arg) => !/^-/.test(arg)), ...outputs].filter(Boolean)
+    if (['x', 'e'].includes(verb)) return outputs.length ? outputs : ['.']
+    return outputs
+  }
   if (head === 'curl') {
     const bundled = args.flatMap((arg, index) => (/^-[a-zA-Z]+o$/.test(arg) && args[index + 1] !== undefined ? [args[index + 1]] : []))
-    const files = [...flagValues(args, ['-o', '--output']), ...bundled]
+    const attached = args.flatMap((arg) => (/^-o./.test(arg) ? [arg.slice(2)] : []))
+    const files = [...flagValues(args, ['-o', '--output']), ...bundled, ...attached]
     const dirs = flagValues(args, ['--output-dir'])
     const remoteName = args.some((arg) => arg === '--remote-name' || arg === '--remote-name-all' || /^-[a-zA-Z]*O[a-zA-Z]*$/.test(arg))
     return [...files, ...dirs, ...(remoteName && !dirs.length ? ['.'] : [])]
   }
   if (head === 'wget') {
-    const files = flagValues(args, ['-O', '--output-document'])
+    const bundled = args.flatMap((arg, index) => (/^-[a-zA-Z]+O$/.test(arg) && args[index + 1] !== undefined ? [args[index + 1]] : []))
+    const attached = args.flatMap((arg) => (/^-O./.test(arg) ? [arg.slice(2)] : []))
+    const files = [...flagValues(args, ['-O', '--output-document']), ...bundled, ...attached]
     const dirs = flagValues(args, ['-P', '--directory-prefix'])
     return files.length || dirs.length ? [...files, ...dirs] : ['.']
   }
   if (['iwr', 'invoke-webrequest', 'irm', 'invoke-restmethod'].includes(head)) {
-    return flagValues(args, ['-outfile'], { ignoreCase: true })
+    return psFlagValues(args, ['-o', '-ou', '-out', '-outf', '-outfi', '-outfil', '-outfile'])
   }
   if (head === 'git') {
     const at = args.findIndex((arg) => arg === 'clone')
@@ -876,15 +1046,24 @@ function toolWriteTargets(head, args) {
   if (head === 'tar') {
     const dirs = flagValues(args, ['-C', '--directory'])
     const extract = /^[a-wyzA-Z]*x[a-zA-Z]*$/.test(args[0] ?? '') || args.some((arg) => arg === '--extract' || arg === '--get' || /^-[a-zA-Z]*x[a-zA-Z]*$/.test(arg))
-    return dirs.length ? dirs : extract ? ['.'] : []
+    const bundles = args.flatMap((arg, index) => (/^-[a-zA-Z]+$/.test(arg) || (index === 0 && /^[a-zA-Z]+$/.test(arg)) ? [{ letters: arg.replace(/^-/, ''), index }] : []))
+    const creates = bundles.some(({ letters }) => /[cru]/.test(letters)) || args.some((arg) => ['--create', '--append', '--update', '--concatenate'].includes(arg))
+    const archives = creates
+      ? [...flagValues(args, ['--file']), ...bundles.filter(({ letters }) => letters.includes('f')).flatMap(({ index }) => (args[index + 1] !== undefined ? [args[index + 1]] : []))]
+      : []
+    return [...(dirs.length ? dirs : extract ? ['.'] : []), ...archives]
   }
   if (head === 'unzip') {
     const dirs = flagValues(args, ['-d'])
     return dirs.length ? dirs : ['.']
   }
   if (head === 'expand-archive') {
-    const dirs = flagValues(args, ['-destinationpath'], { ignoreCase: true })
-    return dirs.length ? dirs : ['.']
+    const dirs = psFlagValues(args, ['-destinationpath'])
+    if (dirs.length) return dirs
+    const plain = withoutRedirects(args)
+    const named = plain.some((arg) => /^-(?:path|literalpath)(?::|$)/i.test(arg))
+    const positional = plain.filter((arg, index) => !/^-/.test(arg) && !/^-(?:path|literalpath)$/i.test(plain[index - 1] ?? ''))
+    return [positional[named ? 0 : 1] ?? '.']
   }
   return []
 }
@@ -916,13 +1095,12 @@ function segmentWriteTargets(segment, { head, args }) {
   const positional = args.filter((a) => !/^-/.test(a) && !/^\d?>/.test(a))
   if (head === 'tee') out.push(...positional)
   else if (WRITE_COMMANDS_ALL_ARGS.has(head)) {
-    const flagged = []
-    args.forEach((a, i) => { if (PS_PATH_FLAGS.has(a.toLowerCase()) && args[i + 1]) flagged.push(args[i + 1]) })
-    out.push(...(flagged.length ? flagged : PS_VALUE_AFTER_PATH.has(head) ? positional.slice(0, 1) : positional))
+    const flagged = flagValues(args, [...PS_PATH_FLAGS], { ignoreCase: true }).filter(Boolean)
+    out.push(...(flagged.length ? flagged : PS_VALUE_AFTER_PATH.has(head) ? positional.slice(0, 1) : positional), ...psColonValues(args, [...PS_PATH_FLAGS]))
   } else if (WRITE_COMMANDS_LAST_ARG.has(head)) {
-    const flagged = []
-    args.forEach((a, i) => { if (['-destination', '-path'].includes(a.toLowerCase()) && args[i + 1]) flagged.push(args[i + 1]) })
-    out.push(...(flagged.length ? flagged : positional.slice(-1)))
+    const flagged = flagValues(args, ['-destination', '-path'], { ignoreCase: true }).filter(Boolean)
+    const destination = flagValues(args, ['-destination'], { ignoreCase: true }).length > 0
+    out.push(...(flagged.length ? flagged : positional.slice(-1)), ...psColonValues(args, ['-destination', '-path']), ...flagValues(args, ['-t', '--target-directory']), ...(destination ? [] : positional.slice(-1)))
   }
   out.push(...toolWriteTargets(head, args))
   return out
@@ -1072,28 +1250,36 @@ function nestedScript(segment, cmd) {
   return wrapped ? unwrapShellBody(wrapped) : ''
 }
 
-export function shellWrites(command, cwd, depth = 0, scope) {
+function bothStreamsTarget(part, next) {
+  if (part.sep !== '&' || !/(?<![<>&\d])\d?>\s*$/.test(part.text)) return null
+  const word = tokens(next?.text ?? '')[0]
+  return word && !/^(?:\d+|-)$/.test(word) ? word : null
+}
+
+export function shellWrites(command, cwd, depth = 0, scope, dialect = 'posix') {
   const out = []
   let base = scope ? scope.base : canonicalRoot(String(cwd || process.cwd()))
   const vars = scope?.vars ?? new Map()
-  for (const part of splitSegments(String(command ?? '').replace(/>\|/g, '>'))) {
+  const parts = splitSegments(String(command ?? '').replace(/>\|/g, '>'), dialect)
+  parts.forEach((part, index) => {
     const segment = part.text.replace(/^\s*[({]+/, '')
     rememberVariables(segment, vars)
     const cmd = commandOf(segment)
-    for (const raw of segmentWriteTargets(segment, cmd)) out.push({ raw, target: resolveFrom(raw, base, vars) })
+    const both = bothStreamsTarget(part, parts[index + 1])
+    for (const raw of [...segmentWriteTargets(segment, cmd), ...(both ? [both] : [])]) out.push({ raw, target: resolveFrom(raw, base, vars) })
     const inner = depth < MAX_SHELL_DEPTH ? nestedScript(segment, cmd) : ''
-    if (inner) out.push(...shellWrites(inner, cwd, depth + 1, { base, vars: new Map(vars) }))
+    if (inner) out.push(...shellWrites(inner, cwd, depth + 1, { base, vars: new Map(vars) }, encodedPowerShell(cmd) ? 'powershell' : dialectOf(cmd.head)))
     if (depth < MAX_SHELL_DEPTH) {
-      for (const sub of substitutions(withoutHeredocBodies(part.text, true))) out.push(...shellWrites(sub, cwd, depth + 1, { base, vars: new Map(vars) }))
+      for (const sub of substitutions(withoutHeredocBodies(part.text, true))) out.push(...shellWrites(sub, cwd, depth + 1, { base, vars: new Map(vars) }, dialect))
     }
     if (LOCATION_COMMANDS.has(cmd.head)) base = nextLocation(cmd, base)
-  }
+  })
   return out
 }
 
-export function shellLocationAfter(command, base) {
+export function shellLocationAfter(command, base, toolName) {
   let current = base
-  for (const part of splitSegments(String(command ?? ''))) {
+  for (const part of splitSegments(String(command ?? ''), toolDialect(toolName))) {
     const cmd = commandOf(part.text)
     if (LOCATION_COMMANDS.has(cmd.head)) current = nextLocation(cmd, current)
   }
@@ -1106,7 +1292,7 @@ function writeTargets(toolName, input, cwd, base) {
     const raw = fileToolPath(input?.path ?? input?.file_path ?? input?.filePath)
     return typeof raw === 'string' && raw.trim() ? [{ raw, target: resolveTarget(raw, cwd) }] : []
   }
-  if (name === 'bash' || name === 'powershell') return shellWrites(String(input?.command ?? ''), cwd, 0, base === undefined ? undefined : { base, vars: new Map() })
+  if (name === 'bash' || name === 'powershell') return shellWrites(String(input?.command ?? ''), cwd, 0, base === undefined ? undefined : { base, vars: new Map() }, toolDialect(name))
   return []
 }
 

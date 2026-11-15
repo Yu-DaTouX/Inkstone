@@ -497,7 +497,7 @@ export async function renderTerminalText(raw: string, cols: number, context = ''
 export interface DangerRules {
   detectDanger(toolName: string, input: { command: string }, cwd: string, options?: { base?: string | null }): string[]
   outsideWrites(toolName: string, input: { command: string }, cwd: string, prefs: unknown): string[]
-  shellLocationAfter(command: string, base: string | null): string | null
+  shellLocationAfter(command: string, base: string | null, toolName?: string): string | null
   criticalDanger?(toolName: string, input: { command: string }, cwd: string, options?: { base?: string | null }): string[]
   criticalBlockReason?(reasons: string[], why: string): string
 }
@@ -920,7 +920,7 @@ export class TerminalAgentCommands {
           }
         }
       }
-      if (rules) terminalLocations.set(stream.info.id, rules.shellLocationAfter(command, base))
+      if (rules) terminalLocations.set(stream.info.id, rules.shellLocationAfter(command, base, shellToolName(stream.info)))
     }
     typedLines.set(stream.info.id, plan.pending)
   }
