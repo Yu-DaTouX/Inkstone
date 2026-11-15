@@ -91,6 +91,8 @@ export async function pruneSubagentArchive(dir: string, options: SubagentPruneOp
     await Promise.all([
       rm(join(dir, `${id}.json`), { force: true }),
       rm(join(dir, `${id}.patch`), { force: true }),
+      rm(join(dir, `${id}-outputs`), { recursive: true, force: true }),
+      ...entries.filter((entry) => entry.isFile() && entry.name.startsWith(`${id}-idle-`) && entry.name.endsWith('.patch')).map((entry) => rm(join(dir, entry.name), { force: true })),
       rm(join(dir, 'sessions', id), { recursive: true, force: true }),
       rm(join(dir, 'approvals', id), { recursive: true, force: true })
     ].map((task) => task.catch(() => undefined)))

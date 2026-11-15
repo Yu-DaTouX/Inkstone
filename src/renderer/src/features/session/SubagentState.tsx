@@ -43,6 +43,12 @@ export function SubagentStateIcon({ state, label, awaiting = false }: { state: S
           <Icon name="square" size={10} />
         </StatusSlot>
       )
+    case 'interrupted':
+      return (
+        <StatusSlot tone="muted" label={label}>
+          <Icon name="clock" size={12} />
+        </StatusSlot>
+      )
     default:
       return (
         <StatusSlot tone="muted" label={label}>

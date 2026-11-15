@@ -73,11 +73,11 @@ try {
     const restarted = make(repo)
     await restarted.loadHistory()
     const run = restarted.get(id)
-    ok(run.status === 'error' && run.endReason === 'exited', `${label}：重启后标为中断`)
+    ok(run.status === 'cancelled' && run.endReason === 'interrupted', `${label}：重启后标为中断`)
     ok(run.review === 'pending' && run.diff?.files === 2 && existsSync(run.diff.patchPath), `${label}：改动存成补丁，审阅状态可合并`)
     ok(existsSync(worktree), `${label}：工作树保留，可以原地续接`)
     ok(run.resultPath === worktree, `${label}：保留工作树时结果路径指向工作树`)
-    ok(/原地续接/.test(run.error ?? ''), `${label}：说明改动怎么处置`)
+    ok(/原地续接/.test(run.latestActivity ?? '') && !run.error, `${label}：说明改动怎么处置，不当成出错`)
     ok(run.resumable?.ok === true, `${label}：可续派`, JSON.stringify(run.resumable))
 
     const merged = await restarted.merge(id)
@@ -178,13 +178,14 @@ try {
     const restarted = make(repo)
     await restarted.loadHistory()
     const run = restarted.get(started.run.id)
-    ok(run.status === 'error' && run.review === 'none' && !existsSync(worktree), '没有改动的中断子代理：清理工作树，不留待审阅状态')
+    ok(run.status === 'cancelled' && run.review === 'pending' && existsSync(worktree) && run.resumable?.ok === true, '没有改动的中断子代理：工作树保留，可原地续接')
+    ok((await restarted.discard(started.run.id)).ok && !existsSync(worktree), '没有改动的中断子代理：放弃时才清理工作树')
   }
 
   {
     const repo = await newRepo('repo-resume')
     const crashed = make(repo)
-    const started = await crashed.start('改一个文件', undefined, 'worktree')
+    const started = await crashed.start('改一个文件', undefined, 'worktree', undefined, undefined, { cwd: repo, parentSessionId: 'sess-crash' })
     const id = started.run.id
     const worktree = started.run.cwd
     await writeFile(join(worktree, 'a.txt'), 'before crash\n')
@@ -192,7 +193,11 @@ try {
     await writeFile(join(archive, 'sessions', id, 'a.jsonl'), '{}\n')
     const restarted = make(repo)
     await restarted.loadHistory()
-    const resumed = await restarted.send(id, '接着改', 'steer', { parentSessionId: undefined, from: 'parent' })
+    const stranger = await restarted.send(id, '接着改', 'steer', { parentSessionId: 'sess-other', from: 'parent' })
+    ok(!stranger.ok && /本会话/.test(stranger.error), '别的会话不能向它追加信息', JSON.stringify(stranger))
+    const orphan = await restarted.send(id, '接着改', 'steer', { parentSessionId: undefined, from: 'parent' })
+    ok(!orphan.ok, '没有会话归属的调用方不能向它追加信息')
+    const resumed = await restarted.send(id, '接着改', 'steer', { parentSessionId: 'sess-crash', from: 'parent' })
     ok(resumed.ok && resumed.delivery === 'resumed', '原地续接：崩溃子代理在原工作树继续')
     const live = restarted.runs.get(id)
     ok(live?.workspace.cwd === worktree && existsSync(worktree), '原地续接：仍在原工作树')
@@ -207,7 +212,7 @@ try {
   {
     const repo = await newRepo('repo-exclusive')
     const ctrl = make(repo)
-    const started = await ctrl.start('隔离', undefined, 'worktree')
+    const started = await ctrl.start('隔离', undefined, 'worktree', undefined, undefined, { cwd: repo, parentSessionId: 'sess-crash' })
     const id = started.run.id
     const run = ctrl.runs.get(id)
     await writeFile(join(run.workspace.cwd, 'b.txt'), 'x\n')
@@ -226,7 +231,7 @@ try {
     let release
     const hold = new Promise((resolve) => { release = resolve })
     const merging = ctrl.exclusiveReview(id, async () => { await hold; return { ok: true } })
-    const resumed = await ctrl.send(id, '继续', 'steer', { parentSessionId: undefined, from: 'parent' })
+    const resumed = await ctrl.send(id, '继续', 'steer', { parentSessionId: 'sess-crash', from: 'parent' })
     ok(!resumed.ok && /合并或放弃/.test(resumed.error), '互斥：合并/放弃进行时不能续接')
     const second = await ctrl.discard(id)
     ok(!second.ok && /正在合并或放弃/.test(second.error), '互斥：合并/放弃不能并发')

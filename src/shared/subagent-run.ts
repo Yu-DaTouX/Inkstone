@@ -10,6 +10,8 @@ export interface SubagentDiffSummary {
   paths: string[]
   truncated: boolean
   patchPath?: string
+  skippedLinks?: string[]
+  skippedLinkCount?: number
 }
 
 export interface SubagentUsageTotals {
@@ -22,7 +24,7 @@ export interface SubagentUsageTotals {
   reportedMessages: number
 }
 
-export type SubagentEndReason = 'completed' | 'timeout' | 'budget' | 'model-error' | 'startup' | 'exited' | 'failed' | 'stopped'
+export type SubagentEndReason = 'completed' | 'timeout' | 'budget' | 'model-error' | 'startup' | 'exited' | 'failed' | 'stopped' | 'interrupted'
 
 export interface SubagentStopResult {
   ok: boolean

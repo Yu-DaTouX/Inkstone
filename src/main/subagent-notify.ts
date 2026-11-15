@@ -1,5 +1,5 @@
 import type { SubagentRun } from '../shared/ipc'
-import { buildSubagentNotice } from '../shared/subagent-notice'
+import { buildSubagentInterruptedNotice, buildSubagentNotice } from '../shared/subagent-notice'
 import { slimNoticeRun, type SubagentNoticeStore } from './subagent-notice-store'
 
 export const NOTICE_COALESCE_WINDOW_MS = 3_000
@@ -10,6 +10,7 @@ export const NOTICE_BUSY_POLL_MS = 3_000
 const MAX_DELIVERY_ATTEMPTS = 5
 export const NOTICE_MAX_UNDELIVERED_RUNS = 20
 const READ_RESULTS_MAX = 200
+const INTERRUPTED_KEY = 'interrupted:'
 
 const readResults = new Map<string, number | undefined>()
 const readListeners = new Set<(id: string, endedAt?: number) => void>()
@@ -37,6 +38,8 @@ export interface NoticeTarget {
   send(text: string, images: undefined, mode: 'followUp'): Promise<{ ok: boolean; error?: string }>
   getState?(): { isAgentRunning?: boolean; isStreaming?: boolean } | null
   holdsNotices?(): boolean
+  userRunActive?(): boolean
+  steerIntoUserRun?(text: string): Promise<{ ok: boolean; idle?: boolean; error?: string }>
 }
 
 function targetBusy(target: NoticeTarget): boolean {
@@ -48,6 +51,7 @@ export interface SubagentNotifierDeps {
   find(run: SubagentRun): NoticeTarget | null
   enabled(): boolean | Promise<boolean>
   runningSiblings?(run: SubagentRun): number | Promise<number>
+  latest?(run: SubagentRun): SubagentRun | null | undefined | Promise<SubagentRun | null | undefined>
   now?(): number
   store?: SubagentNoticeStore
 }
@@ -104,6 +108,10 @@ interface PendingBatch {
   timer: ReturnType<typeof setTimeout>
   deadlineAt: number
   pollTimer?: ReturnType<typeof setTimeout>
+}
+
+function interruptedOnExit(run: SubagentRun): boolean {
+  return run.status === 'cancelled' && run.endReason === 'interrupted'
 }
 
 function awaitsReview(run: SubagentRun): boolean {
@@ -263,6 +271,49 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     rearm(key, batch, NOTICE_BUSY_POLL_MS)
   }
 
+  const holdInterrupted = (run: SubagentRun): void => {
+    const sessionId = run.parentSessionId
+    if (!sessionId || sessionId.startsWith('pending:')) return
+    const key = `${INTERRUPTED_KEY}${sessionId}`
+    undelivered.set(key, [...(undelivered.get(key) ?? []).filter((held) => held.id !== run.id), slimNoticeRun(run)])
+    trimUndelivered()
+    persist()
+  }
+
+  const stillInterrupted = async (runs: SubagentRun[]): Promise<SubagentRun[]> => {
+    if (!deps.latest) return runs
+    const kept: SubagentRun[] = []
+    for (const run of runs) {
+      const latest = await Promise.resolve(deps.latest(run)).catch(() => null)
+      if (latest && interruptedOnExit(latest) && latest.endedAt === run.endedAt && latest.resumable?.ok !== false) kept.push(latest)
+    }
+    return kept
+  }
+
+  const deliverInterrupted = async (key: string, held: SubagentRun[]): Promise<void> => {
+    const target = deps.find(held[held.length - 1])
+    if (!target?.steerIntoUserRun || target.holdsNotices?.() || !target.userRunActive?.()) return
+    undelivered.delete(key)
+    const runs = await stillInterrupted(takeUnread(held))
+    if (runs.length === 0) {
+      failedAttempts.delete(key)
+      persist()
+      return
+    }
+    let result: { ok: boolean; idle?: boolean } = { ok: false }
+    try {
+      result = await target.steerIntoUserRun(buildSubagentInterruptedNotice(runs))
+    } catch {
+    }
+    if (result.ok) {
+      failedAttempts.delete(key)
+      persist()
+    } else if (result.idle) {
+      undelivered.set(key, [...runs, ...(undelivered.get(key) ?? [])])
+      persist()
+    } else keepUndelivered(key, runs)
+  }
+
   const retry = (): void => {
     if (retrying || undelivered.size === 0) return
     retrying = true
@@ -275,6 +326,10 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
       for (const key of [...undelivered.keys()]) {
         const held = undelivered.get(key)
         if (!held || pending.has(key)) continue
+        if (key.startsWith(INTERRUPTED_KEY)) {
+          await deliverInterrupted(key, held)
+          continue
+        }
         const target = deps.find(held[held.length - 1])
         if (!target || target.holdsNotices?.() || targetBusy(target)) continue
         undelivered.delete(key)
@@ -331,6 +386,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
 
   const notify = (run: SubagentRun): void => {
     if (run.status !== 'done' && run.status !== 'error' && run.status !== 'cancelled') return
+    if (interruptedOnExit(run)) holdInterrupted(run)
     const key = run.parentSessionId || run.parentRunId
     if (!key) return
     void (async () => {

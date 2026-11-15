@@ -1,7 +1,7 @@
 import { pick } from '../shared/ui-lang'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, rm, stat } from 'node:fs/promises'
 import { SubagentHistory, type SubagentHistoryRecord } from './subagent-history'
 import { launchDigest, persistableForkLaunch, resolveResumeLaunch, restoreForkSource, subagentResumability, type ResumeLaunch, type ResumeMeta } from './subagent-resume'
 import { pruneSubagentArchive } from './subagent-prune'
@@ -30,6 +30,7 @@ import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { confirmRegisteredModel } from './subagents/registered-model'
+import { workflowIdOfAnchor } from '../shared/workflows'
 import { forkPiArgs, forkPrompt, sideQuestionPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
 import { runArtifactPreview, type PreviewHtml } from './artifact-preview-command'
 import { dangerReviewOf } from './agent-commands/danger-confirm'
@@ -42,6 +43,7 @@ import {
   preserveIgnoredOutputs,
   recoverWorktree,
   savedOutputsDir,
+  verifyKeptWorktree,
   type PreparedWorkspace,
   type PreservedOutputs
 } from './subagent-isolation'
@@ -81,6 +83,16 @@ function wrapUpMessage(text: string): string {
 const MAX_TRANSCRIPT = 200
 const MAX_FINISHED_IN_MEMORY = 200
 const ABORT_TIMEOUT_MS = 5_000
+const DAY_MS = 24 * 60 * 60 * 1000
+const WORKTREE_KEEP_DAYS = 7
+
+function worktreeKeepDays(): number {
+  const value = Number(process.env.YAN_SUBAGENT_WORKTREE_KEEP_DAYS)
+  return Number.isFinite(value) && value > 0 ? value : WORKTREE_KEEP_DAYS
+}
+
+const interruptedActivity = (): string => pick('应用退出时中断；可续派接着做', 'Interrupted when the app quit; send a message to resume it')
+const keptWorktreeNote = (): string => pick('工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动', 'Worktree kept. Send a message to resume it in place, or merge or discard its changes')
 
 async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<{ ok: boolean; errors: string[] }> {
   const result = await removeWorkspace(workspace)
@@ -356,6 +368,8 @@ export class SubagentController {
   private pendingLaunches = new Set<Promise<void>>()
   private resuming = new Map<string, { cancelled: boolean }>()
   private reviewing = new Set<string>()
+  private retiring = new Set<string>()
+  private staleOwners = new Set<string>()
   private activationSeq = 0
   private stoppingAll?: Promise<void>
   private opts: SubagentOptions
@@ -368,38 +382,167 @@ export class SubagentController {
 
   async loadHistory(): Promise<void> {
     await this.history.load()
+    for (const { run } of this.history.list()) if (run.parentSessionId?.startsWith('pending:')) this.staleOwners.add(run.id)
     await this.recoverInterruptedWorktrees()
-    void this.pruneArchive()
+    void this.pruneIdleWorktrees().then(() => this.pruneArchive())
+  }
+
+  parentOwns(id: string, sessionId: string | undefined): boolean {
+    return !!sessionId && !this.staleOwners.has(id) && this.get(id)?.parentSessionId === sessionId
+  }
+
+  async pruneIdleWorktrees(options: { now?: number; keepDays?: number } = {}): Promise<string[]> {
+    const now = options.now ?? Date.now()
+    const maxIdleMs = (options.keepDays ?? worktreeKeepDays()) * DAY_MS
+    const retired: string[] = []
+    for (const record of this.history.list()) {
+      const { run } = record
+      if (run.isolation !== 'worktree' || (run.review !== 'pending' && run.review !== 'conflict')) continue
+      if (now - Math.max(run.endedAt ?? 0, run.startedAt) <= maxIdleMs) continue
+      if (this.runs.has(run.id) || this.resuming.has(run.id) || this.reviewing.has(run.id) || this.stoppingAll) continue
+      const workspace = keptWorktreeOf(record)
+      if (!workspace) continue
+      this.reviewing.add(run.id)
+      this.retiring.add(run.id)
+      let settle: () => void = () => {}
+      const task = new Promise<void>((resolve) => { settle = resolve })
+      this.pendingLaunches.add(task)
+      try {
+        if (await this.retireWorktree(run.id, workspace, maxIdleMs, now)) retired.push(run.id)
+      } catch (error) {
+        console.warn('[subagent] 清理闲置工作树失败', run.id, error)
+      } finally {
+        this.reviewing.delete(run.id)
+        this.retiring.delete(run.id)
+        this.pendingLaunches.delete(task)
+        settle()
+      }
+    }
+    return retired
+  }
+
+  private async keepIdleWorktree(record: SubagentHistoryRecord, note: string): Promise<false> {
+    const current = this.history.get(record.run.id)
+    if (current !== record || this.runs.has(record.run.id)) return false
+    const lines = (record.run.error ?? '').split(String.fromCharCode(10)).filter(Boolean)
+    if (lines.includes(note)) return false
+    const next: SubagentRun = { ...record.run, error: [...lines, note].join(String.fromCharCode(10)) }
+    await this.history.save(next, record.rootCwd)
+    const updated = this.history.get(record.run.id)
+    if (updated) this.opts.onChange(this.historic(updated))
+    console.warn('[subagent] 闲置工作树没有自动清理', record.run.id, note)
+    return false
+  }
+
+  private async retireWorktree(id: string, workspace: PreparedWorkspace, maxIdleMs: number, now: number): Promise<boolean> {
+    const record = this.history.get(id)
+    if (!record || this.runs.has(id) || (record.run.review !== 'pending' && record.run.review !== 'conflict')) return false
+    const untrusted = await verifyKeptWorktree(id, workspace)
+    if (untrusted) return this.keepIdleWorktree(record, idleKeptNote(untrusted))
+    const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
+    const previous = record.run.diff
+    const exitPatch = previous?.patchPath
+    const exitPatchStat = exitPatch ? await stat(exitPatch).catch(() => null) : null
+    const baselineFresh = previous ? (previous.files === 0 ? !exitPatch : !!exitPatchStat && exitPatchStat.mtimeMs >= (record.run.endedAt ?? 0) - 1000) : false
+    const freshName = `${id}-idle-${new Date(now).toISOString().replace(/\D/g, '').slice(0, 14)}`
+    const collected = await collectDiff(workspace, archiveDir, id, { patchName: freshName })
+    const dropFresh = async (): Promise<void> => { if (collected.patchPath) await rm(collected.patchPath, { force: true }).catch(() => undefined) }
+    if (collected.summary.files > 0 && !collected.patchPath) return this.keepIdleWorktree(record, idleKeptNote(pick('改动没能存成补丁', 'Changes could not be saved as a patch')))
+    if (collected.summary.skippedLinkCount) {
+      await dropFresh()
+      return this.keepIdleWorktree(record, idleKeptNote(pick(`工作树里有 ${collected.summary.skippedLinkCount} 个联接或目录链接（${(collected.summary.skippedLinks ?? []).slice(0, 5).join(', ')}）`, `The worktree has ${collected.summary.skippedLinkCount} junction(s) or directory link(s) (${(collected.summary.skippedLinks ?? []).slice(0, 5).join(', ')})`)))
+    }
+    const oldRemoved = exitPatchStat && exitPatch ? countRemovedFiles(await readFile(exitPatch, 'utf8').catch(() => '')) : 0
+    const moreRemoved = !!previous && ((collected.removedFiles ?? 0) > oldRemoved || collected.summary.deletions > previous.deletions)
+    if (moreRemoved) {
+      await dropFresh()
+      return this.keepIdleWorktree(record, idleKeptNote(pick(`工作树里的删除比上次保存的补丁多（删除文件 ${oldRemoved} → ${collected.removedFiles ?? 0}，删除行 ${previous?.deletions ?? 0} → ${collected.summary.deletions}），可能被系统清理过临时文件`, `The worktree has more deletions than the last saved patch (deleted files ${oldRemoved} → ${collected.removedFiles ?? 0}, deleted lines ${previous?.deletions ?? 0} → ${collected.summary.deletions}); temporary files may have been cleaned up by the system`)))
+    }
+    let patchPath = collected.patchPath
+    let diff: SubagentRun['diff'] & object = collected.summary
+    if (baselineFresh && previous) {
+      const same = previous.files === collected.summary.files && previous.additions === collected.summary.additions && previous.deletions === collected.summary.deletions &&
+        previous.paths.join(String.fromCharCode(0)) === collected.summary.paths.join(String.fromCharCode(0))
+      await dropFresh()
+      if (!same) return this.keepIdleWorktree(record, idleKeptNote(pick('工作树在上次结束后又有改动，与保存的补丁不一致', 'The worktree changed after its last run and no longer matches the saved patch')))
+      patchPath = exitPatch
+      diff = previous
+    }
+    const saved = await preserveIgnoredOutputs(workspace, archiveDir, id)
+    if (!saved.ok) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物没能另存：${saved.error}`, `Ignored outputs could not be saved: ${saved.error}`)))
+    if (saved.skipped?.length) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物超出另存上限，没能全部存下（${saved.skipped.slice(0, 5).join(', ')}）`, `Ignored outputs exceeded the save limit and were not all saved (${saved.skipped.slice(0, 5).join(', ')})`)))
+    if (saved.links?.length) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物里有穿过链接的路径，没有另存（${saved.links.slice(0, 5).join(', ')}）`, `Some ignored outputs pass through links and were not saved (${saved.links.slice(0, 5).join(', ')})`)))
+    if (this.stoppingAll || this.runs.has(id) || this.history.get(id) !== record) return false
+    const cleaned = await removeWorkspace(workspace)
+    const days = Math.round(maxIdleMs / DAY_MS * 10) / 10
+    const notes = [record.run.error, ...(saved.withheld?.length ? [withheldOutputsNote(saved.withheld)] : []), ...(cleaned.ok ? [] : cleaned.errors)].filter(Boolean)
+    const next: SubagentRun = {
+      ...record.run,
+      review: cleaned.ok ? 'archived' : record.run.review,
+      diff: patchPath ? { ...diff, patchPath } : diff,
+      resultPath: cleaned.ok ? patchPath ?? saved.path ?? workspace.worktreePath : workspace.worktreePath,
+      ...(saved.path ? { savedOutputsPath: saved.path } : {}),
+      latestActivity: cleaned.ok
+        ? pick(`闲置超过 ${days} 天无人处置，工作树已清理；改动已存成补丁，仍可合并`, `Idle for over ${days} days without being handled; worktree removed, changes kept as a patch that can still be merged`)
+        : record.run.latestActivity,
+      ...(notes.length ? { error: notes.join(String.fromCharCode(10)) } : {})
+    }
+    if (cleaned.ok) delete next.pendingOutputs
+    await this.history.save(next, record.rootCwd, { patchPath, resume: { ...record.resume, workspace: cleaned.ok ? undefined : workspace } })
+    const updated = this.history.get(id)
+    if (updated) this.opts.onChange(this.historic(updated))
+    return cleaned.ok
   }
 
   private async recoverInterruptedWorktrees(): Promise<void> {
     const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
     for (const record of this.history.list()) {
       const { run } = record
-      if (run.isolation !== 'worktree' || run.status !== 'error' || run.endReason !== 'exited' || (run.review ?? 'none') !== 'none' || run.diff?.patchPath || this.runs.has(run.id)) continue
+      if (run.isolation !== 'worktree' || run.status !== 'cancelled' || run.endReason !== 'interrupted' || (run.review ?? 'none') !== 'none' || run.diff?.patchPath || this.runs.has(run.id)) continue
       try {
         const workspace = record.resume?.workspace ?? await recoverWorktree(run.cwd, record.rootCwd)
         if (!workspace?.worktreePath || !existsSync(workspace.worktreePath)) continue
+        const untrusted = await verifyKeptWorktree(run.id, workspace)
+        if (untrusted) {
+          console.warn('[subagent] interrupted worktree failed verification; diff not collected', run.id, untrusted)
+          continue
+        }
         const collected = await collectDiff(workspace, archiveDir, run.id)
-        const keepWorkspace = collected.summary.files > 0 || (collected.ignoredOutputs?.length ?? 0) > 0
-        const saved = keepWorkspace ? { ok: true as const, path: undefined } : await preserveIgnoredOutputs(workspace, archiveDir, run.id)
-        const kept = keepWorkspace ? '' : !saved.ok ? pick('被忽略的产物没能另存，已保留工作区', 'Ignored outputs could not be saved; workspace kept') : ''
-        const cleaned = keepWorkspace || kept ? { ok: false, errors: [] as string[] } : await removeWorkspace(workspace)
-        const note = keepWorkspace ? pick('应用退出时子 Agent未完成；工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动', 'Subagent unfinished at app exit; worktree kept. Send a message to resume it, or merge or discard its changes') : kept ? pick(`应用退出时子 Agent未完成；${kept}：${workspace.worktreePath}`, `Subagent unfinished at app exit; ${kept}: ${workspace.worktreePath}`) : pick('应用退出时子 Agent未完成，未自动恢复执行', 'Subagent unfinished at app exit; not resumed')
+        if (workflowOwned(run) && await this.archiveRecoveredWorkflow(record, workspace, collected, archiveDir)) continue
         const next: SubagentRun = {
           ...run,
-          review: keepWorkspace ? 'pending' : 'none',
+          review: 'pending',
           diff: collected.summary,
-          resultPath: keepWorkspace ? workspace.worktreePath : collected.patchPath ?? (saved.ok && saved.path ? saved.path : workspace.worktreePath),
-          ...(saved.ok && saved.path ? { savedOutputsPath: saved.path } : {}),
-          ...(keepWorkspace && collected.ignoredOutputs?.length ? { pendingOutputs: { path: savedOutputsDir(archiveDir, run.id), files: collected.ignoredOutputs } } : {}),
-          error: [note, ...cleaned.errors].join(String.fromCharCode(10))
+          resultPath: workspace.worktreePath,
+          ...(collected.ignoredOutputs?.length ? { pendingOutputs: { path: savedOutputsDir(archiveDir, run.id), files: collected.ignoredOutputs } } : {}),
+          latestActivity: `${interruptedActivity()}${pick('；', '; ')}${keptWorktreeNote()}`
         }
-        await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, ...(keepWorkspace ? { resume: { ...record.resume, workspace } } : {}) })
+        await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, resume: { ...record.resume, workspace } })
       } catch (error) {
         console.warn('[subagent] 恢复中断的 worktree 子代理失败', run.id, error)
       }
     }
+  }
+
+  private async archiveRecoveredWorkflow(record: SubagentHistoryRecord, workspace: PreparedWorkspace, collected: Awaited<ReturnType<typeof collectDiff>>, archiveDir: string): Promise<boolean> {
+    const { run } = record
+    if (collected.summary.files > 0 && !collected.patchPath) return false
+    if (await verifyKeptWorktree(run.id, workspace)) return false
+    const saved = await preserveIgnoredOutputs(workspace, archiveDir, run.id)
+    if (!saved.ok || saved.skipped?.length || saved.links?.length) return false
+    const cleaned = await removeWorkspace(workspace)
+    if (!cleaned.ok) return false
+    const next: SubagentRun = {
+      ...run,
+      review: collected.summary.files > 0 ? 'archived' : 'none',
+      diff: collected.summary,
+      resultPath: collected.patchPath ?? saved.path,
+      ...(saved.path ? { savedOutputsPath: saved.path } : {}),
+      ...(saved.withheld?.length ? { error: [run.error, withheldOutputsNote(saved.withheld)].filter(Boolean).join(String.fromCharCode(10)) } : {})
+    }
+    delete next.pendingOutputs
+    await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, resume: { ...record.resume, workspace: undefined } })
+    return true
   }
 
   private async pruneArchive(): Promise<void> {
@@ -436,6 +579,7 @@ export class SubagentController {
       if (run.parentSessionId !== fromSessionId) continue
       run.parentSessionId = toSessionId
       this.emit(run)
+      void this.writeMetadata(run)
       changed.push(this.snapshot(run))
     }
     return changed
@@ -1045,7 +1189,8 @@ export class SubagentController {
     const live = this.runs.get(id)
     const snapshot = live ? this.snapshot(live) : this.history.get(id)?.run
     if (!snapshot) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
-    if (from === 'parent' && snapshot.parentSessionId && origin.parentSessionId !== snapshot.parentSessionId) {
+    if (from === 'parent' && this.staleOwners.has(id)) return { ok: false, error: staleOwnerError() }
+    if (from === 'parent' && !this.parentOwns(id, origin.parentSessionId)) {
       return { ok: false, error: pick('只能向本会话派出的子 Agent追加信息', 'Messages can only be sent to subagents started from this session') }
     }
     if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子 Agent正在启动，稍后再发', 'Subagent is starting; send again shortly') }
@@ -1081,6 +1226,7 @@ export class SubagentController {
   }
 
   private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
+    if (this.retiring.has(id)) return { ok: false, error: retiringError() }
     if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，不能同时续接；处理完再发', 'This subagent\'s changes are being merged or discarded; send again afterwards') }
     if (this.stoppingAll) return { ok: false, error: pick('子 Agent正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
     if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子 Agent（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
@@ -1115,6 +1261,11 @@ export class SubagentController {
         return { ok: false, error: pick('这个子 Agent上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'This subagent\'s last run was interrupted and cannot be resumed; start a new one and include its findings') }
       }
       const keptWorkspace = !previous && snapshot.isolation === 'worktree' && (snapshot.review === 'pending' || snapshot.review === 'conflict') ? keptWorktreeOf(record) : undefined
+      if (keptWorkspace) {
+        const untrusted = await verifyKeptWorktree(id, keptWorkspace)
+        if (abandoned()) return abandonedError()
+        if (untrusted) return { ok: false, error: pick(`保留的工作树没通过核对，不续接：${untrusted}`, `The kept worktree failed verification; not resuming: ${untrusted}`) }
+      }
       if (snapshot.isolation === 'worktree' && !keptWorkspace && !(previous && worktreeAlive(previous) && existsSync(previous.workspace.cwd))) {
         return { ok: false, error: pick('worktree 子 Agent的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
       }
@@ -1134,7 +1285,8 @@ export class SubagentController {
         { appendSystemPrompt: this.opts.appendSystemPrompt, extensions: this.opts.extensions, readOnlyExtension: this.opts.readOnlyExtension },
         existsSync
       )
-      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentRunId: snapshot.parentRunId, parentGeneration: snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: snapshot.thinkingLevel }
+      const stale = this.staleOwners.has(id)
+      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentRunId: stale ? undefined : snapshot.parentRunId, parentGeneration: stale ? undefined : snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: snapshot.thinkingLevel }
       let brief: SubagentBrief
       let rpc: SubagentRpc
       try {
@@ -1152,6 +1304,7 @@ export class SubagentController {
       const activation = ++this.activationSeq
       const run: Run = previous ?? {
         ...snapshot,
+        ...(stale ? { parentRunId: undefined, parentGeneration: undefined } : {}),
         rpc,
         timer: setTimeout(() => undefined, 0),
         lastProgressAt: now,
@@ -1224,7 +1377,7 @@ export class SubagentController {
         await this.writeMetadata(run)
         if (!current('running')) return stoppedError()
         this.emit(run)
-        const res = await rpc.command('prompt', { message: forwardedMessage(text, 'resume', from) }, { timeoutMs: 10_000 })
+        const res = await rpc.command('prompt', { message: forwardedMessage(text, snapshot.endReason === 'interrupted' ? 'interrupted' : 'resume', from) }, { timeoutMs: 10_000 })
         if (!current('running')) return stoppedError()
         if (!res.success) {
           await this.fail(id, res.error ?? pick('续接后发送信息失败', 'Could not send the message after resuming'))
@@ -1254,7 +1407,7 @@ export class SubagentController {
     return { ok: true }
   }
 
-  private async stopRun(run: Run, cleanupReview: boolean): Promise<void> {
+  private async stopRun(run: Run, cleanupReview: boolean, interrupted = false): Promise<void> {
     if (run.settling) {
       try { await run.settling } catch { }
       if (run.status !== 'running' && run.status !== 'starting') {
@@ -1262,8 +1415,9 @@ export class SubagentController {
         return
       }
     }
+    const endReason: SubagentEndReason = interrupted ? 'interrupted' : 'stopped'
     run.status = 'cancelled'
-    run.endReason = 'stopped'
+    run.endReason = endReason
     run.error = undefined
     const settling = (async () => {
       try {
@@ -1273,12 +1427,12 @@ export class SubagentController {
       clearTimeout(run.timer)
       await run.rpc.close()
       run.status = 'cancelled'
-      run.endReason = 'stopped'
+      run.endReason = endReason
       run.wrapUp = undefined
       run.quotaWait = undefined
       run.queued = undefined
       run.endedAt = Date.now()
-      run.latestActivity = pick('已停止', 'Stopped')
+      run.latestActivity = interrupted ? interruptedActivity() : pick('已停止', 'Stopped')
       this.emit(run)
       await this.finalize(run, cleanupReview)
     })()
@@ -1301,7 +1455,7 @@ export class SubagentController {
     let next = 0
     let failure: unknown
     const settleRun = async (run: Run): Promise<void> => {
-      if (run.status === 'running' || run.status === 'starting') await this.stopRun(run, true)
+      if (run.status === 'running' || run.status === 'starting') await this.stopRun(run, true, true)
       else {
         if (run.settling) await run.settling
         else await run.rpc.close()
@@ -1352,7 +1506,7 @@ export class SubagentController {
     if (run.status === 'starting' && !run.resumed) run.launchFailed = true
     const cancelled = run.status === 'cancelled'
     run.status = cancelled ? 'cancelled' : 'error'
-    run.endReason = cancelled ? 'stopped' : reason
+    run.endReason = cancelled ? (run.endReason === 'interrupted' ? 'interrupted' : 'stopped') : reason
     run.wrapUp = undefined
     run.quotaWait = undefined
     run.progressWarning = undefined
@@ -1397,8 +1551,12 @@ export class SubagentController {
       run.diff = collected.summary
       const changed = collected.summary.files > 0
       run.pendingOutputs = run.isolation === 'worktree' && collected.ignoredOutputs?.length ? { path: savedOutputsDir(archiveDir, run.id), files: collected.ignoredOutputs } : undefined
+      const keepOnExit = cleanupReview && this.keepsWorktreeOnExit(run)
 
-      if (run.isolation === 'worktree' && changed) {
+      if (keepOnExit) {
+        run.review = 'pending'
+        run.resultPath = run.workspace.worktreePath
+      } else if (run.isolation === 'worktree' && changed) {
         if (cleanupReview) {
           if (!collected.patchPath) throw new Error(pick('未能保存改动补丁，已保留工作区', 'Could not save the patch; workspace kept'))
           run.review = 'archived'
@@ -1469,6 +1627,8 @@ export class SubagentController {
         if (!run.diff?.patchPath) run.resultPath = saved.path
       }
       if (saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join('\n')
+      const extra = outputNotes(saved)
+      if (extra.length) run.error = [run.error, ...extra].filter(Boolean).join('\n')
     }
     const result = await cleanupWorkspace(run.workspace)
     run.worktreeDone = result.ok
@@ -1476,10 +1636,28 @@ export class SubagentController {
     return outputs
   }
 
+  private keepsWorktreeOnExit(run: Run): boolean {
+    return run.isolation === 'worktree' && !!run.workspace.worktreePath && !run.worktreeDone && !workflowOwned(run)
+  }
+
+  private async backupOnExit(run: Run): Promise<void> {
+    const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
+    if (run.pendingOutputs?.files.length && run.workspace.worktreePath && existsSync(run.workspace.worktreePath)) {
+      const saved = await preserveIgnoredOutputs(run.workspace, archiveDir, run.id).catch((error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) }))
+      if (!saved.ok) console.warn('[subagent] 退出时备份被忽略产物失败，工作树仍保留', run.id, saved.error)
+    }
+    await this.writeMetadata(run, run.diff?.patchPath)
+    this.emit(run)
+  }
+
   private async archiveOnExit(run: Run): Promise<void> {
     if (run.worktreeDone) return
 
     if (run.isolation === 'worktree' && (run.review === 'pending' || run.review === 'conflict')) {
+      if (this.keepsWorktreeOnExit(run)) {
+        await this.backupOnExit(run)
+        return
+      }
       try {
         const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
         const collected = await collectDiff(run.workspace, archiveDir, run.id)
@@ -1518,6 +1696,7 @@ export class SubagentController {
   }
 
   private async exclusiveReview(id: string, work: () => Promise<SubagentReviewResult>): Promise<SubagentReviewResult> {
+    if (this.retiring.has(id)) return { ok: false, error: retiringError() }
     if (this.resuming.has(id)) return { ok: false, error: pick('子 Agent正在续接，等它结束后再合并或放弃', 'Subagent is resuming; merge or discard after it finishes') }
     if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，请稍候', 'This subagent\'s changes are being merged or discarded; wait a moment') }
     this.reviewing.add(id)
@@ -1611,6 +1790,8 @@ export class SubagentController {
     const kept = keptWorktreeOf(record)
     const cleanupRetry = review === 'merged' && run.review === 'merged' && run.isolation === 'worktree' && !!kept
     if (run.review === review && !cleanupRetry) return { ok: true }
+    const untrusted = kept && run.isolation === 'worktree' ? await verifyKeptWorktree(run.id, kept) : null
+    if (untrusted) return { ok: false, error: pick(`保留的工作树没通过核对，没有合并或清理：${untrusted}`, `The kept worktree failed verification; nothing was merged or cleaned up: ${untrusted}`) }
     if (review === 'merged' && run.review !== 'merged') {
       if (!['pending', 'conflict', 'archived'].includes(run.review ?? '') || !run.diff?.files || !run.diff.patchPath) {
         return { ok: false, error: pick('历史任务没有可合并的补丁', 'This past task has no patch to merge') }
@@ -1631,6 +1812,8 @@ export class SubagentController {
       delete run.pendingOutputs
       if (saved.path) run.savedOutputsPath = saved.path
       if (saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join(String.fromCharCode(10))
+      const extra = outputNotes(saved)
+      if (extra.length) run.error = [run.error, ...extra].filter(Boolean).join(String.fromCharCode(10))
       if (!cleaned.ok) {
         run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
         if (review === 'merged') run.review = 'merged'
@@ -2138,6 +2321,26 @@ export class SubagentController {
   }
 }
 
+function workflowOwned(run: { parentMessageId?: string; parentMessageIds?: readonly string[] }): boolean {
+  return !!workflowIdOfAnchor(run.parentMessageId) || !!run.parentMessageIds?.some((anchor) => !!workflowIdOfAnchor(anchor))
+}
+
+function countRemovedFiles(patch: string): number {
+  return patch.match(/^deleted file mode /gm)?.length ?? 0
+}
+
+const idleKeptNote = (reason: string): string => pick(`闲置工作树没有自动清理：${reason}；由主会话或用户合并、放弃`, `Idle worktree was not cleaned up automatically: ${reason}; merge or discard it from the main session or the app`)
+const retiringError = (): string => pick('正在清理这个子 Agent的闲置工作树（先存补丁和产物），请稍后再试', 'This subagent\'s idle worktree is being cleaned up (patch and outputs are saved first); try again shortly')
+const staleOwnerError = (): string => pick('这个子 Agent是上次启动时由还没保存的会话派出的，归属无法确认；只能由用户在界面里续接、合并或放弃', 'This subagent was started last session by a conversation that had not been saved yet, so its owner cannot be confirmed; only the user can resume, merge or discard it in the app')
+const withheldOutputsNote = (files: readonly string[]): string => pick(`可能含凭据的被忽略文件没有另存，只记下文件名：${files.slice(0, 10).join('、')}${files.length > 10 ? ' 等' : ''}`, `Ignored files that may hold credentials were not saved; only their names are recorded: ${files.slice(0, 10).join(', ')}${files.length > 10 ? ', …' : ''}`)
+
+function outputNotes(saved: { links?: string[]; withheld?: string[] }): string[] {
+  return [
+    ...(saved.links?.length ? [pick(`被忽略的产物里有穿过链接的路径，没有另存：${saved.links.slice(0, 5).join('、')}${saved.links.length > 5 ? ' 等' : ''}`, `Some ignored outputs pass through links and were not saved: ${saved.links.slice(0, 5).join(', ')}${saved.links.length > 5 ? ', …' : ''}`)] : []),
+    ...(saved.withheld?.length ? [withheldOutputsNote(saved.withheld)] : [])
+  ]
+}
+
 function usableParentSession(id: string | undefined): string | undefined {
   return id && !id.startsWith('pending:') ? id : undefined
 }
@@ -2170,9 +2373,11 @@ function finiteCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : undefined
 }
 
-function forwardedMessage(text: string, mode: SubagentSendMode | 'resume', from: SubagentSendFrom): string {
+function forwardedMessage(text: string, mode: SubagentSendMode | 'resume' | 'interrupted', from: SubagentSendFrom): string {
   const label = from === 'user' ? '【用户追加】' : '【主会话追加】'
-  const timing = mode === 'resume'
+  const timing = mode === 'interrupted'
+    ? '你上一轮在应用退出时被中断，原会话与工作目录都还在；先核对已有的工具结果和文件状态，接着做完被打断的工作，不重复已完成的操作，并处理这条消息'
+    : mode === 'resume'
     ? '你已经完成过原任务，这是新的消息；在之前的工作基础上继续'
     : mode === 'steer' ? '请在继续之前先考虑这条信息' : '这是在你完成原任务后补充的要求'
   return `${label}${timing}；Stay within the original task.\n\n${text}`

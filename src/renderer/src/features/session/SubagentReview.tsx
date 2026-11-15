@@ -51,7 +51,7 @@ export function SubagentReview({ run, loadPatch }: SubagentReviewProps): JSX.Ele
     <section className="v3-subagent-review" data-testid="v3-subagent-review" data-review={run.review}>
       <div className="v3-subagent-review-actions">
         <span className="v3-subagent-review-state" data-testid="v3-subagent-review-state">
-          {run.review === 'conflict' ? t('sa.reviewConflict') : t('sa.reviewPending')}
+          {run.review === 'conflict' ? t('sa.reviewConflict') : run.endReason === 'interrupted' && run.status === 'cancelled' ? t('sa.reviewInterrupted') : t('sa.reviewPending')}
         </span>
         {gate.canPatch ? (
           <Button size="sm" variant="ghost" onPress={() => setShowDiff((value) => !value)} data-testid="v3-subagent-review-view">

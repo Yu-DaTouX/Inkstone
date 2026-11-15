@@ -28,6 +28,7 @@ function subagentBotMood(model: Pick<SubagentLineModel, 'phase' | 'outcomeKey'>)
     case 'dismissed':
       return 'fail'
     case 'stopped':
+    case 'interrupted':
       return 'rest'
     default:
       return 'done'

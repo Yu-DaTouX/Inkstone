@@ -23,6 +23,7 @@ export function runSubagentOutcomeTests(ok, { outcome, notice, brief, repeatGuar
   ok(key({ status: 'error', endReason: 'model-error' }) === 'failed', '模型报错：出错')
   ok(key({ status: 'error' }) === 'failed', '旧记录没有结束原因：按出错')
   ok(key({ status: 'cancelled', endReason: 'stopped' }) === 'stopped', '用户停止')
+  ok(key({ status: 'cancelled', endReason: 'interrupted', review: 'pending' }) === 'interrupted' && subagentOutcome({ status: 'cancelled', endReason: 'interrupted', review: 'pending' }).tone === 'warn', '应用退出时中断：单独标「已中断」，不算用户停止')
   ok(key({ status: 'done', review: 'pending' }) === 'review' && key({ status: 'done', review: 'conflict' }) === 'conflict', '有待处理的改动：待合并 / 冲突')
   ok(key({ status: 'done', endReason: 'timeout', review: 'pending' }) === 'review', '待合并优先于「超时」这个词（改动更需要人处理）')
   ok(subagentOutcome({ status: 'done', endReason: 'timeout', review: 'pending' }).partial, '但仍标出结论可能不完整')

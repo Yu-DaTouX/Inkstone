@@ -48,11 +48,12 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
     )
   }
 
+  const interrupted = run.status === 'cancelled' && run.endReason === 'interrupted'
   const placeholder = mode === 'resume'
-    ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
+    ? t(interrupted ? 'sa.composer.resumeInterrupted' : run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
     : t('sa.composer.steer')
   const shortPlaceholder = mode === 'resume'
-    ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktreeShort' : 'sa.composer.resumeShort')
+    ? t(interrupted ? 'sa.composer.resumeInterruptedShort' : run.isolation === 'worktree' ? 'sa.composer.resumeWorktreeShort' : 'sa.composer.resumeShort')
     : t('sa.composer.steerShort')
   return (
     <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">

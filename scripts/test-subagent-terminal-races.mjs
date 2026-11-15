@@ -150,9 +150,10 @@ async function testF05(SubagentController) {
     ok(last?.id === run.id && last.review === 'pending', '最后一次推送就是这条待审阅记录（不是已删 id 的迟到 upsert）')
 
     await ctrl.stopAll()
-    ok(ctrl.get(run.id)?.review === 'archived', 'stopAll 仍能把未审阅 worktree 归档')
-    ok(existsSync(run.cwd) === false, 'stopAll 清掉了 worktree')
-    ok(typeof ctrl.get(run.id)?.resultPath === 'string' && existsSync(ctrl.get(run.id).resultPath), '归档补丁仍可追溯')
+    ok(ctrl.get(run.id)?.review === 'pending', 'stopAll 不再归档未审阅 worktree，仍待处置')
+    ok(existsSync(run.cwd) === true, 'stopAll 保留 worktree，合并或放弃时才删')
+    ok(typeof ctrl.get(run.id)?.diff?.patchPath === 'string' && existsSync(ctrl.get(run.id).diff.patchPath), '补丁已存档作备份')
+    ok((await ctrl.discard(run.id)).ok && existsSync(run.cwd) === false, '放弃后才清掉 worktree')
 
     const factory2 = makeRpcFactory()
     const pushes2 = []
@@ -286,7 +287,7 @@ async function testF07(SubagentController) {
     const factory = makeRpcFactory()
     let releasePrepare
     const prepareGate = new Promise((resolve) => { releasePrepare = resolve })
-    const container = await mkdtemp(join(tmpdir(), 'inkstone-f07-prep-'))
+    const container = await mkdtemp(join(tmpdir(), 'yan-subagent-f07-prep-'))
     await execFileAsync('git', ['init', '-q'], { cwd: container, windowsHide: true, timeout: 10000 })
     const worktree = join(container, 'worktree')
     await mkdir(worktree, { recursive: true })

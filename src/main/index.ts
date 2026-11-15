@@ -379,6 +379,7 @@ const notifySubagentFinished = createSubagentNotifier({
   store: createSubagentNoticeStore(join(YAN_DIR, 'subagent-notices.json')),
   enabled: async () => (await getSettings()).subagentNotify !== false,
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
+  latest: async (run) => (await subagentService.get()).get(run.id),
   runningSiblings: (run) => (subagentService.current()?.list() ?? []).filter((other) => (other.status === 'running' || other.status === 'starting') && !workflowService.owns(other) &&
     ((!!run.parentSessionId && other.parentSessionId === run.parentSessionId) || (!!run.parentRunId && other.parentRunId === run.parentRunId))).length
 })

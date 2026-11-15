@@ -121,7 +121,7 @@ try {
   assert.deepEqual(longCalls.map(([kind, text]) => [kind, text.length]), [['start', longTask.length], ['send', longTask.length]], '很长的任务文本能启动、能续派，不按长度拒绝或截断')
 
   const finished = { id: 'sub-a1b2c3d4', status: 'done', task: 't', parentSessionId: 'p', isolation: 'shared-cwd', startedAt: 1, endedAt: 2, review: 'none', transcript: [{ id: 'm1', role: 'assistant', text: '最终结论全文' }], deliverables: [], toolCalls: 0 }
-  service.get = async () => ({ setContext() {}, get: () => finished, getFull: async () => finished })
+  service.get = async () => ({ setContext() {}, get: () => finished, getFull: async () => finished, parentOwns: (id, sessionId) => sessionId === finished.parentSessionId })
   const plain = await service.run('subagent.get', { id: finished.id }, context)
   const withTranscript = await service.run('subagent.get', { id: finished.id, transcript: true }, context)
   assert.equal(typeof plain.data.finalMessage, 'string')

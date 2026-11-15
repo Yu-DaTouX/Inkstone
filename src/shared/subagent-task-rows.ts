@@ -1,7 +1,7 @@
 import { formatDuration } from './duration'
 import type { SubagentRun } from './ipc'
 
-export type SubagentRowState = 'starting' | 'running' | 'stopping' | 'done' | 'failed' | 'stopped' | 'unknown'
+export type SubagentRowState = 'starting' | 'running' | 'stopping' | 'done' | 'failed' | 'stopped' | 'interrupted' | 'unknown'
 export type SubagentRowTense = 'active' | 'done' | 'failed'
 export type SubagentRowLang = 'zh-CN' | 'en-US'
 export type SubagentConnection = 'connected' | 'disconnected'
@@ -92,7 +92,7 @@ const EN_VERBS: Record<string, VerbForms> = Object.fromEntries(
 const RULES: Record<SubagentRowLang, TenseRules> = {
   'zh-CN': {
     verbs: ZH_VERBS,
-    generic: { starting: '启动中', running: '进行中', stopping: '停止中', done: '已完成', failed: '已失败', stopped: '已停止', unknown: '状态未知' },
+    generic: { starting: '启动中', running: '进行中', stopping: '停止中', done: '已完成', failed: '已失败', stopped: '已停止', interrupted: '已中断', unknown: '状态未知' },
     match(description) {
       const verb = Object.keys(ZH_VERBS).find((candidate) => description.startsWith(candidate))
       return verb ? { verb, rest: description.slice(verb.length).trimStart() } : null
@@ -102,7 +102,7 @@ const RULES: Record<SubagentRowLang, TenseRules> = {
   },
   'en-US': {
     verbs: EN_VERBS,
-    generic: { starting: 'Starting', running: 'Running', stopping: 'Stopping', done: 'Completed', failed: 'Failed', stopped: 'Stopped', unknown: 'Status unknown' },
+    generic: { starting: 'Starting', running: 'Running', stopping: 'Stopping', done: 'Completed', failed: 'Failed', stopped: 'Stopped', interrupted: 'Interrupted', unknown: 'Status unknown' },
     match(description) {
       const word = description.split(/\s+/, 1)[0]?.toLowerCase().replace(/[^a-z]/g, '') ?? ''
       if (!word || !EN_VERBS[word]) return null
@@ -117,7 +117,7 @@ const RULES: Record<SubagentRowLang, TenseRules> = {
 
 function tenseOfState(state: SubagentRowState): SubagentRowTense {
   if (state === 'done') return 'done'
-  if (state === 'failed' || state === 'stopped') return 'failed'
+  if (state === 'failed' || state === 'stopped' || state === 'interrupted') return 'failed'
   return 'active'
 }
 
@@ -156,7 +156,7 @@ function rowState(run: SubagentRun, connection: SubagentConnection, stopping: bo
     return run.status === 'starting' ? 'starting' : 'running'
   }
   if (run.status === 'done') return 'done'
-  if (run.status === 'cancelled') return 'stopped'
+  if (run.status === 'cancelled') return run.endReason === 'interrupted' ? 'interrupted' : 'stopped'
   return 'failed'
 }
 

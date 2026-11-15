@@ -1,9 +1,9 @@
 import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
-import { copyFile, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdtemp, mkdir, readdir, realpath, rm, unlink, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { existsSync, mkdtempSync, realpath as realpathFs, rmSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { sanitizedGitEnv } from './git-run-policy'
 import { subagentWorktreeRoot } from './subagent-worktree-root'
@@ -58,11 +58,14 @@ export interface SubagentDiffSummary {
   paths: string[]
   truncated: boolean
   patchPath?: string
+  skippedLinks?: string[]
+  skippedLinkCount?: number
 }
 
 export interface CollectedDiff {
   summary: SubagentDiffSummary
   patchPath?: string
+  removedFiles?: number
   ignoredOutputs?: string[]
 }
 
@@ -295,30 +298,84 @@ export function summarizeGitDiff(nameStatus: string, numstat: string): SubagentD
   }
 }
 
-export async function collectDiff(workspace: PreparedWorkspace, archiveDir: string, id: string): Promise<CollectedDiff> {
+async function linkRootsOf(tree: string, paths: Iterable<string>, known = new Map<string, boolean>()): Promise<string[]> {
+  const roots = new Set<string>()
+  const linkAt = async (rel: string, leaf: boolean): Promise<boolean> => {
+    const key = `${leaf ? 'f' : 'd'}:${rel}`
+    const cached = known.get(key)
+    if (cached !== undefined) return cached
+    const info = await lstat(join(tree, ...rel.split('/'))).catch(() => null)
+    const link = !!info && (info.isSymbolicLink() || (leaf && info.isFile() && info.nlink > 1))
+    known.set(key, link)
+    return link
+  }
+  for (const entry of paths) {
+    if (!entry) continue
+    const parts = entry.split('/')
+    let prefix = ''
+    for (let i = 0; i < parts.length; i += 1) {
+      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i]
+      if (roots.has(prefix)) break
+      if (await linkAt(prefix, i === parts.length - 1)) {
+        roots.add(prefix)
+        break
+      }
+    }
+  }
+  return [...roots].sort()
+}
+
+export async function changedLinkRoots(tree: string, base = 'HEAD'): Promise<string[]> {
+  const listings = await Promise.all([
+    runGitBytes(tree, ['ls-files', '--others', '--exclude-standard', '-z'], 120_000),
+    runGitBytes(tree, ['diff', '--cached', '--name-only', '--no-renames', '-z', base], 120_000),
+    runGitBytes(tree, ['diff', '--name-only', '--no-renames', '-z'], 120_000)
+  ])
+  return linkRootsOf(tree, listings.map((bytes) => bytes.toString('utf8')).join('\0').split('\0'))
+}
+
+async function stageWithoutLinks(tree: string, base: string): Promise<string[]> {
+  const links = await changedLinkRoots(tree, base)
+  if (links.length) {
+    await runGit(tree, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], 120_000, ['.', ...links.map((path) => `:(exclude,literal)${path}`)].join('\0'))
+    await runGit(tree, ['reset', '-q', base, '--pathspec-from-file=-', '--pathspec-file-nul'], 60_000, links.map((path) => `:(literal)${path}`).join('\0'))
+  } else {
+    await git(tree, ['add', '-A', '--', '.'])
+  }
+  const staged = (await runGitBytes(tree, ['diff', '--cached', '--name-only', '--no-renames', '-z', base], 120_000)).toString('utf8').split('\0').filter(Boolean)
+  const linked = new Set(links)
+  const underKnown = staged.filter((path) => links.some((link) => path === link || path.startsWith(`${link}/`)))
+  const underFresh = await linkRootsOf(tree, staged)
+  const leaked = [...underKnown, ...underFresh.filter((path) => !linked.has(path))]
+  if (leaked.length) throw new Error(pick(`暂存后仍有位于链接下、与基线不同的路径，没有生成补丁：${leaked.slice(0, 5).join(', ')}`, `Staged paths that differ from the baseline still sit under links; no patch was made: ${leaked.slice(0, 5).join(', ')}`))
+  return links
+}
+
+export async function collectDiff(workspace: PreparedWorkspace, archiveDir: string, id: string, options: { patchName?: string } = {}): Promise<CollectedDiff> {
   if (workspace.isolation !== 'worktree' || !workspace.repoRoot) {
-    return { summary: { files: 0, additions: 0, deletions: 0, paths: [], truncated: false } }
+    return { summary: { files: 0, additions: 0, deletions: 0, paths: [], truncated: false }, removedFiles: 0 }
   }
 
   await mkdir(archiveDir, { recursive: true })
   const base = workspace.baselineCommit ?? 'HEAD'
   const tree = workspace.worktreePath ?? workspace.cwd
-  await git(tree, ['add', '-A', '--', '.'])
+  const links = await stageWithoutLinks(tree, base)
   const [nameStatus, numstat, patch] = await Promise.all([
     git(tree, ['diff', '--cached', '--name-status', '--no-renames', base]).then((r) => r.stdout),
     git(tree, ['diff', '--cached', '--numstat', base]).then((r) => r.stdout),
     runGitBytes(tree, ['diff', '--cached', '--binary', '--no-ext-diff', base])
   ])
 
-  const summary = summarizeGitDiff(nameStatus, numstat)
+  const removedFiles = nameStatus.split(/\r?\n/).filter((line) => line.startsWith('D\t')).length
+  const summary = { ...summarizeGitDiff(nameStatus, numstat), ...(links.length ? { skippedLinks: links.slice(0, 20), skippedLinkCount: links.length } : {}) }
   const listing = await git(tree, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']).then((r) => r.stdout, () => '')
   const ignoredOutputs = ignoredOutputsOf(listing)
   const ignored = ignoredOutputs.length ? { ignoredOutputs } : {}
-  if (patch.length === 0) return { summary, ...ignored }
+  if (patch.length === 0) return { summary, removedFiles, ...ignored }
 
-  const patchPath = join(archiveDir, `${id}.patch`)
+  const patchPath = join(archiveDir, `${options.patchName ?? id}.patch`)
   await writeFile(patchPath, patch)
-  return { summary: { ...summary, patchPath }, patchPath, ...ignored }
+  return { summary: { ...summary, patchPath }, patchPath, removedFiles, ...ignored }
 }
 
 export const IGNORED_OUTPUT_COPY_LIMIT = 200 * 1024 * 1024
@@ -333,21 +390,43 @@ export function ignoredOutputRank(path: string): number {
 }
 
 interface OutputFile { rel: string; top: string; size: number; rank: number }
+interface OutputScan { found: OutputFile[]; overflow: Set<string>; links: Set<string>; withheld: string[] }
 
-async function listOutputFiles(root: string, rel: string, top: string, found: OutputFile[], overflow: Set<string>): Promise<void> {
-  if (found.length >= IGNORED_OUTPUT_FILE_LIMIT) {
-    overflow.add(top)
+const SECRET_OUTPUT = /^(?:\.env(?:\..*)?|.*\.(?:pem|key|pfx|p12)|id_(?:rsa|ed25519|ecdsa|dsa).*|auth\.json|\.netrc|_netrc|\.npmrc|credentials.*|secrets.*\.json)$/i
+
+export function withheldOutput(rel: string): boolean {
+  return SECRET_OUTPUT.test(rel.split('/').pop() ?? rel)
+}
+
+async function linkOnPath(root: string, rel: string): Promise<boolean> {
+  const parts = rel.split('/').filter(Boolean)
+  for (let i = 1; i <= parts.length; i += 1) {
+    const info = await lstat(join(root, ...parts.slice(0, i))).catch(() => null)
+    if (!info) return false
+    if (info.isSymbolicLink()) return true
+  }
+  return false
+}
+
+async function listOutputFiles(root: string, rel: string, top: string, scan: OutputScan): Promise<void> {
+  if (scan.found.length >= IGNORED_OUTPUT_FILE_LIMIT) {
+    scan.overflow.add(top)
     return
   }
   const info = await lstat(join(root, rel))
-  if (info.isSymbolicLink()) return
+  if (info.isSymbolicLink()) {
+    scan.links.add(rel)
+    return
+  }
   if (!info.isDirectory()) {
-    found.push({ rel, top, size: info.size, rank: ignoredOutputRank(rel) })
+    if (info.nlink > 1) scan.links.add(rel)
+    else if (withheldOutput(rel)) scan.withheld.push(rel)
+    else scan.found.push({ rel, top, size: info.size, rank: ignoredOutputRank(rel) })
     return
   }
   for (const entry of await readdir(join(root, rel))) {
     if (isDisposableOutput(`${rel}/${entry}`)) continue
-    await listOutputFiles(root, `${rel}/${entry}`, top, found, overflow)
+    await listOutputFiles(root, `${rel}/${entry}`, top, scan)
   }
 }
 
@@ -371,7 +450,7 @@ export function savedOutputsDir(archiveDir: string, id: string): string {
   return join(archiveDir, `${id}-outputs`)
 }
 
-export type PreservedOutputs = { ok: true; path?: string; files: string[]; skipped?: string[] } | { ok: false; error: string }
+export type PreservedOutputs = { ok: true; path?: string; files: string[]; skipped?: string[]; links?: string[]; withheld?: string[] } | { ok: false; error: string }
 
 export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archiveDir: string, id: string, limit = IGNORED_OUTPUT_COPY_LIMIT): Promise<PreservedOutputs> {
   if (workspace.isolation !== 'worktree' || !workspace.worktreePath) return { ok: true, files: [] }
@@ -385,22 +464,36 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
   }
   if (outputs.length === 0) return { ok: true, files: [] }
   try {
-    const found: OutputFile[] = []
-    const overflow = new Set<string>()
-    for (const rel of outputs) await listOutputFiles(tree, rel, rel, found, overflow)
-    const { kept, dropped } = pickIgnoredOutputs(found, limit)
+    const scan: OutputScan = { found: [], overflow: new Set<string>(), links: new Set<string>(), withheld: [] }
+    for (const rel of outputs) {
+      if (await linkOnPath(tree, rel)) scan.links.add(rel)
+      else await listOutputFiles(tree, rel, rel, scan)
+    }
+    const { kept, dropped } = pickIgnoredOutputs(scan.found, limit)
     const keptTops = new Set(kept.map((file) => file.top))
-    const droppedTops = new Set([...dropped.map((file) => file.top), ...overflow])
+    const droppedTops = new Set([...dropped.map((file) => file.top), ...scan.overflow])
     const files = outputs.filter((rel) => keptTops.has(rel))
     const skipped = outputs.filter((rel) => droppedTops.has(rel))
-    if (!files.length) return { ok: true, files, ...(skipped.length ? { skipped } : {}) }
+    const extra = {
+      ...(skipped.length ? { skipped } : {}),
+      ...(scan.links.size ? { links: [...scan.links].sort() } : {}),
+      ...(scan.withheld.length ? { withheld: scan.withheld.sort() } : {})
+    }
+    if (!files.length) return { ok: true, files, ...extra }
     const target = savedOutputsDir(archiveDir, id)
+    const realTree = await realpath(tree)
     for (const file of kept) {
+      const from = join(tree, file.rel)
+      const real = await realpath(from)
+      if (!pathInside(realTree, real)) {
+        scan.links.add(file.rel)
+        continue
+      }
       const to = join(target, file.rel)
       await mkdir(dirname(to), { recursive: true })
-      await copyFile(join(tree, file.rel), to)
+      await copyFile(from, to)
     }
-    return { ok: true, path: target, files, ...(skipped.length ? { skipped } : {}) }
+    return { ok: true, path: target, files, ...extra, ...(scan.links.size ? { links: [...scan.links].sort() } : {}) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
@@ -422,8 +515,90 @@ export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ 
   }
 }
 
+function pathInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child)
+  return !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
+function samePath(a: string, b: string): boolean {
+  const left = resolve(a)
+  const right = resolve(b)
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
+}
+
+export function removableContainer(workspace: Pick<PreparedWorkspace, 'containerPath' | 'worktreePath'>): boolean {
+  const container = workspace.containerPath
+  if (!container || !basename(container).startsWith('yan-subagent-')) return false
+  return !workspace.worktreePath || samePath(join(container, 'worktree'), workspace.worktreePath)
+}
+
+function nativeRealpath(path: string): Promise<string | null> {
+  return new Promise((done) => realpathFs.native(path, (error, resolved) => done(error ? null : resolved)))
+}
+
+export async function verifyKeptWorktree(id: string, workspace: Pick<PreparedWorkspace, 'cwd' | 'repoRoot' | 'worktreePath' | 'containerPath'>, tempRoot = tmpdir()): Promise<string | null> {
+  const tree = workspace.worktreePath
+  if (!tree || !workspace.repoRoot) return pick('记录里缺少工作树路径或仓库路径', 'The record has no worktree or repository path')
+  const top = await lstat(tree).catch(() => null)
+  if (!top?.isDirectory() || top.isSymbolicLink()) return pick(`工作树不存在或是链接：${tree}`, `The worktree is missing or is a link: ${tree}`)
+  const realTree = await nativeRealpath(tree)
+  if (!realTree) return pick(`工作树路径解析不了：${tree}`, `The worktree path could not be resolved: ${tree}`)
+  const container = dirname(realTree)
+  if (basename(realTree).toLowerCase() !== 'worktree' || !basename(container).toLowerCase().startsWith(`yan-subagent-${id}-`)) return pick(`工作树路径不是砚为 ${id} 建的临时目录：${tree}`, `The worktree path is not a temporary folder Inkstone created for ${id}: ${tree}`)
+  const realTemp = await nativeRealpath(tempRoot)
+  if (!realTemp || !samePath(dirname(container), realTemp)) return pick(`工作树不在系统临时目录下：${tree}`, `The worktree is not under the system temporary folder: ${tree}`)
+  if (workspace.containerPath) {
+    const realContainer = await nativeRealpath(workspace.containerPath)
+    if (!realContainer || !samePath(realContainer, container)) return pick(`临时目录与工作树不对应：${workspace.containerPath}`, `The temporary folder does not match the worktree: ${workspace.containerPath}`)
+  }
+  const realCwd = await nativeRealpath(workspace.cwd)
+  if (!realCwd || (!samePath(realCwd, realTree) && !pathInside(realTree, realCwd))) return pick(`工作目录不在工作树里：${workspace.cwd}`, `The working folder is not inside the worktree: ${workspace.cwd}`)
+  const listed = await git(workspace.repoRoot, ['worktree', 'list', '--porcelain', '-z'], 10_000).then((result) => result.stdout, () => null)
+  if (listed === null) return pick(`读不到仓库的工作树登记：${workspace.repoRoot}`, `Could not read the repository's worktree list: ${workspace.repoRoot}`)
+  for (const line of listed.split('\0')) {
+    if (!line.startsWith('worktree ')) continue
+    const real = await nativeRealpath(line.slice(9))
+    if (real && samePath(real, realTree)) return null
+  }
+  return pick(`工作树没有登记在 ${workspace.repoRoot} 的 git worktree list 里`, `The worktree is not registered in git worktree list of ${workspace.repoRoot}`)
+}
+
+export async function detachLinks(root: string): Promise<string[]> {
+  const errors: string[] = []
+  const top = await lstat(root).catch((error: NodeJS.ErrnoException) => error)
+  if (top instanceof Error) return top.code === 'ENOENT' ? [] : [top.message]
+  if (top.isSymbolicLink()) return [pick(`工作树路径本身是链接，拒绝清理：${root}`, `The worktree path itself is a link; refusing to clean it up: ${root}`)]
+  if (!top.isDirectory()) return []
+  const pending = [root]
+  while (pending.length) {
+    const dir = pending.pop()!
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(error instanceof Error ? error.message : String(error))
+      continue
+    }
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isSymbolicLink()) {
+        await unlink(path).catch((error: unknown) => {
+          errors.push(pick(`删不掉工作树里的链接（${path}）：${error instanceof Error ? error.message : String(error)}`, `Could not remove a link in the worktree (${path}): ${error instanceof Error ? error.message : String(error)}`))
+        })
+      } else if (entry.isDirectory()) {
+        pending.push(path)
+      }
+    }
+  }
+  return errors
+}
+
 export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<WorkspaceCleanupResult> {
   const errors: string[] = []
+  if (workspace.worktreePath) {
+    const top = await lstat(workspace.worktreePath).catch(() => null)
+    if (top?.isSymbolicLink()) return { ok: false, errors: [pick(`工作树路径本身是链接，拒绝清理：${workspace.worktreePath}`, `The worktree path itself is a link; refusing to clean it up: ${workspace.worktreePath}`)] }
+  }
   if (workspace.worktreePath && workspace.repoRoot) {
     try {
       await git(workspace.repoRoot, ['worktree', 'remove', '--force', workspace.worktreePath], 30_000)
@@ -440,7 +615,13 @@ export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<Wo
     }
   }
   if (errors.length) return { ok: false, errors }
-  if (workspace.containerPath) {
+  if (workspace.worktreePath && basename(workspace.worktreePath) === 'worktree' && basename(dirname(workspace.worktreePath)).startsWith('yan-subagent-')) {
+    const linkErrors = await detachLinks(workspace.worktreePath)
+    if (linkErrors.length) return { ok: false, errors: linkErrors }
+  }
+  if (workspace.containerPath && !removableContainer(workspace)) {
+    console.warn(`[subagent] 不是砚创建的临时目录，不递归删除（${workspace.containerPath}）`)
+  } else if (workspace.containerPath) {
     await rm(workspace.containerPath, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }).catch((error) => {
       console.warn(`[subagent] 临时目录暂时删不掉，留给系统清理（${workspace.containerPath}）：${error instanceof Error ? error.message : String(error)}`)
     })

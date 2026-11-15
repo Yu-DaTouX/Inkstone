@@ -44,6 +44,7 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
   if (key === 'budget') return status === 'done' ? '调用次数用完后已收尾（结论可能不完整）' : '调用次数用完被停止（结论可能不完整）'
   if (key === 'failed') return '失败'
   if (key === 'stopped') return '已停止'
+  if (key === 'interrupted') return '被应用退出中断（会话保留，可续派）'
   return '已完成'
 }
 
@@ -81,6 +82,8 @@ export function buildSubagentNotice(
     if ((run.review === 'pending' || run.review === 'conflict') && run.resultPath) lines.push(`工作区：${run.resultPath}`)
     if (run.review === 'pending' || run.review === 'conflict') lines.push(`处置：合并 yan subagent merge --id ${run.id}；放弃 yan subagent discard --id ${run.id}；要它继续改或解决冲突用 yan subagent send --id ${run.id}`)
   }
+  const skippedLinks = run.diff?.skippedLinkCount ?? 0
+  if (skippedLinks > 0) lines.push(`补丁跳过了 ${skippedLinks} 个链接（联接或目录链接，目标里的文件没有收进补丁）：${(run.diff?.skippedLinks ?? []).slice(0, 5).join(', ')}${skippedLinks > 5 ? ' …' : ''}`)
   const outputsLine = ignoredOutputsLine(run)
   if (outputsLine) lines.push(outputsLine)
   if (outcome.partial || status === 'error') lines.push(`完整过程：yan subagent get --id ${run.id}`)
@@ -130,6 +133,22 @@ export function buildSubagentOvertimeNotice(
     '这是宿主自动发出的通知，不是用户的新消息：请据此安排后续，不要复述本通知。'
   ]
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="running">\n${safeNoticeBody(lines)}\n</${SUBAGENT_NOTICE_TAG}>`
+}
+
+export function buildSubagentInterruptedNotice(
+  runs: Array<Pick<SubagentRun, 'id' | 'isolation'> & Partial<Pick<SubagentRun, 'brief' | 'review' | 'resultPath'>>>
+): string {
+  const lines = [
+    `上次应用退出时，以下 ${runs.length} 个子代理的运行被中断，原会话保留，可用 yan subagent send --id <id> --message <内容> 续接：`,
+    ...runs.map((run) => {
+      const tree = run.isolation === 'worktree' && (run.review === 'pending' || run.review === 'conflict') && run.resultPath ? `（工作树保留：${run.resultPath}）` : ''
+      const title = run.brief?.title?.split(/\r?\n/)[0]?.trim()
+      return `- ${run.id}${title ? `：${clip(title, HEADLINE_TASK_MAX)}` : ''}${tree}`
+    }),
+    NOT_AUTHORIZATION,
+    '这是宿主自动发出的通知，不是用户的新消息。'
+  ]
+  return `<${SUBAGENT_NOTICE_TAG} id="${runs.map((run) => run.id).join(',')}" status="interrupted">\n${safeNoticeBody(lines)}\n</${SUBAGENT_NOTICE_TAG}>`
 }
 
 const NOTICE_RE = new RegExp(`^<${SUBAGENT_NOTICE_TAG} id="([^"]+)" status="([^"]+)">\\n([\\s\\S]*?)\\n</${SUBAGENT_NOTICE_TAG}>$`)

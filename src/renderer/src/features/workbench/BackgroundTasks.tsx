@@ -158,7 +158,7 @@ function TaskRowView({ entry, text, onGone }: TaskRowProps): ReactElement {
 
   const { run, row } = entry
   if (!entry.live) {
-    const ended = row.state === 'done' ? (row.durationMs === null ? undefined : formatDuration(row.durationMs, { minSeconds: 1 })) : text.endedState[row.state === 'failed' ? 'failed' : 'stopped']
+    const ended = row.state === 'done' ? (row.durationMs === null ? undefined : formatDuration(row.durationMs, { minSeconds: 1 })) : text.endedState[row.state === 'failed' ? 'failed' : row.state === 'interrupted' ? 'interrupted' : 'stopped']
     return (
       <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
         <div className="wb-bg-line">

@@ -297,7 +297,7 @@ export class SubagentService {
     }
 
     if (command === 'subagent.list') {
-      const runs = ctrl.list().filter((run) => !!context.parentSessionId && run.parentSessionId === context.parentSessionId)
+      const runs = ctrl.list().filter((run) => !!context.parentSessionId && run.parentSessionId === context.parentSessionId && ctrl.parentOwns(run.id, context.parentSessionId))
       const active = runs.filter((run) => run.status === 'running' || run.status === 'starting')
       const withTranscript = params.transcript === true || params.transcript === 'true'
       return {
@@ -321,8 +321,7 @@ export class SubagentService {
     }
 
     if (command === 'subagent.get' || command === 'subagent.stop' || command === 'subagent.merge' || command === 'subagent.discard') {
-      const run = ctrl.get(id)
-      if (!context.parentSessionId || !run || run.parentSessionId !== context.parentSessionId) {
+      if (!ctrl.parentOwns(id, context.parentSessionId)) {
         throw new CapabilityCommandError('subagent_not_found', `找不到当前会话的子代理：${id}`)
       }
     }

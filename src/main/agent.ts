@@ -42,6 +42,7 @@ import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
+import { isHostTextNotice } from '../shared/host-notice-text'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -627,6 +628,7 @@ export class AgentController extends EventEmitter {
     this.stream.streaming = next
   }
   private agentRunning = false
+  private runFromUser = false
   private liveItemEdits = 0
   private hydrateDeferred: { sessionId?: string; sessionFile?: string } | null = null
   private pendingAborts = 0
@@ -2585,6 +2587,7 @@ export class AgentController extends EventEmitter {
   private setAgentRunning(v: boolean): void {
     if (this.agentRunning === v) return
     this.agentRunning = v
+    if (!v) this.runFromUser = false
     if (v) this.executionRunObserved = true
     if (!this.state) return
     this.state = { ...this.state, isAgentRunning: v }
@@ -3058,11 +3061,28 @@ export class AgentController extends EventEmitter {
         }
       }
       await this.terminalNotices.flushHeld()
+      if (!this.executionActive()) this.runFromUser = !autoContinue && !isSubagentNotice(text) && !isHostTextNotice(text)
       const res = await this.queue.submit('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，发送结果未应用到当前会话', 'Session changed; the send result was not applied to the current session') }
       if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images } })
       await this.refreshState()
+      return { ok: true }
+    })
+  }
+
+  userRunActive(): boolean {
+    return this.agentRunning && this.runFromUser
+  }
+
+  async steerIntoUserRun(text: string): Promise<{ ok: boolean; idle?: boolean; error?: string }> {
+    return this.queue.run(async () => {
+      if (!this.userRunActive()) return { ok: false, idle: true }
+      const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
+      if (!rpc) return { ok: false, idle: true }
+      const res = await this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
+      if (!res.success) return { ok: false, error: res.error }
+      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换', 'Session changed') }
       return { ok: true }
     })
   }

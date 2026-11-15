@@ -48,6 +48,11 @@ try {
   const stopped = rows.buildSubagentTaskRow({ ...base, status: 'cancelled', endedAt: 2_000 }, { now: NOW })
   assert.equal(stopped.state, 'stopped')
   assert.equal(stopped.label, '已停止：调查登录流程的并发问题')
+  const interrupted = rows.buildSubagentTaskRow({ ...base, status: 'cancelled', endReason: 'interrupted', endedAt: 2_000 }, { now: NOW })
+  assert.equal(interrupted.state, 'interrupted')
+  assert.equal(interrupted.label, '已中断：调查登录流程的并发问题')
+  assert.equal(interrupted.canStop, false)
+  assert.equal(rows.buildSubagentTaskRow({ ...base, status: 'cancelled', endReason: 'interrupted', endedAt: 2_000 }, { now: NOW, lang: 'en-US' }).label, 'Interrupted: 调查登录流程的并发问题')
 
   const en = rows.buildSubagentTaskRow({ ...base, task: 'Investigate flaky login test' }, { now: NOW, lang: 'en-US' })
   assert.equal(en.label, 'Investigating flaky login test')

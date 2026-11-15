@@ -10,6 +10,7 @@ export type SubagentOutcomeKey =
   | 'failed'
   | 'dismissed'
   | 'stopped'
+  | 'interrupted'
   | 'review'
   | 'conflict'
 
@@ -44,7 +45,7 @@ export function subagentOutcome(run: OutcomeInput): SubagentOutcome {
 
   if (run.status === 'starting') return make('starting', 'live', false, true)
   if (run.status === 'running') return make(run.wrapUp ? 'wrapUp' : 'running', run.wrapUp ? 'warn' : 'live', false, true)
-  if (run.status === 'cancelled') return make('stopped', 'mute', false)
+  if (run.status === 'cancelled') return run.endReason === 'interrupted' ? make('interrupted', 'warn', false) : make('stopped', 'mute', false)
   if (run.status === 'error') {
     if (isDismissed(run)) return make('dismissed', 'mute', false)
     if (run.endReason === 'timeout') return make('timeout', 'warn', true)

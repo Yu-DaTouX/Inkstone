@@ -47,6 +47,7 @@ try {
         export const preserveIgnoredOutputs = async () => ({ ok: true, files: [] })
         export const savedOutputsDir = (dir, id) => dir + '/' + id + '-outputs'
         export const recoverWorktree = async () => null
+        export const verifyKeptWorktree = async () => null
       ` }))
     } }]
   })

@@ -86,6 +86,7 @@ export interface SubagentListTotals {
   failed: number
   done: number
   stopped: number
+  interrupted: number
   toolCalls: number
   tokens: number
   spanMs: number | null
@@ -97,6 +98,7 @@ export function subagentListTotals(runs: readonly SubagentRun[]): SubagentListTo
   let failed = 0
   let done = 0
   let stopped = 0
+  let interrupted = 0
   let toolCalls = 0
   let tokens = 0
   let first = Infinity
@@ -104,6 +106,7 @@ export function subagentListTotals(runs: readonly SubagentRun[]): SubagentListTo
   for (const run of runs) {
     if (isLiveSubagentRun(run)) live += 1
     else if (run.status === 'error') failed += 1
+    else if (run.status === 'cancelled' && run.endReason === 'interrupted') interrupted += 1
     else if (run.status === 'cancelled') stopped += 1
     else done += 1
     toolCalls += Math.max(0, Math.floor(run.toolCalls ?? 0))
@@ -118,6 +121,7 @@ export function subagentListTotals(runs: readonly SubagentRun[]): SubagentListTo
     failed,
     done,
     stopped,
+    interrupted,
     toolCalls,
     tokens,
     spanMs: ended && Number.isFinite(first) && Number.isFinite(last) ? Math.max(0, last - first) : null,

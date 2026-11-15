@@ -25,11 +25,13 @@ export type SessionTextKey =
   | 'subagentDoneCount'
   | 'subagentFailedCount'
   | 'subagentStoppedCount'
+  | 'subagentInterruptedCount'
   | 'subagentAllDone'
   | 'subagentAllLive'
   | 'subagentAllAwaiting'
   | 'subagentAllFailed'
   | 'subagentAllStopped'
+  | 'subagentAllInterrupted'
   | 'subagentListLabel'
   | 'subagentShowMore'
   | 'subagentShowLess'
@@ -319,11 +321,13 @@ const ZH: Record<SessionTextKey, string> = {
   subagentDoneCount: '{n} 完成',
   subagentFailedCount: '{n} 失败',
   subagentStoppedCount: '{n} 已停止',
+  subagentInterruptedCount: '{n} 已中断',
   subagentAllDone: '全部完成',
   subagentAllLive: '进行中',
   subagentAllAwaiting: '等你确认',
   subagentAllFailed: '全部失败',
   subagentAllStopped: '全部停止',
+  subagentAllInterrupted: '全部中断',
   subagentListLabel: '子 Agent 列表',
   subagentShowMore: '再显示 {n} 个',
   subagentShowLess: '收起',
@@ -614,11 +618,13 @@ const EN: Record<SessionTextKey, string> = {
   subagentDoneCount: '{n} done',
   subagentFailedCount: '{n} failed',
   subagentStoppedCount: '{n} stopped',
+  subagentInterruptedCount: '{n} interrupted',
   subagentAllDone: 'all done',
   subagentAllLive: 'in progress',
   subagentAllAwaiting: 'need approval',
   subagentAllFailed: 'all failed',
   subagentAllStopped: 'all stopped',
+  subagentAllInterrupted: 'all interrupted',
   subagentListLabel: 'Subagents',
   subagentShowMore: 'Show {n} more',
   subagentShowLess: 'Show less',

@@ -50,6 +50,7 @@ const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
   budget: 'sa.state.budget',
   failed: 'sa.state.failed',
   stopped: 'sa.state.stopped',
+  interrupted: 'sa.state.interrupted',
   review: 'sa.state.review',
   conflict: 'sa.state.conflict'
 }
@@ -98,29 +99,32 @@ function subagentCountsText(totals: SubagentListTotals, tt: SessionText): string
     totals.live ? tt('subagentLiveCount', { n: totals.live }) : null,
     totals.failed ? tt('subagentFailedCount', { n: totals.failed }) : null,
     totals.done ? tt('subagentDoneCount', { n: totals.done }) : null,
+    totals.interrupted ? tt('subagentInterruptedCount', { n: totals.interrupted }) : null,
     totals.stopped ? tt('subagentStoppedCount', { n: totals.stopped }) : null
   ].filter(Boolean).join(' · ')
 }
 
-type SubagentCount = 'awaiting' | 'live' | 'failed' | 'done' | 'stopped'
+type SubagentCount = 'awaiting' | 'live' | 'failed' | 'done' | 'interrupted' | 'stopped'
 
 const COUNT_KEY: Record<SubagentCount, SessionTextKey> = {
   awaiting: 'subagentAwaitingCount',
   live: 'subagentLiveCount',
   failed: 'subagentFailedCount',
   done: 'subagentDoneCount',
+  interrupted: 'subagentInterruptedCount',
   stopped: 'subagentStoppedCount'
 }
 
-const COUNT_ORDER: readonly SubagentCount[] = ['awaiting', 'live', 'failed', 'done', 'stopped']
+const COUNT_ORDER: readonly SubagentCount[] = ['awaiting', 'live', 'failed', 'done', 'interrupted', 'stopped']
 
-const LEAD_TONE: Record<SubagentCount, CardStatusTone> = { awaiting: 'ask', failed: 'fail', live: 'run', stopped: 'muted', done: 'ok' }
+const LEAD_TONE: Record<SubagentCount, CardStatusTone> = { awaiting: 'ask', failed: 'fail', live: 'run', interrupted: 'muted', stopped: 'muted', done: 'ok' }
 
 const ALL_KEY: Record<SubagentCount, SessionTextKey> = {
   awaiting: 'subagentAllAwaiting',
   live: 'subagentAllLive',
   failed: 'subagentAllFailed',
   done: 'subagentAllDone',
+  interrupted: 'subagentAllInterrupted',
   stopped: 'subagentAllStopped'
 }
 
@@ -142,7 +146,7 @@ function subagentSummary(listTotals: SubagentListTotals, awaiting: number, tt: S
   usage: string | null
 } {
   const totals = { ...listTotals, awaiting, live: listTotals.live - awaiting }
-  const lead: SubagentCount | null = totals.awaiting ? 'awaiting' : totals.failed ? 'failed' : totals.live ? 'live' : totals.stopped ? 'stopped' : null
+  const lead: SubagentCount | null = totals.awaiting ? 'awaiting' : totals.failed ? 'failed' : totals.live ? 'live' : totals.interrupted ? 'interrupted' : totals.stopped ? 'stopped' : null
   const rest = lead ? COUNT_ORDER.filter((key) => key !== lead && totals[key] > 0).map((key) => tt(COUNT_KEY[key], { n: totals[key] })) : []
   const usage = totals.ended
     ? subagentSummaryLine({ toolCalls: totals.toolCalls, tokens: totals.tokens || null, durationMs: totals.spanMs }, rowLang(lang))
@@ -164,7 +168,7 @@ function subagentRowUsage(
   lang: string
 ): string {
   if (row.state === 'failed') return firstLine(error ?? '') || failedWord
-  if (row.state === 'done' || row.state === 'stopped') {
+  if (row.state === 'done' || row.state === 'stopped' || row.state === 'interrupted') {
     return subagentSummaryLine({ toolCalls: row.toolCalls, tokens: row.tokens, durationMs: null }, rowLang(lang))
   }
   return [row.state === 'starting' ? null : row.latestActivity, row.toolCalls > 0 ? tt('subagentCalls', { n: row.toolCalls }) : null].filter(Boolean).join(' · ')

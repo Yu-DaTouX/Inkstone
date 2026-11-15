@@ -27,7 +27,7 @@ export interface OverviewText {
   earlierOutput: string
   taskGone: string
   terminalJobState: Record<import('../../../../shared/terminal-jobs').TerminalJobState, string>
-  endedState: Record<'stopped' | 'failed' | 'exited' | 'timeout', string>
+  endedState: Record<'stopped' | 'interrupted' | 'failed' | 'exited' | 'timeout', string>
   exitCode: (code: number) => string
   quotaFailed: string
   quotaExpired: string
@@ -104,7 +104,7 @@ const ZH: WorkbenchText = {
     earlierOutput: '（更早的输出未显示）',
     taskGone: '任务已经结束，无需停止',
     terminalJobState: { running: '终端运行中', stopping: '正在停止', completed: '已结束', matched: '已就绪', exited: '终端已退出', timeout: '超过时限，仍在运行', stopped: '已停止' },
-    endedState: { stopped: '已停止', failed: '失败', exited: '已退出', timeout: '超时' },
+    endedState: { stopped: '已停止', interrupted: '已中断', failed: '失败', exited: '已退出', timeout: '超时' },
     exitCode: (code) => `退出码 ${code}`,
     quotaFailed: '额度查询失败',
     quotaExpired: '登录已过期',
@@ -169,7 +169,7 @@ const EN: WorkbenchText = {
     earlierOutput: '(Earlier output not shown)',
     taskGone: 'The task already ended; nothing to stop',
     terminalJobState: { running: 'Running in terminal', stopping: 'Stopping', completed: 'Finished', matched: 'Ready', exited: 'Terminal exited', timeout: 'Past time limit, still running', stopped: 'Stopped' },
-    endedState: { stopped: 'Stopped', failed: 'Failed', exited: 'Exited', timeout: 'Timed out' },
+    endedState: { stopped: 'Stopped', interrupted: 'Interrupted', failed: 'Failed', exited: 'Exited', timeout: 'Timed out' },
     exitCode: (code) => `Exit code ${code}`,
     quotaFailed: 'Quota check failed',
     quotaExpired: 'Sign-in expired',

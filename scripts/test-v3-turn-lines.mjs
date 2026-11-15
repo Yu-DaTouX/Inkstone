@@ -590,6 +590,19 @@ async function main() {
     const waitingDetail = collect(waitingTile, (el) => el.props?.className === 'v3-sa-tile-detail')[0]
     ok(flattenText(waitingDetail?.props.children) === 'awaitApproval' && waitingDetail?.props['data-warning'] === '', '等审批的块写「等你确认」，不再显示最近动作', flattenText(waitingDetail?.props.children))
     ok(collect(waitingTile, kind('SubagentStateIcon'))[0]?.props.awaiting === true, '等审批的块状态点切成等待')
+    const endedRuns = [
+      subagentRun({ id: 'sub-e0', startedAt: 1000, status: 'done', endedAt: 5000 }),
+      subagentRun({ id: 'sub-e1', startedAt: 1001, status: 'cancelled', endReason: 'interrupted', endedAt: 5001 }),
+      subagentRun({ id: 'sub-e2', startedAt: 1002, status: 'cancelled', endReason: 'stopped', endedAt: 5002 })
+    ]
+    rt.cells = []
+    store({ subagents: endedRuns, models: [], approvals: [] })
+    const endedSum = summaryOf(byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0])
+    ok(endedSum.status === 'subagentInterruptedCount' && endedSum.title === 'subagentCount · subagentDoneCount · subagentStoppedCount', '组头把「已中断」与「已停止」分开计数', JSON.stringify(endedSum))
+    rt.cells = []
+    store({ subagents: [endedRuns[1], { ...endedRuns[1], id: 'sub-e3' }], models: [], approvals: [] })
+    const allInterrupted = summaryOf(byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0])
+    ok(allInterrupted.status === 'subagentAllInterrupted', '全部被退出中断时写「全部中断」，不写「全部停止」', JSON.stringify(allInterrupted))
     rt.cells = []
     store({ subagents: many, models: [] })
     ok(kind('CardSummary')(sum) && sum.props.expanded === true && sum.props['data-failed'] === '1', '组头是卡片摘要行（展开箭头），有失败时带失败标记')

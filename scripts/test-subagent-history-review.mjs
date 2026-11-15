@@ -39,6 +39,7 @@ try {
           export const preserveIgnoredOutputs = async () => ({ ok: true, files: [] })
           export const savedOutputsDir = (dir, id) => dir + '/' + id + '-outputs'
           export const recoverWorktree = async () => null
+          export const verifyKeptWorktree = async () => null
         ` }))
       }
     }]
@@ -53,6 +54,8 @@ try {
   controller.runs = new Map()
   controller.resuming = new Map()
   controller.reviewing = new Set()
+  controller.retiring = new Set()
+  controller.staleOwners = new Set()
   let record
   controller.history = {
     get: () => record,

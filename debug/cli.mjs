@@ -12,6 +12,7 @@ import { applyUserUi, composeComparison, listFrictionShots, measureUi, openFrict
 import { initializeCards, prepareCards } from './lib/card-gallery.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
 import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
+import { cleanupInstanceWorktrees } from './lib/subagent-worktrees.mjs'
 
 const scenariosDir = join(debugDir, 'scenarios')
 const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep', 'user-days', 'friction'])
@@ -97,7 +98,7 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
       await initializeCards(cdp, box)
     } catch (error) {
       writeFileSync(join(runDir, 'main.log'), app.log())
-      stopInstance({ app, fake })
+      stopInstance({ app, fake, runDir })
       throw error
     } finally { cdp?.close() }
   }
@@ -108,16 +109,27 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
       await initializeDemo(cdp, box)
     } catch (error) {
       writeFileSync(join(runDir, 'main.log'), app.log())
-      stopInstance({ app, fake })
+      stopInstance({ app, fake, runDir })
       throw error
     } finally { cdp?.close() }
   }
   return { fake, runDir, box, cdpPort, app }
 }
 
-function stopInstance({ app, fake }) {
+function stopInstance({ app, fake, runDir }) {
   killTree(app.child.pid)
   fake?.server.close()
+  if (runDir) cleanupRunWorktrees(runDir)
+}
+
+function cleanupRunWorktrees(runDir) {
+  try {
+    const { removed, skipped } = cleanupInstanceWorktrees(runDir)
+    if (removed.length) console.log(`已按本实例的子代理记录清掉 ${removed.length} 个工作树`)
+    for (const item of skipped) console.log(`未清理子代理工作树 ${item.worktree}：${item.reason}`)
+  } catch (error) {
+    console.log(`清理子代理工作树失败：${error?.message ?? error}`)
+  }
 }
 
 async function waitStore(cdp) {
@@ -193,6 +205,7 @@ function cmdDown() {
   if (!current) { console.log('没有正在运行的实例'); return }
   killTree(current.pid)
   console.log(`已结束 pid ${current.pid}`)
+  if (current.runDir) cleanupRunWorktrees(current.runDir)
 }
 
 function listScenarios() {

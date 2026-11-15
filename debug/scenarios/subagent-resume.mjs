@@ -12,7 +12,8 @@ export default async function run({ cdp, waitFor, check, sleep, shot }) {
   const runs = [
     run('sub-00000a01', { resumable: { ok: true } }),
     run('sub-00000a02', { isolation: 'worktree', review: 'pending', diff: { files: 1, additions: 3, deletions: 1, paths: ['a.ts'], truncated: false }, resumable: { ok: true } }),
-    run('sub-00000a03', { isolation: 'worktree', review: 'merged', resumable: { ok: false, reason: 'worktree 已合并、放弃或归档清理，原工作树不在了' } })
+    run('sub-00000a03', { isolation: 'worktree', review: 'merged', resumable: { ok: false, reason: 'worktree 已合并、放弃或归档清理，原工作树不在了' } }),
+    run('sub-00000a04', { isolation: 'worktree', status: 'cancelled', endReason: 'interrupted', review: 'pending', diff: { files: 2, additions: 5, deletions: 1, paths: ['a.ts', 'b.ts'], truncated: false }, resumable: { ok: true } })
   ]
   await ev(`window.__yanStore.setState({ subagents: ${JSON.stringify(runs)} })`)
   const open = async (id) => {
@@ -30,4 +31,10 @@ export default async function run({ cdp, waitFor, check, sleep, shot }) {
   const blockedInfo = await ev(`(() => { const c = document.querySelector('[data-testid="rp-surface-subagent:sub-00000a03"] [data-testid="v3-subagent-composer"]'); const line = c?.querySelector('[data-testid="v3-subagent-composer-ended"]'); return { mode: c?.dataset.mode, textarea: !!c?.querySelector('textarea'), title: line?.title, text: line?.innerText, height: c?.getBoundingClientRect().height } })()`)
   check('不可续派时收成一行，原因放悬停', blockedInfo.mode === 'blocked' && !blockedInfo.textarea && (blockedInfo.title ?? '').includes('不能继续：worktree 已合并'), blockedInfo)
   await shot('subagent-resume-blocked')
+  await open('sub-00000a04')
+  const interrupted = await ev(`(() => { const pane = document.querySelector('[data-testid="rp-surface-subagent:sub-00000a04"]'); const c = pane?.querySelector('[data-testid="v3-subagent-composer"]'); return { mode: c?.dataset.mode, label: c?.querySelector('textarea')?.getAttribute('aria-label'), status: pane?.querySelector('[data-testid="v3-subagent-pane-status"]')?.innerText, review: pane?.querySelector('[data-testid="v3-subagent-review-state"]')?.innerText } })()`)
+  check('退出时中断的 worktree 子代理显示「已中断」', (interrupted.status ?? '').includes('已中断'), interrupted)
+  check('已中断：审阅栏说明工作树保留、可续接或由主会话合并放弃', (interrupted.review ?? '').includes('工作树已保留'), interrupted)
+  check('已中断：输入框可续接并说明按被打断的任务接着做', interrupted.mode === 'resume' && (interrupted.label ?? '').includes('中断'), interrupted)
+  await shot('subagent-resume-interrupted')
 }

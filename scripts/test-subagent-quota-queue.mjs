@@ -110,12 +110,15 @@ async function withQuotaController(body) {
   try {
     const started = await ctrl.start('等额度时有追加消息', 'anthropic/claude-test', 'shared-cwd')
     ok(started.ok === true, '假 RPC 启动成功（带模型）', started.error ?? '')
+    ctrl.runs.get(started.run.id).parentSessionId = 'sess-quota'
     await body({ ctrl, id: started.run.id, rpc: factory.created[0], state })
   } finally {
     await ctrl.stopAll()
     await rm(archive, { recursive: true, force: true })
   }
 }
+
+const PARENT = { parentSessionId: 'sess-quota', from: 'parent' }
 
 const hitQuota = (rpc) => {
   rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
@@ -126,8 +129,8 @@ await withQuotaController(async ({ ctrl, id, rpc }) => {
   hitQuota(rpc)
   ok(await waitFor(() => ctrl.get(id)?.quotaWait !== undefined), '额度用尽后进入等额度', JSON.stringify(ctrl.get(id)?.quotaWait))
   const before = promptCount(rpc)
-  const first = await ctrl.send(id, '补充一', 'steer')
-  const second = await ctrl.send(id, '补充二', 'followUp')
+  const first = await ctrl.send(id, '补充一', 'steer', PARENT)
+  const second = await ctrl.send(id, '补充二', 'followUp', PARENT)
   ok(first.ok && first.delivery === 'queued' && second.ok && second.delivery === 'queued', '等额度时追加消息先收下排队', JSON.stringify([first.delivery, second.delivery]))
   ok(promptCount(rpc) === before, '排队时不打断额度等待、不立即发 prompt', String(promptCount(rpc)))
   ok(/额度等待中/.test(ctrl.get(id).latestActivity ?? ''), '进度说明追加信息在排队', ctrl.get(id).latestActivity)
@@ -144,8 +147,8 @@ await withQuotaController(async ({ ctrl, id, rpc }) => {
 await withQuotaController(async ({ ctrl, id, rpc, state }) => {
   hitQuota(rpc)
   ok(await waitFor(() => ctrl.get(id)?.quotaWait !== undefined), '额度用尽后进入等额度（失败用例）', JSON.stringify(ctrl.get(id)?.quotaWait))
-  await ctrl.send(id, '先送到的一条', 'steer')
-  await ctrl.send(id, '会送失败的一条', 'steer')
+  await ctrl.send(id, '先送到的一条', 'steer', PARENT)
+  await ctrl.send(id, '会送失败的一条', 'steer', PARENT)
   let steerAttempts = 0
   rpc.hooks.push((type, payload) => {
     if (type !== 'prompt' || payload?.streamingBehavior !== 'steer') return undefined
@@ -162,7 +165,7 @@ await withQuotaController(async ({ ctrl, id, rpc, state }) => {
 await withQuotaController(async ({ ctrl, id, rpc, state }) => {
   hitQuota(rpc)
   ok(await waitFor(() => ctrl.get(id)?.quotaWait !== undefined), '额度用尽后进入等额度（续跑失败用例）', JSON.stringify(ctrl.get(id)?.quotaWait))
-  await ctrl.send(id, '等恢复后要发的', 'steer')
+  await ctrl.send(id, '等恢复后要发的', 'steer', PARENT)
   rpc.hooks.push((type, payload) =>
     type === 'prompt' && !payload?.streamingBehavior ? { success: false, error: 'resume prompt failed' } : undefined
   )

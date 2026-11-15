@@ -154,8 +154,8 @@ export class SubagentHistory {
       transcript,
       toolCalls: !interrupted && Number.isFinite(data.toolCalls) ? data.toolCalls : transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
       review: data.review ?? 'none',
-      ...(interrupted ? { status: 'error', endReason: 'exited', endedAt: data.endedAt ?? (await stat(path)).mtimeMs,
-        error: pick('应用退出时子 Agent未完成，未自动恢复执行', 'Subagent unfinished at app exit; not resumed'), latestActivity: pick('运行已中断', 'Run interrupted') } : {})
+      ...(interrupted ? { status: 'cancelled', endReason: 'interrupted', endedAt: data.endedAt ?? (await stat(path)).mtimeMs,
+        latestActivity: pick('应用退出时未完成，运行已中断；可续派接着做', 'Run interrupted when the app quit; send a message to resume it') } : {})
     }
     return { run, rootCwd: data.rootCwd, resume: data.resume && typeof data.resume === 'object' ? data.resume as ResumeMeta : undefined }
   }
