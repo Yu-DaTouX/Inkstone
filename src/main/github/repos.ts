@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { classifyGhFailure, prFailure, runGh, type GhRun, type GhRunner } from './command'
 import { sanitizeWorkFolderName } from '../work-folder'
+import { killProcessTree } from '../git-service'
 import type {
   GhPrFailure,
   GhPrListItemJson,
@@ -254,16 +255,22 @@ export interface CloneDeps {
   addProject: (cwd: string) => Promise<{ projectId?: string }>
   trusted: (cwd: string) => Promise<boolean>
   timeoutMs?: number
+  killTree?: (child: ChildProcess) => void
+  removeDir?: (path: string) => Promise<void>
 }
 
-const active = new Map<string, { child: ChildProcess; cancelled: boolean }>()
+const active = new Map<string, { child: ChildProcess; cancelled: boolean; kill: () => void }>()
 
 export function cancelClone(id: string): boolean {
   const entry = active.get(id)
   if (!entry) return false
   entry.cancelled = true
-  entry.child.kill()
+  entry.kill()
   return true
+}
+
+function removeCloneDir(path: string): Promise<void> {
+  return rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
 }
 
 export function cloneArguments(request: GithubCloneRequest, target: string): { command: string; args: string[]; name: string } | { error: string } {
@@ -309,11 +316,12 @@ export async function cloneRepository(request: GithubCloneRequest, deps: CloneDe
       stdio: ['ignore', 'ignore', 'pipe'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GIT_ASKPASS: '', GCM_INTERACTIVE: 'never' }
     })
-    const entry = { child, cancelled: false }
+    const killTree = deps.killTree ?? killProcessTree
+    const entry = { child, cancelled: false, kill: () => killTree(child) }
     active.set(request.id, entry)
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill()
+      entry.kill()
     }, deps.timeoutMs ?? CLONE_TIMEOUT_MS)
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (chunk: string) => {
@@ -332,10 +340,11 @@ export async function cloneRepository(request: GithubCloneRequest, deps: CloneDe
     })
   })
   if (outcome.cancelled || outcome.code !== 0) {
-    if (resolved.created) await rm(resolved.target, { recursive: true, force: true }).catch(() => undefined)
-    if (outcome.cancelled) return { ok: false, cancelled: true, error: pick('已取消克隆', 'Clone canceled') }
+    const leftover = resolved.created && !(await (deps.removeDir ?? removeCloneDir)(resolved.target).then(() => true, () => false)) ? resolved.target : undefined
+    const leftoverNote = leftover ? pick(`；未能删除残留文件夹，请手动删除：${leftover}`, `; could not remove the leftover folder, delete it manually: ${leftover}`) : ''
+    if (outcome.cancelled) return { ok: false, cancelled: true, error: pick('已取消克隆', 'Clone canceled') + leftoverNote, ...(leftover ? { leftover } : {}) }
     const failure = classifyCloneFailure(outcome.stderr, outcome.timedOut, outcome.missing)
-    return fail(failure.message, failure)
+    return { ...fail(failure.message + leftoverNote, failure), ...(leftover ? { leftover } : {}) }
   }
   deps.onProgress?.({ id: request.id, phase: 'done', percent: 100 })
   const added = await deps.addProject(resolved.target)

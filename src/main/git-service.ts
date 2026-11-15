@@ -59,6 +59,7 @@ export interface GitRunOptions {
   env?: Record<string, string>
   stdin?: string | Buffer
   deadline?: GitDeadline
+  maxBuffer?: number
 }
 
 function gitFailure(message: string, timedOut: boolean, code: GitErrorCode): Error {
@@ -93,9 +94,11 @@ export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = 
       cwdExists: input.enoent ? existsSync(cwd) : undefined,
       deadlineExpired: opts.deadline?.expired() ?? false
     })
+  const maxBuffer = opts.maxBuffer ?? MAX_BUFFER
   if (opts.stdin !== undefined) {
     let timedOut = false
     let enoent = false
+    let outputLimit = false
     const res = await new Promise<GitRunResult>((resolve) => {
       const child = spawn('git', full, { cwd, windowsHide: true, env })
       const timer = setTimeout(() => {
@@ -103,36 +106,49 @@ export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = 
         killProcessTree(child)
       }, timeout)
       child.on('exit', () => clearTimeout(timer))
-      let stdout = ''
-      let stderr = ''
-      child.stdout?.on('data', (d: Buffer) => {
-        stdout += d.toString('utf8')
-      })
-      child.stderr?.on('data', (d: Buffer) => {
-        stderr += d.toString('utf8')
-      })
+      const out: Buffer[] = []
+      const err: Buffer[] = []
+      let total = 0
+      const collect = (into: Buffer[]) => (d: Buffer) => {
+        if (outputLimit) return
+        const room = maxBuffer - total
+        if (d.length > room) {
+          if (room > 0) into.push(d.subarray(0, room))
+          total = maxBuffer
+          outputLimit = true
+          clearTimeout(timer)
+          killProcessTree(child)
+          return
+        }
+        into.push(d)
+        total += d.length
+      }
+      child.stdout?.on('data', collect(out))
+      child.stderr?.on('data', collect(err))
+      const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString('utf8')
       child.on('error', (e) => {
         clearTimeout(timer)
         enoent = (e as NodeJS.ErrnoException).code === 'ENOENT'
         resolve({
           ok: false,
-          stdout,
-          stderr: enoent ? enoentMessage(cwd) : stderr + e.message
+          stdout: text(out),
+          stderr: enoent ? enoentMessage(cwd) : text(err) + e.message
         })
       })
-      child.on('close', (code) => resolve({ ok: code === 0 && !timedOut, stdout, stderr, ...(timedOut ? { timedOut } : {}) }))
+      child.on('close', (code) => resolve({ ok: code === 0 && !timedOut && !outputLimit, stdout: text(out), stderr: text(err), ...(timedOut ? { timedOut } : {}) }))
       child.stdin?.on('error', () => undefined)
       child.stdin?.end(opts.stdin, 'utf8')
     })
     if (res.ok) return res
-    const code = codeFor({ enoent, timedOut, stderr: res.stderr })
-    if (opts.allowFailure) return { ...res, code, error: (res.stderr || res.stdout).trim() || (timedOut ? pick('git 命令超时', 'Git command timed out') : undefined) }
-    throw gitFailure((res.stderr || res.stdout).trim() || pick('git 命令失败', 'Git command failed'), timedOut, code)
+    const code = codeFor({ enoent, timedOut, outputLimit, stderr: res.stderr })
+    const limitMessage = outputLimit ? pick('git 输出超出上限', 'Git output exceeded the limit') : undefined
+    if (opts.allowFailure) return { ...res, code, error: limitMessage ?? ((res.stderr || res.stdout).trim() || (timedOut ? pick('git 命令超时', 'Git command timed out') : undefined)) }
+    throw gitFailure(limitMessage ?? ((res.stderr || res.stdout).trim() || pick('git 命令失败', 'Git command failed')), timedOut, code)
   }
   let timedOutByTimer = false
   try {
     const res = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      const child = execFile('git', full, { cwd, windowsHide: true, maxBuffer: MAX_BUFFER, encoding: 'utf8', env }, (error, stdout, stderr) => {
+      const child = execFile('git', full, { cwd, windowsHide: true, maxBuffer, encoding: 'utf8', env }, (error, stdout, stderr) => {
         clearTimeout(timer)
         if (error) reject(Object.assign(error, { stdout, stderr }))
         else resolve({ stdout, stderr })

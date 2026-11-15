@@ -303,6 +303,7 @@ export interface GithubCloneResult {
   projectId?: string
   trusted?: boolean
   cancelled?: boolean
+  leftover?: string
   error?: string
   failure?: GhPrFailure
 }

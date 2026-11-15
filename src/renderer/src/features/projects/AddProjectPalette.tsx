@@ -220,7 +220,7 @@ function AddProjectBody({ isOpen }: { isOpen: boolean }): ReactElement {
       return
     }
     if (result.cancelled) {
-      setError(t('project.add.cancelled'))
+      setError(result.leftover && result.error ? result.error : t('project.add.cancelled'))
       return
     }
     if (result.failure?.code === 'not-authenticated' && request.source.kind === 'github') {

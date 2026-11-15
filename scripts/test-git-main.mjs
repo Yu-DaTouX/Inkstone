@@ -167,6 +167,15 @@ async function runGitServices() {
     const leaked = await service.gitRun(dir, ['--version'], { allowFailure: true })
     delete process.env.GIT_DIR
     assert.equal(leaked.ok, true)
+    const capped = await service.gitRun(dir, ['stripspace'], { allowFailure: true, stdin: 'line\n'.repeat(40_000), maxBuffer: 4096 })
+    assert.equal(capped.ok, false)
+    assert.equal(capped.code, 'OUTPUT_LIMIT')
+    assert.ok(Buffer.byteLength(capped.stdout) + Buffer.byteLength(capped.stderr) <= 4096)
+    await assert.rejects(service.gitRun(dir, ['stripspace'], { stdin: 'line\n'.repeat(40_000), maxBuffer: 4096 }), (error) => error.code === 'OUTPUT_LIMIT')
+    const wide = `${'中'.repeat(100_000)}\n`
+    const echoed = await service.gitRun(dir, ['stripspace'], { allowFailure: true, stdin: wide })
+    assert.equal(echoed.ok, true)
+    assert.equal(echoed.stdout, wide)
 
     assert.deepEqual(identity.parseRemoteUrl('https://github.com/Owner/Repo.git'), { host: 'github.com', owner: 'Owner', name: 'Repo' })
     assert.deepEqual(identity.parseRemoteUrl('git@github.com:owner/repo.git'), { host: 'github.com', owner: 'owner', name: 'repo' })

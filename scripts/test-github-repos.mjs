@@ -87,6 +87,8 @@ try {
     const child = new EventEmitter()
     child.stderr = new EventEmitter()
     child.stderr.setEncoding = () => undefined
+    child.exitCode = null
+    child.signalCode = null
     child.kill = () => { child.emit('close', null) }
     fakeSpawn.last = { command, args, options }
     queueMicrotask(() => { void script(child, args, command) })
@@ -94,7 +96,12 @@ try {
   }
   const events = []
   const added = []
-  const deps = (spawn, extra = {}) => ({ spawn, defaultDir: () => dir, onProgress: (p) => events.push(p), addProject: async (cwd) => { added.push(cwd); return { projectId: 'p1' } }, trusted: async () => false, ...extra })
+  const treeKilled = []
+  const killTree = (child) => {
+    treeKilled.push(child)
+    child.kill()
+  }
+  const deps = (spawn, extra = {}) => ({ spawn, defaultDir: () => dir, onProgress: (p) => events.push(p), addProject: async (cwd) => { added.push(cwd); return { projectId: 'p1' } }, trusted: async () => false, killTree, ...extra })
 
   const success = await repos.cloneRepository({ id: 'ok1', source: { kind: 'github', nameWithOwner: 'demo/ledger' }, parentDir: dir }, deps(fakeSpawn(async (child, args) => {
     await mkdir(args[3], { recursive: true })
@@ -135,11 +142,33 @@ try {
   })))
   const cancelResult = await cancelled
   assert.equal(cancelResult.cancelled, true)
+  assert.equal(cancelResult.leftover, undefined)
+  assert.equal(treeKilled.length, 1)
   assert.equal(existsSync(join(dir, 'slow')), false)
   assert.equal(repos.cancelClone('missing'), false)
 
   const timed = await repos.cloneRepository({ id: 't1', source: { kind: 'url', url: 'https://example.com/a/late.git' }, parentDir: dir }, deps(fakeSpawn(async () => undefined), { timeoutMs: 10 }))
   assert.equal(timed.failure.code, 'timeout')
+  assert.equal(treeKilled.length, 2)
+
+  const removed = []
+  const stuck = await repos.cloneRepository({ id: 'c2', source: { kind: 'url', url: 'https://example.com/a/stuck.git' }, parentDir: dir }, deps(fakeSpawn(async (child, args) => {
+    await mkdir(args.at(-1), { recursive: true })
+    await writeFile(join(args.at(-1), 'pack'), 'x')
+    setTimeout(() => repos.cancelClone('c2'), 5)
+  }), { removeDir: async (path) => { removed.push(path); throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' }) } }))
+  assert.equal(stuck.cancelled, true)
+  assert.deepEqual(removed, [join(dir, 'stuck')])
+  assert.equal(stuck.leftover, join(dir, 'stuck'))
+  assert.ok(stuck.error.includes(join(dir, 'stuck')))
+  const stuckFail = await repos.cloneRepository({ id: 'f2', source: { kind: 'url', url: 'https://example.com/a/stuck2.git' }, parentDir: dir }, deps(fakeSpawn(async (child, args) => {
+    await mkdir(args.at(-1), { recursive: true })
+    child.stderr.emit('data', 'fatal: early EOF')
+    child.emit('close', 128)
+  }), { removeDir: async () => { throw new Error('EBUSY') } }))
+  assert.equal(stuckFail.ok, false)
+  assert.equal(stuckFail.leftover, join(dir, 'stuck2'))
+  assert.ok(stuckFail.error.includes(join(dir, 'stuck2')))
 
   const noGit = await repos.cloneRepository({ id: 'm1', source: { kind: 'url', url: 'https://example.com/a/nogit.git' }, parentDir: dir }, deps(fakeSpawn(async (child) => {
     child.emit('error', Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }))
