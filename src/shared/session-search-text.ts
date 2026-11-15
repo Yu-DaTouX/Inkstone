@@ -1,4 +1,5 @@
 import { escapeRegExp } from './escape'
+import { visibleTextOfBlock } from './thinking-narration'
 
 const HEAD_KEEP = 100 * 1024
 const TAIL_KEEP = 300 * 1024
@@ -20,10 +21,8 @@ function visibleText(line: string): string {
   if (!Array.isArray(content)) return ''
   const parts: string[] = []
   for (const part of content) {
-    if (part && typeof part === 'object' && (part as { type?: unknown }).type === 'text') {
-      const text = (part as { text?: unknown }).text
-      if (typeof text === 'string' && text.trim()) parts.push(text)
-    }
+    const text = message.role === 'assistant' ? visibleTextOfBlock(part) : part && typeof part === 'object' && (part as { type?: unknown }).type === 'text' ? (part as { text?: unknown }).text : null
+    if (typeof text === 'string' && text.trim()) parts.push(text)
   }
   return parts.join('\n')
 }

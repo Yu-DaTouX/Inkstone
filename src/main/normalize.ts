@@ -4,11 +4,14 @@ import { modelErrorNotice, TRUNCATED_OUTPUT_NOTICE } from '../shared/model-error
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { estimateCost } from '../shared/model-pricing'
 import { serverSearchCalls } from './server-search-calls'
+import { isNarrationBlock } from '../shared/thinking-narration'
 
 export interface PiContentBlock {
   type: string
   text?: string
   thinking?: string
+  thinkingSignature?: string
+  redacted?: boolean
   id?: string
   name?: string
   arguments?: unknown
@@ -137,11 +140,12 @@ export function normalizeMessage(
 
   if (m.role === 'assistant') {
     const blocks = Array.isArray(m.content) ? m.content : []
+    const narration = new Set(blocks.filter(isNarrationBlock))
     const text = blocks
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text ?? '')
+      .filter((c) => c.type === 'text' || narration.has(c))
+      .map((c) => (c.type === 'text' ? c.text : c.thinking) ?? '')
       .join('')
-    const thinkingBlocks = blocks.filter((c) => c.type === 'thinking')
+    const thinkingBlocks = blocks.filter((c) => c.type === 'thinking' && !narration.has(c))
     const thinking = thinkingBlocks
       .map((c) => c.thinking ?? '')
       .join('')

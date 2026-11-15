@@ -36,7 +36,17 @@ export function withProgressUpdates(payload) {
   }
 }
 
+export function exposeThinkingSignature(event) {
+  const update = event?.assistantMessageEvent
+  if (update?.type !== 'thinking_end' || event.message?.api !== 'anthropic-messages') return
+  const block = event.message.content?.[update.contentIndex]
+  if (block?.type !== 'thinking' || block.redacted || typeof block.thinkingSignature !== 'string' || !block.thinkingSignature) return
+  update.thinkingSignature = block.thinkingSignature
+}
+
 export default function anthropicProgressUpdates(pi) {
+  pi.on('message_update', exposeThinkingSignature)
+
   const rejections = new Map()
   const disabled = new Set()
   const summarizeNext = new Set()

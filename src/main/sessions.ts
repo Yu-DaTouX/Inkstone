@@ -12,6 +12,7 @@ import { ArtifactStore, readSessionId } from './artifacts'
 import { sessionSkillsDir } from './capabilities/acquired-skills'
 import { dropSession } from './sources'
 import { plainTitleText } from '../shared/title-text'
+import { visibleTextOfBlock } from '../shared/thinking-narration'
 import { pick } from '../shared/ui-lang'
 
 export const SESSIONS_DIR =
@@ -261,7 +262,7 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
           }
           if (!reply && o.message?.role === 'assistant') {
             const content = o.message.content
-            const body = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join(' ') : ''
+            const body = typeof content === 'string' ? content : Array.isArray(content) ? content.map(visibleTextOfBlock).filter((text): text is string => !!text).join(' ') : ''
             const stamp = typeof o.message.timestamp === 'number' && Number.isFinite(o.message.timestamp) ? o.message.timestamp : !Number.isNaN(ts) ? ts : undefined
             if (body?.trim() && stamp && o.id) reply = { id: o.id, at: stamp, text: body.replace(/\s+/g, ' ').trim().slice(0, 180) }
           }

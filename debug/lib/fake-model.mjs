@@ -123,6 +123,7 @@ export const FAKE_TRIGGERS = {
   DEVSERVER: '在会话终端里起一个本地 http 服务（DEVSCRIPT=<脚本路径> DEVPORT=<端口>），再用 yan browser open 打开它，用来看本地服务发现与停止',
   BGTERMINAL: '用 yan terminal run --background 在后台跑一条 12 秒的命令（BGSECONDS<n> 改秒数；含 BGBUSY 时接着跑 11 步各 2 秒的 bash），看后台任务面板与结束后的宿主通知',
   TERMINAL: '用 yan terminal run 在会话终端里跑一条快命令、一条慢命令，再 list 一次，看终端面板自动打开与 agent 提示（含 DANGER 时改为一条要审批的删除注册表命令）',
+  NARRATE: '仅 fake-anthropic/fake-narration（场景 meta.anthropic 打开）：三步，每步先思考，再以签名为 narration 的思考块写进度说明（第三步没有），再调用 bash，最后流出短答案，用来看旁白改判为正文',
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
   'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
@@ -392,6 +393,76 @@ async function respond(res, text, done, requestNo) {
   res.end()
 }
 
+const pbVarint = (value) => {
+  const out = []
+  while (value >= 128) {
+    out.push((value % 128) | 128)
+    value = Math.floor(value / 128)
+  }
+  out.push(value)
+  return out
+}
+const pbLen = (field, bytes) => [...pbVarint(field * 8 + 2), ...pbVarint(bytes.length), ...bytes]
+const pbInt = (field, value) => [...pbVarint(field * 8), ...pbVarint(value)]
+
+export function fakeThinkingSignature(kind, seed = 0) {
+  const inner = pbLen(1, [...pbInt(1, 19), ...pbInt(3, 2), ...pbInt(7, 1), ...pbLen(8, [...Buffer.from(kind)])])
+  const filler = Array.from({ length: 96 }, (_, i) => (i * 31 + seed * 17) % 256)
+  return Buffer.from([...pbInt(1, 4), ...pbLen(2, [...inner, ...pbLen(2, filler)])]).toString('base64')
+}
+
+function anthropicTurn(messages) {
+  let done = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.role !== 'user') continue
+    const content = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content ?? []
+    const text = content.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('')
+    done += content.filter((part) => part.type === 'tool_result').length
+    if (text && !content.some((part) => part.type === 'tool_result')) return { text, done }
+  }
+  return { text: '', done }
+}
+
+const NARRATE_STEPS = [
+  { narration: '先看看项目结构，确认金额是在哪一层算的。\n\n', command: 'echo list files', description: '列出项目文件' },
+  { narration: '金额用浮点累加，先复现一次误差，再改成按分计算。\n\n', command: 'echo reproduce', description: '复现浮点误差' },
+  { narration: '', command: 'echo run tests', description: '运行测试' }
+]
+
+async function respondAnthropic(res, messages, requestNo) {
+  const { text, done } = anthropicTurn(messages)
+  const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+  let index = 0
+  send({ type: 'message_start', message: { id: `msg_${requestNo}`, type: 'message', role: 'assistant', model: 'fake-narration', content: [], usage: { input_tokens: 100, output_tokens: 1 } } })
+  const block = async (start, deltas, delay, signature) => {
+    const at = index++
+    send({ type: 'content_block_start', index: at, content_block: start })
+    for (const delta of deltas) {
+      send({ type: 'content_block_delta', index: at, delta })
+      if (delay) await sleep(delay)
+    }
+    if (signature) send({ type: 'content_block_delta', index: at, delta: { type: 'signature_delta', signature } })
+    send({ type: 'content_block_stop', index: at })
+  }
+  const pieces = (value, size) => Array.from({ length: Math.ceil(value.length / size) }, (_, i) => value.slice(i * size, (i + 1) * size))
+  const thinking = (value, kind, size, delay) => block({ type: 'thinking', thinking: '', signature: '' }, pieces(value, size).map((part) => ({ type: 'thinking_delta', thinking: part })), delay, fakeThinkingSignature(kind, requestNo))
+  const say = (value, size, delay) => block({ type: 'text', text: '' }, pieces(value, size).map((part) => ({ type: 'text_delta', text: part })), delay)
+  let stop = 'end_turn'
+  if (text.includes('NARRATE')) {
+    const step = NARRATE_STEPS[done]
+    await thinking(`${flowThinking(done)}\n\n`, 'thinking', 24, 40)
+    if (step) {
+      if (step.narration) await thinking(step.narration, 'narration', 4, 70)
+      await block({ type: 'tool_use', id: `toolu_${requestNo}_${done}`, name: 'bash', input: {} }, pieces(JSON.stringify({ command: step.command, description: step.description }), 20).map((part) => ({ type: 'input_json_delta', partial_json: part })), 120)
+      stop = 'tool_use'
+    } else await say(flowAnswer(true), 16, 25)
+  } else await say('好的，收到。', 20, 10)
+  send({ type: 'message_delta', delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 50 } })
+  send({ type: 'message_stop' })
+  res.end()
+}
+
 export function startFakeModel(port = 0) {
   const requests = []
   const flaky = new Map()
@@ -402,6 +473,13 @@ export function startFakeModel(port = 0) {
       if (body.includes(SECRET_TEST_MARKER)) secretMarkerSeen = true
       let json = {}
       try { json = JSON.parse(body) } catch {}
+      if (String(req.url ?? '').includes('/messages')) {
+        const turn = anthropicTurn(Array.isArray(json.messages) ? json.messages : [])
+        requests.push({ at: Date.now(), text: turn.text.slice(0, 40), done: turn.done, anthropic: true })
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        void respondAnthropic(res, Array.isArray(json.messages) ? json.messages : [], requests.length).catch(() => res.end())
+        return
+      }
       const input = Array.isArray(json.input) ? json.input : []
       const text = lastUserText(input)
       const done = toolOutputsSinceUser(input)

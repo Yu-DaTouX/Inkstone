@@ -2149,7 +2149,7 @@ export class AgentController extends EventEmitter {
           model: assistantModelIdentity(m),
           timestamp: m.timestamp ?? Date.now(),
           error: assistantError(m)
-        }, serverSearchCalls(m as { yanWebSearch?: unknown; timestamp?: number }, id))
+        }, serverSearchCalls(m as { yanWebSearch?: unknown; timestamp?: number }, id), m)
         this.turn.messageIds.push(id)
         this.backfillCompactionAfter()
         if (this.turn.startedMono !== undefined) {
@@ -2530,8 +2530,8 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private settleStreaming(id: string, meta: Partial<UIMessage>, extraCalls: UIToolCall[] = []): UIMessage {
-    return this.items.liveMessageEnd(meta, extraCalls) ?? this.items.appendMessage({ id, role: 'assistant', text: '', ...meta, ...(extraCalls.length ? { toolCalls: extraCalls } : {}) })
+  private settleStreaming(id: string, meta: Partial<UIMessage>, extraCalls: UIToolCall[] = [], final?: PiMessage): UIMessage {
+    return this.items.liveMessageEnd(meta, extraCalls, final) ?? this.items.appendMessage({ id, role: 'assistant', text: '', ...meta, ...(extraCalls.length ? { toolCalls: extraCalls } : {}) })
   }
 
   private attachWorkspaceChanges(call: UIToolCall): void {

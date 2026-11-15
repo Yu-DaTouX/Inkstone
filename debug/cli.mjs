@@ -78,7 +78,7 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   }
   const fake = flags['no-fake'] ? null : await startFakeModel()
   const runDir = newRunDir(label)
-  const box = createSandbox(runDir, { fakePort: fake?.port, samples, demo: !!flags.demo })
+  const box = createSandbox(runDir, { fakePort: fake?.port, samples, demo: !!flags.demo, anthropic: !!flags.anthropic })
   if (flags['user-data']) console.log('导入真实数据副本：' + JSON.stringify(importUserData(box, { days: flags['user-days'] ? Number(flags['user-days']) : 7 })))
   if (flags.demo) prepareDemo(box)
   if (flags.cards) prepareCards(box)
@@ -175,7 +175,7 @@ async function runScenarioOnce(name, flags) {
   const need = mod.meta?.samples ?? 0
   const samples = need ? samplePaths('all').slice(0, need) : []
   if (samples.length < need) throw new Error(`场景 ${name} 需要 ${need} 个大会话样本：先 npm run debug -- samples pick`)
-  const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false, demo: !!flags.demo || !!mod.meta?.demo }, samples })
+  const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false, demo: !!flags.demo || !!mod.meta?.demo, anthropic: !!mod.meta?.anthropic }, samples })
   const observation = mod.meta?.observation === true
   const report = { scenario: name, observation, startedAt: new Date().toISOString(), checks: [], timings: {}, log: [] }
   let cdp

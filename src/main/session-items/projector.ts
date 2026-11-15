@@ -14,6 +14,7 @@ import { normalizeMessage, restoreNestedCalls, type PiContentBlock, type PiMessa
 import { appendToolCallArgs, endToolExecution, finishToolCallArgs, startToolExecution, streamingToolCall, updateToolExecution, type ToolExecutionEnd, type ToolResultPayload } from './tool-events'
 
 import { thinkingDisplayMode } from '../../shared/thinking-display'
+import { signatureKind, thinkingBlockKind, type ThinkingBlockKind } from '../../shared/thinking-narration'
 
 export type LocalizeImage = (mimeType: string, data: string) => string
 
@@ -23,12 +24,27 @@ export function writesProgressUpdates(model: unknown): boolean {
   return thinkingDisplayMode() === 'updates' && typeof model === 'string' && PROGRESS_UPDATE_MODEL.test(model)
 }
 
-function promoteProgressUpdate(item: SessionItem | undefined): void {
-  if (item?.kind !== 'reasoning' || !item.text.trim()) return
+export function displaysAsText(blocks: readonly PiContentBlock[], index: number, progressUpdates: boolean): boolean {
+  const block = blocks[index]
+  if (block?.type !== 'thinking') return false
+  const kind = thinkingBlockKind(block)
+  if (kind !== 'unknown') return kind === 'narration'
+  return progressUpdates && blocks[index + 1]?.type === 'toolCall' && !!block.thinking?.trim()
+}
+
+function promoteProgressUpdate(item: SessionItem | undefined, signed = false): boolean {
+  if (item?.kind !== 'reasoning' || (!signed && !item.text.trim())) return false
   const promoted = item as SessionItem as AssistantTextItem & Partial<Pick<ReasoningItem, 'live' | 'durationMs'>>
   promoted.kind = 'assistant-text'
   delete promoted.live
   delete promoted.durationMs
+  return true
+}
+
+function demoteToReasoning(item: SessionItem | undefined): boolean {
+  if (item?.kind !== 'assistant-text') return false
+  ;(item as SessionItem as ReasoningItem).kind = 'reasoning'
+  return true
 }
 
 interface MessageSlot {
@@ -38,6 +54,8 @@ interface MessageSlot {
   items: SessionItem[]
   toolBlocks?: Map<number, ToolItem>
   progressUpdates?: boolean
+  signedBlocks?: Map<number, ThinkingBlockKind>
+  thinkingStartedBefore?: number
 }
 
 interface CallEntry {
@@ -219,10 +237,19 @@ export class SessionItemProjector {
       const item = this.blockItem(slot, 'reasoning', index) as ReasoningItem
       if (kind === 'thinking_start') {
         item.live = true
+        slot.thinkingStartedBefore = slot.header.thinkingStartedAt
         slot.header.thinkingStartedAt = now
       }
       if (kind === 'thinking_delta') item.text += String(ev.delta ?? '')
-      if (kind === 'thinking_end') item.live = false
+      if (kind === 'thinking_end') {
+        item.live = false
+        const signed = signatureKind(ev.thinkingSignature)
+        if (signed !== 'unknown') (slot.signedBlocks ??= new Map()).set(index, signed)
+        if (signed === 'narration' && promoteProgressUpdate(item, true)) {
+          slot.header.thinkingStartedAt = slot.thinkingStartedBefore
+          this.clearComposed(slot)
+        }
+      }
       return null
     }
     if (kind === 'text_delta') {
@@ -230,9 +257,9 @@ export class SessionItemProjector {
       return null
     }
     if (kind === 'toolcall_start') {
-      if (slot.progressUpdates && typeof ev.contentIndex === 'number') {
+      if (slot.progressUpdates && typeof ev.contentIndex === 'number' && !slot.signedBlocks?.has(ev.contentIndex - 1)) {
         const previousId = assistantBlockId(slot.turnId, slot.step, ev.contentIndex - 1)
-        promoteProgressUpdate(slot.items.find((item) => item.id === previousId))
+        if (promoteProgressUpdate(slot.items.find((item) => item.id === previousId))) this.clearComposed(slot)
       }
       const call = streamingToolCall(ev, slot.items.filter((item) => item.kind === 'tool').length, now)
       const item = this.attachCall(slot, call)
@@ -255,10 +282,11 @@ export class SessionItemProjector {
     return null
   }
 
-  liveMessageEnd(meta: Partial<UIMessage> = {}, extraCalls: UIToolCall[] = []): UIMessage | null {
+  liveMessageEnd(meta: Partial<UIMessage> = {}, extraCalls: UIToolCall[] = [], final?: PiMessage): UIMessage | null {
     const slot = this.streaming
     if (!slot) return null
     this.streaming = null
+    if (final?.role === 'assistant' && Array.isArray(final.content) && this.reconcileBlocks(slot, final.content)) this.clearComposed(slot)
     for (const call of extraCalls) if (!this.callIndex.has(call.id)) this.attachCall(slot, call)
     for (const item of slot.items) if (item.kind === 'reasoning') item.live = false
     const { text: _text, thinking: _thinking, toolCalls: _calls, error, ...rest } = meta
@@ -377,7 +405,7 @@ export class SessionItemProjector {
     if (blocks) {
       const progressUpdates = writesProgressUpdates(raw?.model)
       blocks.forEach((block, index) => {
-        if (block.type === 'thinking' && progressUpdates && blocks[index + 1]?.type === 'toolCall' && block.thinking?.trim()) slot.items.push({ kind: 'assistant-text', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.thinking })
+        if (displaysAsText(blocks, index, progressUpdates)) slot.items.push({ kind: 'assistant-text', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.thinking ?? '' })
         else if (block.type === 'thinking') slot.items.push({ kind: 'reasoning', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.thinking ?? '' })
         else if (block.type === 'text') slot.items.push({ kind: 'assistant-text', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.text ?? '' })
         else if (block.type === 'toolCall' && block.id && calls.has(block.id) && !used.has(block.id)) {
@@ -391,6 +419,24 @@ export class SessionItemProjector {
     }
     for (const call of h.toolCalls ?? []) if (!used.has(call.id) && !slot.items.some((item) => item.kind === 'tool' && item.call === call)) slot.items.push(this.toolItem(slot, call))
     if (h.error) slot.items.push({ kind: 'status', id: statusItemId(slot.turnId, slot.step), ...base, step: slot.step, status: 'error', text: h.error })
+  }
+
+  private reconcileBlocks(slot: MessageSlot, blocks: readonly PiContentBlock[]): boolean {
+    let changed = false
+    blocks.forEach((block, index) => {
+      if (block.type !== 'thinking') return
+      const item = slot.items.find((candidate) => candidate.id === assistantBlockId(slot.turnId, slot.step, index))
+      if (!item || (item.kind !== 'reasoning' && item.kind !== 'assistant-text') || item.text !== (block.thinking ?? '')) return
+      const asText = displaysAsText(blocks, index, !!slot.progressUpdates)
+      if (asText && item.kind === 'reasoning') changed = promoteProgressUpdate(item, true) || changed
+      else if (!asText && item.kind === 'assistant-text') changed = demoteToReasoning(item) || changed
+    })
+    return changed
+  }
+
+  private clearComposed(slot: MessageSlot): void {
+    slot.header.text = ''
+    slot.header.thinking = undefined
   }
 
   private toolItem(slot: MessageSlot, call: UIToolCall): ToolItem {

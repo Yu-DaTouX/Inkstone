@@ -28,7 +28,7 @@ function seedProjects(root) {
   return projects
 }
 
-export function createSandbox(runDir, { fakePort, samples = [], demo = false } = {}) {
+export function createSandbox(runDir, { fakePort, samples = [], demo = false, anthropic = false } = {}) {
   const box = {
     runDir,
     piDir: join(runDir, 'pi-agent'),
@@ -54,7 +54,10 @@ export function createSandbox(runDir, { fakePort, samples = [], demo = false } =
   if (fakePort) {
     const catalog = process.env.YAN_DEBUG_MODEL_CATALOG ? JSON.parse(process.env.YAN_DEBUG_MODEL_CATALOG) : [{ id: 'fake-model', name: 'Fake', reasoning: false, input: ['text', 'image'], contextWindow: 400000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, { id: 'fake-reasoning', name: 'Fake Reasoning', reasoning: true, input: ['text', 'image'], contextWindow: 400000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }]
     writeFileSync(join(box.piDir, 'models.json'), JSON.stringify({
-      providers: { fake: { baseUrl: `http://127.0.0.1:${fakePort}/v1`, api: 'openai-responses', apiKey: 'fake-key', models: catalog } }
+      providers: {
+        fake: { baseUrl: `http://127.0.0.1:${fakePort}/v1`, api: 'openai-responses', apiKey: 'fake-key', models: catalog },
+        ...(anthropic ? { 'fake-anthropic': { baseUrl: `http://127.0.0.1:${fakePort}`, api: 'anthropic-messages', apiKey: 'fake-key', models: [{ id: 'fake-narration', name: 'Fake Narration', reasoning: true, input: ['text'], contextWindow: 200000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } : {})
+      }
     }))
     writeFileSync(join(box.piDir, 'settings.json'), JSON.stringify({ defaultProvider: 'fake', defaultModel: process.env.YAN_DEBUG_DEFAULT_MODEL || 'fake-model' }))
   }

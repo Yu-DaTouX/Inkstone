@@ -3,6 +3,7 @@ import { generationTiming, turnTiming } from '../shared/turn-timing'
 import { toUsage, type PiMessage } from './normalize'
 import type { SessionItemProjector } from './session-items/projector'
 import { streamsHtmlWriteArgs, toolOutputPushMode } from './session-items/tool-events'
+import { signatureKind } from '../shared/thinking-narration'
 
 export const FLUSH_MS = 16
 export const MAX_FLUSH_MS = 120
@@ -24,6 +25,7 @@ export interface StreamingState {
   pushedText: number
   pushedThinking: number
   toolOpen?: boolean
+  thinkingBefore?: { startedAt?: number; ms?: number }
 }
 
 export type StreamTimer = unknown
@@ -134,8 +136,15 @@ export class StreamProjection {
 
     const call = this.items.liveAssistantDelta(ev, this.clock.now())
     if (kind === 'thinking_start') {
+      this.streaming.thinkingBefore = { startedAt: this.streaming.thinkingStartedAt, ms: this.streaming.thinkingMs }
       this.streaming.thinkingStartedAt = this.clock.now()
       this.streaming.thinkingLive = true
+    } else if (kind === 'thinking_end' && signatureKind(ev.thinkingSignature) === 'narration') {
+      const before = this.streaming.thinkingBefore
+      this.streaming.thinkingStartedAt = before?.startedAt
+      this.streaming.thinkingMs = before?.ms
+      this.streaming.thinkingLive = false
+      this.markDirty()
     } else if (kind === 'thinking_delta') {
       this.deps.checkDelta('thinking', String(ev.delta ?? ''))
       this.markDirty()

@@ -1,4 +1,5 @@
 import { parseHostNotice, type HostNotice } from './host-notice'
+import { isNarrationBlock } from './thinking-narration'
 
 export type NativeSessionMode = 'tree' | 'scoped-models' | 'trust'
 
@@ -69,7 +70,7 @@ function fullText(content: unknown): string {
     .join('\n')
 }
 
-function contentText(content: unknown): string {
+function contentText(content: unknown, assistant = false): string {
   if (typeof content === 'string') return nativeOneLine(content)
   if (!Array.isArray(content)) return ''
   const texts: string[] = []
@@ -77,6 +78,7 @@ function contentText(content: unknown): string {
   for (const block of content) {
     if (!isRecord(block)) continue
     if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text)
+    else if (assistant && isNarrationBlock(block) && typeof block.thinking === 'string') texts.push(block.thinking)
     else if (block.type === 'image' || block.type === 'image_url') hasImage = true
   }
   const joined = nativeOneLine(texts.join(' '))
@@ -97,7 +99,7 @@ export function describeEntry(entry: unknown): NativeEntryDescription {
         return { kind: 'user', text: contentText(message?.content), entryType, ...(hostNotice ? { hostNotice } : {}) }
       }
       case 'assistant':
-        return { kind: 'assistant', text: contentText(message?.content), entryType }
+        return { kind: 'assistant', text: contentText(message?.content, true), entryType }
       case 'toolResult': {
         const name = message && typeof message.toolName === 'string' ? message.toolName : ''
         return { kind: 'tool', text: nativeOneLine([name, contentText(message?.content)].filter(Boolean).join(' ')), entryType }
