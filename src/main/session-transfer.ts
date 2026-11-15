@@ -7,7 +7,9 @@ import { atomicWriteFile } from './atomic-write'
 
 export const SESSION_BUNDLE_KIND = 'inkstone-session'
 export const SESSION_BUNDLE_VERSION = 1
-export const SESSION_TRANSFER_MAX_BYTES = 64 * 1024 * 1024
+export const SESSION_TRANSFER_MAX_BYTES = 256 * 1024 * 1024
+const LIMIT_MB = SESSION_TRANSFER_MAX_BYTES / 1024 / 1024
+export const sessionTooLargeError = (): string => pick(`会话过大，超过单次导出上限 ${LIMIT_MB}MB`, `Session is too large; exceeds the ${LIMIT_MB}MB export limit`)
 
 export interface SessionBundle {
   v: 1
@@ -21,6 +23,7 @@ export interface SessionBundle {
 export interface SessionTransferOptions {
   now?: () => number
   newId?: () => string
+  cwd?: string
 }
 
 export type ExportSessionResult =
@@ -40,12 +43,10 @@ export async function exportSession(
   if (!targetPath) return { ok: false, error: pick('缺少导出目标路径', 'Missing export target path') }
   let content: string
   try {
+    if ((await stat(sessionFilePath)).size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: sessionTooLargeError() }
     content = await readFile(sessionFilePath, 'utf8')
   } catch (error) {
     return { ok: false, error: pick(`读取会话失败：${describe(error)}`, `Failed to read session: ${describe(error)}`) }
-  }
-  if (Buffer.byteLength(content, 'utf8') > SESSION_TRANSFER_MAX_BYTES) {
-    return { ok: false, error: pick('会话过大，超过单次导出上限 64MB', 'Session is too large; exceeds the 64MB export limit') }
   }
   const sourceSessionId = readSessionId(content)
   const bundle: SessionBundle = {
@@ -76,7 +77,7 @@ export async function importSession(
     (info) => info.size,
     () => 0
   )
-  if (size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: pick('会话包过大，超过导入上限 64MB', 'Session bundle is too large; exceeds the 64MB import limit') }
+  if (size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: pick(`会话包过大，超过导入上限 ${LIMIT_MB}MB`, `Session bundle is too large; exceeds the ${LIMIT_MB}MB import limit`) }
   let bundle: SessionBundle
   try {
     bundle = JSON.parse(await readFile(bundlePath, 'utf8')) as SessionBundle
@@ -105,7 +106,7 @@ export async function importSession(
     file = ''
   }
   if (!file) return { ok: false, error: pick('生成新会话名失败（目标目录已有同名文件）', 'Failed to create a new session name (file already exists)') }
-  const content = rewriteSessionId(bundle.content, sessionId)
+  const content = rewriteSessionHeader(bundle.content, { id: sessionId, ...(options.cwd ? { cwd: options.cwd } : {}) })
   if (readSessionId(content) !== sessionId) return { ok: false, error: pick('改写会话 session 头失败', 'Failed to rewrite the session header') }
   try {
     await mkdir(sessionsDir, { recursive: true })
@@ -130,14 +131,14 @@ export function readSessionId(content: string): string | undefined {
   return id
 }
 
-export function rewriteSessionId(content: string, newId: string): string {
+function rewriteSessionHeader(content: string, patch: { id: string; cwd?: string }): string {
   const lines = content.split('\n')
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>
       if (parsed?.type === 'session' && typeof parsed.id === 'string' && parsed.id) {
-        parsed.id = newId
+        Object.assign(parsed, patch)
         lines[index] = JSON.stringify(parsed)
         return lines.join('\n')
       }

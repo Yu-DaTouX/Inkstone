@@ -1,6 +1,7 @@
-import { basename } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { basename, isAbsolute } from 'node:path'
 import type { IpcRegistrar } from './registrar'
-import { exportSession, importSession, SESSION_TRANSFER_MAX_BYTES } from '../session-transfer'
+import { exportSession, importSession, SESSION_TRANSFER_MAX_BYTES, sessionTooLargeError } from '../session-transfer'
 import { atomicWriteFile } from '../atomic-write'
 import { pick } from '../../shared/ui-lang'
 import { sessionMarkdown } from '../../shared/session-markdown'
@@ -10,6 +11,8 @@ import type { SessionExportFormat, SessionExportResult, SessionImportResult, Ses
 
 export interface SessionTransferIpcDeps {
   sessionsDir: string
+  sessionsDirFor?(cwd: string): string
+  pickImportFolder?(): Promise<string | null>
   pickExportPath(suggestedFileName: string, format: SessionExportFormat): Promise<string | null>
   pickImportFile(): Promise<string | null>
   currentSessionPath?(): string | undefined
@@ -77,7 +80,7 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
         if (text === null) return { ok: false, error: unreadable() }
       } else if (format === 'html') {
         if (typeof options.html !== 'string' || !options.html) return { ok: false, error: exportFailed(unsupported()) }
-        if (Buffer.byteLength(options.html, 'utf8') > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: exportFailed(pick('会话过大，超过单次导出上限 64MB', 'Session is too large; exceeds the 64MB export limit')) }
+        if (Buffer.byteLength(options.html, 'utf8') > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: exportFailed(sessionTooLargeError()) }
         text = options.html
       }
       const target = await deps.pickExportPath(`${stem}${SESSION_EXPORT_EXTENSIONS[format]}`, format)
@@ -98,14 +101,21 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
     }
   })
 
-  handle('yan:sessionTransfer:import', async (filePath?: unknown): Promise<SessionImportResult> => {
+  handle('yan:sessionTransfer:import', async (filePath?: unknown, rawOptions?: unknown): Promise<SessionImportResult> => {
     try {
-      if (filePath !== undefined && (typeof filePath !== 'string' || !/\.json$/i.test(filePath))) {
+      if (filePath !== undefined && filePath !== null && (typeof filePath !== 'string' || !/\.json$/i.test(filePath))) {
         return { ok: false, error: importFailed(pick('只能导入 .json 会话包', 'Only .json session bundles can be imported')) }
       }
+      const options = rawOptions && typeof rawOptions === 'object' ? (rawOptions as Record<string, unknown>) : {}
       const bundle = typeof filePath === 'string' ? filePath : await deps.pickImportFile()
       if (!bundle) return { ok: false, cancelled: true }
-      const result = await importSession(bundle, deps.sessionsDir)
+      const cwd = typeof options.cwd === 'string' && options.cwd ? options.cwd : await deps.pickImportFolder?.()
+      if (deps.pickImportFolder && !cwd) return { ok: false, cancelled: true }
+      if (cwd && !(isAbsolute(cwd) && (await stat(cwd).then((info) => info.isDirectory(), () => false)))) {
+        return { ok: false, error: importFailed(pick(`目录不存在：${cwd}`, `Folder not found: ${cwd}`)) }
+      }
+      const sessionsDir = cwd && deps.sessionsDirFor ? deps.sessionsDirFor(cwd) : deps.sessionsDir
+      const result = await importSession(bundle, sessionsDir, cwd ? { cwd } : {})
       return result.ok ? { ok: true, path: result.path, sessionId: result.sessionId } : { ok: false, error: importFailed(result.error) }
     } catch (error) {
       return { ok: false, error: importFailed(describe(error)) }
