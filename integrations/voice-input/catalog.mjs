@@ -1,18 +1,19 @@
 const MB = 1024 * 1024
 const VOICE_MODELS = [
-  { id: 'base', tier: 'light', file: 'ggml-base.bin', approxBytes: 148 * MB, approxMemoryMB: 400, minThreads: 2, minFreeMemoryMB: 1_000 },
-  { id: 'small', tier: 'balanced', file: 'ggml-small.bin', approxBytes: 488 * MB, approxMemoryMB: 900, minThreads: 4, minFreeMemoryMB: 2500 },
+  { id: 'base', tier: 'light', file: 'ggml-base.bin', approxBytes: 148 * MB, sha256: '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe', approxMemoryMB: 400, minThreads: 2, minFreeMemoryMB: 1_000 },
+  { id: 'small', tier: 'balanced', file: 'ggml-small.bin', approxBytes: 488 * MB, sha256: '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b', approxMemoryMB: 900, minThreads: 4, minFreeMemoryMB: 2500 },
   {
     id: 'large-v3-turbo-q5_0',
     tier: 'quality',
     file: 'ggml-large-v3-turbo-q5_0.bin',
     approxBytes: 574 * MB,
+    sha256: '394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2',
     approxMemoryMB: 1600,
     minThreads: 8,
     minFreeMemoryMB: 4_000
   }
 ]
-const VOICE_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
+const VOICE_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/'
 const WHISPER_RELEASE_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
 const WHISPER_RELEASES_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=20'
 const WHISPER_WINDOWS_ASSET = 'whisper-bin-x64.zip'

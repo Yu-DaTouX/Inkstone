@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus, freemem, tmpdir, totalmem } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -41,6 +41,10 @@ function sha256Hex(bytes) {
 function whisperAssetProblem(expected, digest) {
   if (!expected) return '没有这个版本转写程序的校验值，已中止下载'
   return digest === expected ? void 0 : '程序包校验失败（SHA-256 不一致），已删除下载内容'
+}
+function voiceModelProblem(expected, digest) {
+  if (!expected) return '没有这个模型的校验值，已中止下载'
+  return digest === expected ? void 0 : '模型校验失败（SHA-256 不一致），已删除下载内容'
 }
 class VoiceService {
   constructor(getSettings) {
@@ -342,9 +346,11 @@ class VoiceService {
       if (this.progress) this.progress.total = total
       const out = createWriteStream(part)
       let received = 0
+      const digest = createHash('sha256')
       const counting = new TransformStream({
         transform: (chunk, controller) => {
           received += chunk.byteLength
+          digest.update(chunk)
           if (plan.sizeKnown && received > plan.bytes) throw new Error('下载内容超过确认时的文件大小')
           if (plan.target.kind === 'binary' && received > MAX_BINARY_ZIP_BYTES) throw new Error('程序包超过 100 MiB 上限，已停止')
           if (this.progress) this.progress.received = received
@@ -356,6 +362,8 @@ class VoiceService {
       if (plan.sizeKnown && received !== plan.bytes) throw new Error('下载大小与确认时不一致，请重新核实')
       if (this.progress && this.progress.received < total) throw new Error('下载不完整')
       if (plan.target.kind === 'model') {
+        const problem = voiceModelProblem(voiceModelSpec(plan.target.id)?.sha256, digest.digest('hex'))
+        if (problem) throw new Error(problem)
         await rename(part, plan.destination)
       } else {
         const problem = whisperAssetProblem(asset ? whisperAssetSha256(asset.tag, asset.name) : void 0, sha256Hex(await readFile(part)))
@@ -503,9 +511,14 @@ async function installBinaryZip(zipPath) {
     await rm(staging, { recursive: true, force: true }).catch(() => void 0)
     throw error
   }
+  const leftovers = await readdir(VOICE_DIR).catch(() => [])
+  for (const name of leftovers) {
+    if (name.startsWith('bin-backup-')) await rm(join(VOICE_DIR, name), { recursive: true, force: true }).catch(() => void 0)
+  }
 }
 export {
   VoiceService,
+  installBinaryZip,
   whisperAssetProblem,
   whisperAssetSha256
 }

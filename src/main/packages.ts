@@ -55,12 +55,14 @@ function readJson<T>(path: string): T | null {
   }
 }
 
+const NPM_SOURCE_BODY = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[^\s@/\\]+)?$/i
+
 export function readPackageSources(settingsPath: string): string[] {
   const json = readJson<{ packages?: unknown }>(settingsPath)
   if (json === null) return []
   const list = json?.packages
   if (!Array.isArray(list)) return []
-  const valid = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[a-z0-9][a-z0-9._-]*)?$/i
+  const valid = NPM_SOURCE_BODY
   return list.flatMap((entry) => {
     if (typeof entry !== 'string' || !entry.trim()) return []
     const source = entry.trim()
@@ -200,7 +202,7 @@ export function validatePackageSource(source: string): string | null {
   }
   const body = s.replace(/^(?:npm|git|https?|ssh):/, '')
   if (body.startsWith('-')) return pick('来源内容不能以 - 开头（那会被当成命令行选项）', 'Source content cannot start with - (it would be read as a CLI option)')
-  if (s.startsWith('npm:') && !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[^\s]+)?$/i.test(body)) {
+  if (s.startsWith('npm:') && !NPM_SOURCE_BODY.test(body)) {
     return pick('npm 来源必须是有效的包名，可选版本号', 'npm source must be a valid package name with optional version')
   }
   return null

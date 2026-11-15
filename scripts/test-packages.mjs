@@ -68,6 +68,28 @@ export async function runPackagesTests(ok, packagesModule) {
     ok(readPackageSources(f).length === 0, '字段类型不对时当作空（不让脏数据炸开）')
     writeFileSync(f, JSON.stringify({ packages: ['npm:a', 42, null] }))
     ok(readPackageSources(f).length === 1, '数组里的非字符串元素被过滤', JSON.stringify(readPackageSources(f)))
+    const ranged = ['npm:foo@^1.0.0', 'npm:@s/p@~2.1', 'npm:foo@>=1.2.0', 'npm:foo@1.x', 'npm:foo@latest']
+    for (const source of ranged) {
+      writeFileSync(f, JSON.stringify({ packages: [source] }))
+      let read
+      try { read = readPackageSources(f) } catch (error) { read = String(error) }
+      ok(validatePackageSource(source) === null && JSON.stringify(read) === JSON.stringify([source]), `安装能通过的版本写法读取时也接受：${source}`, JSON.stringify(read))
+    }
+    const agentDir = join(root, 'agent')
+    const project = join(root, 'project')
+    mkdirSync(join(project, '.pi'), { recursive: true })
+    writeFileSync(join(project, '.pi', 'settings.json'), JSON.stringify({ packages: ['npm:foo@^1.0.0'] }))
+    const ranges = listPackages(project, agentDir)
+    ok(ranges.ok && ranges.entries.some((entry) => entry.source === 'npm:foo@^1.0.0' && entry.name === 'foo'), '带版本范围的项目包不让包列表整体失败', JSON.stringify(ranges))
+    let dirs
+    try { dirs = projectPackageDirs(project, agentDir) } catch (error) { dirs = String(error) }
+    ok(Array.isArray(dirs), '带版本范围的项目包不让会话启动取包目录时抛错', String(dirs))
+    for (const source of ['npm:foo@x/../../evil', 'npm:foo@1@2', 'npm:foo@x\\..\\evil']) {
+      writeFileSync(f, JSON.stringify({ packages: [source] }))
+      let readError = false
+      try { readPackageSources(f) } catch { readError = true }
+      ok(validatePackageSource(source) !== null && readError, `版本段带路径分隔符或多个 @ 时安装和读取都拒绝：${source}`)
+    }
     rmSync(root, { recursive: true, force: true })
   }
 

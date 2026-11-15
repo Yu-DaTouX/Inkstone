@@ -210,6 +210,25 @@ export async function runPluginMarketTests(ok) {
   ok(['desktop-pet', 'comfyui'].every(id => catalog.BUILTIN_PLUGIN_CATALOG.plugins.some(entry => entry.id === id && entry.kind === 'bundled')), '桌宠与 ComfyUI 作为随包可安装插件列出')
   ok(catalog.normalizePluginCatalog({ schema: 1, plugins: [{ id: 'unknown', kind: 'bundled', name: 'x', url: 'https://example.com', text: { 'zh-CN': { desc: 'x' } } }] }).plugins.length === 0, '远程目录不能为未知随包插件增加可执行接入')
   ok(catalog.normalizePluginCatalog({ schema: 1, plugins: [{ id: 'other-mcp', kind: 'mcp', name: 'x', url: 'https://example.com', text: { 'zh-CN': { desc: 'x' } } }] }).plugins.length === 0, '远程目录不能加入没有代码支撑的 MCP 插件')
+  if (process.platform === 'win32') {
+    await build({ stdin: { contents: "import './src/main/exe-search-guard'\nexport { indexCodegraphProject } from './src/main/plugin-market'", resolveDir: process.cwd(), loader: 'ts' }, outfile: 'out/test/plugin-market-guarded.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+    const cgRoot = await mkdtemp(join(tmpdir(), 'inkstone-codegraph-hijack-'))
+    const savedPath = process.env.PATH
+    try {
+      const bin = join(cgRoot, 'bin'), project = join(cgRoot, 'project'), mark = join(cgRoot, 'mark.txt')
+      await mkdir(bin); await mkdir(project)
+      await writeFile(join(bin, 'codegraph.cmd'), `@echo off\r\necho path> "${mark}"\r\n`)
+      await writeFile(join(project, 'codegraph.cmd'), `@echo off\r\necho project> "${mark}"\r\n`)
+      process.env.PATH = [bin, join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')].join(';')
+      const { indexCodegraphProject } = await import(pathToFileURL('out/test/plugin-market-guarded.mjs').href)
+      const indexed = await indexCodegraphProject(project)
+      const ran = (await readFile(mark, 'utf8').catch(() => '')).trim()
+      ok(indexed.ok && ran === 'path', '建索引时不执行项目目录里的同名 codegraph.cmd，只用 PATH 里的', ran)
+    } finally {
+      process.env.PATH = savedPath
+      await rm(cgRoot, { recursive: true, force: true })
+    }
+  }
   if (process.argv.includes('--live')) {
     const live = await searchPiPackages('browser')
     ok(live.ok && live.entries.length > 0, '真实 npm pi-package 目录可用：' + live.entries.length)
