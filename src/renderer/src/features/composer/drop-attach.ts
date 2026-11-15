@@ -1,6 +1,6 @@
 import { useStore } from '../../state/store'
 import type { ComposerSubmitIdentity } from '../../state/composer-recovery'
-import { readFiles } from './attachment-files'
+import { INLINE_IMAGE_MAX_BYTES, readFiles } from './attachment-files'
 
 export interface DroppedFiles {
   paths: string[]
@@ -30,10 +30,11 @@ export function captureDroppedFiles(data: DataTransfer): DroppedFiles | null {
   if (!data.types.includes('Files')) return null
   const files = [...data.files]
   if (!files.length) return null
+  const inline = (file: File): boolean => file.type.startsWith('image/') && file.size <= INLINE_IMAGE_MAX_BYTES
   return {
     paths: [],
-    images: files.filter((file) => file.type.startsWith('image/')),
-    others: files.filter((file) => !file.type.startsWith('image/'))
+    images: files.filter(inline),
+    others: files.filter((file) => !inline(file))
   }
 }
 
