@@ -39,5 +39,5 @@ export function scenarioContext({ cdp, fake, box, runDir, report }) {
   }
   const autoApprove = () => cdp.evaluate(`(() => { const st = window.__yanStore; if (window.__autoApprove) return; const seen = new Set(); window.__autoApprove = st.subscribe((s) => { try { const list = Array.isArray(s.approvals) ? s.approvals : Object.values(s.approvals ?? {}); for (const a of list) { if (a && a.id && !seen.has(a.id)) { seen.add(a.id); setTimeout(() => void st.getState().answerApproval(a.id, 'session'), 0) } } } catch {} }) })()`)
   const shot = (name) => cdp.shot(name, runDir)
-  return { cdp, fake, box, runDir, report, state, until, waitFor, log, check, newSession, turn, autoApprove, shot, sleep, running }
+  return { cdp, fake, box, runDir, out: runDir, report, state, until, waitFor, log, check, newSession, turn, autoApprove, shot, sleep, running }
 }

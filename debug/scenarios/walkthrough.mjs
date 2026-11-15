@@ -151,6 +151,7 @@ export default async function run({ cdp, check, waitFor, sleep, out, newSession,
   }
 
   if (PART === 'all' || PART === 'ask') {
+    await ev(`(() => { window.__autoApprove?.(); window.__autoApprove = undefined })()`)
     await newSession(box.project)
     await ev(`window.__yanStore.getState().send('APPROVAL 走查')`)
     await waitFor(`s.approvals.length > 0`, 30000)
