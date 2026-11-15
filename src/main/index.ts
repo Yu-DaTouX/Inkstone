@@ -149,7 +149,7 @@ import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
-import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
+import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { fillNativeMcpDescriptions } from './mcp/native-describe'
 import { armProbeRun, armProbeShots } from './probe-hooks'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
@@ -266,9 +266,6 @@ process.on('uncaughtException', (error) => {
 })
 process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection', reason))
 
-if (ELECTRON_USER_DATA_DIR) {
-  app.setPath('userData', ELECTRON_USER_DATA_DIR)
-}
 if (ELECTRON_CRASH_DUMPS_DIR) {
   app.setPath('crashDumps', ELECTRON_CRASH_DUMPS_DIR)
 }

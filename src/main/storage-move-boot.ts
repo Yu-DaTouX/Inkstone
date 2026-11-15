@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { escapeHtml } from '../shared/escape'
+import { ELECTRON_USER_DATA_DIR } from './paths'
 import { hasPendingStorageMove, runPendingStorageMove, type StorageMoveProgress, type StorageMoveResult } from './storage-move'
 
 interface MoveText {
@@ -144,6 +145,8 @@ async function moveWithProgressWindow(): Promise<void> {
   }
   closeWhenAppWindowShows(window)
 }
+
+if (ELECTRON_USER_DATA_DIR) app.setPath('userData', ELECTRON_USER_DATA_DIR)
 
 export const storageMoveReady: Promise<void> =
   app.requestSingleInstanceLock() && hasPendingStorageMove()
