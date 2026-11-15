@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
-function normalizeSegment(value) {
-  return String(value).replace(/-/g, '_')
-}
+const MAX_TOOL_NAME_LENGTH = 64
 
 function toolNameFor(serverId, toolName) {
-  return `mcp__${normalizeSegment(serverId)}__${normalizeSegment(toolName)}`
+  const name = `mcp__${serverId}__${toolName}`.replace(/[^A-Za-z0-9_]/g, '_')
+  if (name.length <= MAX_TOOL_NAME_LENGTH) return name
+  const hash = createHash('sha256').update(`${serverId}\0${toolName}`).digest('hex').slice(0, 8)
+  return `${name.slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1)}_${hash}`
 }
 
 function report(message) {

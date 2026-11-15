@@ -282,6 +282,10 @@ assert.equal(
   assert.equal(next.tools, payload.tools)
   assert.deepEqual([next.prompt_cache_key, next.reasoning, next.max_output_tokens], ['k', payload.reasoning, 9_000], '缓存键、思考档位不变，只改输出上限')
   assert.equal(payload.input.length, 1, '不改动原请求体')
+  const codex = mod.appendInstruction('openai-codex-responses', { model: 'gpt', input: payload.input, tools: payload.tools, prompt_cache_key: 'k' }, '写摘要', 9_000)
+  assert.equal(codex.input.length, 2, 'Codex 订阅接口同样在末尾追加指令')
+  assert.equal(codex.tool_choice, 'none')
+  assert.ok(!('max_output_tokens' in codex), 'Codex 订阅后端不接受 max_output_tokens，不带这个字段')
 }
 {
   const toolResult = { type: 'tool_result', tool_use_id: 't1', content: 'x', cache_control: { type: 'ephemeral' } }

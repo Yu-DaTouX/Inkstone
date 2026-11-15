@@ -43,7 +43,7 @@ ok(finalReply([reply('x', 'stop', [{ type: 'toolCall' }])]) === '', '\u5e26\u5de
 ok(suggestionInstruction('\u56de\u590d\u6b63\u6587').includes(SUGGESTION_MARKER) && suggestionInstruction('\u56de\u590d\u6b63\u6587').includes('<assistant-reply>\n\u56de\u590d\u6b63\u6587'), '\u6307\u4ee4\u5e26\u6807\u8bb0\u548c\u672c\u8f6e\u56de\u590d')
 ok(suggestionInstruction('a'.repeat(5000)).includes('a'.repeat(4000)) && !suggestionInstruction('a'.repeat(5000)).includes('a'.repeat(4001)), '\u56de\u590d\u53ea\u5e26\u6700\u540e 4000 \u5b57')
 
-function harness({ completeImpl, enabled = true } = {}) {
+function harness({ completeImpl, enabled = true, api = 'openai-responses' } = {}) {
   const statuses = []
   const calls = []
   let sessionId = 's1'
@@ -55,7 +55,7 @@ function harness({ completeImpl, enabled = true } = {}) {
       return completeImpl ? completeImpl(payload, options) : { stopReason: 'stop', content: [{ type: 'text', text: '\u63d0\u4ea4\u5427' }] }
     }
   }
-  const model = { provider: 'p', id: 'm', api: 'openai-responses' }
+  const model = { provider: 'p', id: 'm', api }
   const ctx = { model, modelRegistry: registry, ui, sessionManager: { getSessionId: () => sessionId } }
   const suggestion = createPromptSuggestion({ enabled: () => enabled })
   const request = () => suggestion.onRequest({ payload: { input: [{ role: 'user', content: 'hi' }], tools: [{ name: 'read' }], reasoning: { effort: 'high' } } }, ctx)
@@ -80,6 +80,16 @@ function harness({ completeImpl, enabled = true } = {}) {
   h.start('\u63d0\u4ea4\u5427')
   ok(h.statuses.at(-1)?.[1] === undefined, '\u4e0b\u4e00\u8f6e\u5f00\u59cb\u65f6\u6e05\u6389\u5efa\u8bae')
   ok(h.suggestion.state().ignored === 0, '\u7528\u4e86\u5efa\u8bae\u4e0d\u7b97\u5ffd\u7565')
+}
+
+{
+  const h = harness({ api: 'openai-codex-responses' })
+  h.request()
+  h.end()
+  await settle()
+  const payload = h.calls[0]?.payload
+  ok(payload?.input?.at(-1)?.content?.[0]?.text?.includes(SUGGESTION_MARKER) && payload.reasoning.effort === 'low', 'Codex 订阅接口同样追加指令并降推理档')
+  ok(payload && !('max_output_tokens' in payload), 'Codex 订阅后端不接受 max_output_tokens，预测请求不带这个字段')
 }
 
 {

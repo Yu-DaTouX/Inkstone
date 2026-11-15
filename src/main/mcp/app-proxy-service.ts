@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { dirname, join, resolve, sep } from 'node:path'
 import { CapabilityCommandError, type CapabilityCommandResult } from '../capability-server'
 import { YAN_DIR } from '../paths'
@@ -25,12 +25,13 @@ export const MCP_APP_PROXY_NO_TARGETS = 'no_targets'
 const SNAPSHOT_VERSION = 1
 const SNAPSHOT_SOURCE = 'inkstone-mcp-app-proxy'
 
-function normalizeMcpAppToolName(serverId: string, toolName: string): string {
-  return `mcp__${normalizeSegment(serverId)}__${normalizeSegment(toolName)}`
-}
+const MCP_APP_TOOL_NAME_MAX = 64
 
-function normalizeSegment(value: string): string {
-  return String(value).replace(/-/g, '_')
+function normalizeMcpAppToolName(serverId: string, toolName: string): string {
+  const name = `mcp__${serverId}__${toolName}`.replace(/[^A-Za-z0-9_]/g, '_')
+  if (name.length <= MCP_APP_TOOL_NAME_MAX) return name
+  const hash = createHash('sha256').update(`${serverId}\0${toolName}`).digest('hex').slice(0, 8)
+  return `${name.slice(0, MCP_APP_TOOL_NAME_MAX - hash.length - 1)}_${hash}`
 }
 
 interface McpAppProxyTool {

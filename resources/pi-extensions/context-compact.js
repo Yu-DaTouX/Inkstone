@@ -440,7 +440,7 @@ export function appendInstruction(api, payload, text, maxTokens) {
       ...payload,
       input: [...payload.input, { role: 'user', content: [{ type: 'input_text', text }] }],
       ...(hasTools ? { tool_choice: 'none' } : {}),
-      max_output_tokens: maxTokens
+      ...(api === 'openai-codex-responses' ? {} : { max_output_tokens: maxTokens })
     }
   }
   if (api === 'anthropic-messages') {
