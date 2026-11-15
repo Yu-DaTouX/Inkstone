@@ -1,4 +1,59 @@
-import { homedir } from 'node:os'
+import { existsSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  const mod = await import('../resources/pi-extensions/danger-guard.js')
+  runDangerGuardTests(ok, mod)
+  await runApprovalBindingTests(ok, mod)
+}, { isolate: true })
+
+function runDriveRootTests(ok, mod) {
+  if (process.platform !== 'win32') return
+  const { detectDanger, criticalDanger } = mod
+  const other = 'DEFGHIJKLMNOPQRSTUVWXYZ'.split('').find((letter) => existsSync(`${letter}:/`))
+  const temp = tmpdir()
+  const locations = [
+    /^c:/i.test(temp) ? temp : existsSync('C:/') ? 'C:/' : null,
+    other ? `${other}:/` : null
+  ].filter(Boolean)
+  if (!other) console.log('  · 本机没有 C: 以外的盘，跳过当前目录在其他盘的情况')
+  const drives = ['C', other ?? 'D']
+  const commands = drives.flatMap((drive) => [
+    ['bash', String.raw`powershell -c "Remove-Item -Recurse -Force ${drive}:\"`],
+    ['bash', String.raw`powershell -c "Remove-Item -Recurse -Force ${drive}:"`],
+    ['powershell', `Remove-Item -Recurse -Force ${drive}:\\`],
+    ['powershell', `Remove-Item -Recurse -Force ${drive}:`],
+    ['powershell', `Remove-Item -Recurse -Force "${drive}:"`],
+    ['bash', `rm -rf ${drive}:`],
+    ['bash', `rm -rf ${drive}:/`],
+    ['bash', `rd /s /q ${drive}:`]
+  ])
+  const projects = ['C:/proj', `${other ?? 'D'}:/proj`]
+  const original = process.cwd()
+  const seen = new Map()
+  try {
+    for (const location of locations) {
+      process.chdir(location)
+      for (const project of projects) {
+        for (const [tool, command] of commands) {
+          const reasons = detectDanger(tool, { command }, project)
+          ok(reasons.some((reason) => reason.includes('大范围')), `当前目录在 ${location.slice(0, 2)}、项目在 ${project.slice(0, 2)} 时，删除整个盘要问：${command}`, JSON.stringify(reasons))
+          ok(criticalDanger(tool, { command }, project).length > 0, `当前目录在 ${location.slice(0, 2)}、项目在 ${project.slice(0, 2)} 时，删除整个盘被拦下：${command}`)
+          const key = `${project} ${tool} ${command}`
+          if (seen.has(key)) ok(seen.get(key) === JSON.stringify(reasons), `判断结果与当前目录所在的盘无关：${command}`)
+          else seen.set(key, JSON.stringify(reasons))
+        }
+        const inside = project.slice(0, 2)
+        for (const command of [`rm -rf ${inside}/proj/out`, String.raw`Remove-Item -Recurse -Force ${inside}\proj\dist`, 'rm -rf build']) {
+          ok(detectDanger('bash', { command }, project).length === 0, `当前目录在 ${location.slice(0, 2)} 时，项目内删除仍不打扰：${command}`)
+        }
+      }
+    }
+  } finally {
+    process.chdir(original)
+  }
+}
 
 function runWrapperAndPathTests(ok, mod) {
   const { detectDanger, outsideWrites, shellLocationAfter } = mod
@@ -95,6 +150,7 @@ function runWrapperAndPathTests(ok, mod) {
 }
 
 export function runDangerGuardTests(ok, mod) {
+  runDriveRootTests(ok, mod)
   runTargetParsingTests(ok, mod)
   runBypassTests(ok, mod)
   runWrapperAndPathTests(ok, mod)
@@ -418,19 +474,3 @@ export async function runApprovalBindingTests(ok, mod) {
   }
 }
 
-if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
-  const mod = await import('../resources/pi-extensions/danger-guard.js')
-  let passed = 0
-  let failed = 0
-  const ok = (condition, label, detail) => {
-    if (condition) passed++
-    else {
-      failed++
-      console.error(`FAIL: ${label}`, detail ?? '')
-    }
-  }
-  runDangerGuardTests(ok, mod)
-  await runApprovalBindingTests(ok, mod)
-  console.log(`danger guard: ${passed} passed, ${failed} failed`)
-  if (failed) process.exitCode = 1
-}

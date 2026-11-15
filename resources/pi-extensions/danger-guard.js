@@ -211,10 +211,15 @@ function isRecursiveDelete({ head, args }) {
   return false
 }
 
+function driveRootTarget(raw) {
+  const text = unquote(raw)
+  return /^[a-z]:[\\/]?$/i.test(text) ? `${text.slice(0, 2)}/` : raw
+}
+
 function recursiveDeleteTarget(cmd, cwd, base = cwd) {
   if (!isRecursiveDelete(cmd)) return null
   const cmdFlag = cmd.head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
-  const targets = cmd.args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a))
+  const targets = cmd.args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a)).map(driveRootTarget)
   return targets.find((target) => (isBroadTarget(target) && !deletesInsideAllowedFolder(target, cwd, base)) || deletesOutsideProject(target, cwd, base)) ?? null
 }
 
