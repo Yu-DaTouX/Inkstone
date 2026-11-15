@@ -175,7 +175,7 @@ export interface Store {
   composerFocus: { tick: number; at: number; sessionId?: string; path?: string }
   queueRestore: string | null
   attachments: Attachment[]
-  pendingSourceLinks: { sessionId: string; sourceIds: string[] }[]
+  pendingSourceLinks: { sessionId: string; text: string; sourceIds: string[] }[]
   submittingMessages: SubmittingMessage[]
   locateMessage: (messageId: string) => Promise<boolean>
 
@@ -952,21 +952,14 @@ export const useStore = create<Store>((rawSet, get) => {
         if (s.startupPhase) patch.startupPhase = false
         set(patch)
         if (m.payload.role === 'user') {
-          const head = get().pendingSourceLinks[0]
           const sid = get().session?.sessionId
-          if (head && sid && head.sessionId === sid) {
+          const text = (m.payload.text ?? '').trim()
+          const entry = sid ? get().pendingSourceLinks.find((item) => item.sessionId === sid && item.text === text) : undefined
+          if (entry && sid) {
+            set({ pendingSourceLinks: get().pendingSourceLinks.filter((item) => item !== entry) })
             void window.yan.sources
-              .link({ sessionId: sid, sourceIds: head.sourceIds, messageId: m.payload.id })
-              .then((res) => {
-                if (res && !res.ok) {
-                  set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x !== head) })
-                } else if (res?.ok) {
-                  set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x !== head) })
-                }
-              })
-              .catch(() => {
-                set({ pendingSourceLinks: get().pendingSourceLinks.filter((item) => item !== head) })
-              })
+              .link({ sessionId: sid, sourceIds: entry.sourceIds, messageId: m.payload.id })
+              .catch(() => undefined)
           }
         }
         break

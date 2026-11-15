@@ -86,7 +86,7 @@ const SESSIONS = [
 ]
 
 function makeYan() {
-  const calls = { send: [], runBash: [], selectSession: [], peekSession: [], verifyFiles: [] }
+  const calls = { send: [], runBash: [], selectSession: [], peekSession: [], verifyFiles: [], link: [] }
   const pending = { send: null, verifyFiles: null, select: null, peek: null }
   const real = {
     send: async (text, images, mode) => {
@@ -114,7 +114,11 @@ function makeYan() {
         if (pending.verifyFiles) return await pending.verifyFiles.promise
         return []
       },
-      addImage: async () => undefined
+      addImage: async () => undefined,
+      link: async (req) => {
+        calls.link.push(req)
+        return { ok: true }
+      }
     },
     listRunners: async () => [],
     agentStatus: async () => ({ state: 'idle', detail: '' })
@@ -333,6 +337,48 @@ async function main() {
     ok(calls.send.length === 0, '切走后 yan.send 未被调用', calls.send.length)
     ok(useStore.getState().pendingSourceLinks.length === 0, '没有登记任何（错误会话的）sourceLink', useStore.getState().pendingSourceLinks)
     pending.verifyFiles = null
+  }
+
+  group('D7 排队时无附件消息先到：来源链接只给带附件的那条')
+  {
+    const { yan: y7, calls } = makeYan()
+    y7.sources.verifyFiles = async (args) => {
+      calls.verifyFiles.push(args)
+      return [{ sourceId: 'file:C:/x.txt:1' }]
+    }
+    globalThis.window.yan = y7
+    const fileAttachment = { id: 'f1', name: 'x.txt', mimeType: '', size: 1, data: '', preview: '', kind: 'file', path: 'C:/x.txt' }
+    resetStore(useStore, activation, {
+      session: { sessionId: 'sess-b', cwd: 'C:/proj' },
+      peekedSessionId: 'sess-b',
+      activeRunnerId: null,
+      attachments: []
+    })
+    ok((await useStore.getState().send('A 无附件')) === true, 'A 排队发出')
+    useStore.setState({ attachments: [fileAttachment] })
+    ok((await useStore.getState().send('B 带附件')) === true, 'B 排队发出')
+    ok(useStore.getState().pendingSourceLinks.length === 1, '只有 B 登记了来源', useStore.getState().pendingSourceLinks)
+    useStore.getState().applyPush({ ch: 'msg-add', payload: { id: 'm-a', role: 'user', text: 'A 无附件', timestamp: 1 } })
+    await flush()
+    ok(calls.link.length === 0, 'A 到达时不领走 B 的来源', calls.link)
+    useStore.getState().applyPush({ ch: 'msg-add', payload: { id: 'm-b', role: 'user', text: 'B 带附件', timestamp: 2 } })
+    await flush()
+    ok(calls.link.length === 1 && calls.link[0].messageId === 'm-b', 'B 到达时来源链接到 B', calls.link)
+    ok(useStore.getState().pendingSourceLinks.length === 0, '链接成功后条目移除', useStore.getState().pendingSourceLinks)
+
+    calls.link.length = 0
+    resetStore(useStore, activation, {
+      session: { sessionId: 'sess-b', cwd: 'C:/proj' },
+      peekedSessionId: 'sess-b',
+      activeRunnerId: null,
+      pendingSourceLinks: [
+        { sessionId: 'sess-a', text: 'C 带附件', sourceIds: ['file:C:/old.txt:1'] },
+        { sessionId: 'sess-b', text: 'C 带附件', sourceIds: ['file:C:/x.txt:1'] }
+      ]
+    })
+    useStore.getState().applyPush({ ch: 'msg-add', payload: { id: 'm-c', role: 'user', text: 'C 带附件', timestamp: 3 } })
+    await flush()
+    ok(calls.link.length === 1 && calls.link[0].sessionId === 'sess-b' && calls.link[0].sourceIds[0] === 'file:C:/x.txt:1', '队首是别的会话的条目时不挡住本会话的链接', calls.link)
   }
 
   group('D5 setSessionDraft 显式键：读写的键由调用方指定，不再猜当前激活会话')

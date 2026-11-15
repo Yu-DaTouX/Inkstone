@@ -134,7 +134,7 @@ export function createSendSlice({ set, get }: SliceContext): SendSlice {
           : await collectSourceIds(attachments, sessionId)
       if (guardView && !sameComposerView(get(), target)) return false
       if (sourceIds.length) {
-        set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
+        set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, text: text.trim(), sourceIds }] })
       }
       const expected = await submitRuntimeFor(get, target)
       if (guardView && !sameComposerView(get(), target)) return false

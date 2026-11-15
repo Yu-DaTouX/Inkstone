@@ -44,6 +44,7 @@ export function useSplitPersistence(): void {
     }
     const off = useSplitView.subscribe((state, previous) => {
       if (state.split === previous.split && state.weights === previous.weights && state.rowSplit === previous.rowSplit) return
+      if (state.split) restored.current = true
       if (timer !== null) clearTimeout(timer)
       timer = setTimeout(flush, SAVE_DELAY_MS)
     })
