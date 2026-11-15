@@ -143,6 +143,11 @@ export class WorkflowModelLane {
     this.pump()
   }
 
+  setConcurrency(limit: number): void {
+    this.opts.concurrency = limit
+    this.pump()
+  }
+
   pump(): void {
     while (!this.opts.blocked() && !this.opts.signal.aborted && this.queue.length && this.inflight.size < this.opts.concurrency) {
       const job = this.queue.shift()!

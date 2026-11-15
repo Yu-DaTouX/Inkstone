@@ -18,6 +18,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const pushes = []
   const sent = []
   let fail = true
+  let live = 0
+  let peak = 0
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
   const target = { getState: () => ({ isAgentRunning: false }), holdsNotices: () => false, send: async (text) => (sent.push(text), { ok: true }) }
   const service = new WorkflowService({
     root: join(dir, 'runs'),
@@ -28,6 +32,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
     modelHost: {
       call: async (req) => {
         calls.push(req)
+        if (req.prompt.startsWith('并发')) {
+          live += 1
+          peak = Math.max(peak, live)
+          await gate
+          live -= 1
+          return { text: req.prompt, model: req.model, stopReason: 'stop', durationMs: 1 }
+        }
         await delay(5)
         if (fail && req.prompt === '段2') throw Object.assign(new Error('401 Incorrect API key provided'), { kind: 'model' })
         return { text: `EN ${req.prompt}`, model: req.model, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2 }, stopReason: 'stop', durationMs: 5 }
@@ -92,6 +103,41 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(again.models.cached === 2 && again.models.done === 1, '续跑后的计数：沿用 2、新完成 1', JSON.stringify(again.models))
     const journal = (await readFile(join(again.dir, 'journal.jsonl'), 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line))
     ok(journal.filter((line) => line.kind === 'io' && line.op === 'write').length === 5, 'journal 记了两次运行的写入（2 + 3）')
+
+    const tune = join(project, 'tune.js')
+    await writeFile(tune, [
+      `export const meta = { name: 'tune', description: '调并发' }`,
+      `return await pipeline(Array.from({ length: 12 }, (_, i) => i), (i) => model('并发' + i))`
+    ].join('\n'), 'utf8')
+    const waitLive = async (n) => {
+      for (let i = 0; i < 300 && live < n; i++) await delay(10)
+      await delay(30)
+      return live
+    }
+    const tuneId = (await service.run('workflow.run', { file: tune, 'model-concurrency': 2 }, ctx)).summary.id
+    ok(await waitLive(2) === 2, '按 --model-concurrency 2 同时跑 2 个', String(live))
+    await service.run('workflow.pause', { id: tuneId }, ctx)
+    let liveError
+    try {
+      await service.run('workflow.resume', { id: tuneId, file: tune, 'model-concurrency': 5 }, ctx)
+    } catch (e) {
+      liveError = e
+    }
+    ok(/--file 和 --args/.test(liveError?.message ?? ''), '运行还在内存里时带 --file 明确报错，不再静默忽略', liveError?.message)
+    const unpaused = await service.run('workflow.resume', { id: tuneId, 'model-concurrency': 5 }, ctx)
+    ok(unpaused.data.status === 'running' && unpaused.data.modelConcurrency === 5 && await waitLive(5) === 5 && peak === 5, '暂停后 resume 带 --model-concurrency 5 立即生效', JSON.stringify({ live, peak, mc: unpaused.data.modelConcurrency }))
+    const retuned = await service.run('workflow.resume', { id: tuneId, 'model-concurrency': 8 }, ctx)
+    ok(retuned.data.modelConcurrency === 8 && await waitLive(8) === 8, '运行中 resume 只带并发参数时当场调大', JSON.stringify({ live, mc: retuned.data.modelConcurrency }))
+    let runningError
+    try {
+      await service.run('workflow.resume', { id: tuneId }, ctx)
+    } catch (e) {
+      runningError = e
+    }
+    ok(runningError?.code === 'workflow_running' || /正在运行/.test(runningError?.message ?? ''), '运行中不带参数的 resume 照旧拒绝', runningError?.message)
+    release()
+    const tuned = await waitDone(tuneId, 1)
+    ok(tuned.status === 'done' && tuned.models.done === 12 && tuned.modelConcurrency === 8, '调并发后跑完，记录新的并发', JSON.stringify({ status: tuned.status, models: tuned.models, mc: tuned.modelConcurrency }))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

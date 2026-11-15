@@ -531,8 +531,20 @@ export class WorkflowService {
   private async commandResume(record: WorkflowRecord, params: Record<string, unknown>, context: WorkflowContext): Promise<CapabilityCommandResult> {
     const runner = this.runners.get(record.view.id)
     if (runner && !runner.done) {
-      if (!runner.paused) throw new CapabilityCommandError('workflow_running', `工作流 ${record.view.id} 正在运行，不需要续跑`)
-      this.unpause(record)
+      const concurrency = intParam(params.concurrency, 'concurrency', 1, WORKFLOW_LIMITS.maxConcurrency)
+      const modelConcurrency = modelConcurrencyOf(params)
+      const retune = concurrency !== undefined || modelConcurrency !== undefined
+      const state = runner.paused ? '已暂停' : '正在运行'
+      if ((typeof params.file === 'string' && params.file.trim()) || params.args !== undefined) throw new CapabilityCommandError('workflow_running', `工作流 ${record.view.id} ${state}，--file 和 --args 只能在它停止或结束后续跑时使用；只改并发可以直接带 --concurrency 或 --model-concurrency`)
+      if (!runner.paused && !retune) throw new CapabilityCommandError('workflow_running', `工作流 ${record.view.id} 正在运行，不需要续跑；要改并发就带上 --concurrency 或 --model-concurrency`)
+      if (retune) {
+        if (concurrency) record.view.concurrency = concurrency
+        if (modelConcurrency) record.view.modelConcurrency = modelConcurrency
+        runner.setConcurrency({ concurrency, modelConcurrency })
+        await this.persist(record)
+      }
+      if (runner.paused) this.unpause(record)
+      else this.schedulePush(record, true)
       return this.actionSummary('resume', record)
     }
     const stillRunning: string[] = []

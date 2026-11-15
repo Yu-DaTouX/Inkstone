@@ -167,6 +167,14 @@ export class WorkflowRunner {
     this.lane.pump()
   }
 
+  setConcurrency(limits: { concurrency?: number; modelConcurrency?: number }): void {
+    if (this.finished) return
+    if (limits.concurrency) this.opts.concurrency = limits.concurrency
+    if (limits.modelConcurrency) this.lane.setConcurrency(limits.modelConcurrency)
+    this.pump()
+    this.opts.onChange()
+  }
+
   stop(): Promise<void> {
     return this.end({ status: 'stopped' })
   }
