@@ -1,5 +1,4 @@
-import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runNetworkBoundaryTests(ok, mod) {
   const { decideRequestBoundary, isPrivateHost, isLinkLocalHost: isLinkLocal } = mod
@@ -202,27 +201,6 @@ export async function runNetworkBoundaryTests(ok, mod) {
 }
 
 
-async function main() {
-  const { build } = await import('esbuild')
-  const result = await build({ entryPoints: ['src/main/browser/network-boundary.ts'], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
-  const mod = await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'))
-  let checks = 0
-  let failures = 0
-  const ok = (value, label, detail) => {
-    checks += 1
-    if (!value) {
-      failures += 1
-      console.log('✗ ' + label + (detail === undefined ? '' : ': ' + detail))
-    }
-  }
-  await runNetworkBoundaryTests(ok, mod)
-  console.log(`network-boundary: ${checks - failures}/${checks} 通过`)
-  if (failures) process.exitCode = 1
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error('network-boundary: ' + (error?.stack ?? error))
-    process.exitCode = 1
-  })
-}
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runNetworkBoundaryTests(ok, await compile('src/main/browser/network-boundary.ts'))
+})

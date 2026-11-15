@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runBrowserSelectTests(ok, await compile('src/main/browser/InputController.ts', { platform: 'neutral' }), await compile('src/main/browser/ElementRegistry.ts', { platform: 'neutral' }))
+})
+
 export async function runBrowserSelectTests(ok, mod, errors) {
   const { SELECT_VALUE_FN } = mod
   const { NotSelectElementError, SelectOptionNotFoundError } = errors

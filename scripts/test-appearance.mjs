@@ -1,5 +1,10 @@
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runAppearanceTests(ok)
+})
 
 export async function runAppearanceTests(ok) {
   await build({ entryPoints: ['src/shared/appearance.ts'], outfile: 'out/test/appearance.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })

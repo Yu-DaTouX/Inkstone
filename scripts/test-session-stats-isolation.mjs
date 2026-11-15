@@ -1,4 +1,5 @@
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -221,21 +222,6 @@ export async function runSessionStatsIsolationTests(ok) {
   }
 }
 
-async function main() {
-  let pass = 0
-  let fail = 0
-  const ok = (cond, label, actual) => {
-    if (cond) {
-      pass += 1
-      console.log(`  ✓ ${label}`)
-    } else {
-      fail += 1
-      console.error(`  ✗ ${label}${actual === undefined ? '' : `（实际：${String(actual)}）`}`)
-    }
-  }
+await runSuite(import.meta.url, async (ok) => {
   await runSessionStatsIsolationTests(ok)
-  console.log(`\n会话 stats 隔离：${pass} 通过 / ${fail} 失败`)
-  if (fail || pass === 0) process.exitCode = 1
-}
-
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) await main()
+}, { isolate: true })

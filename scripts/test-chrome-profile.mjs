@@ -2,13 +2,17 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
-export async function runChromeProfileTests(ok) {
-  const {
-    chromeUserDataRoot,
-    pickProfileName,
-    syncChromeProfile
-  } = await import('../out/test/chrome-profile.mjs')
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runChromeProfileTests(ok, await compile('src/main/chrome-profile.ts'))
+}, { isolate: true })
+
+export async function runChromeProfileTests(ok, {
+  chromeUserDataRoot,
+  pickProfileName,
+  syncChromeProfile
+}) {
 
   console.log('\n--- 12. 本机 Chrome 路径 ---')
   const win = chromeUserDataRoot('win32', { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, 'C:\\Users\\u')

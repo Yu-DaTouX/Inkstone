@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 const filler = (ch, bytes) => ch.repeat(bytes)
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -48,8 +49,7 @@ async function loadImageActions() {
   return { image: await import(pathToFileURL(outfile).href), cleanup: () => rmSync(dir, { recursive: true, force: true }) }
 }
 
-export async function runSessionImageTests(ok) {
-  const { readSessionMessages } = await import('../out/test/session-reader.mjs')
+export async function runSessionImageTests(ok, { readSessionMessages }) {
 
   console.log('\n--- 历史重读：图片 base64 不被截断 ---')
 
@@ -267,3 +267,7 @@ export async function runSessionImageTests(ok) {
     cleanup()
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSessionImageTests(ok, await compile('src/main/session-reader.ts'))
+}, { isolate: true })

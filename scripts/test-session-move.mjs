@@ -3,6 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runSessionMoveTests(ok) {
   await build({ entryPoints: ['src/main/session-move.ts'], outfile: 'out/test/session-move.mjs', bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' })
@@ -46,10 +47,6 @@ export async function runSessionMoveTests(ok) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let failed = 0
-  let passed = 0
-  await runSessionMoveTests((cond, name) => { if (cond) passed++; else { failed++; console.error('✗', name) } })
-  console.log(failed ? `✗ ${failed} 项失败，${passed} 项通过` : `✓ 会话移动 ${passed} 项通过`)
-  process.exit(failed ? 1 : 0)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runSessionMoveTests(ok)
+}, { isolate: true })

@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs'
 
-export async function runUiTimeoutTests(ok) {
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runUiTimeoutTests(ok, await compile('src/shared/ui-timeout.ts', { platform: 'neutral' }))
+})
+
+export async function runUiTimeoutTests(ok, uiTimeout) {
   const {
     UI_TIMEOUT_DEFAULT,
     UI_TIMEOUT_EXTEND,
@@ -10,7 +16,7 @@ export async function runUiTimeoutTests(ok) {
     extendDeadline,
     formatCountdown,
     requestedTimeout
-  } = await import('../out/test/ui-timeout.mjs')
+  } = uiTimeout
 
   ok(UI_TIMEOUT_DEFAULT === 180_000, '默认等待是 3 分钟（用户 2026-09-26 拍板）', String(UI_TIMEOUT_DEFAULT))
   ok(UI_TIMEOUT_EXTEND === 120_000, '点一下加 2 分钟', String(UI_TIMEOUT_EXTEND))

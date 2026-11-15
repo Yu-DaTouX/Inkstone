@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSkillSecurityTests(ok, await compile('src/shared/skill-security.ts', { platform: 'neutral' }))
+})
+
 export async function runSkillSecurityTests(ok, security) {
   const { formatSkillSecurityReview, reviewSkillFiles } = security
 

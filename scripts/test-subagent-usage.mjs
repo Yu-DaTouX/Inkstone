@@ -1,5 +1,10 @@
-export async function runSubagentUsageTests(ok) {
-  const { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage } = await import('../out/test/subagent-usage.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSubagentUsageTests(ok, await compile('src/shared/subagent-usage.ts', { platform: 'neutral' }))
+})
+
+export async function runSubagentUsageTests(ok, { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage }) {
 
   console.log('\n--- H-10b 子代理累计 usage ---')
   const u = (input, output, cacheRead = 0, cacheWrite = 0, totalTokens = input + output, cost = 0) => ({

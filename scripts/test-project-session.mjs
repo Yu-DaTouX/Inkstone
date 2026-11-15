@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runProjectSessionTests(ok, await compile('src/renderer/src/state/project-session.ts', { platform: 'neutral' }))
+})
+
 export function runProjectSessionTests(ok, mod) {
   const { pickProjectSession, sameCwd } = mod
 

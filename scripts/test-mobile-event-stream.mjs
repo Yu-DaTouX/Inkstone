@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { build } from 'esbuild'
+
+if (!existsSync(join('mobile', 'node_modules', '@noble', 'curves'))) {
+  console.log('- test-mobile-event-stream（跳过：worktree 未安装 mobile 依赖）')
+  process.exit(0)
+}
 
 const built = await build({
   stdin: { contents: `export { RemoteEventStream, EVENT_IDLE_MS, EVENT_WAKE_STALE_MS } from './src/api/client'`, resolveDir: 'mobile', loader: 'ts' },

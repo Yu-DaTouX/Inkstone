@@ -1,3 +1,15 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const sdk = { external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'] }
+  await runMcpTests(ok, {
+    mcp: await compile('src/shared/mcp.ts', { platform: 'neutral' }),
+    config: await compile('src/main/mcp/config.ts'),
+    manager: await compile('src/main/mcp/connection-manager.ts', sdk),
+    toolService: await compile('src/main/mcp/tool-service.ts', sdk)
+  })
+}, { isolate: true })
+
 export async function runMcpTests(ok, modules) {
   const mcp = modules.mcp
   const config = modules.config

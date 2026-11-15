@@ -2,6 +2,7 @@ import { mkdtemp, writeFile, readFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { runSuite } from './lib/test-suite.mjs'
 
 function fakeAccessToken(accountId) {
   const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
@@ -153,3 +154,7 @@ export async function runOAuthTests(ok) {
   globalThis.fetch = realFetch
   await mkdir(join(dir, 'done'), { recursive: true })
 }
+
+await runSuite(import.meta.url, async (ok) => {
+  await runOAuthTests(ok)
+}, { isolate: true })

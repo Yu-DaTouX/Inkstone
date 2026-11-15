@@ -1,5 +1,10 @@
-export async function runLinkTests(ok) {
-  const { classifyLink, parseFileLink } = await import('../out/test/links.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runLinkTests(ok, await compile('src/shared/links.ts', { platform: 'neutral' }))
+})
+
+export async function runLinkTests(ok, { classifyLink, parseFileLink }) {
 
   const kindOf = (href) => classifyLink(href).kind
 

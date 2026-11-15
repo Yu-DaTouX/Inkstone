@@ -2,12 +2,11 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 const sha1 = (s) => createHash('sha1').update(s).digest('hex')
 
-export async function runAttachmentTests(ok) {
-  const { attachmentStem, attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } =
-    await import('../out/test/attachments.mjs')
+export async function runAttachmentTests(ok, { attachmentStem, attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames }) {
 
   console.log('\n--- 图片附件：占用与清理 ---')
 
@@ -88,3 +87,7 @@ export async function runAttachmentTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runAttachmentTests(ok, await compile('src/main/attachments.ts'))
+}, { isolate: true })

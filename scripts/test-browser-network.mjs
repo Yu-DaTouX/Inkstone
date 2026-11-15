@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runBrowserNetworkTests(ok, await compile('src/main/browser/NetworkTracker.ts', { platform: 'neutral' }))
+})
+
 export async function runBrowserNetworkTests(ok, mod) {
   const listeners = new Map()
   const cdp = {

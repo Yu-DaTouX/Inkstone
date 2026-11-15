@@ -1,3 +1,4 @@
+import { runSuite } from './lib/test-suite.mjs'
 
 const LIVE_SNAPSHOT = {
   credits: { belowThreshold: false, creditThreshold: 0, monthlyCredits: 69.996221407, purchasedCredits: 0, freeCredits: 0 },
@@ -107,9 +108,8 @@ export function runQuotaToneTests(ok, m) {
   ok(quotaTone(Number.NaN) === 'ok', '拿不到比例（NaN）不误报红')
 }
 
-export async function runQuotaResumeTests(report) {
+export async function runQuotaResumeTests(report, m) {
   const ok = (label, cond) => report(!!cond, label)
-  const m = await import('../out/test/quota-resume.mjs')
   const NOW = 1_000_000_000_000
   const win = (id, used, resetAt, extra = {}) => ({ id, label: id, used, total: 100, resetAt, ...extra })
 
@@ -151,5 +151,12 @@ export async function runQuotaMiniTests(ok, mod) {
 }
 
 export default runQuotaMiniTests
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runQuotaResumeTests(ok, await compile('src/shared/quota-resume.ts', { platform: 'neutral' }))
+  runQuotaCommandCodeTests(ok, await compile('src/main/quota-commandcode.ts', { platform: 'neutral' }))
+  runQuotaToneTests(ok, await compile('src/shared/quota-tone.ts', { platform: 'neutral' }))
+  await runQuotaMiniTests(ok, await compile('src/shared/quota-mini.ts', { platform: 'neutral' }))
+})
 
 

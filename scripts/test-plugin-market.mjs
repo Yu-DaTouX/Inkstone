@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { mkdtemp, mkdir, readdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, index) => {
   let value = index
@@ -214,9 +215,7 @@ export async function runPluginMarketTests(ok) {
     ok(live.ok && live.entries.length > 0, '真实 npm pi-package 目录可用：' + live.entries.length)
   }
 }
-if (process.argv[1]?.endsWith('test-plugin-market.mjs')) {
-  let passed = 0, failed = 0
-  await runPluginMarketTests((value, name) => { console.log((value ? 'PASS ' : 'FAIL ') + name); value ? passed++ : failed++ })
-  console.log(`${passed} passed, ${failed} failed`)
-  process.exitCode = failed ? 1 : 0
-}
+
+await runSuite(import.meta.url, async (ok) => {
+  await runPluginMarketTests(ok)
+}, { isolate: true })

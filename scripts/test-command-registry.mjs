@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runCommandRegistryTests(ok, await compile('src/main/command-registry.ts', { platform: 'neutral' }))
+})
+
 export function runCommandRegistryTests(ok, registry) {
   const local = registry.localCommandDescriptors()
   ok(local.some((command) => command.name === 'new' && command.source === 'yan' && command.executable), 'Yan 本地 /new 始终注册')

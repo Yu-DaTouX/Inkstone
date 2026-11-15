@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runAtQueryTests(ok, await compile('src/renderer/src/features/composer/at-query.ts', { platform: 'neutral' }))
+})
+
 export function runAtQueryTests(ok, atQuery) {
   const { findAtQuery, replaceAtQuery } = atQuery
 

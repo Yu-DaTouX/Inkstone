@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSlashQueryTests(ok, await compile('src/renderer/src/features/composer/slash-query.ts', { platform: 'neutral' }))
+})
+
 export function runSlashQueryTests(ok, slashQuery) {
   const { findSlashQuery, replaceSlashQuery } = slashQuery
 

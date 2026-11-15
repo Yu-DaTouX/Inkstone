@@ -1,5 +1,10 @@
-export async function runSubagentViewTests(ok) {
-  const { dedupeRuns, selectSubagentRuns, subagentCost, subagentRunsForTurnScope } = await import('../out/test/subagent-view.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSubagentViewTests(ok, await compile('src/renderer/src/state/subagent-view.ts', { platform: 'neutral' }))
+})
+
+export async function runSubagentViewTests(ok, { dedupeRuns, selectSubagentRuns, subagentCost, subagentRunsForTurnScope }) {
 
   console.log('\n--- H-10a 子代理运行归属 ---')
   const run = (id, extra = {}) => ({

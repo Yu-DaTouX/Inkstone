@@ -1,5 +1,10 @@
-export async function runDurationTests(ok) {
-  const { formatDuration } = await import('../out/test/duration.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runDurationTests(ok, await compile('src/shared/duration.ts', { platform: 'neutral' }))
+})
+
+export async function runDurationTests(ok, { formatDuration }) {
 
   console.log('\n--- 11.8 人读时长：唯一写法与边界 ---')
 

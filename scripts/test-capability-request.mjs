@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runCapabilityRequestTests(ok, await compile('src/renderer/src/state/capability-request.ts', { platform: 'neutral' }))
+})
+
 export function runCapabilityRequestTests(ok, mod) {
   const { isCapabilityResponseStale } = mod
 

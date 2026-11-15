@@ -1,3 +1,4 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -127,3 +128,7 @@ export async function runFilesWatchTests(ok, { FilesWatcher }) {
     await rm(root, { recursive: true, force: true })
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runFilesWatchTests(ok, await compile('src/main/files-watch.ts'))
+}, { isolate: true })

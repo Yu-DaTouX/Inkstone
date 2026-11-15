@@ -1,5 +1,10 @@
-export async function runTaskPlanTests(ok) {
-  const TP = await import('../out/test/task-plan.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runTaskPlanTests(ok, await compile('src/shared/task-plan.ts', { platform: 'neutral' }))
+})
+
+export async function runTaskPlanTests(ok, TP) {
   const {
     applyTaskRequest,
     emptyTaskPlan,

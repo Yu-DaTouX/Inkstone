@@ -1,10 +1,9 @@
-import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { createQuestionTool, TOOL_GUIDANCE } from '../resources/pi-extensions/question.js'
 import { capabilityGuide, createTodosTool } from '../resources/pi-extensions/capability-guide.js'
 import readOnlyTools from '../resources/pi-extensions/readonly-tools.js'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runPromptSkillContractTests(ok) {
   const match = (value, pattern, label) => ok(pattern.test(value), label)
@@ -92,8 +91,6 @@ export async function runPromptSkillContractTests(ok) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let count = 0
-  await runPromptSkillContractTests((condition, label) => { assert.ok(condition, label); count++ })
-  console.log(`prompt-skill-contracts: ${count} assertions passed (offline)`)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runPromptSkillContractTests(ok)
+}, { isolate: true })

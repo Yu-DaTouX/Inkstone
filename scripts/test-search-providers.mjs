@@ -1,5 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 function fakeFetch(replies) {
   const calls = []
@@ -372,3 +375,30 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
 export function ensureDir(path) {
   mkdirSync(path, { recursive: true })
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'yan-search-providers-'))
+  const stub = join(dataDir, 'electron-stub.mjs')
+  writeFileSync(stub, 'export const BrowserWindow = class {}\nexport const session = {}\n')
+  process.env.YAN_DATA_DIR = dataDir
+  process.env.YAN_PI_DIR = dataDir
+  delete process.env.DEEPSEEK_API_KEY
+  try {
+    const entry = [
+      "export * as config from './src/main/search/config.ts'",
+      "export * as tavily from './src/main/search/tavily.ts'",
+      "export * as deepseek from './src/main/search/deepseek.ts'",
+      "export * as firecrawl from './src/main/search/firecrawl.ts'",
+      "export * as context7 from './src/main/search/context7.ts'",
+      "export * as plan from './src/main/search/plan.ts'",
+      "export * as modifiers from './src/main/search/modifiers.ts'",
+      "export * as ddg from './src/main/search/ddg.ts'",
+      "export * as brave from './src/main/search/brave.ts'",
+      "export * as shared from './src/shared/search.ts'"
+    ].join('\n')
+    const providers = await compile(null, { stdin: { contents: entry, resolveDir: resolve('.'), loader: 'ts' }, alias: { electron: stub } })
+    await runSearchProviderTests(ok, providers, dataDir)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+}, { isolate: true })

@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 export async function runOpenGuardTests(ok, { openBlockedByName, openBlockReason }) {
   for (const ext of ['exe', 'ps1', 'lnk', 'bat', 'msi', 'py', 'js', 'sh']) {
     ok(openBlockedByName('C:/tmp/x.' + ext) === false, '放行 .' + ext)
@@ -9,3 +11,7 @@ export async function runOpenGuardTests(ok, { openBlockedByName, openBlockReason
   ok(openBlockReason('C:/tmp/invoice' + String.fromCharCode(0x202e) + 'fdp.exe') === 'unsafe-name', '拦截带双向控制字符的文件名')
   ok(openBlockReason('C:/tmp/photo.png') === null, '放行图片')
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runOpenGuardTests(ok, await compile('src/main/open-guard.ts'))
+})

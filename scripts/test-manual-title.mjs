@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 export async function runManualTitleTests(ok, mod, dataDir) {
   const { setManualTitle, manualTitles } = mod
   const { mkdir, rm } = await import('node:fs/promises')
@@ -52,30 +54,15 @@ export async function runManualTitleTests(ok, mod, dataDir) {
   }
 }
 
-if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
+await runSuite(import.meta.url, async (ok, compile) => {
   const { mkdtemp, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
-  const { pathToFileURL } = await import('node:url')
-  const { build } = await import('esbuild')
   const root = await mkdtemp(join(tmpdir(), 'inkstone-manual-title-'))
   process.env.YAN_DATA_DIR = join(root, 'yan')
   try {
-    const outfile = join(root, 'title.mjs')
-    await build({ entryPoints: ['src/main/title.ts'], outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
-    const mod = await import(pathToFileURL(outfile).href)
-    let passed = 0
-    let failed = 0
-    await runManualTitleTests((condition, label, detail) => {
-      if (condition) passed++
-      else {
-        failed++
-        console.error(`FAIL: ${label}`, detail ?? '')
-      }
-    }, mod, process.env.YAN_DATA_DIR)
-    console.log(`manual title: ${passed} passed, ${failed} failed`)
-    if (failed) process.exitCode = 1
+    await runManualTitleTests(ok, await compile('src/main/title.ts'), process.env.YAN_DATA_DIR)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
-}
+}, { isolate: true })

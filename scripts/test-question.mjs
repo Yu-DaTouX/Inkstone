@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 const HOST_ENV_KEYS = ['YAN_RUNNER_ID', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']
 
 export async function runQuestionTests(ok) {
@@ -47,3 +49,7 @@ async function runWithoutHost(ok) {
   const sectioned = handlers.before_agent_start({ systemPrompt: 'BASE', systemPromptOptions: { sections } })
   ok(sectioned === undefined && /yan question ask/.test(sections.inkstone_question ?? ''), '有具名分区时只写分区、不返回整段提示')
 }
+
+await runSuite(import.meta.url, async (ok) => {
+  await runQuestionTests(ok)
+}, { isolate: true })

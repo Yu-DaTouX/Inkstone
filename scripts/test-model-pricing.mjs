@@ -1,5 +1,6 @@
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 async function load(out) {
   await build({
@@ -33,10 +34,6 @@ export async function runModelPricingTests(ok) {
   ok(toUsage({ cost: { total: 0 } }, 'deepseek/deepseek-v4-pro').cost === 0, '没有 token 不估算')
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let failed = 0
-  let passed = 0
-  await runModelPricingTests((cond, name) => { if (cond) passed++; else { failed++; console.error('✗', name) } })
-  console.log(failed ? `✗ ${failed} 项失败，${passed} 项通过` : `✓ 花费估算 ${passed} 项通过`)
-  process.exit(failed ? 1 : 0)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runModelPricingTests(ok)
+})

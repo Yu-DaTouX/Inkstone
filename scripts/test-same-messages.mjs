@@ -1,5 +1,11 @@
-export async function runSameMessagesTests(ok) {
-  const { reuseIfSame } = await import('../out/test/same-messages.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSameMessagesTests(ok, await compile('src/renderer/src/state/same-messages.ts', { platform: 'neutral' }))
+  await runStableRefTests(ok, await compile('src/renderer/src/state/stable-ref.ts', { platform: 'neutral' }))
+})
+
+export async function runSameMessagesTests(ok, { reuseIfSame }) {
   console.log('\n--- 消息列表内容相同时沿用旧引用 ---')
 
   const a = () => [
@@ -38,8 +44,7 @@ export async function runSameMessagesTests(ok) {
   ok(reuseIfSame(prev, prev) === prev, '同一引用直接返回')
 }
 
-export async function runStableRefTests(ok) {
-  const { keepRef, structurallyEqual } = await import('../out/test/stable-ref.mjs')
+export async function runStableRefTests(ok, { keepRef, structurallyEqual }) {
   console.log('\n--- keepRef：8 层以内结构比较，超过上限一律换新引用 ---')
 
   const shallow = () => ({ id: 'r1', status: 'running', tools: [{ id: 't1', state: { done: true } }] })

@@ -1,13 +1,11 @@
-import { build } from 'esbuild'
-import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
-async function load(entry, out) {
-  await build({ entryPoints: [entry], outfile: out, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' })
-  return import(pathToFileURL(out).href)
-}
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSplitViewTests(ok, (entry) => compile(entry, { packages: 'external' }))
+})
 
-export async function runSplitViewTests(ok) {
-  const split = await load('src/renderer/src/state/split-view.ts', 'out/test/split-view.mjs')
+export async function runSplitViewTests(ok, load) {
+  const split = await load('src/renderer/src/state/split-view.ts')
   const { reconcileSplit, sameSplitSession, displayedSessionOf, useSplitView, placeInSplit, removeSplitTile, MAX_SPLIT_TILES } = split
 
   const mk = (id) => ({ sessionId: id, path: `C:/s/${id}.jsonl` })
@@ -89,7 +87,7 @@ export async function runSplitViewTests(ok) {
   store.getState().close()
   ok(store.getState().split === null, '关闭回到单会话')
 
-  const snaps = await load('src/renderer/src/state/split-snapshots.ts', 'out/test/split-snapshots.mjs')
+  const snaps = await load('src/renderer/src/state/split-snapshots.ts')
   const msg = (id, ts) => ({ id, role: 'assistant', text: id, ...(ts ? { timestamp: ts } : {}) })
   const shownNew = [msg('u1', 100), msg('a1', 200), msg('u2', 300), msg('a2', 400)]
   const cacheOld = [msg('u1', 100), msg('t1', 150), msg('t2', 160), msg('a1', 200), msg('t3', 210)]
@@ -117,7 +115,7 @@ export async function runSplitViewTests(ok) {
   ok(movedSplit.tiles[0].uid === uid0 && movedSplit.tiles.length === 2, '拖已在分屏里的会话挪位置：列的编号不变')
   const swapped = reconcileSplit(withUidSplit, c)
   ok(swapped.tiles[0].uid === withUidSplit.tiles[0].uid && swapped.tiles[0].sessionId === 'c', '焦点那一块换了会话：列的编号沿用')
-  const wk = await load('src/renderer/src/state/workspace-key.ts', 'out/test/workspace-key.mjs')
+  const wk = await load('src/renderer/src/state/workspace-key.ts')
   ok(wk.workspaceKeyFor({ sessionId: 'z', path: 'C:/s/z.jsonl' }) === 'C:/s/z.jsonl', '会话键优先用文件路径')
   ok(wk.workspaceKeyFor({ sessionId: 'z' }) === 'z' && wk.workspaceKeyFor({}) === 'pending', '没有文件时退回 id，都没有时用 pending')
   ok(wk.workspaceKeyFor({ path: 'C:\\S\\z.jsonl' }) === 'C:\\S\\z.jsonl', '路径原样作为键，不做归一化')
@@ -125,7 +123,7 @@ export async function runSplitViewTests(ok) {
   ok(Object.keys(useSplitView.getState().weights).length === 0, '回到单会话：份额清空')
   const lsData = new Map()
   globalThis.localStorage = { getItem: (k) => lsData.get(k) ?? null, setItem: (k, v) => void lsData.set(k, String(v)) }
-  const owners = await load('src/renderer/src/state/resource-owners.ts', 'out/test/resource-owners.mjs')
+  const owners = await load('src/renderer/src/state/resource-owners.ts')
   ok(owners.claimResource('terminal:1', 'X') === 'X' && owners.claimResource('terminal:1', 'Y') === 'X', '资源归第一个认领的会话，不被后来者改走')
   owners.releaseResource('terminal:1')
   ok(owners.resourceOwner('terminal:1') === undefined, '释放后不再有主人')
@@ -136,7 +134,7 @@ export async function runSplitViewTests(ok) {
   ok(owners.claimResource('browser', 'Y') === 'Y', '关闭浏览器释放归属，下次打开绑定新会话')
   const brokenKey = 'inkstone.workspace.owners.v1.broken.'
   ok(![...lsData.keys()].some((k) => k.startsWith(brokenKey)), '存储正常时不留损坏备份')
-  const brokenOwners = await load('src/renderer/src/state/resource-owners.ts', 'out/test/resource-owners-broken.mjs')
+  const brokenOwners = await load('src/renderer/src/state/resource-owners.ts')
   lsData.set('inkstone.workspace.owners.v1', '{oops')
   ok(brokenOwners.claimResource('file:x', 'S') === 'S', '存储损坏时仍可重新登记')
   const backupKey = [...lsData.keys()].find((k) => k.startsWith(brokenKey))
@@ -144,12 +142,4 @@ export async function runSplitViewTests(ok) {
   ok(JSON.parse(lsData.get('inkstone.workspace.owners.v1'))['file:x'] === 'S', '重写后只含新内容')
   ok(brokenOwners.resourceOwner('file:x') === 'S', '重新登记后读得回来')
   ok(snaps.newestMessages([msg('x')], [msg('y', 1)]) !== undefined && snaps.latestTimestamp([msg('a', 5), msg('b')]) === 5, '没有时间的消息不算，往前找带时间的')
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let failed = 0
-  let passed = 0
-  await runSplitViewTests((cond, name) => { if (cond) passed++; else { failed++; console.error('✗', name) } })
-  console.log(failed ? `✗ ${failed} 项失败，${passed} 项通过` : `✓ 分屏 ${passed} 项通过`)
-  process.exit(failed ? 1 : 0)
 }

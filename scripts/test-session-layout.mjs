@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSessionLayoutTests(ok, await compile('src/main/session-layout.ts'))
+}, { isolate: true })
+
 export async function runSessionLayoutTests(ok, api) {
   const project = (id, cwd) => ({
     id,

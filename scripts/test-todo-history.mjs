@@ -1,5 +1,10 @@
-export async function runTodoHistoryTests(ok) {
-  const { todoSnapshotsFromEntries, sameTodos } = await import('../out/test/todo-snapshots.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runTodoHistoryTests(ok, await compile('src/main/todo-snapshots.ts', { platform: 'neutral' }))
+})
+
+export async function runTodoHistoryTests(ok, { todoSnapshotsFromEntries, sameTodos }) {
 
   const user = (n) => ({ type: 'message', message: { role: 'user' }, id: `u${n}` })
   const asst = (n) => ({ type: 'message', message: { role: 'assistant' }, id: `a${n}` })

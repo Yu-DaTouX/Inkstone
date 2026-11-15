@@ -4,8 +4,15 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { writePackageSourcesForTest } from './helpers/package-sources-fixture.mjs'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { runSuite } from './lib/test-suite.mjs'
 
-export async function runPackagesTests(ok) {
+await runSuite(import.meta.url, async (ok, compile) => {
+  const piCliPath = join(selectedPiRuntime(join('resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
+  if (!existsSync(piCliPath)) throw new Error(`内置 pi CLI 不在（${piCliPath}）：先跑 npm run vendor:pi`)
+  await runPackagesTests(ok, await compile('src/main/packages.ts'))
+}, { isolate: true })
+
+export async function runPackagesTests(ok, packagesModule) {
   const {
     packageNameOf,
     versionOf,
@@ -17,7 +24,7 @@ export async function runPackagesTests(ok) {
     runPackageAction,
     installManagedPiPackage,
     configurePackageContext
-  } = await import('../out/test/packages.mjs')
+  } = packagesModule
 
   {
     ok(packageNameOf('npm:pi-zh-cn') === 'pi-zh-cn', 'npm: 前缀去掉', packageNameOf('npm:pi-zh-cn'))

@@ -1,5 +1,6 @@
 import { build } from 'esbuild'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 const compile = async (entry) => {
   const compiled = await build({
@@ -334,18 +335,7 @@ export async function runSessionConcurrencySendGuardTests(ok) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let passed = 0
-  let failed = 0
-  const report = (condition, label, detail) => {
-    if (condition) passed++
-    else {
-      failed++
-      console.error(`FAIL: ${label}`, detail ?? '')
-    }
-  }
-  await runSessionConcurrencyConflictTests(report)
-  await runSessionConcurrencySendGuardTests(report)
-  console.log(`Session concurrency runner tests: ${passed} passed, ${failed} failed`)
-  if (failed) process.exitCode = 1
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runSessionConcurrencyConflictTests(ok)
+  await runSessionConcurrencySendGuardTests(ok)
+}, { isolate: true })

@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export async function runSourcesTests(ok) {
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSourcesTests(ok, await compile('src/main/sources.ts'))
+}, { isolate: true })
+
+export async function runSourcesTests(ok, sourcesModule) {
   const {
     configureSources,
     sourcesDir,
@@ -14,7 +20,7 @@ export async function runSourcesTests(ok) {
     linkSources,
     removeImage,
     dropSession
-  } = await import('../out/test/sources.mjs')
+  } = sourcesModule
 
   const root = mkdtempSync(join(tmpdir(), 'yan-sources-'))
   configureSources({ dir: root })

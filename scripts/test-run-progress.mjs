@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runRunProgressTests(ok, await compile('src/shared/run-progress.ts', { platform: 'neutral' }))
+})
+
 export async function runRunProgressTests(ok, mod) {
   const { deriveRunProgress, resolveRunClock } = mod
   const base = {

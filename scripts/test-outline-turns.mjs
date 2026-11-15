@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runOutlineTurnTests(ok, await compile('src/shared/outline-turns.ts', { platform: 'neutral' }))
+})
 
 export function runOutlineTurnTests(ok, { createOutlineProjector }) {
   const project = createOutlineProjector()

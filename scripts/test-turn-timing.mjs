@@ -1,10 +1,19 @@
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { runSuite } from './lib/test-suite.mjs'
 
-export async function runTurnTimingTests(ok) {
-  const { turnTiming } = await import('../out/test/turn-timing.mjs')
-  const { groupIntoTurns } = await import('../out/test/turns.mjs')
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runTurnTimingTests(ok, {
+    timing: await compile('src/shared/turn-timing.ts', { platform: 'neutral' }),
+    turns: await compile('src/shared/turns.ts', { platform: 'neutral' })
+  })
+  await runTurnTimingStoreTests(ok, await compile('src/main/turn-timing-store.ts'))
+})
+
+export async function runTurnTimingTests(ok, modules) {
+  const { turnTiming } = modules.timing
+  const { groupIntoTurns } = modules.turns
 
   const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps
 
@@ -133,8 +142,7 @@ export async function runTurnTimingTests(ok) {
   }
 }
 
-export async function runTurnTimingStoreTests(ok) {
-  const mod = await import('../out/test/turn-timing-store.mjs')
+export async function runTurnTimingStoreTests(ok, mod) {
   const {
     appendTurnTiming,
     readTurnTimings,

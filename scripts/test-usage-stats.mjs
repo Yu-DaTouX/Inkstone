@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runUsageStatsTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-usage-stats-'))
@@ -114,15 +115,6 @@ export async function runUsageStatsTests(ok) {
   ok(kept.currency === 'EUR' && kept.rates.EUR === 0.9 && !('CNY' in kept.rates) && !('JPY' in kept.rates) && !('USD' in kept.rates), '只保留有效且非默认的汇率')
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let failed = 0
-  await runUsageStatsTests((condition, message) => {
-    if (condition) console.log(`  ok - ${message}`)
-    else {
-      failed++
-      console.error(`  FAIL - ${message}`)
-    }
-  })
-  console.log(`\nusage-stats: ${failed ? `${failed} failed` : 'all passed'}`)
-  if (failed) process.exitCode = 1
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runUsageStatsTests(ok)
+}, { isolate: true })

@@ -1,3 +1,10 @@
+import { resolve } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSearchTests(ok, await compile(null, { stdin: { contents: "export * from './src/main/search/search'\nexport * from './src/main/search/public-sources'", resolveDir: resolve('.'), loader: 'ts' } }))
+}, { isolate: true })
+
 export async function runSearchTests(ok, mod) {
   const {
     SEARCH_SOURCES,

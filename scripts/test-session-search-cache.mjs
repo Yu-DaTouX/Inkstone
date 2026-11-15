@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { applyTestEnv, isIsolatedTestEnv } from './lib/test-env.mjs'
+import { runSuite } from './lib/test-suite.mjs'
 
 const FILE_COUNT = 60
 const LINE_CHARS = 2000
@@ -161,17 +162,6 @@ export async function runSessionSearchCacheTests(ok) {
 
 export default runSessionSearchCacheTests
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  let failed = 0
-  let passed = 0
-  const ok = (cond, name) => {
-    if (cond) passed++
-    else {
-      failed++
-      console.error(`✗ ${name}`)
-    }
-  }
+await runSuite(import.meta.url, async (ok) => {
   await runSessionSearchCacheTests(ok)
-  console.log(failed ? `✗ ${failed} 失败，${passed} 通过` : `✓ 会话搜索缓存：${passed} 项通过`)
-  process.exit(failed ? 1 : 0)
-}
+})

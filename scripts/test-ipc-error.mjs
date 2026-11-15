@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runIpcErrorTests(ok, await compile('src/shared/ipc-error.ts', { platform: 'neutral' }))
+})
+
 export function runIpcErrorTests(ok, mod) {
   const { stripIpcErrorPrefix } = mod
 

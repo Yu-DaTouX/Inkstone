@@ -1,9 +1,14 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { agentTestBuildOptions } from './lib/agent-test-bundle.mjs'
+import { runSuite } from './lib/test-suite.mjs'
+
+let recordCheck = () => {}
 
 function assert(condition, message) {
   if (!condition) throw new Error(`artifact test failed: ${message}`)
+  recordCheck(message)
 }
 
 const NO_PROVIDERS = { codex: false, openai: false, compatible: false, google: false, doubao: false, local: null }
@@ -223,10 +228,11 @@ async function runVersionAndPortabilityTests(ArtifactStore, project) {
   }
 }
 
-export async function runArtifactTests(modules = {}) {
-  const { ArtifactStore } = modules.artifacts ?? await import('../out/test/artifacts.mjs')
-  const { generateImage, resolveImageProvider, seedreamSize, nearestAspectRatio } = modules.images ?? await import('../out/test/image-generation.mjs')
-  const { AgentController } = modules.agent ?? await import('../out/test/agent.mjs')
+export async function runArtifactTests(modules, ok) {
+  recordCheck = (message) => ok(true, message)
+  const { ArtifactStore } = modules.artifacts
+  const { generateImage, resolveImageProvider, seedreamSize, nearestAspectRatio } = modules.images
+  const { AgentController } = modules.agent
   const root = await mkdtemp(join(tmpdir(), 'yan-artifacts-'))
   const project = await mkdtemp(join(tmpdir(), 'yan-artifact-project-'))
   const sessionFile = join(project, 'session.jsonl')
@@ -400,6 +406,10 @@ export async function runArtifactTests(modules = {}) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll('\\', '/')}`) {
-  await runArtifactTests()
-}
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runArtifactTests({
+    artifacts: await compile('src/main/artifacts.ts'),
+    images: await compile('src/main/image-generation.ts'),
+    agent: await compile('src/main/agent.ts', agentTestBuildOptions)
+  }, ok)
+}, { isolate: true })

@@ -1,5 +1,10 @@
-export async function runFileResourceTests(ok) {
-  const fr = await import('../out/test/file-resource.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runFileResourceTests(ok, await compile('src/shared/file-resource.ts', { platform: 'neutral' }))
+})
+
+export async function runFileResourceTests(ok, fr) {
   const key = fr.fileResourceKey
 
   const id = {

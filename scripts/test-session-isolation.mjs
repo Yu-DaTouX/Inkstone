@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 const GIT_ENV = {
   ...process.env,
@@ -32,7 +33,7 @@ function gitc(cwd, args) {
   return git(cwd, ['-c', 'user.name=yan-test', '-c', 'user.email=yan-test@example.com', ...args])
 }
 
-export async function runSessionIsolationTests(ok) {
+export async function runSessionIsolationTests(ok, isolationModule) {
   const {
     autoIsolationBranch,
     sanitizeAutoIsolationDocument,
@@ -41,7 +42,7 @@ export async function runSessionIsolationTests(ok) {
     pendingIsolationChanges,
     isolationCwdKey,
     isolatedSessionCwd
-  } = await import('../out/test/session-isolation.mjs')
+  } = isolationModule
 
   const stamp = new Date(2026, 8, 25, 14, 30, 12, 7)
   const branch = autoIsolationBranch(stamp)
@@ -173,3 +174,7 @@ export async function runSessionIsolationTests(ok) {
     }
     rmSync(root, { recursive: true, force: true })  }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSessionIsolationTests(ok, await compile('src/main/session-isolation.ts'))
+}, { isolate: true })

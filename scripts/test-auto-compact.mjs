@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 export async function runAutoCompactTests(ok, mod, limits) {
   const { compactAt, DEFAULT_COMPACT_TOKENS, default: extension } = mod
 
@@ -111,18 +113,8 @@ export async function runAutoCompactTests(ok, mod, limits) {
   }
 }
 
-if (process.argv[1] && (await import('node:url')).pathToFileURL(process.argv[1]).href === import.meta.url) {
-  const { readFile } = await import('node:fs/promises')
-  const { transform } = await import('esbuild')
-  const source = await readFile(new URL('../src/shared/context-limits.ts', import.meta.url), 'utf8')
-  const { code } = await transform(source, { loader: 'ts', format: 'esm' })
-  const limits = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+await runSuite(import.meta.url, async (ok, compile) => {
+  const limits = await compile('src/shared/context-limits.ts')
   const mod = await import('../resources/pi-extensions/auto-compact.js')
-  let passed = 0, failed = 0
-  await runAutoCompactTests((condition, label, detail) => {
-    if (condition) passed++
-    else { failed++; console.error(`FAIL ${label} ${detail ?? ''}`) }
-  }, mod, limits)
-  console.log(JSON.stringify({ passed, failed }))
-  if (failed) process.exitCode = 1
-}
+  await runAutoCompactTests(ok, mod, limits)
+}, { isolate: true })

@@ -1,5 +1,10 @@
-export async function runTaskPlanStoreTests(ok) {
-  const store = await import('../out/test/task-plan-store.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runTaskPlanStoreTests(ok, await compile('src/main/task-plan-store.ts'))
+}, { isolate: true })
+
+export async function runTaskPlanStoreTests(ok, store) {
   const {
     applyTaskPlanOperation,
     currentTaskPlan,

@@ -1,9 +1,9 @@
-import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runSearchLookupTests(ok) {
   const temp = await mkdtemp(join(tmpdir(), 'inkstone-lookup-'))
@@ -118,8 +118,6 @@ export async function runSearchLookupTests(ok) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let count = 0
-  await runSearchLookupTests((condition, label, detail) => { assert.ok(condition, `${label}: ${detail ?? ''}`); count++ })
-  console.log(`search-lookup: ${count} assertions passed (offline)`)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runSearchLookupTests(ok)
+}, { isolate: true })

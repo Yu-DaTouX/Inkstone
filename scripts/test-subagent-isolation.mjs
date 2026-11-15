@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { runSuite } from './lib/test-suite.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -145,3 +146,7 @@ export async function runSubagentIsolationTests(ok, isolation) {
     for (const dir of extraRoots) await rm(dir, { recursive: true, force: true })
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSubagentIsolationTests(ok, await compile('src/main/subagent-isolation.ts'))
+}, { isolate: true })

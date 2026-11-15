@@ -1,5 +1,6 @@
 import { build } from 'esbuild'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runExecutionAdmissionTests(ok) {
   const compiled = await build({
@@ -263,16 +264,6 @@ export async function runExecutionAdmissionTests(ok) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let passed = 0
-  let failed = 0
-  await runExecutionAdmissionTests((condition, label, detail) => {
-    if (condition) passed++
-    else {
-      failed++
-      console.error(`FAIL: ${label}`, detail ?? '')
-    }
-  })
-  console.log(`Execution admission tests: ${passed} passed, ${failed} failed`)
-  if (failed) process.exitCode = 1
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runExecutionAdmissionTests(ok)
+}, { isolate: true })

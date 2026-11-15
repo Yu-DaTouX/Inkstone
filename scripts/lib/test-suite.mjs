@@ -3,15 +3,17 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { applyTestEnv, isIsolatedTestEnv } from './test-env.mjs'
 
 export function buildTest(entry, outfile, options = {}) {
-  return build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', ...options })
+  return build({ ...(options.stdin ? {} : { entryPoints: [entry] }), outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', ...options })
 }
 
-export async function runSuite(url, run) {
+export async function runSuite(url, run, { isolate = false } = {}) {
   if (!process.argv[1] || pathToFileURL(resolve(process.argv[1])).href !== url) return
   let checks = 0
   const dirs = []
+  const sandbox = isolate && !isIsolatedTestEnv() ? applyTestEnv() : null
   const ok = (condition, label, detail = '') => {
     assert.ok(condition, detail ? `${label}: ${detail}` : label)
     checks++
@@ -30,5 +32,6 @@ export async function runSuite(url, run) {
     console.log(`${checks}/${checks} 通过`)
   } finally {
     await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
+    if (sandbox) await rm(sandbox, { recursive: true, force: true, maxRetries: 3 })
   }
 }

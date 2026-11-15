@@ -1,9 +1,13 @@
-import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runRightPanelTests(ok)
+})
 
 export async function runRightPanelTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-right-panel-'))
@@ -219,14 +223,4 @@ export async function runRightPanelTests(ok) {
     else delete globalThis.localStorage
     await rm(dir, { recursive: true, force: true })
   }
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  let pass = 0
-  await runRightPanelTests((cond, label, detail) => {
-    assert.ok(cond, `${label}${detail === undefined ? '' : ` ${JSON.stringify(detail)}`}`)
-    pass++
-    console.log(`✓ ${label}`)
-  })
-  console.log(`\nright-panel: ${pass} checks passed`)
 }

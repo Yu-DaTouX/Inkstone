@@ -1,5 +1,6 @@
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runRemoteApprovalTests(ok) {
   await build({ stdin: { contents: `export * from './src/main/remote-approval'; export * from './src/main/approval-broker'; export * from './src/main/ui-requests'`, resolveDir: process.cwd() },
@@ -54,9 +55,6 @@ export async function runRemoteApprovalTests(ok) {
   ok(questionToolCallId({ toolCall: { id: 'call_n' } }) === 'call_n' && questionToolCallId({ toolCallId: 'call_f' }) === 'call_f' && questionToolCallId({}) === undefined, 'toolCallId 从 toolCall.id 或 toolCallId 取得')
 }
 
-if (process.argv[1]?.endsWith('test-remote-approval.mjs')) {
-  let passed = 0, failed = 0
-  await runRemoteApprovalTests((value, name) => { if (value) passed++; else { failed++; console.error('FAIL', name) } })
-  console.log(`${passed} passed, ${failed} failed`)
-  process.exitCode = failed ? 1 : 0
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runRemoteApprovalTests(ok)
+}, { isolate: true })

@@ -1,4 +1,5 @@
 import { deflateSync } from 'node:zlib'
+import { runSuite } from './lib/test-suite.mjs'
 
 function pdfObjects(pages, compress) {
   const LF = String.fromCharCode(10)
@@ -76,3 +77,7 @@ export function runPdfTextTests(ok, pdf) {
     ok(tooBig.status === 'unsupported' && /64MB/.test(tooBig.note), '超过体积上限 → unsupported', tooBig.note)
   })()
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runPdfTextTests(ok, await compile('src/main/office/pdf-text.ts', { external: ['pdfjs-dist', 'pdfjs-dist/*'] }))
+})

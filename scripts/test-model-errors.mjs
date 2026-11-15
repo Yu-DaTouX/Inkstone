@@ -1,5 +1,15 @@
-export async function runModelErrorTests(ok) {
-  const shared = await import('../out/test/model-errors.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runModelErrorTests(ok, {
+    shared: await compile('src/shared/model-errors.ts', { platform: 'neutral' }),
+    normalize: await compile('src/main/normalize.ts', { platform: 'neutral' }),
+    projector: await compile('src/main/session-items/projector.ts', { platform: 'neutral' })
+  })
+})
+
+export async function runModelErrorTests(ok, modules) {
+  const { shared } = modules
   const cases = [
     ['429 Too Many Requests', 'quota'],
     ["You've used all 100 free requests for today", 'quota'],
@@ -92,8 +102,8 @@ export async function runModelErrorTests(ok) {
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')
   ok(!/abc123|private-key|sk-secret123/.test(shared.modelErrorNotice('fetch failed Authorization=abc123 api_key=private-key sk-secret123')), '常见密钥字段脱敏')
 
-  const { normalizeMessage } = await import('../out/test/normalize.mjs')
-  const { projectHistory } = await import('../out/test/projector.mjs')
+  const { normalizeMessage } = modules.normalize
+  const { projectHistory } = modules.projector
   const notice = '<subagent-notification id="sub-test" status="done">\n后台结果\n</subagent-notification>'
   const history = projectHistory([
     { role: 'user', content: '原任务' },

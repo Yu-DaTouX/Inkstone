@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runModelCapabilitiesTests(ok, await compile('src/shared/model-capabilities.ts', { platform: 'neutral' }))
+})
+
 export function runModelCapabilitiesTests(ok, api) {
   const model = api.normalizeModelInfo({
     id: 'vision-model',

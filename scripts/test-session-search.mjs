@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runSessionSearchTests(ok, await compile('src/shared/session-search-text.ts'))
+})
+
 export function runSessionSearchTests(ok, mod) {
   const { extractSearchText, matchText, queryTokens } = mod
   const line = (message) => JSON.stringify({ type: 'message', message })

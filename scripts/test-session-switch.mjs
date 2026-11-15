@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runSessionSwitchTests(ok)
+})
+
 export async function runSessionSwitchTests(ok) {
   const { mkdtemp } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')

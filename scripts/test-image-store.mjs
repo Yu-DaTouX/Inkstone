@@ -2,6 +2,11 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runImageStoreTests(ok)
+}, { isolate: true })
 
 export async function runImageStoreTests(ok) {
   console.log('\n--- 附件本地化：只落盘可渲染的图片类型 ---')

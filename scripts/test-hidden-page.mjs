@@ -1,6 +1,4 @@
-import assert from 'node:assert/strict'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 const ELECTRON_STUB = `
 export class BrowserWindow {
@@ -283,8 +281,6 @@ export async function runHiddenPageTests(ok) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let count = 0
-  await runHiddenPageTests((condition, label, detail) => { assert.ok(condition, `${label}: ${detail ?? ''}`); count++ })
-  console.log(`hidden-page: ${count} assertions passed (offline)`)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runHiddenPageTests(ok)
+}, { isolate: true })

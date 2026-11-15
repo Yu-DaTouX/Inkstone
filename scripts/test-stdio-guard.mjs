@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 function fakeStream() {
   const listeners = []
   return {
@@ -93,3 +95,7 @@ export function runStdioGuardTests(ok, mod) {
     ok(guard.brokenPipe('stdout') === true && guard.reported('stdout') === 1, '两种错误各自被正确处理')
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runStdioGuardTests(ok, await compile('src/main/stdio-guard.ts'))
+})

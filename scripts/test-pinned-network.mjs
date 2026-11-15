@@ -1,8 +1,7 @@
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createHash } from 'node:crypto'
 import { createServer as createNetServer, connect as netConnect, isIP, Socket } from 'node:net'
-import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -843,32 +842,7 @@ export async function runPinnedProxyTests(ok, mod) {
 }
 
 
-async function main() {
-  const { build } = await import('esbuild')
-  const bundle = async (entry) => {
-    const result = await build({ entryPoints: [entry], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
-    return import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'))
-  }
-  const resolverModule = await bundle('src/main/net/pinned-resolver.ts')
-  const proxyModule = await bundle('src/main/net/pinned-proxy.ts')
-  let checks = 0
-  let failures = 0
-  const ok = (value, label) => {
-    checks += 1
-    if (!value) {
-      failures += 1
-      console.log('✗ ' + label)
-    }
-  }
-  await runPinnedResolverTests(ok, resolverModule)
-  await runPinnedProxyTests(ok, proxyModule)
-  console.log(`pinned-network: ${checks - failures}/${checks} 通过`)
-  if (failures) process.exitCode = 1
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error('pinned-network: ' + (error?.stack ?? error))
-    process.exitCode = 1
-  })
-}
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runPinnedResolverTests(ok, await compile('src/main/net/pinned-resolver.ts'))
+  await runPinnedProxyTests(ok, await compile('src/main/net/pinned-proxy.ts'))
+})

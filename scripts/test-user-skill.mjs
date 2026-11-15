@@ -1,6 +1,15 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runUserSkillTests(ok,
+    await compile('src/shared/user-skill.ts', { platform: 'neutral' }),
+    await compile('src/main/user-skills.ts', { external: ['electron'] }),
+    { mkdtemp, rm })
+}, { isolate: true })
 
 export async function runUserSkillTests(ok, shared, main, fs) {
   const { validateUserSkill, userSkillMarkdown, legacyPlaybookToSkill, legacyPlaybookSkillName } = shared

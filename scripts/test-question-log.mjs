@@ -1,10 +1,18 @@
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
-export async function runQuestionLogTests(ok) {
-  const { mergeQuestionLog } = await import('../out/test/question-log.mjs')
-  const { QuestionLogStore } = await import('../out/test/question-log-store.mjs')
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runQuestionLogTests(ok, {
+    shared: await compile('src/shared/question-log.ts', { platform: 'neutral' }),
+    store: await compile('src/main/question-log.ts')
+  })
+}, { isolate: true })
+
+export async function runQuestionLogTests(ok, modules) {
+  const { mergeQuestionLog } = modules.shared
+  const { QuestionLogStore } = modules.store
 
   const msg = (id, role, timestamp, text) => ({ id, role, timestamp, text })
   const entry = (id, at, question, answer) => ({ id, question, options: [], answer, cancelled: answer == null, at })

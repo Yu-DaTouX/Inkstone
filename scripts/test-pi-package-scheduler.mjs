@@ -1,6 +1,14 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runPiPackageSchedulerTests(ok, {
+    AcquisitionService: (await compile('src/main/capabilities/acquisition-service.ts')).AcquisitionService,
+    PiPackageActivationScheduler: (await compile('src/main/capabilities/pi-package-scheduler.ts')).PiPackageActivationScheduler
+  })
+}, { isolate: true })
 
 export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPackageActivationScheduler }) {
   const root = await mkdtemp(join(tmpdir(), 'yan-pi-package-scheduler-'))

@@ -1,10 +1,15 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 const EPS = 1e-9
 const isInt = (x) => Math.abs(x - Math.round(x)) < 1e-6
 
 const SCALE_FACTORS = [1, 1.25, 1.5, 1.75, 2]
 
-export async function runZoomTests(ok) {
-  const m = await import('../out/test/zoom-math.mjs')
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runZoomTests(ok, await compile('src/main/zoom-math.ts', { platform: 'neutral' }))
+})
+
+export async function runZoomTests(ok, m) {
 
   console.log('\n--- 15. 界面缩放（DPI 取整）---')
 

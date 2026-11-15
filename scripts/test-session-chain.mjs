@@ -2,9 +2,13 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export async function runSessionChainTests(ok) {
-  const shared = await import('../out/test/session-chain.mjs')
-  const service = await import('../out/test/session-chain-service.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSessionChainTests(ok, await compile('src/shared/session-chain.ts', { platform: 'neutral' }), await compile('src/main/session-chain-service.ts'))
+}, { isolate: true })
+
+export async function runSessionChainTests(ok, shared, service) {
   console.log('\n--- 实施-05 S5b 会话链（前端一条会话） ---')
 
   ok(shared.normalizeChainKey('C:\\a\\b.jsonl') === 'C:/a/b.jsonl', '反斜杠统一成正斜杠')

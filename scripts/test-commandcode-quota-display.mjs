@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 const OUT = resolve('.tmp/commandcode-quota-display')
 
@@ -307,19 +308,6 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
   await runCommandCodeExtensionAuthTest(check)
 }
 
-const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
-if (invokedDirectly) {
-  let failed = 0
-  const ok = (cond, label, extra = '') => {
-    if (cond) console.log(`  ✓ ${label}${extra ? '  ' + extra : ''}`)
-    else { failed++; console.log(`  ✗ ${label}${extra ? '  ' + extra : ''}`) }
-  }
-  try {
-    await runCommandCodeQuotaDisplayTests(ok)
-    console.log(failed ? `\n✗ Command Code 额度显示：失败 ${failed} 项` : '\n✓ Command Code 额度显示：全部通过')
-    if (failed) process.exitCode = 1
-  } catch (error) {
-    console.error(error)
-    process.exitCode = 1
-  }
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runCommandCodeQuotaDisplayTests(ok)
+}, { isolate: true })

@@ -1,5 +1,10 @@
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runVisualBlockTests(ok)
+})
 
 export async function runVisualBlockTests(ok) {
   await build({ entryPoints: ['src/shared/visual-blocks.ts'], outfile: 'out/test/visual-blocks.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
@@ -79,11 +84,4 @@ export async function runVisualBlockTests(ok) {
   ok(pct.max === 100 && pct.ticks.length === 5, '刻度：百分比封顶 100')
   ok(money.max === 5 && money.ticks.join() === '0,1,2,3,4,5', '刻度：4.12 → 0–5')
   ok(tiny.max >= 0.37 && tiny.ticks.length <= 6 && tiny.ticks[0] === 0, '刻度：小数范围')
-}
-
-if (process.argv[1]?.endsWith('test-visual-blocks.mjs')) {
-  let passed = 0, failed = 0
-  await runVisualBlockTests((value, name) => { console.log((value ? 'PASS ' : 'FAIL ') + name); value ? passed++ : failed++ })
-  console.log(`${passed} passed, ${failed} failed`)
-  process.exitCode = failed ? 1 : 0
 }

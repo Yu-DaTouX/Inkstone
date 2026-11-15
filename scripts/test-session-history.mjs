@@ -2,6 +2,12 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runSessionHistoryTests(ok, await compile('src/main/session-history.ts'), await compile('src/main/session-chain-service.ts'))
+}, { isolate: true })
+
 export async function runSessionHistoryTests(ok, history, chainService) {
   console.log('\n--- 实施-05 S5b-4 链感知历史（按段拼接） ---')
 

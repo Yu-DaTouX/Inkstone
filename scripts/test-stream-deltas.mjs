@@ -1,7 +1,13 @@
+import { agentTestBuildOptions } from './lib/agent-test-bundle.mjs'
+import { runSuite } from './lib/test-suite.mjs'
+
 const USAGE = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: 0 }
 
-export async function runStreamDeltasTests(ok) {
-  const { AgentController } = await import('../out/test/agent.mjs')
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runStreamDeltasTests(ok, await compile('src/main/agent.ts', agentTestBuildOptions))
+}, { isolate: true })
+
+export async function runStreamDeltasTests(ok, { AgentController }) {
 
   const pushes = []
   const ctl = new AgentController({ push: (m) => pushes.push(m), cwd: process.cwd() })

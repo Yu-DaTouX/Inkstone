@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runNetworkPolicyTests(ok, await compile('src/main/browser/network-policy.ts'))
+})
+
 export async function runNetworkPolicyTests(ok, policy) {
   const { isPrivateAddress, resolvesToPrivateAddress } = policy
   ok(isPrivateAddress('127.0.0.1'), '网络边界识别 IPv4 loopback')

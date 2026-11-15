@@ -2,6 +2,7 @@ import { mkdtemp, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runApiKeyPoolTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-keypool-'))
@@ -133,14 +134,6 @@ export async function runApiKeyPoolTests(ok) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  let pass = 0
-  let fail = 0
-  await runApiKeyPoolTests((cond, name, detail) => {
-    if (cond) pass++
-    else fail++
-    console.log(`${cond ? '✓' : '✗'} ${name}${!cond && detail ? `  ← ${detail}` : ''}`)
-  })
-  console.log(`api-key-pool: ${pass} passed, ${fail} failed`)
-  process.exit(fail ? 1 : 0)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runApiKeyPoolTests(ok)
+}, { isolate: true })

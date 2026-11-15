@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runBuildInfoTests(ok, await compile('src/shared/build-info.ts', { platform: 'neutral' }))
+})
+
 export function runBuildInfoTests(ok, api) {
   ok(typeof api.BUILD_INFO === 'object', 'BUILD_INFO 在非注入环境也有兜底对象')
   ok(

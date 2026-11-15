@@ -4,6 +4,18 @@ import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, symlink } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as tar from 'tar'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runAcquisitionTests(ok, {
+    shared: await compile('src/shared/acquisition.ts'),
+    service: await compile('src/main/capabilities/acquisition-service.ts'),
+    npmArtifact: await compile('src/main/capabilities/npm-artifact.ts', { external: ['tar'] }),
+    npmAcquisition: await compile('src/main/capabilities/npm-acquisition.ts', { external: ['tar'] }),
+    packageAuthorizationShared: await compile('src/shared/package-authorization.ts'),
+    packageAuthorizationService: await compile('src/main/capabilities/package-authorization-service.ts')
+  })
+}, { isolate: true })
 
 export async function runAcquisitionTests(ok, modules) {
   const { shared, service, npmArtifact, npmAcquisition, packageAuthorizationShared, packageAuthorizationService } = modules

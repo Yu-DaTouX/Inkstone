@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 export async function runFileUrlTests(ok) {
   const { mkdtemp } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
@@ -56,3 +58,7 @@ export async function runFileUrlTests(ok) {
     ok(url.pathname === '/d:/x/y.txt', '小写盘符同样处理', url.pathname)
   }
 }
+
+await runSuite(import.meta.url, async (ok) => {
+  await runFileUrlTests(ok)
+})

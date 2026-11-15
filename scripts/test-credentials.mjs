@@ -2,6 +2,11 @@ import { mkdtemp, writeFile, readFile, stat } from 'node:fs/promises'
 import { readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runCredentialsTests(ok)
+}, { isolate: true })
 
 export async function runCredentialsTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-cred-'))

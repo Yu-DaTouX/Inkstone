@@ -31,7 +31,7 @@ await runSuite(import.meta.url, async (ok) => {
     ok(true, '已有匹配不能掩盖另一个拼错的前缀')
     assert.throws(() => selectTests(catalog, ['../queue']), /无效/)
     ok(true, '拒绝路径和通配符输入')
-    assert.throws(() => executionPlan(selectTests(catalog, ['turns']), true), /尚未独立/)
+    assert.throws(() => executionPlan(selectTests(catalog, ['custom-provider']), true), /尚未独立/)
     ok(true, '未迁移套件不会空跑，也不会偷偷变成全量测试')
     for (const prefix of ['cc-delegation-live', 'packaged', 'browser-frame-network', 'comfyui-video']) {
       assert.throws(() => executionPlan(selectTests(catalog, [prefix]), true))
@@ -49,9 +49,6 @@ await runSuite(import.meta.url, async (ok) => {
     ok(Object.keys(serialScripts).every((name) => catalog.some((test) => test.name === name)), '串行名单都指向存在的测试')
     const source = await readFile('scripts/test-unit-legacy.mjs', 'utf8')
     const referenced = new Set([...source.matchAll(/\.\/(test-[a-z0-9-]+)\.mjs/g)].map((match) => match[1]))
-    const inProcess = source.match(/const inProcessScripts = \[([\s\S]*?)\]/)?.[1]
-    assert.ok(inProcess)
-    for (const match of inProcess.matchAll(/'(test-[a-z0-9-]+)'/g)) referenced.add(match[1])
     assert.deepEqual([...referenced].sort(), [...legacyScripts].sort())
     ok(true, '兼容清单与真实调用一致，避免漏跑或双跑')
     for (const name of ['test-queue-items', 'test-queue-draft-images', 'test-agents-doc']) {
@@ -129,7 +126,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(!noMatch.ok && noMatch.tail.includes('没有匹配'), 'CLI 零匹配返回非零退出码')
     const badOption = await run(await cliFixture('bad-option', ['--wat']))
     ok(!badOption.ok && badOption.tail.includes('未知选项'), 'CLI 拼错参数不会退回全量执行')
-    const legacyOnly = await run(await cliFixture('legacy', ['turns']))
+    const legacyOnly = await run(await cliFixture('legacy', ['custom-provider']))
     ok(!legacyOnly.ok && legacyOnly.tail.includes('尚未独立'), 'CLI 明确拒绝未迁移定向套件')
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 3 })

@@ -3,9 +3,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, 
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
-export async function runGitStateTests(ok) {
-  const { parseStatusV2 } = await import('../out/test/git.mjs')
+export async function runGitStateTests(ok, modules) {
+  const { parseStatusV2 } = modules.git
   const NUL = '\0'
   const j = (...parts) => JSON.stringify(parts)
 
@@ -79,7 +80,7 @@ export async function runGitStateTests(ok) {
 
 }
 
-export async function runGitActionTests(ok) {
+export async function runGitActionTests(ok, modules) {
   const {
     classifyGitFailure,
     validateCommitMessage,
@@ -101,7 +102,7 @@ export async function runGitActionTests(ok) {
     staleFailure,
     MAX_COMMIT_MESSAGE,
     MAX_ACTION_PATHS
-  } = await import('../out/test/git-actions.mjs')
+  } = modules.actions
 
   const j = (...parts) => JSON.stringify(parts)
 
@@ -281,8 +282,8 @@ function git(cwd, args) {
   })
 }
 
-export async function runGitRepoTests(ok) {
-  const { resolveRepo, clearRepoCache } = await import('../out/test/git-service.mjs')
+export async function runGitRepoTests(ok, modules) {
+  const { resolveRepo, clearRepoCache } = modules.service
 
   const root = await mkdtemp(join(tmpdir(), 'yan-git-'))
   const repo = join(root, 'demo')
@@ -328,7 +329,7 @@ export async function runGitRepoTests(ok) {
     clearRepoCache()
     ok((await resolveRepo(join(root, 'not-a-repo'))) === null, '空目录也返回 null')
 
-    const { readRepoSnapshot, readRepoState, readExpected } = await import('../out/test/git-service.mjs')
+    const { readRepoSnapshot, readRepoState, readExpected } = modules.service
     const [snapA, snapB] = await Promise.all([readRepoSnapshot(id), readRepoSnapshot(id)])
     ok(snapA === snapB, '同一仓库并发读取状态只跑一次')
     const separate = await readRepoState(repo, { withRefs: false })
@@ -340,9 +341,7 @@ export async function runGitRepoTests(ok) {
   console.log('\n--- G9. 写操作（真实 git，全部在临时仓库里）---')
 
   {
-    const { runGitAction, configureWriteContext, readExpected, listRemotes } = await import(
-      '../out/test/git-actions-main.mjs'
-    )
+    const { runGitAction, configureWriteContext, readExpected, listRemotes } = modules.actionsMain
 
     const mut = join(root, 'mut')
     await mkdir(mut, { recursive: true })
@@ -682,7 +681,7 @@ export async function runGitRepoTests(ok) {
 
   {
     const { listWorktrees, createWorktree, slugBranch, parseWorktreeList, defaultWorktreeContainer } =
-      await import('../out/test/git-worktree.mjs')
+      modules.worktree
 
     ok(slugBranch('feat/git-review') === 'feat-git-review', '分支名里的 / 变成 -（不多出一层目录）', slugBranch('feat/git-review'))
     ok(slugBranch('  spaced  name  ') === 'spaced-name', '空白收敛成单个 -', slugBranch('  spaced  name  '))
@@ -777,8 +776,8 @@ export async function runGitRepoTests(ok) {
       '两条被认成「砚创建的」（落在默认容器里）'
     )
 
-    const { runGitAction: actWt } = await import('../out/test/git-actions-main.mjs')
-    const { readRepoState: stateWt, readExpected: expectedWt } = await import('../out/test/git-service.mjs')
+    const { runGitAction: actWt } = modules.actionsMain
+    const { readRepoState: stateWt, readExpected: expectedWt } = modules.service
     await writeFile(join(wt, 'base.txt'), 'base staged for busy check\n')
     const fullState = await stateWt(wt)
     ok(
@@ -803,7 +802,7 @@ export async function runGitRepoTests(ok) {
   }
 
   {
-    const { createWorktree } = await import('../out/test/git-worktree.mjs')
+    const { createWorktree } = modules.worktree
     const cRoot = mkdtempSync(join(tmpdir(), 'yan-git-carry-'))
     const cRepo = join(cRoot, 'carry')
     mkdirSync(cRepo)
@@ -980,3 +979,16 @@ export async function runGitRepoTests(ok) {
   await rm(root, { recursive: true, force: true }).catch(() => {})
 }
 
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const modules = {
+    git: await compile('src/shared/git.ts', { platform: 'neutral' }),
+    actions: await compile('src/shared/git-actions.ts', { platform: 'neutral' }),
+    service: await compile('src/main/git-service.ts'),
+    actionsMain: await compile('src/main/git-actions.ts'),
+    worktree: await compile('src/main/git-worktree.ts')
+  }
+  await runGitStateTests(ok, modules)
+  await runGitActionTests(ok, modules)
+  await runGitRepoTests(ok, modules)
+}, { isolate: true })

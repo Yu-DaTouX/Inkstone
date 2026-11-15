@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runSubagentBriefTests(ok, await compile('src/shared/subagent-brief.ts', { platform: 'neutral' }))
+})
+
 export function runSubagentBriefTests(ok, mod) {
   const {
     parseSubagentBrief,

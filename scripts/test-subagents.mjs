@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
+import { runSuite } from './lib/test-suite.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -1434,3 +1435,8 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     }
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const { SubagentController } = await compile('src/main/subagents.ts')
+  await runSubagentControllerTests(ok, SubagentController)
+}, { isolate: true })

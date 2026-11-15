@@ -1,3 +1,14 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runSubagentOutcomeTests(ok, {
+    outcome: await compile('src/shared/subagent-outcome.ts', { platform: 'neutral' }),
+    notice: await compile('src/shared/subagent-notice.ts', { platform: 'neutral' }),
+    brief: await compile('src/shared/subagent-brief.ts', { platform: 'neutral' }),
+    repeatGuard: await import('../resources/pi-extensions/repeat-guard.js')
+  })
+}, { isolate: true })
+
 export function runSubagentOutcomeTests(ok, { outcome, notice, brief, repeatGuard }) {
   const { subagentOutcome } = outcome
   const key = (run) => subagentOutcome({ review: 'none', ...run }).key

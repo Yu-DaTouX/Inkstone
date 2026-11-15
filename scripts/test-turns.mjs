@@ -1,6 +1,11 @@
-export async function runTurnTests(ok) {
-  const { groupIntoTurns, createTurnProjector, splitParagraphs, cacheHitRate, formatHitRate, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs } =
-    await import('../out/test/turns.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runTurnTests(ok, await compile('src/shared/turns.ts', { platform: 'neutral' }))
+})
+
+export async function runTurnTests(ok, turns) {
+  const { groupIntoTurns, createTurnProjector, splitParagraphs, cacheHitRate, formatHitRate, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs } = turns
 
   {
     const project = createTurnProjector()

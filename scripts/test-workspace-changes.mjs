@@ -1,3 +1,4 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, unlinkSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -457,3 +458,9 @@ export async function runGitWorkspaceChangesTests(ok, mod) {
     wide.cleanup()
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const mod = await compile('src/main/snapshots.ts')
+  await runWorkspaceChangesTests(ok, mod)
+  await runGitWorkspaceChangesTests(ok, mod)
+}, { isolate: true })

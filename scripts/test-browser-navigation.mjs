@@ -1,5 +1,10 @@
-export async function runBrowserNavigationTests(ok) {
-  const m = await import('../out/test/browser-navigation.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runBrowserNavigationTests(ok, await compile('src/shared/browser-navigation.ts', { platform: 'neutral' }))
+})
+
+export async function runBrowserNavigationTests(ok, m) {
 
   ok(m.shouldSurfaceLoadError(-105, true) === true, '主框架加载失败要显示给用户')
   ok(m.shouldSurfaceLoadError(-105, false) === false, '子框架失败（广告 iframe）不打扰用户')

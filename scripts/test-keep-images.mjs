@@ -1,5 +1,10 @@
-export async function runKeepImagesTests(ok) {
-  const { keepLocalImages } = await import('../out/test/keep-images.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runKeepImagesTests(ok, await compile('src/renderer/src/state/keep-images.ts', { platform: 'neutral' }))
+})
+
+export async function runKeepImagesTests(ok, { keepLocalImages }) {
 
   console.log('\n--- 历史重读时保住本地图片预览 ---')
 

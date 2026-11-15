@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runProjectIdTests(ok, await compile('src/main/project-id.ts'))
+})
+
 export function runProjectIdTests(ok, projectId) {
   const { legacyProjectId, hashedProjectId, projectIdForCwd } = projectId
 

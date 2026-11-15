@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runEpochSnapshotTests(ok) {
   const indexFile = fileURLToPath(new URL('../src/main/index.ts', import.meta.url))
@@ -70,16 +71,6 @@ export async function runEpochSnapshotTests(ok) {
   ok(pushed.length === 2 && pushed[1] === 'r3', '同一轮多次通知合并为一次快照', JSON.stringify(pushed))
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let passed = 0
-  let failed = 0
-  await runEpochSnapshotTests((condition, label, detail) => {
-    if (condition) passed++
-    else {
-      failed++
-      console.error(`FAIL: ${label}`, detail ?? '')
-    }
-  })
-  console.log(`Epoch snapshot tests: ${passed} passed, ${failed} failed`)
-  if (failed) process.exitCode = 1
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runEpochSnapshotTests(ok)
+}, { isolate: true })

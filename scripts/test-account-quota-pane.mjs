@@ -3,6 +3,7 @@ import { resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 const OUT = resolve('.tmp/fix-validation-20261015/account-quota-pane')
 
@@ -349,19 +350,6 @@ export async function runAccountQuotaPaneTests(ok) {
   }
 }
 
-const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
-if (invokedDirectly) {
-  let failed = 0
-  const ok = (cond, label, extra = '') => {
-    if (cond) console.log(`  ✓ ${label}${extra ? '  ' + extra : ''}`)
-    else { failed++; console.log(`  ✗ ${label}${extra ? '  ' + extra : ''}`) }
-  }
-  try {
-    await runAccountQuotaPaneTests(ok)
-    console.log(failed ? `\n✗ 账号额度磁贴：失败 ${failed} 项` : '\n✓ 账号额度磁贴：全部通过')
-    if (failed) process.exitCode = 1
-  } catch (error) {
-    console.error(error)
-    process.exitCode = 1
-  }
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runAccountQuotaPaneTests(ok)
+}, { isolate: true })

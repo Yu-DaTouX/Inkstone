@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runPushRoutingTests(ok, await compile('src/renderer/src/state/push-routing.ts', { platform: 'neutral' }))
+})
+
 export function runPushRoutingTests(ok, { routePush, viewingSessionId }) {
   const runtimeA = { sessionId: 'session-a', runId: 'r1', projectId: 'p', generation: 2 }
   const base = {

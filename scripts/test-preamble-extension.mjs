@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok) => {
+  await runPreambleExtensionTests(ok, await import('../resources/pi-extensions/preamble.js'))
+}, { isolate: true })
+
 export async function runPreambleExtensionTests(ok, mod) {
   const { NATIVE_PREAMBLE, NATIVE_PREAMBLES, YAN_PREAMBLE, WORK_GUIDANCE, REPORT_GUIDANCE, WORK_RULES, default: extension } = mod
   const GUIDANCE = [WORK_GUIDANCE, REPORT_GUIDANCE, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')

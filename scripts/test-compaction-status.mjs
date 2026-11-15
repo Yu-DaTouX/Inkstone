@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runCompactionStatusTests(ok, await compile('src/main/compaction.ts'), await compile('src/renderer/src/state/compaction-view.ts', { platform: 'neutral' }))
+}, { isolate: true })
+
 export function runCompactionStatusTests(ok, mod, view) {
   const { reduceCompaction, compactionStatusOf, clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, contextFromRun, contextFromEntry, measuredAfterCompaction } = mod
 

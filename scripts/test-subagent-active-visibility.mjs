@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runSubagentActiveVisibilityTests(ok) {
   const check = typeof ok === 'function'
@@ -83,24 +84,6 @@ export async function runSubagentActiveVisibilityTests(ok) {
   }
 }
 
-const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
-if (invokedDirectly) {
-  let passed = 0
-  let failed = 0
-  try {
-    await runSubagentActiveVisibilityTests((condition, label) => {
-      if (condition) {
-        passed++
-        console.log(`  ok  ${label}`)
-      } else {
-        failed++
-        console.log(`  ✗ ${label}`)
-      }
-    })
-    console.log(failed ? `\n✗ 常驻子代理区：失败 ${failed} 项` : `\n✓ 常驻子代理区：${passed} 项通过`)
-    if (failed) process.exitCode = 1
-  } catch (error) {
-    console.error(error)
-    process.exitCode = 1
-  }
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runSubagentActiveVisibilityTests(ok)
+})

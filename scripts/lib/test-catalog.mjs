@@ -38,7 +38,13 @@ export const serialScripts = {
   'test-generation-timing': 'real-timer-race',
   'test-branch-lanes': 'wall-clock-upper-bound',
   'test-subagents': 'real-timer-race',
-  'test-provider-request-pipeline': 'real-timer-race'
+  'test-provider-request-pipeline': 'real-timer-race',
+  'test-session-concurrency-frontend': 'real-timer-race',
+  'test-session-sync-race': 'real-timer-race',
+  'test-pinned-network': 'real-timer-race',
+  'test-workspace-changes': 'wall-clock-upper-bound',
+  'test-files-watch': 'wall-clock-upper-bound',
+  'test-auto-compact': 'real-timer-race'
 }
 
 export async function discoverTests(directory = 'scripts') {

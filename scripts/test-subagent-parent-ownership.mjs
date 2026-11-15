@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 async function loadBundle(entry, dir, name) {
   const outfile = join(dir, `${name}.mjs`)
@@ -431,13 +432,6 @@ export async function runSubagentParentOwnershipTests(ok) {
   }
 }
 
-const invokedDirectly = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
-if (invokedDirectly) {
-  let passed = 0
-  let failed = 0
-  await runSubagentParentOwnershipTests((condition, label) => {
-    if (condition) { passed++; console.log(`  ok  ${label}`) } else { failed++; console.log(`  ✗ ${label}`) }
-  })
-  console.log(failed ? `\n✗ 子代理派活父归属：失败 ${failed} 项` : `\n✓ 子代理派活父归属：${passed} 项通过`)
-  if (failed) process.exitCode = 1
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runSubagentParentOwnershipTests(ok)
+}, { isolate: true })

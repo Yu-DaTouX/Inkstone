@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 const jwt = (claims) => `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`
 const credential = (provider, user, rotated = false) => ({
@@ -119,8 +120,6 @@ export async function runOAuthAccountTests(ok) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  let count = 0
-  await runOAuthAccountTests((condition, name) => { assert.ok(condition, name); count++ })
-  console.log(`✓ OAuth 多账号：${count} 项通过`)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runOAuthAccountTests(ok)
+}, { isolate: true })

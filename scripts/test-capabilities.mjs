@@ -1,4 +1,5 @@
 import { readYanCliGroups } from './helpers/yan-cli-groups.mjs'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runCapabilityCatalogTests(ok, modules) {
   const caps = modules.capabilities
@@ -255,28 +256,10 @@ export async function runCapabilityCatalogTests(ok, modules) {
   await rm(root, { recursive: true, force: true })
 }
 
-import { pathToFileURL } from 'node:url'
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { build } = await import('esbuild')
-  const load = async (entry, outfile, platform) => {
-    await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform, logLevel: 'silent' })
-    return import(`${pathToFileURL(outfile).href}?t=${Date.now()}`)
-  }
-  const modules = {
-    capabilities: await load('src/shared/capabilities.ts', 'out/test/capabilities.mjs', 'neutral'),
-    skill: await load('src/main/capabilities/skill-service.ts', 'out/test/capabilities-skill.mjs', 'node'),
-    catalog: await load('src/main/capabilities/catalog.ts', 'out/test/capabilities-catalog.mjs', 'node')
-  }
-  let pass = 0
-  let fail = 0
-  await runCapabilityCatalogTests((value, name, detail) => {
-    if (value) pass += 1
-    else {
-      fail += 1
-      console.error('FAIL', name, detail ?? '')
-    }
-  }, modules)
-  console.log(`能力目录：${pass} 通过 / ${fail} 失败`)
-  process.exit(fail > 0 || pass === 0 ? 1 : 0)
-}
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runCapabilityCatalogTests(ok, {
+    capabilities: await compile('src/shared/capabilities.ts', { platform: 'neutral' }),
+    skill: await compile('src/main/capabilities/skill-service.ts'),
+    catalog: await compile('src/main/capabilities/catalog.ts')
+  })
+}, { isolate: true })

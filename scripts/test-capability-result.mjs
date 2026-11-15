@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { commandsOf, readYanCliGroups } from './helpers/yan-cli-groups.mjs'
+import { runSuite } from './lib/test-suite.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliPath = join(repoRoot, 'resources', 'yan-cli', 'yan.mjs')
@@ -402,3 +403,7 @@ export async function runCapabilityResultTests(ok, mod) {
 
   await runRetiredHubCliTests(ok, mod)
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runCapabilityResultTests(ok, await compile('src/main/capability-server.ts'))
+}, { isolate: true })

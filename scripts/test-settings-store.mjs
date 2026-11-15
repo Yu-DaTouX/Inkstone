@@ -1,3 +1,5 @@
+import { runSuite } from './lib/test-suite.mjs'
+
 const ELECTRON_STUB = `
 export const app = {
   getLocale: () => 'zh-CN',
@@ -138,3 +140,7 @@ export async function runSettingsStoreTests(ok) {
   ok(await electronGuardSealStore() === null, '没有系统加密时不启用封签')
   await rm(temp, { recursive: true, force: true })
 }
+
+await runSuite(import.meta.url, async (ok) => {
+  await runSettingsStoreTests(ok)
+}, { isolate: true })

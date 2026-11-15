@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { runSuite } from './lib/test-suite.mjs'
 
 const line = (value) => JSON.stringify(value) + '\n'
 const head = (id = 'fixture') => line({ type: 'session', version: 3, id, cwd: 'C:/synthetic-project' })
@@ -118,7 +119,6 @@ export async function runSessionReadEquivalenceTests(ok = (value, label) => asse
   }
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  await runSessionReadEquivalenceTests()
-  console.log('session-read-equivalence: 固定夹具等价检查通过')
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runSessionReadEquivalenceTests(ok)
+})

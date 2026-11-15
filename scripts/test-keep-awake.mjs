@@ -1,5 +1,6 @@
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
+import { runSuite } from './lib/test-suite.mjs'
 
 export async function runKeepAwakeTests(ok) {
   await build({ entryPoints: ['src/shared/keep-awake.ts'], outfile: 'out/test/keep-awake.mjs', bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
@@ -13,8 +14,6 @@ export async function runKeepAwakeTests(ok) {
   ok(KEEP_AWAKE_RELEASE_MS === 30_000, '保持唤醒：停下后 30 秒再放锁')
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let failed = 0
-  await runKeepAwakeTests((cond, msg) => { if (!cond) { failed++; console.error('FAIL', msg) } else console.log('ok  ', msg) })
-  process.exit(failed ? 1 : 0)
-}
+await runSuite(import.meta.url, async (ok) => {
+  await runKeepAwakeTests(ok)
+})

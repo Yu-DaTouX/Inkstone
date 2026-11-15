@@ -1,3 +1,4 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -143,3 +144,7 @@ export async function runFileContentSearchTests(ok, { searchFileContents, compil
     await rm(root, { recursive: true, force: true })
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runFileContentSearchTests(ok, await compile('src/main/file-content-search.ts'))
+}, { isolate: true })

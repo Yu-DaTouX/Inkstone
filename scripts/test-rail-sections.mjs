@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runRailSectionsTests(ok, await compile('src/renderer/src/features/workbench/rail-sections.ts'))
+})
+
 export async function runRailSectionsTests(ok, rail) {
   const {
     RAIL_SECTION_IDS,

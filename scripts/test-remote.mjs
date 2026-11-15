@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runRemoteServerTests(ok, await compile('src/main/remote-server.ts'))
+}, { isolate: true })
+
 export async function runRemoteServerTests(ok, { RemoteServer }) {
   const calls = []
   const { mkdtemp, writeFile, rm } = await import('node:fs/promises')

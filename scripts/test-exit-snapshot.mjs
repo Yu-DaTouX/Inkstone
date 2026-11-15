@@ -1,4 +1,9 @@
 import { readFile, rm } from 'node:fs/promises'
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runExitSnapshotTests(ok, await compile('src/main/exit-snapshot.ts'))
+}, { isolate: true })
 
 export async function runExitSnapshotTests(ok, snapshotModule) {
   const { EXIT_SNAPSHOT_FILE, writeExitSnapshot } = snapshotModule

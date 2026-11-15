@@ -1,3 +1,4 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { createHash } from 'node:crypto'
 import { chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { relative, join } from 'node:path'
@@ -155,3 +156,7 @@ export async function runFileEditorTests(ok, { readEditableFile, writeEditableFi
     await rm(outside, { recursive: true, force: true })
   }
 }
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runFileEditorTests(ok, await compile('src/main/file-editor.ts'))
+}, { isolate: true })

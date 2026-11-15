@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runBrowserWaitTests(ok, await compile('src/shared/browser-wait.ts', { platform: 'neutral' }))
+})
+
 export async function runBrowserWaitTests(ok, mod) {
   const { parseWaitCondition, waitSatisfied, describeWait, WAIT_TIMEOUT_MAX_MS, WAIT_TIMEOUT_MIN_MS, WAIT_TIMEOUT_DEFAULT_MS } = mod
 

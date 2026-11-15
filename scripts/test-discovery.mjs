@@ -1,3 +1,12 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runDiscoveryTests(ok, {
+    shared: await compile('src/shared/discovery.ts'),
+    discover: await compile('src/main/capabilities/discovery/discover.ts')
+  })
+}, { isolate: true })
+
 export async function runDiscoveryTests(ok, modules) {
   const { discover, shared } = modules
 

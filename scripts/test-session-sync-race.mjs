@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from '../node_modules/esbuild/lib/main.js'
+import { runSuite } from './lib/test-suite.mjs'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const settle = async () => {
@@ -713,20 +714,6 @@ export async function runSessionSyncRaceTests(ok) {
   }
 }
 
-async function main() {
-  let passed = 0
-  let failed = 0
-  await runSessionSyncRaceTests((cond, label, detail) => {
-    if (cond) {
-      passed += 1
-      console.log(`  [ok] ${label}`)
-    } else {
-      failed += 1
-      console.error(`  [FAIL] ${label}${detail === undefined ? '' : ` -> ${detail}`}`)
-    }
-  })
-  console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}: ${passed} passed, ${failed} failed`)
-  if (failed > 0) process.exitCode = 1
-}
-
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) await main()
+await runSuite(import.meta.url, async (ok) => {
+  await runSessionSyncRaceTests(ok)
+}, { isolate: true })

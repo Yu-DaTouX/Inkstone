@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runTitleSampleTests(ok, await compile('src/shared/title-samples.ts', { platform: 'neutral' }))
+})
+
 export function runTitleSampleTests(ok, mod) {
   const { titleSamples, titleSampleText, titleSampleImages } = mod
 

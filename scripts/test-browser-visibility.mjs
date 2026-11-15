@@ -1,5 +1,10 @@
-export async function runBrowserVisibilityTests(ok) {
-  const { OverlayBlockers, shouldShowBrowser } = await import('../out/test/browser-visibility.mjs')
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runBrowserVisibilityTests(ok, await compile('src/renderer/src/state/browser-visibility.ts', { platform: 'neutral' }))
+})
+
+export async function runBrowserVisibilityTests(ok, { OverlayBlockers, shouldShowBrowser }) {
 
   console.log('\n--- H-9a 原生网页显隐协调 ---')
   const base = { browserOpen: true, rightPanelOpen: true, activeBrowserSurface: true, overlayBlockers: 0 }
