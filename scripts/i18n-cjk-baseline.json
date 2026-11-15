@@ -37,7 +37,7 @@
   "src/main/capabilities/acquired-skills.ts": 19,
   "src/main/capabilities/acquisition-commands.ts": 39,
   "src/main/capabilities/acquisition-service.ts": 52,
-  "src/main/capabilities/catalog.ts": 57,
+  "src/main/capabilities/catalog.ts": 59,
   "src/main/capabilities/discovery/discover.ts": 34,
   "src/main/capabilities/github-skills.ts": 21,
   "src/main/capabilities/npm-acquisition.ts": 4,
