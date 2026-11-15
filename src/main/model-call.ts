@@ -60,6 +60,7 @@ export interface ModelCallRuntime {
   cwd: string
   env: Record<string, string>
   piBin?: string
+  extensions?: string[]
   readyPollMs?: number
   createRpc?(opts: { cwd: string; piBin?: string; args: string[]; env: Record<string, string> }): ModelCallRpc
 }
@@ -69,9 +70,9 @@ export function modelCallTimeout(ms: number | undefined): number {
   return Math.min(MODEL_CALL_MAX_TIMEOUT_MS, Math.max(MODEL_CALL_MIN_TIMEOUT_MS, Math.round(ms)))
 }
 
-export function modelCallArgs(req: Pick<ModelCallRequest, 'model' | 'system'>): string[] {
+export function modelCallArgs(req: Pick<ModelCallRequest, 'model' | 'system'>, extensions: string[] = []): string[] {
   return [
-    '--no-session', '--no-extensions', '--no-context-files', '--no-skills',
+    '--no-session', '--no-extensions', ...extensions.flatMap((path) => ['--extension', path]), '--no-context-files', '--no-skills',
     '--no-prompt-templates', '--no-tools', '--model', req.model,
     ...(req.system ? ['--system-prompt', req.system] : [])
   ]
@@ -109,7 +110,7 @@ export async function callModel(req: ModelCallRequest, runtime: ModelCallRuntime
   const timeoutMs = modelCallTimeout(req.timeoutMs)
   const maxOutput = req.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
   const started = Date.now()
-  const args = modelCallArgs({ model, system: req.system })
+  const args = modelCallArgs({ model, system: req.system }, runtime.extensions)
   const rpc: ModelCallRpc = runtime.createRpc
     ? runtime.createRpc({ cwd: runtime.cwd, piBin: runtime.piBin, args, env: runtime.env })
     : new PiRpc({ cwd: runtime.cwd, piBin: runtime.piBin, args, env: runtime.env })

@@ -47,6 +47,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const args = modelCallArgs({ model: 'fake/m1', system: '你是译者', prompt: 'x' })
   ok(['--no-session', '--no-extensions', '--no-context-files', '--no-skills', '--no-prompt-templates', '--no-tools'].every((flag) => args.includes(flag)), '裸 pi：不加载会话、扩展、上下文文件、技能、模板和工具', args.join(' '))
   ok(args[args.indexOf('--model') + 1] === 'fake/m1' && args[args.indexOf('--system-prompt') + 1] === '你是译者', '模型与系统提示词进 pi 参数')
+  ok(!args.includes('--extension'), '不传服务商扩展时不加载任何扩展')
+  const withProvider = modelCallArgs({ model: 'commandcode/deepseek/x' }, ['C:/ext/commandcode.js'])
+  ok(withProvider[withProvider.indexOf('--extension') + 1] === 'C:/ext/commandcode.js' && withProvider.indexOf('--extension') > withProvider.indexOf('--no-extensions') && withProvider.filter((a) => a === '--extension').length === 1, '注册服务商的扩展在 --no-extensions 之后显式加载，扩展注册的服务商（如 commandcode）可用', withProvider.join(' '))
 
   {
     const { factory, runtime: rt } = runtime({ events: [delta('你'), delta('好'), end({ provider: 'fake', model: 'm1', stopReason: 'stop', usage: { input: 12, output: 3, cacheRead: 1, cacheWrite: 0, totalTokens: 16, cost: { total: 0.002 } } }), settled] })
@@ -56,6 +59,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const commands = factory.made[0].commands
     ok(commands.some((c) => c.type === 'set_thinking_level' && c.level === 'high') && commands.some((c) => c.type === 'prompt' && c.message === '说你好'), '思考档与提示词经 RPC 发出', JSON.stringify(commands))
     ok(factory.made[0].closed && factory.made[0].opts.cwd === 'C:/data' && factory.made[0].opts.env.PI_CODING_AGENT_DIR === 'C:/pi', '用完关闭 pi 进程；凭据目录由调用方给定')
+  }
+
+  {
+    const { factory, runtime: rt } = runtime({ events: [delta('ok'), end({ stopReason: 'stop' }), settled] })
+    await callModel({ model: 'commandcode/deepseek/x', prompt: 'hi' }, { ...rt, extensions: ['C:/ext/commandcode.js'] })
+    const spawned = factory.made[0].opts.args
+    ok(spawned[spawned.indexOf('--extension') + 1] === 'C:/ext/commandcode.js', '运行时给的服务商扩展传给 pi 进程', spawned.join(' '))
   }
 
   {

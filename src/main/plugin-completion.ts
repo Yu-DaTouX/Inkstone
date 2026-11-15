@@ -5,9 +5,15 @@ import { getSettings } from './settings'
 const PLUGIN_TIMEOUT_MS = 60_000
 const PLUGIN_MAX_OUTPUT_CHARS = 128_000
 
+let providerExtensions: () => string[] = () => []
+
+export function setModelCallProviderExtensions(resolve: () => string[]): void {
+  providerExtensions = resolve
+}
+
 export async function appModelRuntime(): Promise<ModelCallRuntime> {
   const settings = await getSettings()
-  return { cwd: YAN_DIR, piBin: settings.piBin, env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR } }
+  return { cwd: YAN_DIR, piBin: settings.piBin, extensions: providerExtensions(), env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR } }
 }
 
 export async function completePluginText(model: string, system: string, prompt: string, signal: AbortSignal): Promise<string> {

@@ -94,7 +94,7 @@ import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
 import { BundledPlugins } from './bundled-plugins'
-import { appModelRuntime, completePluginText } from './plugin-completion'
+import { appModelRuntime, completePluginText, setModelCallProviderExtensions } from './plugin-completion'
 import { callModel } from './model-call'
 import { runModelAsk } from './model-ask'
 import { decideQuotaResume } from '../shared/quota-resume'
@@ -668,6 +668,8 @@ const YAN_THIN_EXTENSION_FILES = {
 } as const
 
 const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js', 'cache-retention.js', 'parallel-tool-calls.js', 'native-web-search.js', 'fast-mode.js'] as const
+const MODEL_CALL_PROVIDER_FILES = ['commandcode.js'] as const
+setModelCallProviderExtensions(() => MODEL_CALL_PROVIDER_FILES.map(yanThinResourcePath).filter((p): p is string => !!p))
 
 function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined } {
   const entries = Object.entries(YAN_THIN_EXTENSION_FILES).map(([key, file]) => [key, yanThinResourcePath(file)])
