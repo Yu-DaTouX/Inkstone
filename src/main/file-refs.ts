@@ -3,7 +3,7 @@ import { open, readFile, realpath, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import type { FilePreview, FilePreviewIssue, FileRefInfo, FileRefKind, FileTextResult, PreviewBytes } from '../shared/ipc'
-import { isWithin, realRoot, scopedPath } from './file-path-gate'
+import { isWithin, networkPathBlocked, realRoot, scopedPath } from './file-path-gate'
 import { decodeText, mediaOf } from './file-preview-classify'
 import { MAX_PDF_BYTES } from './office/pdf-text'
 
@@ -182,6 +182,7 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
 
   const absolute = isAbsolute(rawPath)
   const root = cwd || process.cwd()
+  if (await networkPathBlocked(rawPath, root)) return { ok: false, error: pick('网络路径不自动读取', 'Network paths are not read automatically'), issue: 'invalid' }
   let real: string
   let outsideRoot = false
   if (absolute) {

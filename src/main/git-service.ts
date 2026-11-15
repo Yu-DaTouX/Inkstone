@@ -8,7 +8,7 @@ import type { GitActionExpected } from '../shared/git-actions'
 import { digestOf } from '../shared/git-actions'
 import type { GitRefOption, GitRepoState, GitStatusParse } from '../shared/git'
 import { parseStatusV2 } from '../shared/git'
-import { classifyGitRunError, readOnlyGitEnv, sanitizedGitEnv, timeoutWithin } from './git-run-policy'
+import { SUBMODULE_STATUS_FLAGS, classifyGitRunError, readOnlyGitEnv, sanitizedGitEnv, timeoutWithin } from './git-run-policy'
 import type { GitDeadline, GitErrorCode } from './git-run-policy'
 
 export function killProcessTree(child: ChildProcess): void {
@@ -241,8 +241,8 @@ export function clearRepoCache(): void {
   repoCache.clear()
 }
 
-const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']
-const STATUS_FALLBACK_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']
+const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', ...SUBMODULE_STATUS_FLAGS]
+const STATUS_FALLBACK_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', ...SUBMODULE_STATUS_FLAGS]
 
 interface StatusSnapshot {
   status: GitStatusParse
@@ -251,7 +251,7 @@ interface StatusSnapshot {
 
 const TRUSTED_LFS_FILTERS = new Set(['git-lfs clean -- %f', 'git-lfs smudge -- %f', 'git-lfs filter-process'])
 
-async function repoFilterGuard(root: string): Promise<Record<string, string>> {
+export async function repoFilterGuard(root: string): Promise<Record<string, string>> {
   const res = await gitRun(root, ['config', '--show-scope', '--includes', '-z', '--get-regexp', '^filter\\.'], { allowFailure: true, timeout: 8000 })
   const parts = res.stdout.split('\0')
   const names = new Set<string>()
@@ -278,19 +278,19 @@ async function repoFilterGuard(root: string): Promise<Record<string, string>> {
   return env
 }
 
-async function readStatusSnapshot(root: string): Promise<StatusSnapshot> {
+async function readStatusSnapshot(root: string, timeout?: number): Promise<StatusSnapshot> {
   const env = await repoFilterGuard(root)
-  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true, env })
+  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true, env, timeout })
   if (res.ok || res.stdout) return { status: parseStatusV2(res.stdout), stdout: res.stdout }
-  const fallback = await gitRun(root, STATUS_FALLBACK_ARGS, { allowFailure: true, env })
+  const fallback = await gitRun(root, STATUS_FALLBACK_ARGS, { allowFailure: true, env, timeout })
   if (!fallback.ok && !fallback.stdout) {
     throw new Error(res.error ?? fallback.error ?? pick('git status 失败', 'git status failed'))
   }
   return { status: parseStatusV2(fallback.stdout), stdout: fallback.stdout }
 }
 
-export async function readStatus(root: string): Promise<GitStatusParse> {
-  return (await readStatusSnapshot(root)).status
+export async function readStatus(root: string, options: { timeout?: number } = {}): Promise<GitStatusParse> {
+  return (await readStatusSnapshot(root, options.timeout)).status
 }
 
 export interface RefListing {

@@ -74,7 +74,7 @@ await check('写命令不算只读', () => {
 })
 
 await check('readOnlyGitEnv 只对只读命令给出 GIT_OPTIONAL_LOCKS=0', () => {
-  assert.deepEqual(policy.readOnlyGitEnv(['status']), { GIT_OPTIONAL_LOCKS: '0' })
+  assert.deepEqual(policy.readOnlyGitEnv(['status']), { GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: 'file:git:http:https:ssh' })
   assert.deepEqual(policy.readOnlyGitEnv(['add', '-A']), {})
 })
 

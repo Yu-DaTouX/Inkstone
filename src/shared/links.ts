@@ -5,10 +5,12 @@
  * implementation plan for the source/attribution boundary.
  */
 
+import { isNetworkPath } from './network-path'
+
 export type LinkTarget =
   | { kind: 'url'; url: string }
   | { kind: 'file'; path: string; line?: number; lineEnd?: number }
-  | { kind: 'invalid'; reason: 'empty' | 'protocol' }
+  | { kind: 'invalid'; reason: 'empty' | 'protocol' | 'network' }
 
 export function parseFileLink(
   value: string
@@ -46,9 +48,6 @@ const LINE_RE = /^(.*?):(\d+)(?::(\d+))?$/
 function isWindowsAbs(p: string): boolean {
   return /^[a-zA-Z]:[\\/]/.test(p)
 }
-function isUncAbs(p: string): boolean {
-  return /^\\\\[^\\]/.test(p)
-}
 function isUnixAbs(p: string): boolean {
   return p.startsWith('/')
 }
@@ -83,6 +82,12 @@ function decodeLocalPath(raw: string): string {
 }
 
 export function classifyLink(href: string | undefined | null): LinkTarget {
+  const target = classifyRawLink(href)
+  if (target.kind === 'file' && isNetworkPath(target.path)) return { kind: 'invalid', reason: 'network' }
+  return target
+}
+
+function classifyRawLink(href: string | undefined | null): LinkTarget {
   const raw = (href ?? '').trim()
   if (!raw) return { kind: 'invalid', reason: 'empty' }
   if (raw.includes('\0')) return { kind: 'invalid', reason: 'protocol' }
@@ -94,8 +99,9 @@ export function classifyLink(href: string | undefined | null): LinkTarget {
 
   const local = decodeLocalPath(raw)
   if (local.includes('\0')) return { kind: 'invalid', reason: 'protocol' }
+  if (isNetworkPath(raw) || isNetworkPath(local)) return { kind: 'invalid', reason: 'network' }
 
-  if (isWindowsAbs(local) || isUncAbs(local)) {
+  if (isWindowsAbs(local)) {
     const { path, line } = splitLine(local)
     return { kind: 'file', path, ...(line ? { line } : {}) }
   }

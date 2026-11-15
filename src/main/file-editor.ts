@@ -5,7 +5,7 @@ import type { FileHandle } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { EditableFileError, EditableFileView, EditableFileWriteResult } from '../shared/ipc'
-import { isStrictlyWithin, isWithin, pathKey, realRoot } from './file-path-gate'
+import { isStrictlyWithin, isWithin, networkPathBlocked, pathKey, realRoot } from './file-path-gate'
 
 const MAX_BYTES = 1024 * 1024
 const HASH_PATTERN = /^[0-9a-f]{64}$/
@@ -67,6 +67,7 @@ export async function readEditableFile(root: string, target: string): Promise<Ed
   if (typeof root !== 'string' || typeof target !== 'string' || !target.trim()) {
     return missingView('denied', '', '')
   }
+  if (await networkPathBlocked(target, root)) return missingView('denied', '', '')
   const rootReal = await realRoot(root)
   if (!rootReal) return missingView('denied', '', '')
 
@@ -136,6 +137,7 @@ export async function writeEditableFile(
   if (expectedHash !== null && !(typeof expectedHash === 'string' && HASH_PATTERN.test(expectedHash))) {
     return { status: 'denied' }
   }
+  if (await networkPathBlocked(target, root)) return { status: 'denied' }
 
   const rootReal = await realRoot(root)
   if (!rootReal) return { status: 'denied' }

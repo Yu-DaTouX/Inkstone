@@ -1,4 +1,5 @@
 import { decodeHtml } from './html-charset'
+import { networkPathBlocked } from './file-path-gate'
 import { createHash, randomBytes } from 'node:crypto'
 import { open, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
@@ -36,6 +37,7 @@ export class HtmlArtifactPreviewStore {
     const epoch = this.epoch
     this.pending++
     try {
+      if (await networkPathBlocked(path, root)) return { ok: false, error: 'outside' }
       const [rootReal, target] = await Promise.all([realpath(root), realpath(path)])
       if (!inside(rootReal, target)) return { ok: false, error: 'outside' }
       const handle = await open(target, 'r')

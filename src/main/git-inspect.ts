@@ -4,7 +4,7 @@ import { lstat, open, readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { gitRun, killProcessTree, resolveRepo } from './git-service'
 import { isWithin } from './file-path-gate'
-import { GIT_READ_CONFIG, createGitDeadline, sanitizedGitEnv } from './git-run-policy'
+import { AUTO_READ_GIT_ENV, GIT_READ_CONFIG, SUBMODULE_DIFF_FLAGS, SUBMODULE_STATUS_FLAGS, createGitDeadline, sanitizedGitEnv } from './git-run-policy'
 import type { GitDeadline } from './git-run-policy'
 import {
   EMPTY_TREE,
@@ -47,13 +47,13 @@ const MAX_PREFILL_LINES = 2000
 const PREFILL_PATHSPEC_CHARS = 8000
 
 const READ_ENV: Record<string, string> = {
-  GIT_OPTIONAL_LOCKS: '0',
+  ...AUTO_READ_GIT_ENV,
   GIT_LITERAL_PATHSPECS: '1'
 }
 
 const READ_GLOBALS = ['--no-optional-locks', '--no-pager', '--literal-pathspecs'] as const
 
-const DIFF_FLAGS = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames'] as const
+const DIFF_FLAGS = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames', ...SUBMODULE_DIFF_FLAGS]
 
 function readOpts(deadline?: GitDeadline, timeout = DIFF_TIMEOUT_MS): { allowFailure: true; timeout: number; env: Record<string, string>; deadline?: GitDeadline } {
   return { allowFailure: true, timeout, env: READ_ENV, ...(deadline ? { deadline } : {}) }
@@ -179,7 +179,7 @@ function failDiff(rawPath: unknown, error: string): GitDiffResult {
 async function readStatusReadOnly(root: string, safety: string[], deadline?: GitDeadline): Promise<ReturnType<typeof parseStatusV2>> {
   const res = await gitRun(
     root,
-    [...READ_GLOBALS, ...safety, 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'],
+    [...READ_GLOBALS, ...safety, 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', ...SUBMODULE_STATUS_FLAGS],
     readOpts(deadline)
   )
   if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? pick('git status 失败', 'git status failed')), { code: res.code })
@@ -492,7 +492,7 @@ async function isTracked(root: string, rootRel: string, safety: string[]): Promi
 async function isUntracked(root: string, rootRel: string, safety: string[]): Promise<boolean> {
   const res = await gitRun(
     root,
-    [...READ_GLOBALS, ...safety, 'status', '--porcelain=v2', '-z', '--untracked-files=all', '--', rootRel],
+    [...READ_GLOBALS, ...safety, 'status', '--porcelain=v2', '-z', '--untracked-files=all', ...SUBMODULE_STATUS_FLAGS, '--', rootRel],
     { allowFailure: true, timeout: DIFF_TIMEOUT_MS, env: READ_ENV }
   )
   return res.stdout.split('\0').some((seg) => seg.startsWith('? '))

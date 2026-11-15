@@ -14,6 +14,7 @@ import type { NotificationBotKind } from '../bot-icon'
 import type { ModelRef } from '../../shared/model-brand'
 import type { Attachment, AttentionNotify, MainPush } from '../../shared/ipc'
 import { pick } from '../../shared/ui-lang'
+import { isNetworkPath } from '../../shared/network-path'
 import { getSettings, patchSettings, setGuardSettingsNoticeSink } from '../settings'
 import { isRestoredReadonly, restoredReadonlyMessage } from '../restored-readonly'
 import { openBlockedByName } from '../open-guard'
@@ -135,7 +136,7 @@ export function registerShellIpc(ipc: IpcRegistrar, deps: ShellIpcDeps): void {
 
   handle('yan:openPath', async (p: string) => {
     if (typeof p !== 'string' || !p.trim()) return { ok: false, error: 'empty path' }
-    if (/^[\\/]{2}/.test(p.trim())) return { ok: false, error: 'network path' }
+    if (isNetworkPath(p)) return { ok: false, error: 'network path' }
     if (!existsSync(p)) return { ok: false, error: 'missing' }
     let directory = false
     try {
@@ -149,7 +150,7 @@ export function registerShellIpc(ipc: IpcRegistrar, deps: ShellIpcDeps): void {
   })
 
   handle('yan:revealPath', async (p: string) => {
-    if (typeof p !== 'string' || !p.trim() || /^[\\/]{2}/.test(p.trim()) || !existsSync(p)) return { ok: false }
+    if (typeof p !== 'string' || !p.trim() || isNetworkPath(p) || !existsSync(p)) return { ok: false }
     shell.showItemInFolder(p)
     return { ok: true }
   })

@@ -1,5 +1,20 @@
 import { realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { isNetworkPath } from '../shared/network-path'
+
+export function foreignNetworkPath(target: string, root?: string | null): boolean {
+  const network = isNetworkPath(target) || (isAbsolute(target) && isNetworkPath(resolve(target)))
+  if (!network) return false
+  if (!root || !/^[\\/]{2}(?![?.][\\/])/.test(root) || !/^[\\/]{2}(?![?.][\\/])/.test(target)) return true
+  return !isWithin(resolve(root), resolve(target))
+}
+
+export async function networkPathBlocked(target: string, root?: string | null): Promise<boolean> {
+  if (!foreignNetworkPath(target, root)) return false
+  if (!root || !/^[\\/]{2}(?![?.][\\/])/.test(target)) return true
+  const rootReal = await realpath(root).catch(() => null)
+  return !rootReal || foreignNetworkPath(target, rootReal)
+}
 
 export function pathKey(value: string, platform: NodeJS.Platform = process.platform): string {
   const normalized = value.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1')
@@ -64,7 +79,7 @@ export async function scopedPath(
   if (raw.includes('\0')) return { ok: false, reason: 'invalid', root: rootReal, lexical: '' }
   let lexical: string | null
   if (isAbsolute(raw)) {
-    if (!options.allowAbsolute) return { ok: false, reason: 'invalid', root: rootReal, lexical: '' }
+    if (!options.allowAbsolute || foreignNetworkPath(raw, rootReal)) return { ok: false, reason: 'invalid', root: rootReal, lexical: '' }
     lexical = resolve(raw)
   } else {
     lexical = lexicalJoin(rootReal, raw)

@@ -5,8 +5,8 @@ import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import type { FileDiff, FileSnapshotSide, WorkspaceChangeFile, WorkspaceChanges } from '../shared/ipc'
-import { gitRun, killProcessTree, resolveRepo } from './git-service'
-import { sanitizedGitEnv } from './git-run-policy'
+import { gitRun, killProcessTree, repoFilterGuard, resolveRepo } from './git-service'
+import { AUTO_READ_GIT_ENV, sanitizedGitEnv } from './git-run-policy'
 import { parseStatusV2 } from '../shared/git'
 import type { GitStatusEntry, GitStatusParse } from '../shared/git'
 
@@ -297,7 +297,7 @@ const MAX_EVICTED_TREES = 64
 
 const DIRTY_MAX_FILES = TREE_MAX_FILES
 const GIT_CALL_TIMEOUT = 8000
-const GIT_ENV_OVERRIDE = { GIT_OPTIONAL_LOCKS: '0' }
+const GIT_ENV_OVERRIDE = AUTO_READ_GIT_ENV
 const BLOB_FETCH_CONCURRENCY = 8
 
 async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -341,10 +341,11 @@ function gitKeyFromRepoPath(repoPath: string, relRoot: string): string | null {
 }
 
 async function runGitStatusDirty(root: string): Promise<GitStatusParse | null> {
+  const guard = await repoFilterGuard(root)
   const res = await gitRun(
     root,
     ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--ignore-submodules', '--no-renames', '--', '.'],
-    { allowFailure: true, timeout: GIT_CALL_TIMEOUT, env: GIT_ENV_OVERRIDE }
+    { allowFailure: true, timeout: GIT_CALL_TIMEOUT, env: { ...GIT_ENV_OVERRIDE, ...guard } }
   )
   if (!res.ok && !res.stdout) return null
   return parseStatusV2(res.stdout)

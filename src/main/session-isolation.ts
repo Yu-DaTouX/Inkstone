@@ -2,7 +2,7 @@ import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { gitRun, resolveRepo } from './git-service'
+import { gitRun, readStatus, resolveRepo } from './git-service'
 import { createWorktree } from './git-worktree'
 import { YAN_DIR } from './paths'
 
@@ -214,10 +214,18 @@ export async function isolateCwdForConflict(
   return { ok: true, record }
 }
 
+async function changedFiles(worktree: string): Promise<number | null> {
+  try {
+    return (await readStatus(worktree, { timeout: 30_000 })).entries.filter((entry) => !entry.ignored).length
+  } catch {
+    return null
+  }
+}
+
 export async function discardUnusedIsolation(record: AutoIsolationRecord): Promise<boolean> {
   if (existsSync(record.worktree)) {
-    const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
-    if (!dirty.ok || dirty.stdout.trim()) return false
+    const dirty = await changedFiles(record.worktree)
+    if (dirty !== 0) return false
     const ahead = await gitRun(record.mainCwd, ['rev-list', '--count', `${record.baseBranch || 'HEAD'}..${record.branch}`], {
       allowFailure: true,
       timeout: 30_000
@@ -234,9 +242,8 @@ const GONE = (): string => pick('隔离工作树已经不在磁盘上（可能�
 
 export async function pendingIsolationChanges(record: AutoIsolationRecord): Promise<PendingChanges> {
   if (!existsSync(record.worktree)) return { ok: false, detail: GONE() }
-  const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
-  if (!dirty.ok) return { ok: false, detail: dirty.error ?? pick('读不出隔离工作树的状态', 'Cannot read the isolated worktree status') }
-  const files = dirty.stdout.split(/\r?\n/).filter((line) => line.trim()).length
+  const files = await changedFiles(record.worktree)
+  if (files === null) return { ok: false, detail: pick('读不出隔离工作树的状态', 'Cannot read the isolated worktree status') }
   const base = record.baseBranch || 'HEAD'
   const ahead = await gitRun(record.repoRoot || record.mainCwd, ['rev-list', '--count', `${base}..${record.branch}`], {
     allowFailure: true,

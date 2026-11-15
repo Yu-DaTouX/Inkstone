@@ -27,7 +27,7 @@ export async function runLinkTests(ok, { classifyLink, parseFileLink }) {
   ok(classifyLink('C:/a/b.ts:42').line === 42, '`path:42` 解析出行号')
   ok(classifyLink('C:/a/b.ts:42').path === 'C:/a/b.ts', '行号与路径分开')
   ok(classifyLink('C:\\a\\b.ts').line === undefined, '`C:\\a` 里的盘符不当行号')
-  ok(kindOf('\\\\server\\share\\x.txt') === 'file', 'UNC 路径 → 文件预览')
+  ok(kindOf('\\\\server\\share\\x.txt') === 'invalid', 'UNC 路径不自动访问，显示为不可预览')
   ok(kindOf('/home/x/y.ts') === 'file', '类 Unix 绝对路径 → 文件预览')
 
   ok(classifyLink('src/main/index.ts').path === 'src/main/index.ts', '项目内相对路径 → 文件预览')

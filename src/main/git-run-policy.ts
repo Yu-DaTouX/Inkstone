@@ -50,6 +50,10 @@ export const GIT_READ_CONFIG: readonly string[] = [
   '-c', 'color.ui=false'
 ]
 
+export const SUBMODULE_STATUS_FLAGS: readonly string[] = ['--ignore-submodules=dirty']
+
+export const SUBMODULE_DIFF_FLAGS: readonly string[] = ['--ignore-submodules=dirty', '--submodule=short']
+
 const READ_ONLY_GIT_COMMANDS = new Set([
   'status',
   'diff',
@@ -97,8 +101,14 @@ export function isReadOnlyGitInvocation(args: readonly string[]): boolean {
   return false
 }
 
+export const AUTO_READ_GIT_ENV: Readonly<Record<string, string>> = {
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_NO_LAZY_FETCH: '1',
+  GIT_ALLOW_PROTOCOL: 'file:git:http:https:ssh'
+}
+
 export function readOnlyGitEnv(args: readonly string[]): Record<string, string> {
-  return isReadOnlyGitInvocation(args) ? { GIT_OPTIONAL_LOCKS: '0' } : {}
+  return isReadOnlyGitInvocation(args) ? { ...AUTO_READ_GIT_ENV } : {}
 }
 
 export interface GitDeadline {

@@ -1,3 +1,5 @@
+import { isNetworkPath } from './network-path'
+
 export const VISUAL_DATA_LANGS = ['yan-chart', 'yan-stats', 'yan-cards', 'yan-record', 'yan-flow', 'yan-steps'] as const
 export type VisualDataLang = (typeof VISUAL_DATA_LANGS)[number]
 export const VISUAL_BLOCK_LANGS = [...VISUAL_DATA_LANGS, 'mermaid', 'yan-widget'] as const
@@ -150,7 +152,7 @@ const ABSOLUTE_PATH = /^(?:[a-zA-Z]:[\\/]|\/(?!\/))/
 function image(value: unknown, where: string): string | undefined {
   const text = optStr(value, where, 500)
   if (text === undefined) return undefined
-  return safeHttpUrl(text) ?? (ABSOLUTE_PATH.test(text) ? text : fail(`${where} 应为 http(s) 地址或本地绝对路径`))
+  return safeHttpUrl(text) ?? (ABSOLUTE_PATH.test(text) && !isNetworkPath(text) ? text : fail(`${where} 应为 http(s) 地址或本地绝对路径`))
 }
 function links(value: unknown, where: string): VisualLink[] | undefined {
   return optList(value, where, LIMIT.links)?.map((raw, j) => {
