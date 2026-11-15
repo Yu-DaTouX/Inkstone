@@ -811,8 +811,179 @@ function searchesText({ head, args }) {
   return head === 'git' && args.find((arg) => !/^-/.test(arg)) === 'grep'
 }
 
+const TEXT_PRINTERS = new Set(['echo', 'printf', 'write-output'])
+const PLAIN_COMMANDS = new Set(['cd', 'pwd', 'ls', 'mkdir'])
+const GIT_READ_ONLY = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
+const GIT_COMMIT_FLAGS = new Set(['-a', '--all', '--allow-empty', '--allow-empty-message', '--no-edit', '-q', '--quiet', '-s', '--signoff', '-n', '--no-verify'])
+const YAN_GROUPS = new Set(['subagent', 'workflow', 'model'])
+const YAN_TEXT_FLAGS = new Set(['--task', '--message', '--title'])
+const RELAX_SEPS = new Set(['&&', '||', ';', '\n', ''])
+const RELAX_KEYWORDS = /\.git\b|hooks|home=|git_|editor|visual|(?<!no-)pager/i
+const POWERSHELL_UNSAFE = /[$@(){}[\]|`*?\u2018-\u201e]|\\["']/
+const SAFE_SUBSTITUTION = /^pwd(?:\s+-W(?:\s+2>\/dev\/null\s+\|\|\s+pwd)?)?$/
+
+function bare(word) {
+  return String(word ?? '').replace(/["'\\]/g, '')
+}
+
+function quotedExpansions(body) {
+  const kept = []
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (ch === '\\') { i += 1; continue }
+    if (ch === '`') {
+      const end = body.indexOf('`', i + 1)
+      if (end < 0 || !SAFE_SUBSTITUTION.test(body.slice(i + 1, end).trim())) return null
+      kept.push(body.slice(i, end + 1))
+      i = end
+    } else if (ch === '$' && body[i + 1] === '(') {
+      const end = closingParen(body, i + 1)
+      if (end < 0 || !SAFE_SUBSTITUTION.test(body.slice(i + 2, end).trim())) return null
+      kept.push(body.slice(i, end + 1))
+      i = end
+    } else if (ch === '$' && body[i + 1] === '{') {
+      const name = /^\$\{[A-Za-z_]\w*\}/.exec(body.slice(i))
+      if (!name) return null
+      i += name[0].length - 1
+    } else if (ch === '$' && body[i + 1] === '[') return null
+  }
+  return kept
+}
+
+function wholeQuote(inner, quote, dialect) {
+  const escapes = quote === '"' && dialect === 'posix'
+  for (let i = 0; i < inner.length; i++) {
+    if (escapes && inner[i] === '\\') {
+      if (++i >= inner.length) return false
+      continue
+    }
+    if (inner[i] === quote) return false
+  }
+  return true
+}
+
+function blankValue(word, prefix, dialect, native) {
+  const value = word.slice(prefix.length)
+  const quote = value[0]
+  if (value.length < 2 || (quote !== '"' && quote !== "'") || value.at(-1) !== quote) return word
+  const inner = value.slice(1, -1)
+  if (!wholeQuote(inner, quote, dialect) || (native && /["&|<>^%]/.test(inner))) return word
+  if (quote === "'") return `${prefix}''`
+  const kept = quotedExpansions(inner)
+  return kept ? `${prefix}"${kept.join(' ')}"` : word
+}
+
+function unquotedSpecial(text, dialect) {
+  const escapes = dialect === 'posix'
+  let quote = null
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (quote) {
+      if (escapes && ch === '\\' && quote === '"') i += 1
+      else if (ch === quote) {
+        if (escapes && quote === '"' && !quotedExpansions(text.slice(start, i))) return true
+        quote = null
+      }
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+      start = i + 1
+    } else if (escapes && ch === '\\') i += 1
+    else if ('(){}$@`<>'.includes(ch)) return true
+  }
+  return quote !== null
+}
+
+function printerWords(words, head, blank) {
+  const option = (word) => head !== 'printf' && (/^-[neE]+$/.test(word) || (word.length > 1 && '-noenumerate'.startsWith(word.toLowerCase())))
+  if (words.slice(1).some((word) => /^-/.test(bare(word)) && !option(bare(word)))) return null
+  return words.map((word, i) => (i > 0 ? blank(word) : word))
+}
+
+function yanWords(words, blank) {
+  if (!YAN_GROUPS.has(bare(words[1]))) return null
+  return words.map((word, i) => {
+    const inline = /^--(?:task|message|title)=/.exec(word)
+    if (inline) return blank(word, inline[0])
+    return i > 2 && YAN_TEXT_FLAGS.has(bare(words[i - 1])) ? blank(word) : word
+  })
+}
+
+function longPrefix(flag, ...names) {
+  const name = /^--([a-z-]+)/i.exec(flag)?.[1]?.toLowerCase()
+  return !!name && names.some((full) => full.startsWith(name))
+}
+
+function commitWords(words, at, blank) {
+  const out = words.slice(0, at + 1)
+  let paths = false
+  for (let i = at + 1; i < words.length; i++) {
+    const raw = words[i]
+    const flag = bare(raw)
+    if (paths || !/^-/.test(flag)) { out.push(raw); continue }
+    if (flag === '--') { out.push(raw); paths = true; continue }
+    const inline = /^(--message=|-[aqsn]*m)(?=["'])/.exec(raw)
+    if (inline) { out.push(blank(raw, inline[1])); continue }
+    if (flag === '--message' || /^-[aqsn]*m$/.test(flag)) {
+      if (i + 1 >= words.length) return null
+      out.push(raw, blank(words[++i]))
+      continue
+    }
+    if (!GIT_COMMIT_FLAGS.has(flag) && !/^-[aqsn]+$/.test(flag)) return null
+    out.push(raw)
+  }
+  return out
+}
+
+function gitWords(words, blank) {
+  let at = 1
+  while (at < words.length && /^-/.test(bare(words[at]))) {
+    const flag = bare(words[at])
+    if (flag === '-C') at += 2
+    else if (flag === '--no-pager' || flag === '-P') at += 1
+    else return null
+  }
+  if (at >= words.length) return null
+  const sub = bare(words[at])
+  const rest = words.slice(at + 1).map(bare)
+  if (sub === 'branch') return rest.length === 1 && rest[0] === '--show-current' ? words : null
+  if (GIT_READ_ONLY.has(sub)) return rest.some((flag) => /^-O/.test(flag) || longPrefix(flag, 'output', 'ext-diff', 'textconv', 'open-files-in-pager')) ? null : words
+  if (sub === 'add') return rest.some((flag) => /^-[a-z]*[pie]/i.test(flag) || longPrefix(flag, 'patch', 'interactive', 'edit')) ? null : words
+  return sub === 'commit' ? commitWords(words, at, blank) : null
+}
+
+function relaxedSegment(text, dialect) {
+  if (unquotedSpecial(text, dialect)) return null
+  const words = shellWords(text)
+  if (!words.length || !/^[A-Za-z][\w.-]*$/.test(words[0])) return null
+  const head = words[0].toLowerCase()
+  const native = dialect === 'powershell' && head !== 'echo' && head !== 'write-output'
+  const blank = (word, prefix = '') => blankValue(word, prefix, dialect, native)
+  const kept = PLAIN_COMMANDS.has(head) ? words
+    : TEXT_PRINTERS.has(head) ? printerWords(words, head, blank)
+      : head === 'git' || head === 'git.exe' ? gitWords(words, blank)
+        : head === 'yan' ? yanWords(words, blank)
+          : null
+  if (!kept || RELAX_KEYWORDS.test(bare(kept.join(' ')))) return null
+  return kept.join(' ')
+}
+
+function relaxedSegments(segments, command, dialect) {
+  if (dialect === 'cmd' || (dialect === 'powershell' && POWERSHELL_UNSAFE.test(command))) return null
+  const out = []
+  for (const { text, sep } of segments) {
+    if (!RELAX_SEPS.has(sep)) return null
+    const kept = text.trim() ? relaxedSegment(text, dialect) : text
+    if (kept === null) return null
+    out.push(kept)
+  }
+  return out
+}
+
 export function ruleText(command, dialect = 'posix') {
-  return splitSegments(command, dialect).map(({ text, sep }) => (searchesText(commandOf(text.replace(/^\s*[({]+/, ''))) ? '' : text) + sep).join('')
+  const segments = splitSegments(command, dialect)
+  const relaxed = relaxedSegments(segments, command, dialect)
+  return segments.map(({ text, sep }, i) => (searchesText(commandOf(text.replace(/^\s*[({]+/, ''))) ? '' : relaxed ? relaxed[i] : text) + sep).join('')
 }
 
 export function hostScansTerminalInput(command) {
