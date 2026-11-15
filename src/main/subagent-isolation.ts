@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { sanitizedGitEnv } from './git-run-policy'
+import { subagentWorktreeRoot } from './subagent-worktree-root'
 
 const execFileAsync = promisify(execFile)
 const GIT_MAX_BUFFER = 24 * 1024 * 1024
@@ -177,6 +178,20 @@ export async function findGitRoot(cwd: string): Promise<string | null> {
   }
 }
 
+async function repoPrefix(cwd: string): Promise<string> {
+  try {
+    return (await git(cwd, ['rev-parse', '--show-prefix'], 10_000)).stdout.trim().replace(/\/+$/, '')
+  } catch {
+    return ''
+  }
+}
+
+function worktreeCwd(worktreePath: string, prefix: string): string {
+  if (!prefix || prefix.split('/').some((part) => !part || part === '.' || part === '..')) return worktreePath
+  const cwd = join(worktreePath, ...prefix.split('/'))
+  return existsSync(cwd) ? cwd : worktreePath
+}
+
 export async function prepareWorkspace(
   rootCwd: string,
   id: string,
@@ -192,6 +207,7 @@ export async function prepareWorkspace(
     throw new Error(pick('写入型子 Agent需要 Git 项目；请改用只读模式，或先初始化 Git', 'A subagent that writes needs a Git project; use read-only mode or initialize Git first'))
   }
 
+  const prefix = await repoPrefix(root)
   const containerPath = await mkdtemp(join(tmpdir(), `yan-subagent-${id}-`))
   const worktreePath = join(containerPath, 'worktree')
   try {
@@ -203,7 +219,7 @@ export async function prepareWorkspace(
       await git(repoRoot, ['worktree', 'add', '--detach', '--no-checkout', worktreePath, baselineCommit], 60_000)
       await checkoutWindowsSafeTree(worktreePath)
     }
-    return { isolation, rootCwd: root, cwd: worktreePath, repoRoot, worktreePath, containerPath, baselineCommit }
+    return { isolation, rootCwd: root, cwd: worktreeCwd(worktreePath, prefix), repoRoot, worktreePath, containerPath, baselineCommit }
   } catch (error) {
     await rm(containerPath, { recursive: true, force: true }).catch(() => {})
     throw error
@@ -249,7 +265,7 @@ function parseNumstat(text: string): { additions: number; deletions: number } {
 }
 
 export async function recoverWorktree(cwd: string, rootCwd: string): Promise<PreparedWorkspace | null> {
-  const worktreePath = resolve(cwd)
+  const worktreePath = subagentWorktreeRoot(cwd) ?? resolve(cwd)
   if (!existsSync(join(worktreePath, '.git'))) return null
   const repoRoot = await findGitRoot(rootCwd)
   if (!repoRoot) return null
@@ -258,7 +274,7 @@ export async function recoverWorktree(cwd: string, rootCwd: string): Promise<Pre
     if (!baselineCommit) return null
     const container = dirname(worktreePath)
     return {
-      isolation: 'worktree', rootCwd: resolve(rootCwd), cwd: worktreePath, repoRoot, worktreePath, baselineCommit,
+      isolation: 'worktree', rootCwd: resolve(rootCwd), cwd: resolve(cwd), repoRoot, worktreePath, baselineCommit,
       ...(basename(worktreePath) === 'worktree' && basename(container).startsWith('yan-subagent-') ? { containerPath: container } : {})
     }
   } catch {
@@ -286,15 +302,16 @@ export async function collectDiff(workspace: PreparedWorkspace, archiveDir: stri
 
   await mkdir(archiveDir, { recursive: true })
   const base = workspace.baselineCommit ?? 'HEAD'
-  await git(workspace.cwd, ['add', '-A', '--', '.'])
+  const tree = workspace.worktreePath ?? workspace.cwd
+  await git(tree, ['add', '-A', '--', '.'])
   const [nameStatus, numstat, patch] = await Promise.all([
-    git(workspace.cwd, ['diff', '--cached', '--name-status', '--no-renames', base]).then((r) => r.stdout),
-    git(workspace.cwd, ['diff', '--cached', '--numstat', base]).then((r) => r.stdout),
-    runGitBytes(workspace.cwd, ['diff', '--cached', '--binary', '--no-ext-diff', base])
+    git(tree, ['diff', '--cached', '--name-status', '--no-renames', base]).then((r) => r.stdout),
+    git(tree, ['diff', '--cached', '--numstat', base]).then((r) => r.stdout),
+    runGitBytes(tree, ['diff', '--cached', '--binary', '--no-ext-diff', base])
   ])
 
   const summary = summarizeGitDiff(nameStatus, numstat)
-  const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']).then((r) => r.stdout, () => '')
+  const listing = await git(tree, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']).then((r) => r.stdout, () => '')
   const ignoredOutputs = ignoredOutputsOf(listing)
   const ignored = ignoredOutputs.length ? { ignoredOutputs } : {}
   if (patch.length === 0) return { summary, ...ignored }
@@ -358,9 +375,10 @@ export type PreservedOutputs = { ok: true; path?: string; files: string[]; skipp
 
 export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archiveDir: string, id: string, limit = IGNORED_OUTPUT_COPY_LIMIT): Promise<PreservedOutputs> {
   if (workspace.isolation !== 'worktree' || !workspace.worktreePath) return { ok: true, files: [] }
+  const tree = workspace.worktreePath
   let outputs: string[]
   try {
-    const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
+    const listing = await git(tree, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
     outputs = ignoredOutputsOf(listing.stdout)
   } catch (error) {
     return { ok: false, error: pick(`列不出被忽略的文件：${gitErrorDetail(error)}`, `Could not list ignored files: ${gitErrorDetail(error)}`) }
@@ -369,7 +387,7 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
   try {
     const found: OutputFile[] = []
     const overflow = new Set<string>()
-    for (const rel of outputs) await listOutputFiles(workspace.cwd, rel, rel, found, overflow)
+    for (const rel of outputs) await listOutputFiles(tree, rel, rel, found, overflow)
     const { kept, dropped } = pickIgnoredOutputs(found, limit)
     const keptTops = new Set(kept.map((file) => file.top))
     const droppedTops = new Set([...dropped.map((file) => file.top), ...overflow])
@@ -380,7 +398,7 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
     for (const file of kept) {
       const to = join(target, file.rel)
       await mkdir(dirname(to), { recursive: true })
-      await copyFile(join(workspace.cwd, file.rel), to)
+      await copyFile(join(tree, file.rel), to)
     }
     return { ok: true, path: target, files, ...(skipped.length ? { skipped } : {}) }
   } catch (error) {

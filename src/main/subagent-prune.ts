@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
 import { readFile, readdir, rm, stat } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { normalizeSubagentId } from '../shared/subagent-id'
 import { cleanupWorkspace } from './subagent-isolation'
+import { subagentWorktreeRoot } from './subagent-worktree-root'
 import { planSubagentPrune, type PruneItem } from './subagent-resume'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -42,15 +43,15 @@ export function settledForPrune(record: StoredRecord): { terminal: boolean; revi
 
 async function removeWorktree(record: StoredRecord): Promise<void> {
   if (record.isolation !== 'worktree' || typeof record.cwd !== 'string' || typeof record.rootCwd !== 'string') return
-  if (basename(record.cwd) !== 'worktree' || !basename(dirname(record.cwd)).startsWith('yan-subagent-')) return
-  if (!existsSync(record.cwd)) return
+  const worktreePath = subagentWorktreeRoot(record.cwd)
+  if (!worktreePath || !existsSync(worktreePath)) return
   await cleanupWorkspace({
     isolation: 'worktree',
     rootCwd: record.rootCwd,
     cwd: record.cwd,
     repoRoot: record.rootCwd,
-    worktreePath: record.cwd,
-    containerPath: dirname(record.cwd)
+    worktreePath,
+    containerPath: dirname(worktreePath)
   }).catch(() => undefined)
 }
 
