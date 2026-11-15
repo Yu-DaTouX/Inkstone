@@ -39,12 +39,13 @@ if (flag('cards')) { prepareCards(box); at('卡片会话就绪') }
 const realModel = value('real-model', null)
 const realEnv = {}
 args.forEach((arg, i) => { if (args[i - 1] === '--env' && arg.includes('=')) realEnv[arg.slice(0, arg.indexOf('='))] = arg.slice(arg.indexOf('=') + 1) })
-const REAL_MODELS = { 'commandcode/deepseek/deepseek-v4.1-flash': 'commandcode', 'anthropic/claude-haiku-5-5': 'anthropic', 'openai-codex/gpt-6-luna': 'openai-codex' }
+const REAL_MODELS = { 'commandcode/deepseek/deepseek-v4.1-flash': 'commandcode', 'anthropic/claude-haiku-5-5': 'anthropic', 'anthropic/claude-opus-5-5': 'anthropic', 'openai-codex/gpt-6-luna': 'openai-codex' }
 if (realModel) {
   const provider = REAL_MODELS[realModel]
   if (!provider) { console.log('--real-model 只允许：' + Object.keys(REAL_MODELS).join('、')); process.exit(1) }
   const entry = JSON.parse(readFileSync(join(homedir(), '.pi', 'agent', 'auth.json'), 'utf8'))[provider]
   if (!entry) { console.log('本机没有 ' + provider + ' 凭据'); process.exit(1) }
+  if (provider === 'anthropic' && typeof entry.expires === 'number' && entry.expires < Date.now() + timeoutMin * 60000) { console.log('anthropic 访问令牌已过期或会在本次运行时限内过期；沙箱里不刷新，停止'); process.exit(1) }
   if (provider === 'commandcode') realEnv.COMMANDCODE_API_KEY = entry.key
   else writeFileSync(join(box.piDir, 'auth.json'), JSON.stringify({ [provider]: provider === 'anthropic' ? { ...entry, refresh: 'disabled-in-sandbox' } : entry }))
   realEnv.YAN_TEST_MODEL = realModel
@@ -61,8 +62,11 @@ const finish = async (code) => {
   if (finished) return
   finished = true
   try { await cdp?.evaluate('window.__probeDone && window.__probeDone(1)') } catch {}
+  for (let i = 0; i < 6 && app.child.exitCode === null; i++) await sleep(500)
+  if (app.child.exitCode === null) try { await cdp?.evaluate('void window.yan.win.requestExit(); true') } catch {}
   try { cdp?.close() } catch {}
-  await sleep(500)
+  for (let i = 0; i < 60 && app.child.exitCode === null; i++) await sleep(500)
+  report.exitedNormally = app.child.exitCode !== null
   report.mainLogTail = app.log().slice(-4000)
   killTree(app.child.pid)
   await sleep(1500)
