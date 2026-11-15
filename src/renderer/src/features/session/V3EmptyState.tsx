@@ -56,6 +56,12 @@ const WAITING_TEXT: Record<'zh-CN' | 'en-US', WaitingText> = {
 
 let homeSeen = false
 
+function homeCwd(s: ReturnType<typeof useStore.getState>): string {
+  const runner = s.peekedSessionId ? undefined : s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
+  if (runner?.isolationBranch) return (runner.projectId ? s.settings?.projects.find((project) => project.id === runner.projectId)?.cwd : undefined) ?? worktreeHome(runner.cwd) ?? s.settings?.cwd ?? ''
+  return s.session?.cwd ?? s.settings?.cwd ?? ''
+}
+
 function awaitingRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
   const latest = new Map<string, RunSnapshot>()
   for (const run of runs) {
@@ -70,11 +76,7 @@ function awaitingRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
 function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.Element {
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
-  const cwd = useStore((s) => {
-    const runner = s.peekedSessionId ? undefined : s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
-    if (runner?.isolationBranch) return (runner.projectId ? s.settings?.projects.find((project) => project.id === runner.projectId)?.cwd : undefined) ?? worktreeHome(runner.cwd) ?? s.settings?.cwd ?? ''
-    return s.session?.cwd ?? s.settings?.cwd ?? ''
-  })
+  const cwd = useStore(homeCwd)
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -246,7 +248,7 @@ export function V3EmptyState(): JSX.Element {
     if (!paths.length) return
     event.preventDefault()
     event.stopPropagation()
-    void importSessionBundles(t, paths)
+    void importSessionBundles(t, paths, homeCwd(useStore.getState()) || undefined)
   }
 
   const openAwaiting = (run: RunSnapshot): void => {

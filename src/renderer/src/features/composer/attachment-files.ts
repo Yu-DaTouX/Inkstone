@@ -1,10 +1,12 @@
 import type { Attachment } from '../../../../shared/ipc'
 
+export const INLINE_IMAGE_MAX_BYTES = 12 * 1024 * 1024
+
 export async function readFiles(files: File[], add: (a: Attachment[]) => void, skipped?: (names: string[]) => void): Promise<void> {
   const rejected: string[] = []
   const out: Attachment[] = []
   for (const f of files) {
-    if (f.size > 12 * 1024 * 1024) { rejected.push(f.name || 'pasted.png'); continue }
+    if (f.size > INLINE_IMAGE_MAX_BYTES) { rejected.push(f.name || 'pasted.png'); continue }
     try {
       const data = await readFileAsBase64(f)
       if (data === null) { rejected.push(f.name || 'pasted.png'); continue }

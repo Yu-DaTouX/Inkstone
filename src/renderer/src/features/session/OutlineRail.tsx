@@ -13,6 +13,8 @@ const PRECISION_DELAY_MS = 120
 const PENDING_JUMP_MS = 1500
 const DENSE_SPACING_PX = 3
 const LINE_DELTA_PX = 16
+const WHEEL_NOTCH_PX = 50
+const WHEEL_LOCK_PX = 8
 
 export function userTurnRenderIndex(turns: readonly { kind: string }[], userIndex: number): number | undefined {
   const userTurns: number[] = []
@@ -132,6 +134,9 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
   const repaintRef = useRef(true)
   const pendingRef = useRef<{ index: number; at: number } | null>(null)
   const previewOpenRef = useRef(false)
+  const previewRef = useRef(preview)
+  previewRef.current = preview
+  const wheelAnchorRef = useRef<number | null>(null)
   const shownRef = useRef<ShownCard | null>(null)
   const turnsRef = useRef(turns)
   turnsRef.current = turns
@@ -274,8 +279,29 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
       if (event.target instanceof Node && root.contains(event.target)) return
       schedule()
     }
+    let wheelAcc = 0
     const onWheel = (event: WheelEvent): void => {
       if (event.defaultPrevented || event.ctrlKey || event.deltaY === 0) return
+      const track = trackRef.current
+      if (previewOpenRef.current && track && event.target instanceof Node && track.contains(event.target)) {
+        event.preventDefault()
+        let steps = 0
+        if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL || Math.abs(event.deltaY) >= WHEEL_NOTCH_PX) {
+          steps = Math.sign(event.deltaY)
+          wheelAcc = 0
+        } else {
+          wheelAcc += event.deltaY
+          if (Math.abs(wheelAcc) >= WHEEL_NOTCH_PX) {
+            steps = Math.sign(wheelAcc)
+            wheelAcc = 0
+          }
+        }
+        if (!steps) return
+        wheelAnchorRef.current = event.clientY
+        previewRef.current = { index: clampTurn(previewRef.current.index + steps, turnsRef.current.length), open: true }
+        setPreview(previewRef.current)
+        return
+      }
       const stream = streamOf()
       if (!stream) return
       event.preventDefault()
@@ -346,17 +372,22 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
   }, [preview, tickSig, syncAria])
 
   const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const anchor = wheelAnchorRef.current
+    if (anchor !== null && Math.abs(event.clientY - anchor) < WHEEL_LOCK_PX) return
+    wheelAnchorRef.current = null
     const index = indexAtPointer(event.clientY)
     if (index >= 0) show(index)
   }, [indexAtPointer, show])
 
   const onPointerLeave = useCallback(() => {
+    wheelAnchorRef.current = null
     if (trackRef.current && document.activeElement === trackRef.current) return
     hide()
   }, [hide])
 
   const onClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    const index = indexAtPointer(event.clientY)
+    const wheeled = wheelAnchorRef.current !== null && previewRef.current.open
+    const index = wheeled ? previewRef.current.index : indexAtPointer(event.clientY)
     if (index >= 0) jump(index)
   }, [indexAtPointer, jump])
 

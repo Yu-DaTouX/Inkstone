@@ -11,8 +11,6 @@ const MAX_TEXT = 2 * 1024 * 1024
 const WINDOW_TRIGGER_LINES = 2000
 const WINDOW_BEFORE = 200
 const WINDOW_AFTER = 400
-const MAX_IMAGE = 20 * 1024 * 1024
-const MAX_FILE = 100 * 1024 * 1024
 
 const TEXT_MIME: Record<string, string> = {
   '.txt': 'text/plain',
@@ -121,11 +119,6 @@ export async function grantFile(input: string): Promise<FileRefInfo> {
 
   const name = basename(real)
   const { mime, kind } = classify(name)
-  const limit = kind === 'image' ? MAX_IMAGE : MAX_FILE
-  if (st.size > limit) {
-    return fail(input, pick(`文件过大（${(st.size / 1024 / 1024).toFixed(1)}MB，上限 ${limit / 1024 / 1024}MB）`, `File too large (${(st.size / 1024 / 1024).toFixed(1)}MB, limit ${limit / 1024 / 1024}MB)`))
-  }
-
   granted.set(real, { size: st.size, mime, kind, name, mtimeMs: st.mtimeMs })
   return { ok: true, input, path: real, name, size: st.size, mimeType: mime, kind }
 }

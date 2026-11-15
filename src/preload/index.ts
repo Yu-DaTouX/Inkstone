@@ -90,7 +90,7 @@ const api: YanBridge = {
   },
   sessionTransfer: {
     exportSession: (sessionPath, options) => invoke('yan:sessionTransfer:export', sessionPath, options),
-    importSession: (filePath) => invoke('yan:sessionTransfer:import', filePath),
+    importSession: (filePath, options) => invoke('yan:sessionTransfer:import', filePath, options),
     sessionMarkdown: (sessionPath, title) => invoke('yan:sessionTransfer:markdown', sessionPath, title)
   },
   compact: (customInstructions, expected) => invoke('yan:compact', customInstructions, expected),

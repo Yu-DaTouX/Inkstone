@@ -98,6 +98,7 @@ import { completePluginText } from './plugin-completion'
 import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { isSessionFileInSessionsDir, onSessionPurged, SESSIONS_DIR } from './sessions'
+import { encodeSessionDirName } from './native-session-io'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
@@ -2665,6 +2666,15 @@ function registerIpc(): void {
 
   registerSessionTransferIpc(ipc, {
     sessionsDir: SESSIONS_DIR,
+    sessionsDirFor: (cwd) => join(SESSIONS_DIR, encodeSessionDirName(cwd)),
+    pickImportFolder: async () => {
+      if (!win) return null
+      const r = await dialog.showOpenDialog(win, {
+        title: pick('选择会话的工作目录', 'Choose a working folder for the session'),
+        properties: ['openDirectory', 'createDirectory']
+      })
+      return r.canceled ? null : r.filePaths[0] ?? null
+    },
     readMessages: async (sessionPath) => {
       const history = await readHistoryWithArtifacts(sessionPath)
       return history ? { messages: history.messages, ...(history.sourceCwd ? { cwd: history.sourceCwd } : {}) } : null

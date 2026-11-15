@@ -85,7 +85,20 @@ try {
     assert.equal(existsSync(join(importDir, 'sess-import-0001.jsonl')), true)
     assert.equal(existsSync(join(importDir, 'sess-import-0002.jsonl')), true)
   })
-  await check('超过 64MB 的会话包拒绝导入，不落任何会话文件', async () => {
+  await check('超过旧上限 64MB 的会话可以导出再导入', async () => {
+    const big = join(root, 'sessions-src', 'big.jsonl')
+    const line = JSON.stringify({ type: 'message', id: 'tr', message: { role: 'toolResult', content: [{ type: 'text', text: 'y"\\'.repeat(1024 * 1024) }] } })
+    await writeFile(big, [JSON.stringify({ type: 'session', id: 'sess-big' }), ...Array(24).fill(line), JSON.stringify({ type: 'message', id: 'end', message: { role: 'user', content: '结尾' } })].join('\n') + '\n')
+    const exported = await exportSession(big, join(root, 'export', 'big'))
+    assert.equal(exported.ok, true, exported.error)
+    assert.ok(exported.bytes > 64 * 1024 * 1024)
+    const imported = await importSession(exported.path, join(root, 'sessions-big'), { newId: () => 'sess-big-new' })
+    assert.equal(imported.ok, true, imported.error)
+    const text = await readFile(imported.path, 'utf8')
+    assert.equal(text, (await readFile(big, 'utf8')).replace('"sess-big"', '"sess-big-new"'))
+    assert.match(text.slice(-200), /结尾/)
+  })
+  await check(`超过 ${SESSION_TRANSFER_MAX_BYTES / 1024 / 1024}MB 的会话包拒绝导入，不落任何会话文件`, async () => {
     const huge = join(root, 'huge-bundle.json')
     await writeFile(huge, JSON.stringify({ v: 1, kind: 'inkstone-session', exportedAt: 1, fileName: 'a.jsonl', content: 'x' }))
     await truncate(huge, SESSION_TRANSFER_MAX_BYTES + 1)
@@ -95,7 +108,7 @@ try {
     assert.match(imported.error, /过大|too large/i)
     assert.equal(existsSync(target), false)
   })
-  await check('超过 64MB 的会话拒绝导出，不写半份会话包', async () => {
+  await check(`超过 ${SESSION_TRANSFER_MAX_BYTES / 1024 / 1024}MB 的会话拒绝导出，不写半份会话包`, async () => {
     const hugeSession = join(root, 'sessions-src', 'huge.jsonl')
     await writeFile(hugeSession, JSON.stringify({ type: 'session', id: 'sess-huge' }))
     await truncate(hugeSession, SESSION_TRANSFER_MAX_BYTES + 1)
@@ -207,6 +220,34 @@ try {
     assert.equal(rejected.ok, false)
     assert.ok(rejected.error.length > 0)
     assert.equal(asked, 0)
+  })
+  const workDir = join(ipcRoot, 'work')
+  await mkdir(workDir, { recursive: true })
+  const bucketFor = (cwd) => join(sessionsDir, `bucket-${cwd.split(/[\\/]/).pop()}`)
+  const headerOf = async (path) => JSON.parse((await readFile(path, 'utf8')).split('\n')[0])
+  await check('从设置导入：选完会话包再选目录，会话头 cwd 改成所选目录并放进它的分桶', async () => {
+    const result = await register({ pickImportFile: async () => exportedPath, pickImportFolder: async () => workDir, sessionsDirFor: bucketFor }).invoke('yan:sessionTransfer:import')
+    assert.equal(result.ok, true, result.error)
+    assert.ok(result.path.startsWith(bucketFor(workDir)), result.path)
+    const header = await headerOf(result.path)
+    assert.equal(header.cwd, workDir)
+    assert.equal(header.id, result.sessionId)
+  })
+  await check('从新标签页拖入：直接导入到给定目录，不弹任何选择框', async () => {
+    let asked = 0
+    const result = await register({ pickImportFile: async () => (asked += 1, null), pickImportFolder: async () => (asked += 1, null), sessionsDirFor: bucketFor }).invoke('yan:sessionTransfer:import', exportedPath, { cwd: workDir })
+    assert.equal(result.ok, true, result.error)
+    assert.equal(asked, 0)
+    assert.equal((await headerOf(result.path)).cwd, workDir)
+  })
+  await check('不选目录算取消；目录不存在时拒绝，不落会话文件', async () => {
+    const cancelled = await register({ pickImportFile: async () => exportedPath, pickImportFolder: async () => null, sessionsDirFor: bucketFor }).invoke('yan:sessionTransfer:import')
+    assert.deepEqual(cancelled, { ok: false, cancelled: true })
+    const missing = join(ipcRoot, 'missing-dir')
+    const rejected = await register({ sessionsDirFor: bucketFor }).invoke('yan:sessionTransfer:import', exportedPath, { cwd: missing })
+    assert.equal(rejected.ok, false)
+    assert.match(rejected.error, /missing-dir/)
+    assert.equal(existsSync(bucketFor(missing)), false)
   })
   await check('导入取消时不抛异常', async () => {
     const result = await register({ pickImportFile: async () => null }).invoke('yan:sessionTransfer:import')

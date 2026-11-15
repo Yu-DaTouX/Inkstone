@@ -19,6 +19,10 @@ export interface SessionExportOptions {
   html?: string
 }
 
+export interface SessionImportOptions {
+  cwd?: string
+}
+
 export interface SessionMarkdownResult {
   ok: boolean
   markdown?: string
@@ -43,6 +47,6 @@ export interface SessionImportResult {
 
 export interface SessionTransferBridge {
   exportSession(sessionPath?: string, options?: SessionExportOptions): Promise<SessionExportResult>
-  importSession(filePath?: string): Promise<SessionImportResult>
+  importSession(filePath?: string | null, options?: SessionImportOptions): Promise<SessionImportResult>
   sessionMarkdown(sessionPath: string, title?: string): Promise<SessionMarkdownResult>
 }

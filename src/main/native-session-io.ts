@@ -10,7 +10,7 @@ export const CURRENT_SESSION_VERSION = 3
 
 export const DEFAULT_SHARE_VIEWER_URL = 'https://pi.dev/session/'
 
-export const DEFAULT_MAX_IMPORT_BYTES = 64 * 1024 * 1024
+export const DEFAULT_MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 export const DEFAULT_GH_TIMEOUT_MS = 20_000
 
