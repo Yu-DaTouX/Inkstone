@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 
 export const root = resolve(import.meta.dirname, '..', '..')
@@ -19,7 +19,16 @@ export const sessionSamplesDir = join(sharedDataDir, 'sessions')
 export const userSnapshotDir = join(sharedDataDir, 'user-snapshot')
 export const currentFile = join(runsDir, 'current.json')
 export const fixtureRoot = process.env.YAN_DEBUG_FIXTURES || resolve(mainCheckout(), '..', 'Inkstone', 'bench', 'Harness-test', 'tasks')
-export const evidenceDir = (name) => join(mainCheckout(), '.local-docs', 'evidence', name)
+const evidenceDirs = new Map()
+
+export function evidenceDir(name) {
+  if (!evidenceDirs.has(name)) {
+    const base = join(mainCheckout(), '.local-docs', 'evidence', name)
+    const used = existsSync(base) && readdirSync(base).length > 0
+    evidenceDirs.set(name, used ? `${base}-${stamp()}` : base)
+  }
+  return evidenceDirs.get(name)
+}
 
 export const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 
