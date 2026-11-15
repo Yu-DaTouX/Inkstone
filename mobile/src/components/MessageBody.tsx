@@ -1,9 +1,13 @@
 import { pick } from '../../../src/shared/ui-lang'
 import { memo, useMemo, useState } from 'react'
 import { parseMessageBlocks } from '../messageBlocks'
+import { planBodyImage } from '../bodyImage'
+import { Icon } from '../icons'
+import { useRemote } from '../state'
+import { RemoteImage } from './RemoteImage'
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { isVisualDataLang, parseVisualBlock, type VisualBlock } from '../../../src/shared/visual-blocks'
-import { font, lineHeight, mono, radius, space, touch, usePalette, weight } from '../theme'
+import { font, icon, lineHeight, mono, radius, space, touch, usePalette, weight } from '../theme'
 
 function Inline({ value }: { value: string }) {
   const p = usePalette()
@@ -66,10 +70,31 @@ function Table({ rows }: { rows: string[][] }) {
   </ScrollView>
 }
 
+const tappedImages = new Set<string>()
+
 function BodyImage({ alt, url }: { alt: string; url: string }) {
   const p = usePalette()
-  if (!/^https?:\/\//i.test(url)) return <Text style={{ color: p.fgMute, fontSize: font.sm }}>{pick(`［图片：${alt || url.split(/[\\/]/).pop()}］`, `[Image: ${alt || url.split(/[\\/]/).pop()}]`)}</Text>
-  return <Image accessibilityLabel={alt || pick('回复中的图片', 'Image in reply')} source={{ uri: url }} resizeMode="contain" style={[styles.image, { backgroundColor: p.sunken }]} />
+  const { client } = useRemote()
+  const [, setTapped] = useState(0)
+  const plan = planBodyImage(url, client.connection.baseUrl)
+  const label = alt || pick('回复中的图片', 'Image in reply')
+  if (plan.kind === 'local') return <Text style={{ color: p.fgMute, fontSize: font.sm }}>{pick(`［图片：${alt || plan.name}］`, `[Image: ${alt || plan.name}]`)}</Text>
+  if (plan.kind === 'host') return <RemoteImage client={client} accessibilityLabel={label} source={{ uri: plan.uri, headers: { authorization: `Bearer ${client.connection.token}` } }} resizeMode="contain" style={[styles.image, { backgroundColor: p.sunken }]} />
+  if (plan.kind === 'inline' || tappedImages.has(plan.uri)) return <Image accessibilityLabel={label} source={{ uri: plan.uri }} resizeMode="contain" style={[styles.image, { backgroundColor: p.sunken }]} />
+  const host = plan.host || plan.uri
+  return <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={pick(`${label}，来自 ${host}，点按加载`, `${label}, from ${host}, tap to load`)}
+    onPress={() => { tappedImages.add(plan.uri); setTapped((count) => count + 1) }}
+    style={({ pressed }) => [styles.imageGate, { backgroundColor: p.sunken, borderColor: p.borderSoft, opacity: pressed ? 0.8 : 1 }]}
+  >
+    <Icon name="image" size={icon.sm} color={p.fgMute} />
+    <View style={styles.imageGateText}>
+      <Text numberOfLines={2} style={{ color: p.fg, fontSize: font.sm }}>{label}</Text>
+      <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{host}</Text>
+    </View>
+    <Text style={{ color: p.accent, fontSize: font.sm }}>{pick('点按加载', 'Tap to load')}</Text>
+  </Pressable>
 }
 
 export const MessageBody = memo(function MessageBody({ text, selectable = true }: { text: string; selectable?: boolean }) {
@@ -104,5 +129,7 @@ const styles = StyleSheet.create({
   table: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, marginVertical: space[2], flexGrow: 0 },
   tableRow: { flexDirection: 'row' },
   cell: { width: 140, paddingHorizontal: space[2], paddingVertical: space[1], fontSize: font.sm, lineHeight: 20 },
-  image: { width: '100%', aspectRatio: 16 / 10, borderRadius: radius.md, marginVertical: space[2] }
+  image: { width: '100%', aspectRatio: 16 / 10, borderRadius: radius.md, marginVertical: space[2] },
+  imageGate: { alignSelf: 'stretch', minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space[2], borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2], marginVertical: space[2] },
+  imageGateText: { flex: 1, minWidth: 0, gap: 2 }
 })
