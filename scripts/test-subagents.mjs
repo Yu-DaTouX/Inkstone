@@ -167,6 +167,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     try {
       const a = await ctrl.start('stream A', undefined, 'controlled-cwd')
       const b = await ctrl.start('stream B', undefined, 'controlled-cwd')
+      ctrl.watch([a.run.id])
       const send = (rpc, type, text) => rpc.emit('event', { type, message: { role: 'assistant', content: [{ type: 'text', text }] } })
       const delta = (rpc, text) => rpc.emit('event', { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: text } })
       send(factory.created[0], 'message_start', '')
@@ -185,14 +186,16 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(pushed.length === initial, '流式突发不逐token推送完整快照')
       ok(ctrl.get(a.run.id).transcript.at(-1).text === accA, '主动读取不等待推送计时器，真实 1.4.0 增量形状能即时读到')
       await new Promise(done => setTimeout(done, 55))
-      ok(pushed.length === initial + 2, '两个运行分别合并为一个推送')
+      ok(pushed.length === initial + 1 && pushed.at(-1).id === a.run.id, '打开记录面板的运行按帧合并为一个推送，没打开的还在等')
+      await new Promise(done => setTimeout(done, 260))
+      ok(pushed.length === initial + 2 && pushed.at(-1).id === b.run.id, '两个运行分别合并为一个推送')
       ok(pushed.filter(run => run.id === a.run.id).at(-1).transcript.at(-1).text === accA, '合并推送保留完整中文emoji')
       ok(pushed.filter(run => run.id === b.run.id).at(-1).transcript.at(-1).text === accB, '并行运行不串流式内容')
       delta(factory.created[0], '待结束')
       send(factory.created[0], 'message_end', '最终全文')
       ok(pushed.at(-1).transcript.at(-1).text === '最终全文', '消息结束立即替换为权威全文，覆盖掉增量拼出来的内容')
       const ended = pushed.length
-      await new Promise(done => setTimeout(done, 55))
+      await new Promise(done => setTimeout(done, 300))
       ok(pushed.length === ended, '结束后没有旧计时器重复推送')
       delta(factory.created[1], '工具前最新正文')
       accB += '工具前最新正文'
@@ -203,7 +206,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       await ctrl.stop(b.run.id)
       ok(pushed.at(-1).status === 'cancelled' && pushed.at(-1).transcript.at(-1).text === accB, '停止立即推送并保留最新正文')
       const stopped = pushed.length
-      await new Promise(done => setTimeout(done, 55))
+      await new Promise(done => setTimeout(done, 300))
       ok(pushed.length === stopped, '停止清理待推送计时器')
       await ctrl.clearFinished()
       ok(ctrl.get(b.run.id) === undefined, '停止记录显式清除后不反弹')
