@@ -75,7 +75,6 @@ interface FlowHalftoneProps extends Placement {
   dotSize: number
   contrast: number
   grid: 'hex' | 'square'
-  speed: number
   colorFront: string
   className?: string
   style?: CSSProperties
@@ -83,11 +82,10 @@ interface FlowHalftoneProps extends Placement {
   maxPixelCount?: number
 }
 
-export const FlowHalftone = memo(function FlowHalftone({ image, shape, twinkle, breath, dotSize, contrast, grid, speed, scale, offsetX, offsetY, colorFront, ...props }: FlowHalftoneProps): JSX.Element {
+export const FlowHalftone = memo(function FlowHalftone({ image, shape, twinkle, breath, dotSize, contrast, grid, scale, offsetX, offsetY, colorFront, ...props }: FlowHalftoneProps): JSX.Element {
   return (
     <ShaderMount
       {...props}
-      speed={speed}
       fragmentShader={flowHalftoneShader}
       uniforms={{
         u_image: image,
@@ -115,7 +113,6 @@ interface FlowImageDitherProps extends Placement {
   image: string
   pixel: number
   colorSteps: number
-  speed: number
   originalColors: boolean
   colorFront: string
   colorBack: string
@@ -126,11 +123,10 @@ interface FlowImageDitherProps extends Placement {
   maxPixelCount?: number
 }
 
-export const FlowImageDither = memo(function FlowImageDither({ image, pixel, colorSteps, speed, originalColors, colorFront, colorBack, colorHighlight, scale, offsetX, offsetY, ...props }: FlowImageDitherProps): JSX.Element {
+export const FlowImageDither = memo(function FlowImageDither({ image, pixel, colorSteps, originalColors, colorFront, colorBack, colorHighlight, scale, offsetX, offsetY, ...props }: FlowImageDitherProps): JSX.Element {
   return (
     <ShaderMount
       {...props}
-      speed={speed}
       fragmentShader={flowImageDitherShader}
       uniforms={{
         u_image: image,

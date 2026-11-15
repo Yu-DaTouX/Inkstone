@@ -1,10 +1,12 @@
-import { useEffect, useState, useSyncExternalStore, type JSX } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { Dithering, HalftoneDots, ImageDithering } from '@paper-design/shaders-react'
-import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
+import { CAPPED_FRAME_MS, prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
 import type { HomeEffectParams, HomeFlowStyle, HomeImageEffect, HomeInk } from './home-background'
 import { FlowHalftone, FlowImageDither } from './FlowImageDither'
 
 const PIXEL_BUDGET = { minPixelRatio: 1, maxPixelCount: 1920 * 1080 * 2 }
+const FILL = { position: 'absolute', inset: 0 } as const
+const COLOR_TOKENS = ['--accent', '--bg', '--fg', '--home-print-ink', '--home-print-glow'] as const
 const LIGHT_CONTRAST = 0.55
 const INK: Record<Exclude<HomeInk, 'accent' | 'mono'>, string> = { ember: '#ec6930', cyan: '#22c3d6', gray: '#9a9aa2' }
 
@@ -27,11 +29,25 @@ function resolveColor(token: string): string {
 
 interface ThemeColors { accent: string; back: string; fg: string; ink: string; glow: string; light: boolean }
 
+function readThemeColors(): ThemeColors {
+  return { accent: resolveColor('--accent'), back: resolveColor('--bg'), fg: resolveColor('--fg'), ink: resolveColor('--home-print-ink'), glow: resolveColor('--home-print-glow'), light: document.documentElement.dataset.theme === 'light' }
+}
+
+function themeKey(): string {
+  const style = getComputedStyle(document.body)
+  return [document.documentElement.dataset.theme ?? '', style.colorScheme, ...COLOR_TOKENS.map((token) => style.getPropertyValue(token))].join('|')
+}
+
 function useThemeColors(): ThemeColors {
-  const read = (): ThemeColors => ({ accent: resolveColor('--accent'), back: resolveColor('--bg'), fg: resolveColor('--fg'), ink: resolveColor('--home-print-ink'), glow: resolveColor('--home-print-glow'), light: document.documentElement.dataset.theme === 'light' })
-  const [colors, setColors] = useState(read)
+  const [colors, setColors] = useState(readThemeColors)
   useEffect(() => {
-    const observer = new MutationObserver(() => setColors(read()))
+    let key = themeKey()
+    const observer = new MutationObserver(() => {
+      const next = themeKey()
+      if (next === key) return
+      key = next
+      setColors(readThemeColors())
+    })
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style', 'class'] })
     return () => observer.disconnect()
   }, [])
@@ -48,26 +64,71 @@ function useMotion(): boolean {
   return !useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => true)
 }
 
+interface PaperHost extends HTMLElement {
+  paperShaderMount?: { setFrame(frame: number): void }
+}
+
+function useShaderClock(id: string, speed: number): void {
+  const frame = useRef(0)
+  useEffect(() => {
+    if (speed <= 0) return undefined
+    const selector = `[data-shader-clock="${CSS.escape(id)}"]`
+    let host: PaperHost | null = null
+    let raf = 0
+    let last = 0
+    const tick = (now: number): void => {
+      raf = requestAnimationFrame(tick)
+      if (last && now - last < CAPPED_FRAME_MS) return
+      if (last) frame.current += Math.min(100, now - last) * speed
+      last = now
+      if (!host?.isConnected) host = document.querySelector<PaperHost>(selector)
+      host?.paperShaderMount?.setFrame(frame.current)
+    }
+    const apply = (): void => {
+      const active = document.visibilityState !== 'hidden' && document.hasFocus()
+      if (active && !raf) {
+        last = 0
+        raf = requestAnimationFrame(tick)
+      } else if (!active && raf) {
+        cancelAnimationFrame(raf)
+        raf = 0
+      }
+    }
+    apply()
+    window.addEventListener('focus', apply)
+    window.addEventListener('blur', apply)
+    document.addEventListener('visibilitychange', apply)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('focus', apply)
+      window.removeEventListener('blur', apply)
+      document.removeEventListener('visibilitychange', apply)
+    }
+  }, [id, speed])
+}
+
 export default function ShaderBackdrop({ kind, image, effect, flowStyle = 'dither', params, animate }: { kind: 'dither' | 'image'; image?: string | null; effect?: HomeImageEffect; flowStyle?: HomeFlowStyle; params: HomeEffectParams; animate: boolean }): JSX.Element | null {
   const colors = useThemeColors()
   const motion = useMotion()
-  const style = { position: 'absolute', inset: 0 } as const
+  const clock = useId()
+  const speed = kind === 'dither' && animate && motion ? params.speed : 0
+  useShaderClock(clock, speed)
   if (kind === 'dither' && image) {
-    const speed = animate && motion ? params.speed : 0
     const place = { scale: params.scale, offsetX: params.offsetX, offsetY: params.offsetY }
     if (flowStyle === 'halftone') {
-      return <FlowHalftone className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} shape={params.dotShape} twinkle={params.twinkle} breath={params.breath} dotSize={params.dotSize} contrast={colors.light ? params.contrast * LIGHT_CONTRAST : params.contrast} grid={params.grid} speed={speed} {...place} colorFront={inkColor(params.ink, colors)} />
+      return <FlowHalftone className="v3-home-shader" data-shader-clock={clock} style={FILL} {...PIXEL_BUDGET} image={image} shape={params.dotShape} twinkle={params.twinkle} breath={params.breath} dotSize={params.dotSize} contrast={colors.light ? params.contrast * LIGHT_CONTRAST : params.contrast} grid={params.grid} {...place} colorFront={inkColor(params.ink, colors)} />
     }
     if (colors.light) {
-      return <FlowImageDither className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} pixel={params.pixel} colorSteps={params.colorSteps} speed={speed} {...place} originalColors={false} colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} />
+      return <FlowImageDither className="v3-home-shader" data-shader-clock={clock} style={FILL} {...PIXEL_BUDGET} image={image} pixel={params.pixel} colorSteps={params.colorSteps} {...place} originalColors={false} colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} />
     }
-    return <FlowImageDither className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} pixel={params.pixel} colorSteps={params.colorSteps} speed={speed} {...place} originalColors colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} />
+    return <FlowImageDither className="v3-home-shader" data-shader-clock={clock} style={FILL} {...PIXEL_BUDGET} image={image} pixel={params.pixel} colorSteps={params.colorSteps} {...place} originalColors colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} />
   }
   if (kind === 'dither') {
     return (
       <Dithering
         className="v3-home-shader"
-        style={style}
+        data-shader-clock={clock}
+        style={FILL}
         {...PIXEL_BUDGET}
         colorBack="rgba(0, 0, 0, 0)"
         colorFront={inkColor(params.ink, colors)}
@@ -75,22 +136,22 @@ export default function ShaderBackdrop({ kind, image, effect, flowStyle = 'dithe
         type="8x8"
         size={params.pixel}
         scale={1.1}
-        speed={animate && motion ? params.speed : 0}
+        speed={0}
       />
     )
   }
   if (!image) return null
   if (effect === 'dither') {
     if (colors.light) {
-      return <ImageDithering className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} fit="cover" type="8x8" size={params.pixel} colorSteps={params.colorSteps} colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} originalColors={false} />
+      return <ImageDithering className="v3-home-shader" style={FILL} {...PIXEL_BUDGET} image={image} fit="cover" type="8x8" size={params.pixel} colorSteps={params.colorSteps} colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} colorHighlight={colors.glow} originalColors={false} />
     }
-    return <ImageDithering className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} fit="cover" type="8x8" size={params.pixel} colorSteps={params.colorSteps} originalColors />
+    return <ImageDithering className="v3-home-shader" style={FILL} {...PIXEL_BUDGET} image={image} fit="cover" type="8x8" size={params.pixel} colorSteps={params.colorSteps} originalColors />
   }
   if (effect === 'halftone') {
     if (colors.light) {
-      return <HalftoneDots className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} fit="cover" colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} originalColors={false} inverted grid={params.grid} type="classic" size={params.dotSize} radius={1.25} contrast={params.contrast * LIGHT_CONTRAST} grainMixer={0} grainOverlay={0} />
+      return <HalftoneDots className="v3-home-shader" style={FILL} {...PIXEL_BUDGET} image={image} fit="cover" colorBack="rgba(0, 0, 0, 0)" colorFront={colors.ink} originalColors={false} inverted grid={params.grid} type="classic" size={params.dotSize} radius={1.25} contrast={params.contrast * LIGHT_CONTRAST} grainMixer={0} grainOverlay={0} />
     }
-    return <HalftoneDots className="v3-home-shader" style={style} {...PIXEL_BUDGET} image={image} fit="cover" colorBack={colors.back} originalColors grid={params.grid} type="classic" size={params.dotSize} radius={1.25} contrast={params.contrast} grainMixer={0} grainOverlay={0} />
+    return <HalftoneDots className="v3-home-shader" style={FILL} {...PIXEL_BUDGET} image={image} fit="cover" colorBack={colors.back} originalColors grid={params.grid} type="classic" size={params.dotSize} radius={1.25} contrast={params.contrast} grainMixer={0} grainOverlay={0} />
   }
   return null
 }

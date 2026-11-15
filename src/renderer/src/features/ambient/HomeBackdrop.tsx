@@ -1,4 +1,4 @@
-import { lazy, Suspense, useLayoutEffect, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { lazy, memo, Suspense, useLayoutEffect, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { UsageLandscape } from './UsageLandscape'
 import { homeBackgroundMode, homeImageSource, useHomeBackground, type HomeMaskTone } from './home-background'
@@ -25,7 +25,7 @@ function Lifted({ target, children }: { target: HTMLElement | null; children: Re
   return target ? createPortal(<div className="v3-home-layer" aria-hidden>{children}</div>, target) : <>{children}</>
 }
 
-export function HomeBackdrop({ active, asciiEnabled, lift = false }: { active: boolean; asciiEnabled: boolean; lift?: boolean }): JSX.Element {
+export const HomeBackdrop = memo(function HomeBackdrop({ active, asciiEnabled, lift = false }: { active: boolean; asciiEnabled: boolean; lift?: boolean }): JSX.Element {
   const background = useHomeBackground()
   const mode = homeBackgroundMode(background, asciiEnabled)
   const shaded = mode === 'image' && background.image && background.effect !== 'none'
@@ -73,4 +73,4 @@ export function HomeBackdrop({ active, asciiEnabled, lift = false }: { active: b
       </Lifted>
     </>
   )
-}
+})

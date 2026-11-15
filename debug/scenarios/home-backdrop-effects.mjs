@@ -1,6 +1,6 @@
 import { click, rect, setTheme } from '../lib/review-kit.mjs'
 
-export const meta = { description: '新标签页背景：动态网点（Paper Shaders 抖动）、图片的抖动与网点效果、设置项、会话里静止变淡、减弱动效时静止' }
+export const meta = { description: '新标签页背景：动态网点（Paper Shaders 抖动）、图片的抖动与网点效果、设置项、会话里静止变淡、减弱动效与窗口失焦时静止' }
 
 const MAKE_IMAGE = `(() => {
   const c = document.createElement('canvas'); c.width = 1600; c.height = 1000;
@@ -21,7 +21,9 @@ export default async function run({ cdp, box, check, waitFor, sleep, shot, newSe
     if (!r) return null
     return (await cdp.call('Page.captureScreenshot', { format: 'png', clip: r })).result?.data ?? null
   }
+  const focus = (on) => ev(`document.hasFocus = () => ${on}; window.dispatchEvent(new Event('${on ? 'focus' : 'blur'}'))`)
   await newSession(box.project)
+  await focus(true)
   await ev(`window.__yanStore.getState().patchSettings({ asciiBackground: false })`)
 
   await ev(setBg(`{ mode: 'dither' }`))
@@ -31,6 +33,13 @@ export default async function run({ cdp, box, check, waitFor, sleep, shot, newSe
   await sleep(800)
   const b = await frame('[data-testid="v3-home-dither"]')
   check('新标签页的动态网点在动', a !== null && b !== null && a !== b, `${a?.length} ${b?.length}`)
+  await focus(false)
+  await sleep(300)
+  const u1 = await frame('[data-testid="v3-home-dither"]')
+  await sleep(800)
+  const u2 = await frame('[data-testid="v3-home-dither"]')
+  check('窗口失焦时网点静止', u1 !== null && u1 === u2, `${u1?.length} ${u2?.length}`)
+  await focus(true)
   report.ditherCanvas = await ev(`(() => { const c = document.querySelector('[data-testid="v3-home-dither"] canvas'); return { width: c.width, css: c.getBoundingClientRect().width, dpr: devicePixelRatio } })()`)
   check('网点画布按屏幕实际倍率渲染', report.ditherCanvas.width <= Math.ceil(report.ditherCanvas.css * report.ditherCanvas.dpr) + 2, JSON.stringify(report.ditherCanvas))
   await shot('dither-dark')

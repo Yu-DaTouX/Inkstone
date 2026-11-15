@@ -20,6 +20,10 @@ interface Recording {
   stop: () => void
 }
 
+const FULL_SNAPSHOT = 2
+const INCREMENTAL_SNAPSHOT = 3
+const CHECKOUT_IDLE_TIMEOUT_MS = 5_000
+
 let recording: Recording | null = null
 
 function start(): Recording {
@@ -31,6 +35,16 @@ function start(): Recording {
   const cleanups: Array<() => void> = []
   let saving = false
   let queued: { reason: FrictionReason; detail?: string } | null = null
+  let snapshotAt = Date.now()
+  let checkoutIdle = 0
+  const checkout = (): void => {
+    checkoutIdle = 0
+    try {
+      record.takeFullSnapshot(true)
+    } catch {
+      snapshotAt = Date.now()
+    }
+  }
 
   const stopRecord = record({
     emit(event, isCheckout) {
@@ -40,8 +54,11 @@ function start(): Recording {
         startedAt = first?.timestamp ?? Date.now()
         marks = marks.filter((m) => m.at >= startedAt)
       }
+      if (event.type === FULL_SNAPSHOT) snapshotAt = event.timestamp
+      else if (event.type === INCREMENTAL_SNAPSHOT && !checkoutIdle && event.timestamp - snapshotAt > FRICTION_LIMITS.checkoutMs) {
+        checkoutIdle = requestIdleCallback(checkout, { timeout: CHECKOUT_IDLE_TIMEOUT_MS })
+      }
     },
-    checkoutEveryNms: FRICTION_LIMITS.checkoutMs,
     blockSelector: FRICTION_PRIVATE_SELECTOR,
     maskInputOptions: { password: true },
     sampling: { mousemove: 100, scroll: 100, input: 'last', media: 800 },
@@ -166,6 +183,7 @@ function start(): Recording {
 
   return {
     stop() {
+      if (checkoutIdle) cancelIdleCallback(checkoutIdle)
       stopRecord?.()
       for (const fn of cleanups) fn()
       ring.clear()

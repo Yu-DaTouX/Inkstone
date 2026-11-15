@@ -16,6 +16,7 @@ import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { Button } from '../../ui'
 import { motionAllowed } from '../../ui/motion-hooks'
+import { CAPPED_FRAME_MS } from '../../lib/reduced-motion'
 import { ChevronDown } from '../../ui/icons'
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { useSessionViewSource, type SessionPaneBinding } from './session-view-source'
@@ -450,6 +451,10 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     const step = (now: number): void => {
       followGlideRef.current = 0
       if (!stickRef.current || settlingRef.current || !box.isConnected) return
+      if (now - last < CAPPED_FRAME_MS) {
+        followGlideRef.current = requestAnimationFrame(step)
+        return
+      }
       const gap = box.scrollHeight - box.clientHeight - box.scrollTop
       if (gap <= 0.5) return
       const dt = Math.min(FOLLOW_FRAME_CAP_MS, Math.max(0, now - last))
