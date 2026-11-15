@@ -25,11 +25,14 @@ async function runCodexAuthIpcTests(ok, build) {
     'answerOAuthPrompt', 'cancelOAuthLogin', 'startOAuthLogin', 'accountQuotaReport', 'invalidateAccountQuotaReport',
     'captureActiveCodexAccount', 'clearCodexAccounts', 'listCodexAccounts', 'removeCodexAccount', 'switchCodexAccount',
     'captureActiveApiKey', 'captureActiveOAuthAccount', 'clearOAuthAccounts', 'listOAuthAccounts', 'removeOAuthAccount',
-    'renameOAuthAccount', 'switchOAuthAccount', 'consumeResetCredit'
+    'renameOAuthAccount', 'switchOAuthAccount', 'consumeResetCredit', 'detectLocalLauncher', 'listLocalLaunchers',
+    'renameLocalModel', 'saveLocalLauncher'
   ]
   await build({
     entryPoints: ['src/main/ipc/auth-ipc.ts'], outfile: 'out/test/codex-auth-ipc.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
     plugins: [{ name: 'auth-deps-stub', setup(b) {
+      b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'electron-stub' }))
+      b.onLoad({ filter: /.*/, namespace: 'electron-stub' }, () => ({ contents: 'export const BrowserWindow = { getFocusedWindow: () => null }; export const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) };' }))
       b.onResolve({ filter: /^\.\.\// }, (args) => args.importer.replaceAll('\\', '/').endsWith('/ipc/auth-ipc.ts') && !args.path.endsWith('/shared/oauth-accounts') && !args.path.endsWith('/shared/ui-lang') ? { path: 'deps', namespace: 'stub' } : undefined)
       b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: names.map((name) => `export const ${name} = (...args) => {
         const state = globalThis.__codexIpcTest;

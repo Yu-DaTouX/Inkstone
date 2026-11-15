@@ -35,6 +35,23 @@ export async function runRemoteApprovalTests(ok) {
   ui.handleUi({ id: 'sensitive', method: 'confirm', sensitive: true })
   ok(!(await ui.answerUiRemotely('sensitive', { confirmed: true })).ok && piResponses.length === 0, '普通远程 answer 仍不能批准敏感操作')
   ok((await ui.answerUiRemotely('sensitive', { cancelled: true })).ok, '原有取消路径保留')
+  ui.handleUi({ id: 'secret-input', method: 'input', sensitive: true, title: 'Password' })
+  const secretRemote = await ui.answerUiRemotely('secret-input', { value: 'hunter2' })
+  ok(!secretRemote.ok && secretRemote.code === 'sensitive_confirmation_requires_desktop' && piResponses.length === 1, '密码类提问不能经远程普通 answer 填写')
+  ok(ui.pendingUiRequests().some(item => item.id === 'secret-input'), '远程填写密码被拒后问题仍待桌面回答')
+  const secretConfirm = await ui.answerUiRemotely('secret-input', { confirmed: true })
+  ok(!secretConfirm.ok && piResponses.length === 1, '密码类提问也不能经远程 confirmed 结束')
+  ok(!applyHumanApproval({ ...question, method: 'input' }, { ...answer, digest: approvalDigest({ ...question, method: 'input' }) }, choice => resolved.push(choice), 100).ok && resolved.length === count, '密码类提问不能借用人工批准通道')
+  const secretPushed = []
+  const secretHost = new UiRequests({ push: msg => secretPushed.push(msg), respondToPi: () => true })
+  let secretSettled = false
+  const secretAsk = secretHost.requestHostUi({ method: 'input', message: 'token', form: [{ name: 'token', label: 'Token', kind: 'secret' }], sensitive: true, timeout: 1000 })
+  secretAsk.then(() => { secretSettled = true }, () => { secretSettled = true })
+  const secretId = secretPushed[0].payload.id
+  const hostSecretRemote = await secretHost.answerUiRemotely(secretId, { value: JSON.stringify({ token: 'hunter2' }) })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  ok(!hostSecretRemote.ok && hostSecretRemote.code === 'sensitive_confirmation_requires_desktop' && !secretSettled, '砚自己的密码表单不能经远程 answer 填写')
+  ok((await secretHost.answerUiRemotely(secretId, { cancelled: true })).ok && (await secretAsk).cancelled === true, '密码表单仍可远程取消')
   const pushed = []
   const asked = new UiRequests({ push: msg => pushed.push(msg), respondToPi: () => {} })
   const answering = asked.requestHostUi({ method: 'select', title: 'Q', message: 'pick', options: ['a'], timeout: 1000, toolCallId: 'call_q1' })

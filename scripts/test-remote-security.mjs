@@ -38,9 +38,11 @@ try {
   const agent = await pairDevice('礁石', 'agent')
 
   let gate
+  const legacy = { token: 'legacy-static-token-0001' }
   server = new RemoteServer({
     host: '127.0.0.1',
     port: 0,
+    token: legacy.token,
     devices: store,
     onLog: (text) => logs.push(text),
     handlers: {
@@ -59,6 +61,10 @@ try {
       },
       async search(q) { calls.push(['search', q]); return { ok: true, data: { hits: [] } } },
       models: async () => ({ ok: true, data: {} }),
+      async questions() { calls.push(['questions']); return [] },
+      async answer(id, answer) { calls.push(['answer', id, answer]); return { ok: true, data: {} } },
+      async humanApproval(id, answer) { calls.push(['approval', id, answer]); return { ok: true, data: {} } },
+      async transcribe(wav) { calls.push(['transcribe', wav.length]); return { ok: true, data: { text: '' } } },
       async command(command) {
         calls.push(['command', command.action])
         return command.action === 'abort' ? { ok: false, status: 409, error: '目录 C:\\work\\private 不可用' } : { ok: true, data: {} }
@@ -83,20 +89,43 @@ try {
     return { status: response.status, body: parsed, text }
   }
 
+  const approvalBody = { sessionId: 's', runId: 'r1', digest: 'a'.repeat(64), confirmed: true }
   const routes = [
     ['GET', '/remote/v1/status'], ['GET', '/remote/v1/sessions'], ['GET', '/remote/v1/search?q=a'],
     ['GET', '/remote/v1/sessions/s/insight'], ['GET', '/remote/v1/sessions/s/branches'], ['GET', '/remote/v1/sessions/s/images/m/0'],
     ['POST', '/remote/v1/sessions/s/delete', { confirm: true }], ['POST', '/remote/v1/sessions/s/compact', {}],
     ['POST', '/remote/v1/sessions/s/branch', { branch: 'main' }], ['POST', '/remote/v1/sessions/s/flags', { pinned: true }],
-    ['POST', '/remote/v1/sessions/s/subagents/sub-1/stop', {}], ['POST', '/remote/v1/sessions/s/model', { provider: 'a', modelId: 'b' }]
+    ['POST', '/remote/v1/sessions/s/subagents/sub-1/stop', {}], ['POST', '/remote/v1/sessions/s/model', { provider: 'a', modelId: 'b' }],
+    ['GET', '/remote/v1/questions'], ['POST', '/remote/v1/questions/q/answer', { value: 'x' }],
+    ['POST', '/remote/v1/questions/q/approval', approvalBody], ['POST', '/remote/v1/voice/transcribe', { wav: 'AAAA' }],
+    ['POST', '/remote/v1/device', { name: '改名' }]
   ]
   for (const [method, path, body] of routes) {
     assert.equal((await call(method, path, null, body)).status, 401, `匿名 ${method} ${path}`)
     assert.equal((await call(method, path, { token: 'x'.repeat(43) }, body)).status, 401, `伪造令牌 ${method} ${path}`)
-    assert.equal((await call(method, path, agent, body)).status, 403, `agent ${method} ${path}`)
-    assert.equal((await call(method, path, peer, body)).status, 403, `peer ${method} ${path}`)
+    const agentResult = await call(method, path, agent, body)
+    assert.deepEqual([agentResult.status, agentResult.body?.code], [403, 'agent_scope'], `agent ${method} ${path}`)
+    const peerResult = await call(method, path, peer, body)
+    assert.deepEqual([peerResult.status, peerResult.body?.code], [403, 'peer_scope'], `peer ${method} ${path}`)
   }
   assert.equal(calls.length, 0, '未授权请求没有到达任何处理器')
+
+  for (const [path, body] of [['/remote/v1/questions/q/approval', approvalBody], ['/remote/v1/voice/transcribe', { wav: 'AAAA' }], ['/remote/v1/sessions/s/delete', { confirm: true }]]) {
+    const result = await call('POST', path, legacy, body)
+    assert.deepEqual([result.status, result.body?.code], [403, 'paired_user_required'], `未配对的静态令牌 ${path}`)
+  }
+  assert.equal((await call('POST', '/remote/v1/device', legacy, { name: '改名' })).status, 403, '静态令牌不能改设备名')
+  assert.equal(calls.length, 0, '静态令牌没有到达人工批准、语音或删除处理器')
+
+  for (const [index, changed] of [{ digest: 'short' }, { digest: 'G'.repeat(64) }, { runId: 'r1;x' }, { runId: 'approval:not-a-uuid' }, { sessionId: 'a\nb' }, { confirmed: 'true' }, { scope: 'session', confirmed: false }, { scope: 'forever' }].entries()) {
+    const result = await call('POST', '/remote/v1/questions/q/approval', phone, { ...approvalBody, ...changed }, { 'idempotency-key': `key-approval-bad-${index}` })
+    assert.deepEqual([result.status, result.body?.code], [400, undefined], `人工批准校验 ${JSON.stringify(changed)}`)
+  }
+  assert.equal((await call('POST', `/remote/v1/questions/${'q'.repeat(300)}/approval`, phone, approvalBody, { 'idempotency-key': 'key-approval-long-id' })).status, 400, '人工批准问题 id 校验')
+  assert.equal(calls.length, 0, '不合格的人工批准没有到达处理器')
+  const approved = await call('POST', '/remote/v1/questions/q/approval', phone, approvalBody, { 'idempotency-key': 'key-approval-ok-01' })
+  assert.equal(approved.status, 200, '配对手机可以提交人工批准')
+  assert.deepEqual(calls.splice(0), [['approval', 'q', { sessionId: 's', runId: 'r1', digest: approvalBody.digest, confirmed: true }]], '人工批准原样带着会话、运行与摘要交给处理器')
 
   assert.equal((await call('POST', '/remote/v1/sessions/s/delete', phone, {})).status, 400, '删除缺少 confirm')
   assert.equal((await call('POST', '/remote/v1/sessions/s/delete', phone, { confirm: 'true' })).status, 400, '删除 confirm 必须是布尔 true')

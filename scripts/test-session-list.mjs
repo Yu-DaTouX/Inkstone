@@ -199,21 +199,30 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(list.some((s) => s.id === 'ccc'), '撤销后会话恢复到原路径')
   ok(existsSync(`${pPath}.history.txt`), '撤销删除时快照也恢复')
 
-  let rejected = false
+  const outsideDir = await mkdtemp(join(tmpdir(), 'yan-sessions-outside-'))
+  const evilPath = join(outsideDir, 'evil.jsonl')
+  await writeFile(evilPath, line({ type: 'session', version: 3, id: 'evil', timestamp: new Date().toISOString(), cwd: 'C:\\evil' }), 'utf8')
+  let rejectedMessage = ''
   try {
-    await deleteSession(join(dir, '..', '..', 'evil.jsonl'))
-  } catch {
-    rejected = true
+    await deleteSession(join(dir, '..', outsideDir.split(/[\\/]/).pop(), 'evil.jsonl'))
+  } catch (error) {
+    rejectedMessage = String(error?.message ?? error)
   }
-  ok(rejected, '拒绝删除会话目录之外的文件')
+  ok(/会话目录|sessions folder/.test(rejectedMessage), '拒绝删除会话目录之外的文件', rejectedMessage)
+  ok(existsSync(evilPath), '拒绝删除时目录外文件仍在原位')
+  await rm(outsideDir, { recursive: true, force: true })
 
-  rejected = false
+  const txtPath = join(PROJECT, 'a.txt')
+  await writeFile(txtPath, 'not a session\n', 'utf8')
+  rejectedMessage = ''
   try {
-    await deleteSession(join(PROJECT, 'a.txt'))
-  } catch {
-    rejected = true
+    await deleteSession(txtPath)
+  } catch (error) {
+    rejectedMessage = String(error?.message ?? error)
   }
-  ok(rejected, '拒绝删除非 .jsonl 文件')
+  ok(/不是会话文件|Not a session file/.test(rejectedMessage), '拒绝删除非 .jsonl 文件', rejectedMessage)
+  ok(existsSync(txtPath), '拒绝删除时非会话文件仍在原位')
+  await rm(txtPath, { force: true })
 
   console.log('\n--- 9. 坏数据不致命 ---')
 
