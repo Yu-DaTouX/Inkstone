@@ -159,6 +159,7 @@ function managerWith(callTool, readOnly = true) {
   return {
     list: () => [{ id: 'fixture' }],
     listToolsCached: async () => [{ name: 'observe', inputSchema: { type: 'object' }, annotations: { readOnlyHint: readOnly } }],
+    pinConnection: () => undefined,
     callTool
   }
 }
