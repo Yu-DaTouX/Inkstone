@@ -1,8 +1,14 @@
+import { existsSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunnerStatus } from '../shared/ipc'
+import { pick } from '../shared/ui-lang'
 import { YAN_DIR } from './paths'
 import { atomicWriteFile } from './atomic-write'
+import { effectiveTerminalReason, readTurnTimings, timingKey } from './turn-timing-store'
+import { readSessionTail, tailTurnInterrupted } from './session-tail'
+import { isSessionFileInSessionsDir } from './sessions'
+import { getSessionLayout } from './session-layout'
 
 export const EXIT_SNAPSHOT_FILE = join(YAN_DIR, 'exit-snapshot.json')
 
@@ -123,4 +129,58 @@ export function pickRestoreRunner(snapshot: ExitSnapshot): ExitSnapshot['runners
   const interrupted = usable.filter((runner) => runner.running)
   if (interrupted.length) return interrupted.sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0]
   return [...usable].sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0]
+}
+
+export interface SessionRestore {
+  sessionFile: string
+  interrupted: boolean
+}
+
+let restoreNotice: string | undefined
+
+async function turnsWereInterrupted(sessionFile: string): Promise<boolean> {
+  const bucket = timingKey(sessionFile)
+  const records = bucket ? await readTurnTimings(YAN_DIR, bucket).catch(() => []) : []
+  const last = [...records].sort((a, b) => a.endedAt - b.endedAt).at(-1)
+  if (last && effectiveTerminalReason(last) === 'interrupted') return true
+  const tail = await readSessionTail(sessionFile).catch(() => ({}))
+  return tailTurnInterrupted(tail, last?.endedAt)
+}
+
+async function usableSessionFile(sessionFile: string | undefined): Promise<string | undefined> {
+  if (!sessionFile) return undefined
+  if (!existsSync(sessionFile)) return undefined
+  if (!(await isSessionFileInSessionsDir(sessionFile).catch(() => false))) return undefined
+  return sessionFile
+}
+
+async function restoreFromExitSnapshot(): Promise<SessionRestore | undefined> {
+  const snapshot = await readExitSnapshot().catch(() => null)
+  if (!snapshot) return undefined
+  const runner = pickRestoreRunner(snapshot)
+  await clearExitSnapshot().catch(() => undefined)
+  const sessionFile = await usableSessionFile(runner?.sessionFile)
+  if (!sessionFile) return undefined
+  return { sessionFile, interrupted: runner?.running === true || (await turnsWereInterrupted(sessionFile)) }
+}
+
+async function restoreLastSession(): Promise<SessionRestore | undefined> {
+  const layout = await getSessionLayout().catch(() => null)
+  const candidates = (layout?.entries ?? []).filter((entry) => !!entry.sessionFile && !entry.archivedAt)
+  const latest = candidates.sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))[0]
+  const sessionFile = await usableSessionFile(latest?.sessionFile)
+  if (!sessionFile) return undefined
+  return { sessionFile, interrupted: await turnsWereInterrupted(sessionFile) }
+}
+
+export async function restorePreviousSession(): Promise<SessionRestore | undefined> {
+  const restored = (await restoreFromExitSnapshot().catch(() => undefined)) ?? (await restoreLastSession().catch(() => undefined))
+  if (restored?.interrupted) restoreNotice = pick('上次退出时这一回合没有结束，已恢复该会话；已生成的内容保留在会话里。', 'The last turn did not finish before exit. The session was restored and generated content is kept.')
+  return restored
+}
+
+export function takeRestoreNotice(): string | undefined {
+  const message = restoreNotice
+  restoreNotice = undefined
+  return message
 }

@@ -189,7 +189,7 @@ export interface RunnerStatus {
   createdAt: number
   lastActiveAt: number
   isActive: boolean
-  isolation?: 'waiting' | 'ready' | 'blocked'
+  isolation?: 'waiting' | 'ready'
   isolationBranch?: string
 }
 

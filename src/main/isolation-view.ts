@@ -51,7 +51,6 @@ export interface IsolationView {
 export function createIsolationView(port: IsolationViewPort): IsolationView {
   const store = port.store ?? new AutoIsolationStore()
   const views = new Map<string, IsolationViewEntry>()
-  const blockedReason = new Map<string, string>()
   let sweepAt = 0
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -122,13 +121,7 @@ export function createIsolationView(port: IsolationViewPort): IsolationView {
       }
       const changes = await pendingIsolationChanges(record)
       const pending = changes.ok && changes.files + changes.commits > 0
-      if (!pending) {
-        blockedReason.delete(record.worktree)
-        setView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
-        continue
-      }
-      const state: IsolationViewState = blockedReason.has(record.worktree) ? 'blocked' : 'ready'
-      setView(isolatedSessionCwd(record), { state, branch: record.branch })
+      setView(isolatedSessionCwd(record), { state: pending ? 'ready' : 'waiting', branch: record.branch })
     }
     const alive = new Set(records.map((record) => isolationCwdKey(isolatedSessionCwd(record))))
     for (const key of [...views.keys()]) {

@@ -230,3 +230,70 @@ export class PiPackageActivationScheduler {
     return { operationId: tx.operationId, state: failed.state, detail }
   }
 }
+
+export interface PiPackageActivationTicker {
+  attach(scheduler: Pick<PiPackageActivationScheduler, 'tick'>): void
+  request(): void
+}
+
+export function createPiPackageActivationTicker(port: {
+  log: (text: string) => void
+  onError: (error: unknown) => void
+  delayMs?: number
+}): PiPackageActivationTicker {
+  let scheduler: Pick<PiPackageActivationScheduler, 'tick'> | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let inFlight = false
+  let again = false
+  const deferred = new Map<string, string>()
+
+  const request = (): void => {
+    if (!scheduler) return
+    if (inFlight) {
+      again = true
+      return
+    }
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      const current = scheduler
+      if (!current) return
+      if (inFlight) {
+        again = true
+        return
+      }
+      inFlight = true
+      void current.tick().then((results) => {
+        for (const result of results) {
+          if (result.state === 'deferred') {
+            const previous = deferred.get(result.operationId)
+            if (previous !== result.detail) {
+              deferred.set(result.operationId, result.detail)
+              port.log(`[能力接入] ${result.operationId} 暂缓：${result.detail}`)
+            }
+            continue
+          }
+          if (result.state === 'resumed' || result.state === 'failed') {
+            deferred.delete(result.operationId)
+            port.log(result.state === 'resumed'
+              ? `[能力接入] ${result.operationId} 已激活并续接原目标`
+              : `[能力接入] ${result.operationId} 未能激活：${result.detail}`)
+          }
+        }
+      }).catch((error) => {
+        port.onError(error)
+      }).finally(() => {
+        inFlight = false
+        if (again) {
+          again = false
+          request()
+        }
+      })
+    }, port.delayMs ?? 300)
+  }
+
+  return {
+    attach: (next) => { scheduler = next },
+    request
+  }
+}

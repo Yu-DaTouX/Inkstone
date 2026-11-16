@@ -243,7 +243,7 @@ export class RunnerRegistry {
       onChanged?: () => void
       onRefreshed?: (id: string) => void
       onRefreshFailed?: (id: string, error: string) => void
-      isolationOf?: (cwd: string) => { state: 'waiting' | 'ready' | 'blocked'; branch: string } | undefined
+      isolationOf?: (cwd: string) => { state: 'waiting' | 'ready'; branch: string } | undefined
       stopWaitMs?: number
     }
   ) {}

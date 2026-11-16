@@ -19,8 +19,7 @@ import { loadModelPricing } from './model-pricing'
 import { mcpAppProxyService } from './mcp/app-proxy-service'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
 import { applyRememberedModel } from './model-default'
-import { applyTurnTimings, effectiveTerminalReason, readTurnTimings, timingKey } from './turn-timing-store'
-import { readSessionTail, tailTurnInterrupted } from './session-tail'
+import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
@@ -54,7 +53,7 @@ import { configurePackageContext, installManagedPiPackage, listPackages } from '
 import { acquisitionServiceFor } from './capabilities/acquisition-service'
 import { PackageAuthorizationService } from './capabilities/package-authorization-service'
 import { createPiPackageActivationHostPorts } from './capabilities/pi-package-activation-host'
-import { PiPackageActivationScheduler } from './capabilities/pi-package-scheduler'
+import { PiPackageActivationScheduler, createPiPackageActivationTicker } from './capabilities/pi-package-scheduler'
 import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { allowTrust, trustStatus } from './project-trust'
 import { resolvePi } from './protocol'
@@ -100,7 +99,7 @@ import { runModelAsk } from './model-ask'
 import { decideQuotaResume } from '../shared/quota-resume'
 import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
-import { isSessionFileInSessionsDir, onSessionPurged, SESSIONS_DIR } from './sessions'
+import { onSessionPurged, SESSIONS_DIR } from './sessions'
 import { encodeSessionDirName } from './native-session-io'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
@@ -130,7 +129,7 @@ import { WorkflowService } from './workflows/service'
 import { registerWorkflowsIpc } from './ipc/workflows-ipc'
 import { createSubagentNoticeStore } from './subagent-notice-store'
 import { buildSubagentOvertimeNotice } from '../shared/subagent-notice'
-import { SubagentPushTracker } from '../shared/subagent-push'
+import { createSubagentPushBatch } from './subagent-push-batch'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
@@ -146,7 +145,7 @@ import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { sharedCwdNotice } from './cwd-sharing'
 import { createIsolationView } from './isolation-view'
-import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
+import { restorePreviousSession, takeRestoreNotice, writeExitSnapshot } from './exit-snapshot'
 import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
@@ -167,7 +166,7 @@ import { sweepCredentialFiles } from './credential-vault'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
-import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, SubagentPatch, SubagentRun, TerminalProgramStatus } from '../shared/ipc'
+import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -368,11 +367,10 @@ let mcpAppViewService: McpAppViewService | null = null
 let appViewForeground: { runnerId: string; sessionId: string; sessionFile: string; generation: number } | null = null
 let updateControl: ReturnType<typeof registerAppUpdate> | null = null
 const runnerVisibility = new RunnerVisibility()
-let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
-let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
-let piPackageActivationInFlight = false
-let piPackageActivationAgain = false
-const piPackageActivationDeferred = new Map<string, string>()
+const piPackageActivation = createPiPackageActivationTicker({
+  log: (text) => push({ ch: 'log', payload: { text } }),
+  onError: (error) => reportMainError('pi-package-activation', error)
+})
 let browser: BrowserController | null = null
 const notifySubagentFinished = createSubagentNotifier({
   store: createSubagentNoticeStore(join(YAN_DIR, 'subagent-notices.json')),
@@ -399,6 +397,10 @@ const subagentQuotaWatch = createSubagentQuotaWatch({
       await target.send(text, undefined, 'followUp')
     })().catch(() => undefined)
   }
+})
+const subagentPushBatch = createSubagentPushBatch({
+  push: (msg) => push(msg),
+  publishRemote: (msg) => remoteAccess?.publish(msg)
 })
 const subagentSearch = new Map<string, LookupCommands>()
 const subagentService: SubagentService = new SubagentService({
@@ -475,19 +477,13 @@ const subagentService: SubagentService = new SubagentService({
       approvals.forgetSubagent(run.id)
       if (run.endReason === 'interrupted') runsHost?.refreshSubagent(run)
     }
-    queueSubagentRun(run, patch)
+    subagentPushBatch.change(run, patch)
     refreshTaskbar()
     workflowService.onSubagentChange()
   },
-  onPatch: (patch) => {
-    flushSubagentRuns()
-    push({ ch: 'subagent-patch', payload: subagentPushes.patch(patch) })
-  },
+  onPatch: (patch) => subagentPushBatch.patch(patch),
   onRemove: (id) => {
-    pendingSubagentRuns.delete(id)
-    flushSubagentRuns()
-    subagentPushes.forget(id)
-    push({ ch: 'subagent-remove', payload: id })
+    subagentPushBatch.remove(id)
     refreshTaskbar()
   },
   onEvent: (_runId, evt, run) => {
@@ -1025,63 +1021,10 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
     sessionKey: runnerId
   })
   if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
-  if (msg.ch === 'state' || msg.ch === 'proc') requestPiPackageActivationTick()
+  if (msg.ch === 'state' || msg.ch === 'proc') piPackageActivation.request()
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) isolation.scheduleRefresh()
   if (msg.ch === 'state') pushRunners()
   if (msg.ch === 'ui-request' || msg.ch === 'ui-resolved') pushRunners()
-}
-
-function requestPiPackageActivationTick(): void {
-  if (!piPackageActivationScheduler) return
-  if (piPackageActivationInFlight) {
-    piPackageActivationAgain = true
-    return
-  }
-  if (piPackageActivationTimer) clearTimeout(piPackageActivationTimer)
-  piPackageActivationTimer = setTimeout(() => {
-    piPackageActivationTimer = null
-    const scheduler = piPackageActivationScheduler
-    if (!scheduler) return
-    if (piPackageActivationInFlight) {
-      piPackageActivationAgain = true
-      return
-    }
-    piPackageActivationInFlight = true
-    void scheduler.tick().then((results) => {
-      for (const result of results) {
-        if (result.state === 'deferred') {
-          const previous = piPackageActivationDeferred.get(result.operationId)
-          if (previous !== result.detail) {
-            piPackageActivationDeferred.set(result.operationId, result.detail)
-            push({
-              ch: 'log',
-              payload: { text: `[能力接入] ${result.operationId} 暂缓：${result.detail}` }
-            })
-          }
-          continue
-        }
-        if (result.state === 'resumed' || result.state === 'failed') {
-          piPackageActivationDeferred.delete(result.operationId)
-          push({
-            ch: 'log',
-            payload: {
-              text: result.state === 'resumed'
-                ? `[能力接入] ${result.operationId} 已激活并续接原目标`
-                : `[能力接入] ${result.operationId} 未能激活：${result.detail}`
-            }
-          })
-        }
-      }
-    }).catch((error) => {
-      reportMainError('pi-package-activation', error)
-    }).finally(() => {
-      piPackageActivationInFlight = false
-      if (piPackageActivationAgain) {
-        piPackageActivationAgain = false
-        requestPiPackageActivationTick()
-      }
-    })
-  }, 300)
 }
 
 function adoptSubagentParentSessions(statuses: RunnerStatus[]): void {
@@ -1915,98 +1858,14 @@ async function refreshLaunchContext(): Promise<Awaited<ReturnType<typeof getSett
   return settings
 }
 
-interface SessionRestore {
-  sessionFile: string
-  interrupted: boolean
-}
-
-let restoreNotice: string | undefined
-
-async function turnsWereInterrupted(sessionFile: string): Promise<boolean> {
-  const bucket = timingKey(sessionFile)
-  const records = bucket ? await readTurnTimings(YAN_DIR, bucket).catch(() => []) : []
-  const last = [...records].sort((a, b) => a.endedAt - b.endedAt).at(-1)
-  if (last && effectiveTerminalReason(last) === 'interrupted') return true
-  const tail = await readSessionTail(sessionFile).catch(() => ({}))
-  return tailTurnInterrupted(tail, last?.endedAt)
-}
-
-async function usableSessionFile(sessionFile: string | undefined): Promise<string | undefined> {
-  if (!sessionFile) return undefined
-  if (!existsSync(sessionFile)) return undefined
-  if (!(await isSessionFileInSessionsDir(sessionFile).catch(() => false))) return undefined
-  return sessionFile
-}
-
-async function restoreFromExitSnapshot(): Promise<SessionRestore | undefined> {
-  const snapshot = await readExitSnapshot().catch(() => null)
-  if (!snapshot) return undefined
-  const runner = pickRestoreRunner(snapshot)
-  await clearExitSnapshot().catch(() => undefined)
-  const sessionFile = await usableSessionFile(runner?.sessionFile)
-  if (!sessionFile) return undefined
-  return { sessionFile, interrupted: runner?.running === true || (await turnsWereInterrupted(sessionFile)) }
-}
-
-async function restoreLastSession(): Promise<SessionRestore | undefined> {
-  const layout = await getSessionLayout().catch(() => null)
-  const candidates = (layout?.entries ?? []).filter((entry) => !!entry.sessionFile && !entry.archivedAt)
-  const pick = candidates.sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))[0]
-  const sessionFile = await usableSessionFile(pick?.sessionFile)
-  if (!sessionFile) return undefined
-  return { sessionFile, interrupted: await turnsWereInterrupted(sessionFile) }
-}
-
-async function restorePreviousSession(): Promise<SessionRestore | undefined> {
-  const restored = (await restoreFromExitSnapshot().catch(() => undefined)) ?? (await restoreLastSession().catch(() => undefined))
-  if (restored?.interrupted) restoreNotice = pick('上次退出时这一回合没有结束，已恢复该会话；已生成的内容保留在会话里。', 'The last turn did not finish before exit. The session was restored and generated content is kept.')
-  return restored
-}
-
 async function whenAgentStarted(): Promise<void> {
   if (starting) await starting.catch(() => undefined)
 }
 
 function flushRestoreNotice(): void {
-  const message = restoreNotice
+  const message = takeRestoreNotice()
   if (!message) return
-  restoreNotice = undefined
   push({ ch: 'notify', payload: { id: 'session-restore', method: 'notify', notifyType: 'info', message } })
-}
-
-const pendingSubagentRuns = new Map<string, { run: SubagentRun; patches: SubagentPatch[] | null }>()
-const subagentPushes = new SubagentPushTracker()
-let subagentFlushTimer: ReturnType<typeof setTimeout> | null = null
-
-function flushSubagentRuns(): void {
-  if (subagentFlushTimer) {
-    clearTimeout(subagentFlushTimer)
-    subagentFlushTimer = null
-  }
-  if (pendingSubagentRuns.size === 0) return
-  const runs = [...pendingSubagentRuns.values()]
-  pendingSubagentRuns.clear()
-  for (const { run, patches } of runs) {
-    if (!patches) {
-      push({ ch: 'subagent', payload: subagentPushes.run(run) })
-      continue
-    }
-    for (const patch of patches) push({ ch: 'subagent-patch', payload: subagentPushes.patch(patch) })
-    remoteAccess?.publish({ ch: 'subagent', payload: run })
-  }
-}
-
-function queueSubagentRun(run: SubagentRun, patch?: SubagentPatch): void {
-  const previous = pendingSubagentRuns.get(run.id)
-  const patches = patch && (!previous || previous.patches) ? [...(previous?.patches ?? []), patch] : null
-  pendingSubagentRuns.set(run.id, { run, patches })
-  if (run.status !== 'starting' && run.status !== 'running') {
-    flushSubagentRuns()
-    return
-  }
-  if (subagentFlushTimer) return
-  subagentFlushTimer = setTimeout(flushSubagentRuns, 150)
-  subagentFlushTimer.unref?.()
 }
 
 async function reclaimQueuedMessages(): Promise<void> {
@@ -2127,7 +1986,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
                 }
               }
             : {}),
-          onBashSettled: () => requestPiPackageActivationTick(),
+          onBashSettled: () => piPackageActivation.request(),
           trashItem: (path: string) => shell.trashItem(path),
           previewHtml: (htmlPath: string, root: string, options?: { at?: number[] }) =>
             captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
@@ -2313,7 +2172,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     onChanged: () => {
       pushRunners()
       scheduleEpochSnapshots()
-      requestPiPackageActivationTick()
+      piPackageActivation.request()
     },
     onRefreshed: (id) => {
       push({ ch: 'log', payload: { text: `[运行实例刷新] ${id} 已空闲，按最新配置重启` } })
@@ -2340,7 +2199,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
   const acquisitions = acquisitionServiceFor(YAN_DIR)
   const packageAuthorizations = new PackageAuthorizationService(YAN_DIR)
-  piPackageActivationScheduler = new PiPackageActivationScheduler(
+  piPackageActivation.attach(new PiPackageActivationScheduler(
     acquisitions,
     createPiPackageActivationHostPorts({
       root: YAN_DIR,
@@ -2366,7 +2225,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         ...(piBin ? { piBin } : {})
       })
     })
-  )
+  ))
 
   const openTarget = await resolveSessionOpenTarget({
     ...(restore?.sessionFile ? { sessionFile: restore.sessionFile } : {}),
@@ -2390,7 +2249,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
   pushRunners()
   if (res.ok && res.id) await pushRunnerSnapshot(res.id)
-  requestPiPackageActivationTick()
+  piPackageActivation.request()
   return res.ok ? { ok: true } : { ok: false, error: res.error }
 }
 

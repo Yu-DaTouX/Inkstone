@@ -183,10 +183,10 @@ export function runRunnerTests(ok, RunnerRegistry) {
           '隔离会话在快照里带 waiting 状态与分支名',
           JSON.stringify(isoRow)
         )
-        isoState = 'blocked'
+        isoState = 'ready'
         ok(
-          regF.statuses().find((x) => x.id === f1.id)?.isolation === 'blocked',
-          '隔离状态推进后快照跟着变（blocked）'
+          regF.statuses().find((x) => x.id === f1.id)?.isolation === 'ready',
+          '隔离状态推进后快照跟着变（ready）'
         )
         const regG = new RunnerRegistry({
           limit: 2,

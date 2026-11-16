@@ -108,7 +108,7 @@ export async function runSnapshotIdentityTests(ok) {
       primaryRestoreFile: null,
       push: (msg) => frames.push(msg),
       refreshTrayMenu: noop,
-      requestPiPackageActivationTick: noop,
+      piPackageActivation: { request: noop },
       observeCompaction: async () => {},
       sessionWork: { observePush: noop },
       syncPendingIsolations: async () => {},
