@@ -759,7 +759,7 @@
   "set.imageCodexMissing": "Neither Inkstone nor the Codex CLI is signed in to ChatGPT.",
   "set.imageCodexSignIn": "Sign in",
   "set.dataSubagentPrune": "Prune old subagent records",
-  "set.dataSubagentPruneDesc": "Keeps 30 days or 1500 records; older handled ones are deleted.",
+  "set.dataSubagentPruneDesc": "Keeps 30 days or 1500 records; older handled ones are deleted. Also prunes saved outputs: folders saved over 30 days ago, or beyond a 5GB total, are removed oldest first (only the saved-outputs folders).",
   "status.compact": "Compact now",
   "status.compacting": "Compacting…",
   "tb.hide": "Hide to tray",

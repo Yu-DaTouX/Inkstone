@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, stat, truncate, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, truncate, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
@@ -103,6 +103,27 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
   const blockMove = async (archive, id) => mkdir(join(archive, `${id}-outputs`, '.tmp', 'run.bin', 'blocker'), { recursive: true })
   const unblockMove = async (archive, id) => rm(join(archive, `${id}-outputs`, '.tmp', 'run.bin'), { recursive: true, force: true })
+  const gateSave = (ctrl) => {
+    const original = ctrl.history.save.bind(ctrl.history)
+    let release = () => {}
+    let hit = () => {}
+    const gate = new Promise((resolve) => { release = resolve })
+    const reached = new Promise((resolve) => { hit = resolve })
+    let held = false
+    ctrl.history.save = async (run, ...rest) => {
+      if (!held && run.savedOutputsPath) {
+        held = true
+        hit()
+        await gate
+      }
+      return original(run, ...rest)
+    }
+    return { reached, release: () => { ctrl.history.save = original; release() } }
+  }
+  const ageOutputs = async (tree, days) => {
+    const at = new Date(Date.now() - days * DAY)
+    for (const file of ['run.bin', 'shots/shot.png']) await utimes(join(tree, '.tmp', file), at, at)
+  }
   const prepared = async (name, task, over) => {
     const repo = await newRepo(base, `repo-${name}`)
     const archive = join(base, `archive-${name}`)
@@ -176,6 +197,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       const dropped = await reopened.discard(id, { dropOutputs: true })
       ok(dropped.ok && /早已合并/.test(dropped.warning ?? '') && !existsSync(tree), '合并后又放弃并确认丢弃：只清理工作树', JSON.stringify(dropped))
       ok(reopened.get(id).review === 'merged' && /按确认丢弃/.test(reopened.get(id).error ?? ''), '状态仍是已合并，记录写明丢弃了什么', JSON.stringify({ review: reopened.get(id).review, error: reopened.get(id).error }))
+      ok(!/工作树已保留，没有删除|没能搬到另存目录|没能整体搬到另存目录/.test(reopened.get(id).error ?? ''), '确认丢弃并清理后，记录里不再写「工作树已保留」', reopened.get(id).error)
       const noop = await reopened.discard(id)
       ok(noop.ok && reopened.get(id).review === 'merged', '已合并、工作树已清理时再放弃不改状态', JSON.stringify(noop))
     }
@@ -188,6 +210,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(!discarded.ok && /--drop-outputs/.test(discarded.error ?? '') && existsSync(join(tree, '.tmp', 'run.bin')) && ctrl.get(id).review === 'pending', '放弃时搬不走：工作树保留、改动不放弃', discarded.error)
       const dropped = await ctrl.discard(id, { dropOutputs: true })
       ok(dropped.ok && !existsSync(tree) && ctrl.get(id).review === 'discarded' && /按确认丢弃/.test(ctrl.get(id).error ?? ''), '确认丢弃后照常放弃并清理', JSON.stringify({ dropped, error: ctrl.get(id).error }))
+      ok(!/工作树已保留，没有删除|没能搬到另存目录|没能整体搬到另存目录/.test(ctrl.get(id).error ?? ''), '同一次运行里确认丢弃后，保留说明也去掉', ctrl.get(id).error)
     }
 
     {
@@ -208,12 +231,69 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await reopened.loadHistory()
       await sleep(100)
       ok((await reopened.merge(id)).ok && existsSync(tree) && reopened.get(id).review === 'merged', '合并成功但工作树保留')
+      const keptPrune = await reopened.pruneOutputs({ now: Date.now() + 60 * DAY })
+      ok(!keptPrune.includes(id) && existsSync(join(archive, `${id}-outputs`, '.tmp', 'shots', 'shot.png')), '已合并但工作树还在的记录：另存目录不被清理', JSON.stringify(keptPrune))
       const later = Date.now() + 8 * DAY
       ok(!(await reopened.pruneIdleWorktrees({ now: later })).includes(id) && existsSync(tree), '闲置清理时仍搬不走：继续保留')
       await unblockMove(archive, id)
       const retired = await reopened.pruneIdleWorktrees({ now: later })
       ok(retired.includes(id) && !existsSync(tree) && reopened.get(id).review === 'merged', '闲置清理也处理已合并且工作树还在的记录，状态仍是已合并', JSON.stringify(retired))
+      ok(!/工作树已保留，没有删除|没能搬到另存目录|没能整体搬到另存目录/.test(reopened.get(id).error ?? '') && /整体搬到另存目录/.test(reopened.get(id).error ?? ''), '闲置清理成功后去掉保留说明，改记搬走了哪些', reopened.get(id).error)
       ok((await stat(join(archive, `${id}-outputs`, '.tmp', 'run.bin'))).size === 201 * 1024 * 1024, '清理前把超限产物搬走')
+    }
+
+    {
+      const { repo, archive, first, ctrl, id, tree } = await prepared('race-merge', '合并与另存清理交错')
+      ok(await finish(ctrl, first, id), '结束待合并')
+      await ctrl.stopAll()
+      await ageOutputs(tree, 40)
+      const reopened = make(repo, archive, rpcFactory())
+      await reopened.loadHistory()
+      await sleep(100)
+      const outputs = join(archive, `${id}-outputs`)
+      const gate = gateSave(reopened)
+      const merging = reopened.merge(id)
+      await gate.reached
+      const during = await reopened.pruneOutputs({ now: Date.now() + 60 * DAY })
+      ok(!existsSync(tree) && !during.includes(id) && existsSync(join(outputs, '.tmp', 'run.bin')), '合并进行中（工作树已清、记录未落盘）：另存清理不删这个另存目录', JSON.stringify(during))
+      gate.release()
+      const merged = await merging
+      ok(merged.ok && reopened.get(id).review === 'merged', '合并照常完成', JSON.stringify(merged))
+      const [again] = await Promise.all([reopened.pruneOutputs(), reopened.merge(id)])
+      await sleep(200)
+      ok(!again.includes(id) && (await stat(join(outputs, '.tmp', 'run.bin'))).size === 201 * 1024 * 1024 && existsSync(join(outputs, '.tmp', 'shots', 'shot.png')), '刚搬入的产物文件 mtime 是 40 天前，按另存时间计龄不删', JSON.stringify(again))
+      const in20 = await reopened.pruneOutputs({ now: Date.now() + 20 * DAY })
+      ok(!in20.includes(id) && existsSync(join(outputs, '.tmp', 'run.bin')), '另存后 30 天内不删')
+      const in31 = await reopened.pruneOutputs({ now: Date.now() + 31 * DAY })
+      ok(in31.includes(id) && !existsSync(outputs) && existsSync(join(archive, `${id}.json`)), '另存满 30 天、不再使用时才删，记录还在', JSON.stringify(in31))
+    }
+
+    {
+      const { repo, archive, first, ctrl, id, tree } = await prepared('race-idle', '闲置清理与另存清理交错')
+      ok(await finish(ctrl, first, id), '结束待合并')
+      await ctrl.stopAll()
+      await ageOutputs(tree, 40)
+      const reopened = make(repo, archive, rpcFactory())
+      await reopened.loadHistory()
+      await sleep(100)
+      const outputs = join(archive, `${id}-outputs`)
+      const gate = gateSave(reopened)
+      const retiring = reopened.pruneIdleWorktrees({ now: Date.now() + 8 * DAY })
+      await gate.reached
+      const during = await reopened.pruneOutputs({ now: Date.now() + 60 * DAY })
+      ok(!existsSync(tree) && !during.includes(id) && existsSync(join(outputs, '.tmp', 'run.bin')), '闲置清理进行中（retiring）：另存清理不删这个另存目录', JSON.stringify(during))
+      gate.release()
+      ok((await retiring).includes(id), '闲置清理照常完成')
+      await sleep(200)
+      const now = await reopened.pruneOutputs()
+      ok(!now.includes(id) && (await stat(join(outputs, '.tmp', 'run.bin'))).size === 201 * 1024 * 1024, '闲置清理搬入的旧 mtime 产物不会被随后的另存清理当场删掉', JSON.stringify(now))
+      reopened.reviewing.add(id)
+      const reviewingPrune = await reopened.pruneOutputs({ now: Date.now() + 60 * DAY })
+      reopened.reviewing.delete(id)
+      reopened.retiring.add(id)
+      const retiringPrune = await reopened.pruneOutputs({ now: Date.now() + 60 * DAY })
+      reopened.retiring.delete(id)
+      ok(!reviewingPrune.includes(id) && !retiringPrune.includes(id) && existsSync(outputs), 'reviewing、retiring 中的 id 都受保护', JSON.stringify({ reviewingPrune, retiringPrune }))
     }
 
     {
@@ -243,6 +323,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
       const secondSave = await preserveIgnoredOutputs(workspace, archive, id)
       ok(firstSave.ok && secondSave.ok && (await stat(copied)).mtimeMs === before, '重试另存时没有新产物就不再拷贝')
       ok(existsSync(join(tree, '.tmp', 'run.bin')) && secondSave.skipped?.length === 1, '不带搬移选项时（退出备份）不搬超限产物')
+      await writeFile(join(tree, '.tmp', 'x1.log'), 'x'.repeat(20))
+      await writeFile(join(tree, '.tmp', 'x2.log'), 'y'.repeat(30))
+      const halfArchive = join(base, 'archive-half')
+      await mkdir(join(halfArchive, `${id}-outputs`, '.tmp', 'run.bin', 'blocker'), { recursive: true })
+      const half = await preserveIgnoredOutputs(workspace, halfArchive, id, 3, { moveOverflow: true })
+      ok(half.ok && half.skipped?.length === 1 && !half.moved, '搬到一半失败：整体算没搬走', JSON.stringify(half))
+      ok(existsSync(join(tree, '.tmp', 'x1.log')) && existsSync(join(tree, '.tmp', 'x2.log')) && existsSync(join(tree, '.tmp', 'run.bin')) && existsSync(join(tree, '.tmp', 'shots', 'shot.png')), '已搬走的文件搬回工作树，工作树完整，续派时找得到')
+      ok(!existsSync(join(halfArchive, `${id}-outputs`, '.tmp', 'x1.log')) && !existsSync(join(halfArchive, `${id}-outputs`, '.tmp', 'x2.log')), '另存目录里不留搬了一半的文件')
     }
   } finally {
     for (const ctrl of controllers) await ctrl.stopAll().catch(() => {})

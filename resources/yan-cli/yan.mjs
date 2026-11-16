@@ -313,7 +313,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                                放弃 worktree 子代理尚未合并的改动并清理工作树；已合并的只清理保留下来的工作树
                                merge / discard 删工作树前，把里面被 .gitignore 忽略的产物（报告、截图等）按原相对路径另存，
                                位置见摘要 savedOutputs（通常是 <数据目录>/subagents/<ID>-outputs）；超出 200MB 的部分整体搬过去（savedOutputsMoved），
-                               搬不走时（多半跨盘）工作树保留、列在 savedOutputsSkipped；确认不要这些产物时加 --drop-outputs
+                               搬不走时（多半跨盘）工作树保留、列在 savedOutputsSkipped；先把这些路径和大小告诉用户，
+                               用户明确同意丢弃这些产物后才加 --drop-outputs（用户只说「放弃改动」不算）
+                               另存目录从最近一次另存起保留 30 天、合计上限 5GB，超出按最旧先删（只删另存目录）；回执里 savedOutputsSize 是这次的占用
   stop   --id <子代理ID>        停止一个仍在运行的子代理
 
 说明：

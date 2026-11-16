@@ -759,7 +759,7 @@
   "set.imageCodexMissing": "砚和 Codex CLI 都还没有登录 ChatGPT。",
   "set.imageCodexSignIn": "去登录",
   "set.dataSubagentPrune": "定期清理旧子 Agent 记录",
-  "set.dataSubagentPruneDesc": "保留最近 30 天或 1500 条，更早的已处理记录会删掉。",
+  "set.dataSubagentPruneDesc": "保留最近 30 天或 1500 条，更早的已处理记录会删掉；也清理另存产物：另存超过 30 天或合计超过 5GB 时按最旧先删，只删另存目录。",
   "status.compact": "立即压缩",
   "status.compacting": "压缩中…",
   "tb.hide": "隐藏到托盘",

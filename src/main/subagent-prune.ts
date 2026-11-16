@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
-import { readFile, readdir, rm, stat } from 'node:fs/promises'
+import { lstat, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { normalizeSubagentId } from '../shared/subagent-id'
 import { cleanupWorkspace } from './subagent-isolation'
+import { savedOutputsAt } from './subagent-outputs-stamp'
 import { subagentWorktreeRoot } from './subagent-worktree-root'
 import { planSubagentPrune, type PruneItem } from './subagent-resume'
 
@@ -98,4 +99,94 @@ export async function pruneSubagentArchive(dir: string, options: SubagentPruneOp
     ].map((task) => task.catch(() => undefined)))
   }
   return doomed
+}
+
+const OUTPUTS_SUFFIX = '-outputs'
+const OUTPUTS_FRESH_MS = DAY_MS
+
+export interface OutputsPruneOptions {
+  now?: number
+  keepDays?: number
+  maxBytes?: number
+  keepIds?: ReadonlySet<string>
+  protect?: (id: string) => boolean
+}
+
+export function subagentOutputsPolicy(): { keepDays: number; maxBytes: number } {
+  return { keepDays: envNumber('YAN_SUBAGENT_OUTPUTS_KEEP_DAYS', 30), maxBytes: envNumber('YAN_SUBAGENT_OUTPUTS_MAX_MB', 5120) * 1024 * 1024 }
+}
+
+export async function outputsTreeBytes(root: string): Promise<number> {
+  let bytes = 0
+  const pending = [root]
+  while (pending.length) {
+    const dir = pending.pop()!
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        pending.push(path)
+        continue
+      }
+      const info = await stat(path).catch(() => undefined)
+      if (info) bytes += info.size
+    }
+  }
+  return bytes
+}
+
+async function outputsDirs(dir: string): Promise<{ id: string; path: string; bytes: number; savedAt: number }[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  const found: { id: string; path: string; bytes: number; savedAt: number }[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.endsWith(OUTPUTS_SUFFIX)) continue
+    const id = normalizeSubagentId(entry.name.slice(0, -OUTPUTS_SUFFIX.length))
+    if (!id) continue
+    const path = join(dir, entry.name)
+    const info = await lstat(path).catch(() => undefined)
+    if (!info?.isDirectory() || info.isSymbolicLink()) continue
+    found.push({ id, path, bytes: await outputsTreeBytes(path), savedAt: await savedOutputsAt(path, info.mtimeMs) })
+  }
+  return found
+}
+
+export async function subagentOutputsTotal(dir: string): Promise<number> {
+  return (await outputsDirs(dir)).reduce((sum, item) => sum + item.bytes, 0)
+}
+
+export async function pruneSubagentOutputs(dir: string, options: OutputsPruneOptions = {}): Promise<{ removed: string[]; bytes: number; inUse: number }> {
+  const now = options.now ?? Date.now()
+  const policy = subagentOutputsPolicy()
+  const keepDays = options.keepDays ?? policy.keepDays
+  const maxBytes = options.maxBytes ?? policy.maxBytes
+  const guarded = (id: string) => !!options.keepIds?.has(id) || !!options.protect?.(id)
+  const found = await outputsDirs(dir)
+  let inUse = 0
+  const dirs = found.filter((item) => {
+    if (!guarded(item.id)) return true
+    inUse += item.bytes
+    return false
+  }).sort((a, b) => a.savedAt - b.savedAt)
+  let total = dirs.reduce((sum, item) => sum + item.bytes, 0)
+  const cutoff = now - keepDays * DAY_MS
+  const removed: string[] = []
+  for (const item of dirs) {
+    const info = await lstat(item.path).catch(() => undefined)
+    if (!info?.isDirectory() || info.isSymbolicLink()) continue
+    const savedAt = await savedOutputsAt(item.path, info.mtimeMs)
+    if (now - savedAt < OUTPUTS_FRESH_MS) continue
+    if (savedAt >= cutoff && total <= maxBytes) continue
+    if (guarded(item.id)) {
+      total -= item.bytes
+      inUse += item.bytes
+      continue
+    }
+    const gone = await rm(item.path, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }).then(() => true, () => false)
+    if (!gone) continue
+    total -= item.bytes
+    removed.push(item.id)
+  }
+  if (total + inUse > maxBytes) console.warn(`[subagent] saved outputs still exceed the ${maxBytes} byte limit after pruning: ${inUse} bytes are in use and ${total} bytes are other folders kept by the retention rules; stopped without removing in-use folders`)
+  return { removed, bytes: total, inUse }
 }

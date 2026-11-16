@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { tmpdir } from 'node:os'
 import { sanitizedGitEnv } from './git-run-policy'
 import { subagentWorktreeRoot } from './subagent-worktree-root'
+import { stampSavedOutputs } from './subagent-outputs-stamp'
 
 const execFileAsync = promisify(execFile)
 const GIT_MAX_BUFFER = 24 * 1024 * 1024
@@ -505,9 +506,9 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
       await mkdir(dirname(to), { recursive: true })
       await copyFile(from, to)
     }
-    const movedFiles: OutputFile[] = []
+    let movedFiles: OutputFile[] = []
     let unmoved = dropped
-    if (options.moveOverflow && dropped.length) {
+    if (options.moveOverflow && dropped.length && !scan.overflow.size) {
       unmoved = []
       let failed = false
       for (const file of dropped) {
@@ -531,6 +532,19 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
           unmoved.push(file)
         }
       }
+      if (failed) {
+        const stranded: OutputFile[] = []
+        for (const file of [...movedFiles].reverse()) {
+          try {
+            await mkdir(dirname(join(tree, file.rel)), { recursive: true })
+            await rename(join(target, file.rel), join(tree, file.rel))
+            unmoved.push(file)
+          } catch {
+            stranded.push(file)
+          }
+        }
+        movedFiles = stranded
+      }
     }
     const keptTops = new Set(kept.map((file) => file.top))
     const movedTops = new Set(movedFiles.map((file) => file.top))
@@ -550,6 +564,7 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
       ...(scan.withheld.length ? { withheld: scan.withheld.sort() } : {})
     }
     if (!files.length && !moved.length) return { ok: true, files, ...extra }
+    await stampSavedOutputs(target)
     return { ok: true, path: target, files, ...extra }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }

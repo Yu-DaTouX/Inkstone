@@ -1,5 +1,7 @@
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { findGitRoot, hasGitCommit } from './subagent-isolation'
+import { findGitRoot, hasGitCommit, outputBytesText } from './subagent-isolation'
+import { outputsTreeBytes, subagentOutputsPolicy } from './subagent-prune'
 import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentQuotaWatch } from './subagents'
 import type { ModelReviewReceiptInput } from './approval-log'
 import { dangerGuardPrefs, getSettings } from './settings'
@@ -65,12 +67,21 @@ export function subagentOutputsSummary(run: Pick<SubagentRun, 'savedOutputsPath'
   const path = outputs?.path ?? run?.savedOutputsPath
   const skipped = {
     ...(outputs?.moved?.length ? { savedOutputsMoved: listPaths(outputs.moved), savedOutputsMovedNote: pick('这些路径下超出 200MB 另存上限的文件已整体搬到 savedOutputs（没有拷贝）', 'Files under these paths beyond the 200MB save limit were moved (not copied) to savedOutputs') } : {}),
-    ...(outputs?.skipped?.length ? { savedOutputsSkipped: listPaths(outputs.skipped), savedOutputsSkippedNote: dropped ? pick('这些路径下没另存的文件已按 --drop-outputs 确认随工作树删除', 'Unsaved files under these paths were deleted with the worktree as confirmed by --drop-outputs') : pick('这些路径下的文件超出另存上限又没能搬走，工作树已保留；只有 discard --drop-outputs 确认后才会随工作树删除', 'Files under these paths exceeded the save limit and could not be moved; the worktree was kept. They are deleted with the worktree only after discard --drop-outputs') } : {})
+    ...(outputs?.skipped?.length ? { savedOutputsSkipped: listPaths(outputs.skipped), savedOutputsSkippedNote: dropped ? pick('这些路径下没另存的文件已按 --drop-outputs 确认随工作树删除', 'Unsaved files under these paths were deleted with the worktree as confirmed by --drop-outputs') : pick('这些路径下的文件超出另存上限又没能搬走，工作树已保留；先把这些路径和大小告诉用户，用户明确同意丢弃后才用 discard --drop-outputs', 'Files under these paths exceeded the save limit and could not be moved; the worktree was kept. Tell the user these paths and sizes first; use discard --drop-outputs only after the user explicitly agrees to drop them') } : {})
   }
-  if (path) return { savedOutputs: path, ...(outputs?.files.length ? { savedOutputsFiles: listPaths(outputs.files) } : {}), ...skipped }
+  if (path) return { savedOutputs: path, ...(outputs?.files.length ? { savedOutputsFiles: listPaths(outputs.files) } : {}), ...skipped, ...(existsSync(path) ? {} : { savedOutputsPruned: pick('另存目录已按保留期或总量上限清理，记录和补丁仍在', 'The saved-outputs folder was removed by the retention period or total size limit; the record and patch are kept') }) }
   if (run?.pendingOutputs) return { ignoredOutputs: listPaths(run.pendingOutputs.files), ignoredOutputsSaveTo: run.pendingOutputs.path, ignoredOutputsNote: pick('合并或放弃时按原相对路径另存到 ignoredOutputsSaveTo', 'Saved with their relative paths to ignoredOutputsSaveTo on merge or discard') }
   if (outputs) return { savedOutputs: pick('无：工作树里没有需要另存的被忽略产物', 'none: the worktree had no ignored outputs to save'), ...skipped }
   return {}
+}
+
+export async function savedOutputsUsage(path: string | undefined): Promise<Record<string, unknown>> {
+  if (!path || !existsSync(path)) return {}
+  const policy = subagentOutputsPolicy()
+  return {
+    savedOutputsSize: outputBytesText(await outputsTreeBytes(path)),
+    savedOutputsRetention: pick(`另存目录从最近一次另存起保留 ${policy.keepDays} 天，所有子代理合计上限 ${outputBytesText(policy.maxBytes)}，超出按最旧先删；只删另存目录，不动记录与补丁`, `Saved-outputs folders are kept ${policy.keepDays} days from their last save, with a ${outputBytesText(policy.maxBytes)} total limit across subagents, oldest removed first; only the saved-outputs folders are removed, not records or patches`)
+  }
 }
 
 function startSummary(run: SubagentRun, note?: string): { data: SubagentRun; summary: Record<string, unknown> } {
@@ -412,7 +423,7 @@ export class SubagentService {
         )
       }
       const run = ctrl.get(id)
-      const outputs = subagentOutputsSummary(run, result.outputs, !merging && dropOutputs)
+      const outputs = { ...subagentOutputsSummary(run, result.outputs, !merging && dropOutputs), ...(await savedOutputsUsage(run?.savedOutputsPath)) }
       return {
         data: run ? { ...run, ...(result.outputs ? { savedOutputs: result.outputs } : {}) } : run,
         summary: { kind: 'subagent', action: merging ? 'merge' : 'discard', id, review: run?.review, ...(result.warning ? { warning: result.warning } : {}), ...outputs }

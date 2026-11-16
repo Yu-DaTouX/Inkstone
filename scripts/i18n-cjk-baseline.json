@@ -134,7 +134,7 @@
   "src/main/subagent-notice-store.ts": 1,
   "src/main/subagent-notify.ts": 2,
   "src/main/subagent-service.ts": 24,
-  "src/main/subagents.ts": 18,
+  "src/main/subagents.ts": 19,
   "src/main/subagents/model-label.ts": 3,
   "src/main/subagents/registered-model.ts": 6,
   "src/main/task-plan-store.ts": 5,
