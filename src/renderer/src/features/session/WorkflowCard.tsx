@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useT, type MessageKey } from '../../i18n'
-import { useStore } from '../../state/store'
+import { useStore, type Store } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
 import { useWorkflows, workflowsForTurn } from '../../state/workflows'
 import type { TurnSubagentScope } from '../../state/subagent-view'
@@ -58,15 +58,19 @@ function workflowAnchors(messages: Parameters<typeof subagentAnchorIds>[0], runs
   return anchors
 }
 
+const NO_IDENTITY: { sessionId: string | null; messages: Store['messages'] } = { sessionId: null, messages: [] }
+
 export function WorkflowCards({ turn, scope }: { turn: AssistantTurn; scope?: TurnSubagentScope }): JSX.Element | null {
   useEffect(() => {
     void useWorkflows.getState().load()
   }, [])
+  const allRuns = useWorkflows((s) => s.runs)
+  const anyRuns = Object.keys(allRuns).length > 0
   const identity = useStore(useShallow((s) => {
+    if (!anyRuns) return NO_IDENTITY
     const view = sessionViewIdentity({ peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath, session: s.session })
     return { sessionId: view.sessionId, messages: s.messages }
   }))
-  const allRuns = useWorkflows((s) => s.runs)
   const runs = useMemo(() => {
     if (!Object.keys(allRuns).length) return NO_RUNS
     const anchors = workflowAnchors(identity.messages, allRuns)

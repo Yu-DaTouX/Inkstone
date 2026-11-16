@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useContext, useId, useLayoutEffect, useMemo, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
+import { Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -21,6 +21,7 @@ import type { ApprovalReceipt } from '../../../../shared/approval'
 import { TurnApprovalLine } from './ApprovalReceipt'
 import { isWebTool } from './tool-run-model'
 import { ToolImagePreviews, ToolImagePreviewScope } from './ToolImagePreviews'
+import { sameProcessGroupProps } from './process-group-props'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const NO_RECEIPTS: readonly ApprovalReceipt[] = []
@@ -153,6 +154,22 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
+function useSkipArmed(live: boolean): boolean {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!live || armed) return undefined
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setArmed(true))
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [live, armed])
+  return armed
+}
+
 export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, compactionAfter = null }: {
   process: TurnSegment[]
   live: boolean
@@ -176,9 +193,10 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const lastGroup = items.findLastIndex((item) => item.kind === 'group')
   const lastNotes = live ? items.findLastIndex((item) => item.kind === 'notes') : -1
   const cutAt = compactionAfter ? items.findLastIndex((item) => item.kind === 'group' && !!splitAtCompaction(item.segments, compactionAfter)) : -1
+  const armed = useSkipArmed(live)
 
   return (
-    <div className="v3-spread" data-live={live || undefined} data-testid="v3-spread">
+    <div className="v3-spread" data-live={live || undefined} data-skip={armed || undefined} data-testid="v3-spread">
       {overflow ? (
         <Button size="sm" variant="ghost" className="v3-process-more" aria-expanded={showAll === true} onPress={() => setShowAll(showAll !== true)} data-testid="v3-spread-more">
           {showAll === true ? t('proc.showRecent') : tt('moreItems', { n: overflow })}
@@ -218,28 +236,6 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
     </div>
   )
 }
-
-function sameValue(a: unknown, b: unknown, depth: number): boolean {
-  if (Object.is(a, b)) return true
-  if (depth <= 0 || !a || !b || typeof a !== 'object' || typeof b !== 'object') return false
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
-    return a.every((item, index) => sameValue(item, b[index], depth - 1))
-  }
-  if (a instanceof Set || b instanceof Set) {
-    if (!(a instanceof Set) || !(b instanceof Set) || a.size !== b.size) return false
-    for (const item of a) if (!b.has(item)) return false
-    return true
-  }
-  if (Object.getPrototypeOf(a) !== Object.prototype || Object.getPrototypeOf(b) !== Object.prototype) return false
-  const left = a as Record<string, unknown>
-  const right = b as Record<string, unknown>
-  const keys = Object.keys(left)
-  if (keys.length !== Object.keys(right).length) return false
-  return keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameValue(left[key], right[key], depth - 1))
-}
-
-const PROCESS_PROPS_DEPTH = 6
 
 function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, showFailures, liveStartedAt, view, approvalIds, glowId, compactionAfter }: {
   segments: TurnSegment[]
@@ -336,7 +332,7 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
   )
 }
 
-const MemoProcessGroup = memo(ProcessGroup, (previous, next) => sameValue(previous, next, PROCESS_PROPS_DEPTH))
+const MemoProcessGroup = memo(ProcessGroup, sameProcessGroupProps)
 
 type SessionText = ReturnType<typeof useSessionText>
 type TextKey = Parameters<SessionText>[0]

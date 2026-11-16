@@ -64,6 +64,20 @@ const RAF_WRAP = `(() => {
 
 const ALIGN = "(() => {\n  if (window.__align) return\n  const native = window.requestAnimationFrame.bind(window)\n  const nativeCancel = window.cancelAnimationFrame.bind(window)\n  const PERIOD = 1000 / 60\n  const cfg = window.__align = { on: false, drive: true, raf: true, ticks: 0 }\n  const queue = new Map()\n  const driven = new Map()\n  let seq = 0\n  let timer = 0\n  let raf = 0\n  let last = 0\n  let scanAt = 0\n  const scan = (now) => {\n    scanAt = now\n    for (const a of document.getAnimations()) {\n      if (driven.has(a) || a.playState !== 'running') continue\n      const timing = a.effect?.getComputedTiming?.()\n      if (!timing) continue\n      driven.set(a, { base: a.currentTime ?? 0, t0: now, end: timing.endTime, rate: a.playbackRate || 1 })\n      a.pause()\n    }\n  }\n  const drive = (now) => {\n    for (const [a, d] of driven) {\n      if (a.playState === 'idle' || !a.effect?.target?.isConnected) { driven.delete(a); continue }\n      const t = d.base + (now - d.t0) * d.rate\n      if (t >= d.end) { driven.delete(a); try { a.finish() } catch {} continue }\n      a.currentTime = t\n    }\n  }\n  const pump = () => {\n    if (timer || raf) return\n    const wait = Math.max(0, last + PERIOD - performance.now() - 3)\n    timer = setTimeout(() => { timer = 0; raf = native(frame) }, wait)\n  }\n  const frame = (t) => {\n    raf = 0\n    last = t\n    cfg.ticks++\n    if (cfg.drive) {\n      if (t - scanAt > 400) scan(t)\n      drive(t)\n    }\n    const cbs = [...queue.values()]\n    queue.clear()\n    for (const cb of cbs) { try { cb(t) } catch (e) { console.error(e) } }\n    if (cfg.on && (queue.size || driven.size || cfg.drive)) pump()\n  }\n  window.requestAnimationFrame = (cb) => {\n    if (!cfg.on || !cfg.raf) return native(cb)\n    const id = -(++seq)\n    queue.set(id, cb)\n    pump()\n    return id\n  }\n  window.cancelAnimationFrame = (id) => { if (id < 0) queue.delete(id); else nativeCancel(id) }\n  cfg.start = () => { cfg.on = true; pump() }\n  cfg.stop = () => {\n    cfg.on = false\n    for (const [a] of driven) { try { if (a.playState === 'paused') a.play() } catch {} }\n    driven.clear()\n    const cbs = [...queue.values()]\n    queue.clear()\n    for (const cb of cbs) native(cb)\n  }\n})()\n"
 
+function mainThreadMs(events, ms) {
+  const outer = (name) => {
+    let end = -1
+    let sum = 0
+    for (const e of events.filter((x) => x.name === name).sort((a, b) => a.ts - b.ts)) {
+      if (e.ts < end) continue
+      end = e.ts + e.dur
+      sum += e.dur
+    }
+    return Math.round(sum / ms)
+  }
+  return { paintMsPerSec: outer('Paint'), layoutMsPerSec: outer('Layout'), styleMsPerSec: outer('UpdateLayoutTree'), layerizeMsPerSec: outer('Layerize'), prePaintMsPerSec: outer('PrePaint'), taskMsPerSec: outer('RunTask') }
+}
+
 async function frameRates(cdp, sleep, ms) {
   const from = cdp.events.length
   await cdp.call('Tracing.start', { categories: 'devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.frame', transferMode: 'ReturnAsStream' })
@@ -95,7 +109,8 @@ async function frameRates(cdp, sleep, ms) {
     rafPerSec: per((e) => onMain(e) && e.name === 'FireAnimationFrame' && (e.ph === 'X' || e.ph === 'B')),
     paintPerSec: per((e) => onMain(e) && e.name === 'PrePaint' && (e.ph === 'X' || e.ph === 'B')),
     drawPerSec: per((e) => onComp(e) && e.name === 'DrawFrame'),
-    longTasks: events.filter((e) => onMain(e) && e.name === 'RunTask' && e.ph === 'X' && e.dur > 50000).length
+    longTasks: events.filter((e) => onMain(e) && e.name === 'RunTask' && e.ph === 'X' && e.dur > 50000).length,
+    ...mainThreadMs(events.filter((e) => onMain(e) && e.ph === 'X' && typeof e.dur === 'number'), ms)
   }
 }
 
@@ -180,6 +195,28 @@ const CONSISTENCY = `(async () => {
   return out
 })()`
 
+async function mainProfiler() {
+  const port = process.env.YAN_DEBUG_MAIN_INSPECT
+  if (!port) return null
+  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
+  const ws = new WebSocket(targets[0].webSocketDebuggerUrl)
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
+  let id = 0
+  const pending = new Map()
+  ws.onmessage = ({ data }) => {
+    const reply = JSON.parse(data)
+    if (reply.id) { pending.get(reply.id)?.(reply); pending.delete(reply.id) }
+  }
+  return {
+    call: (method, params = {}) => new Promise((resolve) => {
+      const request = ++id
+      pending.set(request, resolve)
+      ws.send(JSON.stringify({ id: request, method, params }))
+    }),
+    close: () => ws.close()
+  }
+}
+
 export default async function run({ cdp, box, runDir, waitFor, check, report, sleep, shot, log, autoApprove, newSession, state, running }) {
   const ev = (expr) => cdp.evaluate(expr)
   const count = Math.max(1, Math.min(24, Number(process.env.YAN_SWARM_COUNT ?? 20)))
@@ -199,6 +236,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   await ev(PUSH_COUNTER)
   await autoApprove()
   await cdp.call('Performance.enable')
+  const mainCdp = await mainProfiler().catch((error) => { log('main inspector', String(error)); return null })
   const metrics = async () => Object.fromEntries((await cdp.call('Performance.getMetrics')).result.metrics.map((m) => [m.name, m.value]))
 
   const phase = async (name, action, { renders = false, profile = false } = {}) => {
@@ -206,6 +244,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     const before = await metrics()
     if (renders) await ev(RENDER_START)
     if (profile) await startProfile(cdp)
+    if (profile && mainCdp) await startProfile(mainCdp)
     const started = await ev(SET_PHASE(name))
     const out = (await action()) ?? {}
     const ended = await ev(SET_PHASE('between'))
@@ -214,6 +253,11 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
       const { totalMs, top, longBusy, profile: raw } = await stopProfile(cdp, runDir, 30)
       writeFileSync(join(runDir, `${name}.cpuprofile`), JSON.stringify(raw))
       out.profile = { totalMs, top, longBusy }
+      if (mainCdp) {
+        const mainRun = await stopProfile(mainCdp, runDir, 30)
+        writeFileSync(join(runDir, `${name}.main.cpuprofile`), JSON.stringify(mainRun.profile))
+        out.mainProfile = { totalMs: mainRun.totalMs, top: mainRun.top, longBusy: mainRun.longBusy }
+      }
     }
     const after = await metrics()
     const procAfter = sampleProcessTree(marker)
@@ -245,6 +289,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     report.timings[name] = result
     log(name, JSON.stringify({ ms: result.ms, busy: result.mainThreadBusyPct, frames: result.frames, longTasks: result.longTasks, longTaskMax: result.longTaskMax, store: result.storeWritesPerSec, pushes: result.pushesPerSec, cpu: result.processCpuPercent, top: Object.entries(perSec).slice(0, 4) }))
     if (out.profile) log(name + ' profile', JSON.stringify(out.profile.top.slice(0, 15)))
+    if (out.mainProfile) log(name + ' main profile', JSON.stringify(out.mainProfile.top.slice(0, 15)))
     if (take) log(name + ' renders', JSON.stringify(take.renders))
     return result
   }
@@ -313,7 +358,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   if (ab.length) {
     await ev('window.__pa.resumeRaf()')
     const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null }
-    const keys = ['renderer', 'gpu', 'busy', 'store', 'commitPerSec', 'rafPerSec', 'drawPerSec', 'paintPerSec', 'longTasks']
+    const keys = ['renderer', 'gpu', 'busy', 'store', 'commitPerSec', 'rafPerSec', 'drawPerSec', 'paintPerSec', 'longTasks', 'paintMsPerSec', 'layoutMsPerSec', 'styleMsPerSec', 'layerizeMsPerSec', 'prePaintMsPerSec', 'taskMsPerSec']
     report.ab = { rows: abRows, summary: {} }
     for (const variant of ab) {
       for (const on of [true, false]) {
@@ -385,4 +430,5 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   check('停止后渲染端子代理状态与主进程一致', final.length >= count && final.every((r) => r.same && r.status !== 'running'), final.filter((r) => !r.same).slice(0, 5))
   await ev(`window.__yanStore.getState().abort()`)
   await ev('window.__pa.stop = true')
+  mainCdp?.close()
 }

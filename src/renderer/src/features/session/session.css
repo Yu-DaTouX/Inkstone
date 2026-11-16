@@ -170,6 +170,9 @@
   .v3-process { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
   .v3-spread { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
   .v3-spread > * + .v3-process-notes { margin-top: var(--s-8); }
+  .v3-stream .v3-spread:is([data-live], [data-skip]) > .v3-process { contain-intrinsic-size: auto 32px; }
+  .v3-stream .v3-spread:is([data-live], [data-skip]) > .v3-process-notes { contain-intrinsic-size: auto 40px; }
+  .v3-stream .v3-spread[data-skip] > :is(.v3-process-notes, .v3-process):not(:nth-last-child(-n + 2)) { content-visibility: auto; overflow-clip-margin: var(--s-6); }
   .v3-process-head { max-width: 100%; }
   :is(.v3-step-head, .v3-process-head):has(.ui-thumbnail-strip) { width: 100%; }
   :is(.v3-step-head, .v3-process-head):has(.ui-thumbnail-strip) > .ui-collapsible__trigger { flex: 1 1 auto; }

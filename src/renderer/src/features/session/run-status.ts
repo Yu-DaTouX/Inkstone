@@ -1,5 +1,6 @@
 import { useRef, useSyncExternalStore } from 'react'
-import { useStore } from '../../state/store'
+import { useStore, type Store } from '../../state/store'
+import type { UIMessage } from '../../../../shared/ipc'
 import { deriveRunProgress, resolveRunClock, type RunClock, type RunProgress } from '../../../../shared/run-progress'
 import { isStopRequested, stopIntent, subscribeStopIntent } from './stop-intent'
 import { trackThinking, turnOutputTokens, workingLine, type ThinkingClock, type WorkingLine } from './working-line-model'
@@ -7,16 +8,18 @@ import { useTurnScope } from './turn-scope'
 import { useRunNow } from './run-clock'
 
 const ASKING_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
+const NO_MESSAGES: readonly UIMessage[] = []
+const NO_UI_REQUESTS: Store['uiRequests'] = []
 
 export function useWorkingLine(): WorkingLine | null {
   const progress = useRunProgress()
   const scope = useTurnScope()
-  const ownSession = useStore((s) => s.session)
-  const ownMessages = useStore((s) => s.messages)
+  const ownSession = useStore((s) => (scope ? null : s.session))
+  const ownMessages = useStore((s) => (scope ? NO_MESSAGES : s.messages))
   const session = scope ? scope.session : ownSession
   const messages = scope ? scope.messages : ownMessages
   const approvals = useStore((s) => s.approvals)
-  const uiRequests = useStore((s) => s.uiRequests)
+  const uiRequests = useStore((s) => (scope ? NO_UI_REQUESTS : s.uiRequests))
   const intent = useSyncExternalStore(subscribeStopIntent, stopIntent)
   const thinkingRef = useRef<ThinkingClock | null>(null)
   const now = useRunNow(!!progress)
@@ -70,8 +73,8 @@ export function useWorkingLine(): WorkingLine | null {
 
 export function useRunProgress(): RunProgress | null {
   const scope = useTurnScope()
-  const ownSession = useStore((s) => s.session)
-  const ownMessages = useStore((s) => s.messages)
+  const ownSession = useStore((s) => (scope ? null : s.session))
+  const ownMessages = useStore((s) => (scope ? NO_MESSAGES : s.messages))
   const session = scope ? scope.session : ownSession
   const messages = scope ? scope.messages : ownMessages
   const runnerId = useStore((s) => s.activeRunnerId)
