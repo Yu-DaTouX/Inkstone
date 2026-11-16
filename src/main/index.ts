@@ -2340,7 +2340,7 @@ function registerIpc(): void {
       }
     }
   )
-  startDataMaintenance({
+  if (!isRestoredReadonly()) startDataMaintenance({
     isBusy: () => !runners || runners.statuses().some((runner) => runner.running || runner.waiting) || (subagentService.current()?.list().some((run) => run.status === 'running' || run.status === 'starting') ?? false),
     trash: (file) => shell.trashItem(file)
   })
@@ -2946,14 +2946,14 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
-  startSessionPurgeSweep()
+  if (!isRestoredReadonly()) startSessionPurgeSweep()
   setPersistedNoticeSink((message) => push({ ch: 'notify', payload: { id: `persisted-newer-${Date.now()}`, method: 'notify', notifyType: 'warning', message } }))
   installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
-  void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
-  startDailyCredentialSweep((error) => reportMainError('credential-vault', error))
-  void sweepStaleTemps({ dirs: [YAN_DIR, PI_AGENT_DIR] }).catch((error) => reportMainError('stale-temp-sweep', error))
   if (!isRestoredReadonly()) {
+    void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
+    startDailyCredentialSweep((error) => reportMainError('credential-vault', error))
+    void sweepStaleTemps({ dirs: [YAN_DIR, PI_AGENT_DIR] }).catch((error) => reportMainError('stale-temp-sweep', error))
     void moveLegacyState(YAN_DIR).then((result) => {
       if (result.moved.length || result.failed.length) logMainEvent(pick('遗留状态', 'Legacy state'), pick(`已移到 ${result.target}（只移不删）：${result.moved.join('、') || '无'}${result.failed.length ? `；未能移动：${result.failed.join('、')}` : ''}`, `Moved to ${result.target} (moved, never deleted): ${result.moved.join(', ') || 'none'}${result.failed.length ? `; could not move: ${result.failed.join(', ')}` : ''}`))
     }).catch((error) => reportMainError('legacy-state', error))
