@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { idempotencyKey } from '../api/client'
 import { subagentActions } from '../sessionActions'
+import { PatchSheet } from './PatchSheet'
 import type { SubagentInfo } from '../api/client'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { useRemote } from '../state'
@@ -90,6 +91,8 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
   const [stopError, setStopError] = useState<string | null>(null)
   const canStop = !!sessionId && capabilityAllowed(info, 'subagent-stop')
   const caps = { review: !!sessionId && capabilityAllowed(info, 'subagent-review'), send: !!sessionId && capabilityAllowed(info, 'subagent-send') }
+  const canPatch = !!sessionId && capabilityAllowed(info, 'subagent-patch')
+  const [patchRun, setPatchRun] = useState<SubagentInfo | null>(null)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [reviewNote, setReviewNote] = useState<{ id: string; error: boolean; text: string } | null>(null)
   const review = (run: SubagentInfo, action: 'merge' | 'discard') => {
@@ -161,6 +164,7 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
               {run.diff.paths.map((path) => <Text key={path} numberOfLines={1} ellipsizeMode="head" style={{ color: p.fg, fontSize: font.xs, fontFamily: mono }}>{path}</Text>)}
               {run.diff.truncated ? <Text style={{ color: p.fgMute, fontSize: font.xs }}>{pick('更多文件在电脑上查看', 'More files on the desktop')}</Text> : null}
             </View> : null}
+            {canPatch && run.diff?.files ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`查看子代理 ${run.title} 的补丁`, `View the patch from subagent ${run.title}`)} onPress={() => setPatchRun(run)} style={[styles.stop, { borderColor: p.borderSoft }]}><Icon name="file" size={icon.sm} color={p.fgDim} /><Text style={{ color: p.fg, fontSize: font.sm }}>{pick('查看补丁', 'View patch')}</Text></Pressable> : null}
             {(actions.merge || actions.discard) ? <View style={styles.reviewRow}>
               {actions.merge ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`合并子代理 ${run.title} 的改动`, `Merge changes from subagent ${run.title}`)} disabled={reviewing !== null} onPress={() => review(run, 'merge')} style={[styles.stop, { borderColor: p.accent, opacity: reviewing === run.id ? 0.5 : 1 }]}><Icon name="check" size={icon.sm} color={p.accent} /><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('合并', 'Merge')}</Text></Pressable> : null}
               {actions.discard ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`放弃子代理 ${run.title} 的改动`, `Discard changes from subagent ${run.title}`)} disabled={reviewing !== null} onPress={() => review(run, 'discard')} style={[styles.stop, { borderColor: p.err, opacity: reviewing === run.id ? 0.5 : 1 }]}><Icon name="close" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>{pick('放弃', 'Discard')}</Text></Pressable> : null}
@@ -172,6 +176,7 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
         </View>
       })}
     </ScrollView> : null}
+    {sessionId ? <PatchSheet sessionId={sessionId} runId={patchRun?.id ?? null} title={patchRun?.title ?? ''} onClose={() => setPatchRun(null)} /> : null}
   </View>
 }
 

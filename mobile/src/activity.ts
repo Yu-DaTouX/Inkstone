@@ -63,3 +63,25 @@ export function workflowActions(run: Pick<RemoteWorkflow, 'canPause' | 'canResum
   if (!allowed) return []
   return [run.canPause ? 'pause' : null, run.canResume ? 'resume' : null, run.canStop ? 'stop' : null].filter((item): item is 'pause' | 'resume' | 'stop' => item !== null)
 }
+
+export function jobStoppable(job: Pick<RemoteJob, 'live' | 'state'>, allowed: boolean): boolean {
+  return allowed && job.live && job.state !== 'stopping'
+}
+
+export type PatchLineKind = 'file' | 'hunk' | 'add' | 'del' | 'ctx'
+
+export const PATCH_LINES_MAX = 4000
+
+export function patchLines(patch: string, max = PATCH_LINES_MAX): { lines: Array<{ kind: PatchLineKind; text: string }>; clipped: boolean } {
+  const raw = patch.replace(/\r\n/g, '\n').split('\n')
+  if (raw.length && raw[raw.length - 1] === '') raw.pop()
+  const lines = raw.slice(0, max).map((text) => {
+    const kind: PatchLineKind = text.startsWith('diff --git') || text.startsWith('+++ ') || text.startsWith('--- ') ? 'file'
+      : text.startsWith('@@') ? 'hunk'
+      : text.startsWith('+') ? 'add'
+      : text.startsWith('-') ? 'del'
+      : 'ctx'
+    return { kind, text: text.length > 400 ? `${text.slice(0, 400)}…` : text }
+  })
+  return { lines, clipped: raw.length > max }
+}

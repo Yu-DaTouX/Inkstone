@@ -27,7 +27,7 @@ export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
-  | { action: 'new'; projectId?: string }
+  | { action: 'new'; projectId?: string; worktree?: boolean }
   | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; mode?: 'steer' | 'followUp' }
   | { action: 'model'; sessionId: string; provider: string; modelId: string }
   | { action: 'thinking'; sessionId: string; level: string }
@@ -60,6 +60,8 @@ export interface RemoteServerHandlers {
   sendSubagent?(sessionId: string, runId: string, text: string): Promise<RemoteOperationResult>
   queue?(sessionId: string, op: RemoteQueueOp): Promise<RemoteOperationResult>
   jobs?(sessionId: string): Promise<RemoteOperationResult>
+  stopJob?(sessionId: string, jobId: string): Promise<RemoteOperationResult>
+  subagentPatch?(sessionId: string, runId: string): Promise<RemoteOperationResult>
   workflows?(sessionId: string): Promise<RemoteOperationResult>
   workflowControl?(sessionId: string, workflowId: string, action: 'pause' | 'resume' | 'stop'): Promise<RemoteOperationResult>
   quota?(): Promise<RemoteOperationResult>
@@ -696,6 +698,9 @@ export class RemoteServer {
         ...(this.options.handlers.queue ? ['queue-edit'] : []),
         'notices',
         ...(this.options.handlers.jobs ? ['jobs'] : []),
+        ...(this.options.handlers.stopJob ? ['job-stop'] : []),
+        ...(this.options.handlers.subagentPatch ? ['subagent-patch'] : []),
+        'new-worktree',
         ...(this.options.handlers.workflows ? ['workflows'] : []),
         ...(this.options.handlers.workflowControl ? ['workflow-control'] : []),
         ...(this.options.handlers.quota ? ['quota'] : []),
@@ -706,7 +711,7 @@ export class RemoteServer {
         ...(this.options.handlers.branches && this.options.handlers.switchBranch ? ['branches'] : []),
         ...(this.options.handlers.search ? ['search'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop', 'subagent-review', 'subagent-send', 'queue-edit', 'notices', 'jobs', 'workflows', 'workflow-control', 'quota', 'usage', 'session-flags', 'session-delete', 'compact', 'branches', 'search'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop', 'subagent-review', 'subagent-send', 'queue-edit', 'notices', 'jobs', 'job-stop', 'subagent-patch', 'new-worktree', 'workflows', 'workflow-control', 'quota', 'usage', 'session-flags', 'session-delete', 'compact', 'branches', 'search'])]
       const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -809,6 +814,26 @@ export class RemoteServer {
       return
     }
 
+    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'jobs' && parts[6] === 'stop') {
+      const sessionId = decodeURIComponent(parts[3])
+      const jobId = decodeURIComponent(parts[5])
+      if (!validSessionId(sessionId) || !/^term-job-[a-z0-9]{1,16}-\d{1,9}$/.test(jobId)) return writeError(res, 400, pick('后台任务标识无效', 'Invalid background task id'))
+      const stopJob = this.options.handlers.stopJob
+      if (!stopJob) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      await this.readJson(req)
+      await this.idempotent(req, res, caller, true, () => stopJob(sessionId, jobId), `job-stop:${sessionId}:${jobId}`)
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && parts[6] === 'patch') {
+      const sessionId = decodeURIComponent(parts[3])
+      const runId = decodeURIComponent(parts[5])
+      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子 Agent标识无效', 'Invalid subagent id'))
+      if (!this.options.handlers.subagentPatch) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      this.writeOperation(res, await this.options.handlers.subagentPatch(sessionId, runId))
+      return
+    }
+
     if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'workflows' && (parts[6] === 'pause' || parts[6] === 'resume' || parts[6] === 'stop')) {
       const sessionId = decodeURIComponent(parts[3])
       const workflowId = decodeURIComponent(parts[5])
@@ -902,7 +927,8 @@ export class RemoteServer {
       const body = await this.readJson(req)
       if (body.projectId !== undefined && !validText(body.projectId, 200)) return writeError(res, 400, pick('项目 id 无效', 'Invalid project id'))
       const projectId = typeof body.projectId === 'string' ? body.projectId : undefined
-      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}) }), `project:${projectId ?? ''}`)
+      const worktree = body.worktree === true
+      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}), ...(worktree ? { worktree } : {}) }), `project:${projectId ?? ''}${worktree ? ':worktree' : ''}`)
       return
     }
 

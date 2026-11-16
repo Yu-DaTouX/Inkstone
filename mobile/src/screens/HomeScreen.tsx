@@ -1,7 +1,7 @@
 import { pick } from '../../../src/shared/ui-lang'
 import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type SessionListItem } from '../api/client'
 import { approvalInfo, QuestionCard } from '../components/QuestionCard'
 import { Icon, BrandMark } from '../icons'
@@ -51,9 +51,11 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [showAll, setShowAll] = useState<Record<string, boolean>>({})
   const [contentHits, setContentHits] = useState<Array<{ sessionId: string; snippet: string }>>([])
-  const newAttempt = useRef<{ key: string; projectId: string | null } | null>(null)
+  const newAttempt = useRef<{ key: string; projectId: string | null; worktree: boolean } | null>(null)
+  const [inWorktree, setInWorktree] = useState(false)
 
   const searchAllowed = capabilityAllowed(info, 'search')
+  const worktreeAllowed = capabilityAllowed(info, 'new-worktree')
   useEffect(() => {
     const needle = query.trim()
     if (!searchAllowed || needle.length < 2) { setContentHits([]); return }
@@ -135,10 +137,11 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     setPicker(false)
     setCreating(true)
     const target = projectId ?? null
-    const attempt = newAttempt.current?.projectId === target ? newAttempt.current : { key: idempotencyKey(), projectId: target }
+    const worktree = worktreeAllowed && inWorktree
+    const attempt = newAttempt.current?.projectId === target && newAttempt.current.worktree === worktree ? newAttempt.current : { key: idempotencyKey(), projectId: target, worktree }
     newAttempt.current = attempt
     try {
-      const result = await client.newSession(projectId, attempt.key)
+      const result = await client.newSession(projectId, attempt.key, worktree)
       newAttempt.current = null
       await refresh()
       if (result.sessionId) onOpen(result.sessionId, pick('新会话', 'New session'))
@@ -231,6 +234,11 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       <Pressable accessibilityLabel={pick('关闭', 'Close')} onPress={() => setPicker(false)} style={styles.scrim}>
         <Pressable style={[styles.sheet, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
           <Text style={[styles.sheetTitle, { color: p.fg }]}>{pick('在哪个项目新建会话？', 'New session in which project?')}</Text>
+          {worktreeAllowed ? <Pressable accessibilityRole="switch" accessibilityState={{ checked: inWorktree }} accessibilityLabel={pick('在新的 Git 工作树里开始', 'Start in a new Git worktree')} onPress={() => setInWorktree((value) => !value)} style={styles.group}>
+            <Icon name="branch" color={p.fgDim} size={icon.md} />
+            <View style={styles.rowMain}><Text style={{ color: p.fg, fontSize: font.base }}>{pick('在新工作树里', 'In a new worktree')}</Text><Meta numberOfLines={2}>{pick('电脑为这个会话新建一个 Git 工作树，改动不影响主目录', 'The desktop creates a Git worktree so changes stay out of the main folder')}</Meta></View>
+            <Switch value={inWorktree} onValueChange={setInWorktree} importantForAccessibility="no-hide-descendants" trackColor={{ true: p.accent, false: p.borderSoft }} />
+          </Pressable> : null}
           <FlatList
             data={projects}
             keyExtractor={(item) => item.id}

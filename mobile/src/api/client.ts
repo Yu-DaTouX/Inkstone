@@ -7,7 +7,7 @@ import type {
   RemotePendingQuestion,
   RemoteResyncEvent
 } from '../../../src/shared/remote-protocol'
-import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary, RemoteJob, RemoteQueue, RemoteQueueOp, RemoteQuota, RemoteSubagentDiff, RemoteSubagentReview, RemoteUsage, RemoteWorkflow } from '../../../src/shared/remote-protocol'
+import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary, RemoteJob, RemoteQueue, RemoteQueueOp, RemoteQuota, RemoteSubagentDiff, RemoteSubagentPatch, RemoteSubagentReview, RemoteUsage, RemoteWorkflow } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
 import { bytesToUtf8, directTunnelUrl, fromB64u, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -382,6 +382,14 @@ export class RemoteClient {
     return (await this.get<{ data: { jobs: RemoteJob[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/jobs`)).data.jobs
   }
 
+  async stopJob(sessionId: string, jobId: string, key = idempotencyKey()): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/jobs/${encodeURIComponent(jobId)}/stop`, {}, key)
+  }
+
+  async subagentPatch(sessionId: string, runId: string): Promise<RemoteSubagentPatch> {
+    return (await request<{ data: RemoteSubagentPatch }>(this.connection, `/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/patch`, { token: this.connection.token, timeoutMs: SLOW_REQUEST_MS })).data
+  }
+
   async workflows(sessionId: string): Promise<RemoteWorkflow[]> {
     return (await this.get<{ data: { runs: RemoteWorkflow[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/workflows`)).data.runs
   }
@@ -479,8 +487,8 @@ export class RemoteClient {
     return (await this.upload<{ data: { text: string } }>('/remote/v1/voice/transcribe', { wav }, idempotencyKey(), Math.max(wav.length, UPLOAD_FREE_BYTES + 1))).data.text
   }
 
-  async newSession(projectId?: string, key = idempotencyKey()): Promise<{ sessionId?: string }> {
-    return (await this.post<{ data: { sessionId?: string } }>('/remote/v1/sessions/new', projectId ? { projectId } : {}, key)).data
+  async newSession(projectId?: string, key = idempotencyKey(), worktree = false): Promise<{ sessionId?: string }> {
+    return (await this.post<{ data: { sessionId?: string } }>('/remote/v1/sessions/new', { ...(projectId ? { projectId } : {}), ...(worktree ? { worktree: true } : {}) }, key, worktree ? SLOW_REQUEST_MS : undefined)).data
   }
 
   artifactSource(sessionId: string, artifactId: string): { uri: string; headers: Record<string, string> } {

@@ -4,7 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import type { RemoteJob, RemoteWorkflow } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { idempotencyKey } from '../api/client'
-import { jobStateText, workflowActions, workflowProgressText, workflowStatusText } from '../activity'
+import { jobStateText, jobStoppable, workflowActions, workflowProgressText, workflowStatusText } from '../activity'
 import { costText } from '../format'
 import { GlyphSpinner } from '../motion'
 import { useRemote } from '../state'
@@ -35,10 +35,22 @@ function useSessionList<T>(sessionId: string, capability: string, kind: 'jobs' |
 
 export function JobsSection({ sessionId }: { sessionId: string }) {
   const p = usePalette()
-  const { client } = useRemote()
-  const { items } = useSessionList<RemoteJob>(sessionId, 'jobs', 'jobs', (id) => client.jobs(id))
+  const { client, info } = useRemote()
+  const { items, reload } = useSessionList<RemoteJob>(sessionId, 'jobs', 'jobs', (id) => client.jobs(id))
   const [open, setOpen] = useState<string | null>(null)
+  const [stopping, setStopping] = useState<string | null>(null)
+  const [stopError, setStopError] = useState<{ id: string; text: string } | null>(null)
   if (!items.length) return null
+  const canStop = capabilityAllowed(info, 'job-stop')
+  const stop = (job: RemoteJob) => Alert.alert(pick('停止这个后台任务？', 'Stop this background task?'), job.command, [
+    { text: pick('取消', 'Cancel'), style: 'cancel' },
+    { text: pick('停止', 'Stop'), style: 'destructive', onPress: () => void (async () => {
+      setStopping(job.id); setStopError(null)
+      try { await client.stopJob(sessionId, job.id, idempotencyKey()); reload() }
+      catch (err) { setStopError({ id: job.id, text: err instanceof Error ? err.message : pick('停止失败', 'Stop failed') }) }
+      finally { setStopping(null) }
+    })() }
+  ])
   const live = items.filter((job) => job.live).length
   return <Section title={pick('后台任务', 'Background tasks')} value={live ? pick(`${live} 运行中`, `${live} running`) : String(items.length)} initiallyOpen={live > 0}>
     {items.map((job) => {
@@ -49,6 +61,8 @@ export function JobsSection({ sessionId }: { sessionId: string }) {
           <Text numberOfLines={expanded ? 4 : 1} style={[styles.command, { color: p.fg }]}>{job.command}</Text>
           <Text style={[styles.meta, { color: job.exitCode ? p.err : p.fgMute }]}>{jobStateText(job)}</Text>
         </Pressable>
+        {expanded && jobStoppable(job, canStop) ? <View style={[styles.actions, { paddingLeft: space[5] }]}><Button compact label={pick('停止', 'Stop')} variant="danger" busy={stopping === job.id} disabled={stopping !== null} onPress={() => stop(job)} /></View> : null}
+        {expanded && stopError?.id === job.id ? <Text accessibilityLiveRegion="polite" style={{ color: p.err, fontSize: font.xs, paddingLeft: space[5] }}>{stopError.text}</Text> : null}
         {expanded ? job.output ? <ScrollView nestedScrollEnabled style={[styles.output, { backgroundColor: p.sunken }]}>
           {job.outputTruncated ? <Text style={{ color: p.fgMute, fontSize: font.xs }}>{pick('（只显示最后一段输出）', '(showing the last part of the output)')}</Text> : null}
           <Text selectable style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs, lineHeight: 16 }}>{job.output}</Text>

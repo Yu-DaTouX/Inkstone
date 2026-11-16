@@ -87,6 +87,7 @@ try {
     agentOf: () => agent
   }
 
+  let worktreeFails = false
   host.configureRemoteHost({
     win: () => null,
     remoteAccess: () => null,
@@ -100,6 +101,7 @@ try {
     pushRunnerSnapshot: async () => undefined,
     startAgent: async () => ({ ok: true }),
     projectIdForCwd: () => 'p1',
+    openSessionWorktree: async (cwd) => (worktreeFails ? { ok: false, error: '不是 Git 仓库' } : { ok: true, cwd: `${cwd}-wt`, branch: 'yan/wt' }),
     sessionChains: { load: async () => undefined, chains: () => [], representativeOf: () => null }
   })
 
@@ -135,6 +137,19 @@ try {
 
   const missingHistory = await host.remoteHistory('nowhere', 10)
   assert.equal(missingHistory.status, 404, '不存在的会话历史仍然 404')
+
+  const before = selections.length
+  const plain = await host.executeRemoteCommand({ action: 'new' })
+  assert.equal(plain.ok, true, '手机新建会话')
+  assert.ok(!selections[before].cwd.endsWith('-wt'), '不选工作树时用原目录')
+  const inTree = await host.executeRemoteCommand({ action: 'new', worktree: true })
+  assert.equal(inTree.ok, true, '手机可在新工作树里新建会话')
+  assert.ok(selections.at(-1).cwd.endsWith('-wt'), '选工作树时在电脑新建的工作树目录里开会话')
+  worktreeFails = true
+  const failed = await host.executeRemoteCommand({ action: 'new', worktree: true })
+  assert.equal(failed.status, 409, '建工作树失败时返回 409')
+  assert.equal(failed.code, 'worktree_failed', '失败带错误码')
+  assert.equal(selections.length, before + 2, '建工作树失败时不开会话')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
 
 const electronStub = {
@@ -97,6 +100,44 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const usage = A.remoteUsageOf({ range: '7d', sessions: 3, messages: 40, tokens: 1000, tokenBreakdown: {}, cost: 1.2, costBreakdown: {}, activeDays: 2, peakHour: 10, models: Array.from({ length: 8 }, (_, i) => ({ key: `anthropic/claude-${i}`, tokens: 100 - i, cost: 0.1, sources: ['yan'] })), heat: [{ date: '2026-11-16', tokens: 1 }], at: 1 })
   ok(usage.models.length === 5 && usage.models[0].name === 'claude-0' && !('heat' in usage) && !('sources' in usage.models[0]), '用量只带汇总和前 5 个模型')
 
+  const stopped = []
+  const stopFn = (id) => { stopped.push(id); return true }
+  const okStop = await A.remoteStopJob(['s-1'], 'j3', jobs, stopFn)
+  ok(okStop.ok && stopped.join() === 'j3', '本会话运行中的后台任务可停止')
+  const foreignStop = await A.remoteStopJob(['s-1'], 'j4', jobs, stopFn)
+  ok(!foreignStop.ok && foreignStop.status === 404 && stopped.length === 1, '不能停别的会话的后台任务')
+  const doneStop = await A.remoteStopJob(['s-1'], 'j1', jobs, stopFn)
+  ok(!doneStop.ok && doneStop.status === 409 && doneStop.code === 'job_not_running' && stopped.length === 1, '已结束的任务不能停')
+  ok((await A.remoteStopJob(['s-1'], 'j3', [{ ...jobs[2], state: 'stopping' }], stopFn)).status === 409, '正在停止的不重复发')
+
+  const dir = await mkdtemp(join(tmpdir(), 'yan-remote-patch-'))
+  try {
+    const small = join(dir, 'small.patch')
+    await writeFile(small, 'diff --git a/x b/x\n+新增\n')
+    const head = await A.readTextHead(small)
+    ok(head.text === 'diff --git a/x b/x\n+新增\n' && !head.truncated, '小补丁整份读出')
+    const big = join(dir, 'big.patch')
+    await writeFile(big, '+一二三四五\n'.repeat(100))
+    const cut = await A.readTextHead(big, 50)
+    ok(cut.truncated && cut.bytes > 50 && cut.text.endsWith('\n') && !cut.text.includes('\uFFFD'), '大补丁按字节截断，不留半个字也不留半行', JSON.stringify(cut.text))
+    ok(await A.readTextHead(join(dir, 'none.patch')) === null, '文件不在时返回空')
+    const runs = [
+      { id: 'sub-a', parentSessionId: 's-1', diff: { files: 1, additions: 1, deletions: 0, patchPath: small } },
+      { id: 'sub-b', parentSessionId: 's-1', diff: { files: 0, additions: 0, deletions: 0 } },
+      { id: 'sub-c', parentSessionId: 's-1', diff: { files: 2, additions: 1, deletions: 1, patchPath: join(dir, 'gone.patch') } }
+    ]
+    const patched = await A.remoteSubagentPatch('s-1', 'sub-a', runs, (path) => A.readTextHead(path))
+    ok(patched.ok && patched.data.patch.includes('+新增') && patched.data.files === 1 && !JSON.stringify(patched.data).includes(dir), '读出子代理补丁，不带本机路径')
+    const secretKey = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0'
+    const leaky = await A.remoteSubagentPatch('s-1', 'sub-a', runs, async () => ({ text: `diff --git a/.env b/.env\n+ANTHROPIC_API_KEY=${secretKey}\n+PORT=3000\n`, truncated: false, bytes: 80 }))
+    ok(leaky.ok && !leaky.data.patch.includes(secretKey) && leaky.data.patch.includes('+PORT=3000') && leaky.data.patch.split('\n').length === 4, '补丁正文里的密钥下发前遮蔽，其余行与行数不变', leaky.data?.patch)
+    ok((await A.remoteSubagentPatch('s-2', 'sub-a', runs, A.readTextHead)).status === 404, '别的会话读不到这个子代理的补丁')
+    ok((await A.remoteSubagentPatch('s-1', 'sub-b', runs, A.readTextHead)).code === 'subagent_no_patch', '没有改动时说明没有补丁')
+    ok((await A.remoteSubagentPatch('s-1', 'sub-c', runs, A.readTextHead)).status === 410, '补丁文件已清理时返回 410')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+
   const calls = []
   const server = new RemoteServer({
     host: '127.0.0.1',
@@ -105,12 +146,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
     handlers: {
       async snapshot() { return { sessions: [] } },
       async history() { return { ok: true, data: { messages: [] } } },
-      async command() { return { ok: true } },
+      async command(command) { calls.push(['command', command]); return { ok: true, data: {} } },
       async jobs(sessionId) { calls.push(['jobs', sessionId]); return { ok: true, data: { jobs: [] } } },
       async workflows(sessionId) { calls.push(['workflows', sessionId]); return { ok: true, data: { runs: [] } } },
       async workflowControl(sessionId, id, action) { calls.push(['control', sessionId, id, action]); return { ok: true, data: { id, action } } },
       async quota() { calls.push(['quota']); return { ok: true, data: { cards: [], checkedAt: 1 } } },
-      async usage(range) { calls.push(['usage', range]); return { ok: true, data: { range } } }
+      async usage(range) { calls.push(['usage', range]); return { ok: true, data: { range } } },
+      async stopJob(sessionId, jobId) { calls.push(['stopJob', sessionId, jobId]); return { ok: true, data: { id: jobId } } },
+      async subagentPatch(sessionId, runId) { calls.push(['patch', sessionId, runId]); return { ok: true, data: { patch: '', truncated: false, bytes: 0, files: 0, additions: 0, deletions: 0 } } }
     }
   })
   const info = await server.start()
@@ -120,7 +163,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const post = async (path, key = 'k-12345678') => { const response = await fetch(base + path, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', ...(key ? { 'idempotency-key': key } : {}) }, body: '{}' }); return { status: response.status, body: await response.json() } }
   try {
     const caps = (await get('/remote/v1/info')).body.capabilities
-    ok(['notices', 'jobs', 'workflows', 'workflow-control', 'quota', 'usage'].every((cap) => caps.includes(cap)), '电脑声明新能力', JSON.stringify(caps))
+    ok(['notices', 'jobs', 'job-stop', 'subagent-patch', 'new-worktree', 'workflows', 'workflow-control', 'quota', 'usage'].every((cap) => caps.includes(cap)), '电脑声明新能力', JSON.stringify(caps))
     ok((await get('/remote/v1/sessions/s-1/jobs')).status === 200 && calls.at(-1)[0] === 'jobs', '后台任务路由')
     ok((await get('/remote/v1/sessions/s-1/workflows')).status === 200 && calls.at(-1)[0] === 'workflows', '工作流路由')
     ok((await get('/remote/v1/quota')).status === 200 && calls.at(-1)[0] === 'quota', '额度路由')
@@ -130,6 +173,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(stop.status === 200 && calls.at(-1)[3] === 'stop', '工作流停止路由')
     ok((await post('/remote/v1/sessions/s-1/workflows/wf-0000000a/pause', '')).status === 400, '工作流控制必须带幂等键')
     ok((await post('/remote/v1/sessions/s-1/workflows/..%2Fx/stop', 'k-abcdefgh')).status === 400, '非法工作流 id 拒绝')
+    const jobStop = await post('/remote/v1/sessions/s-1/jobs/term-job-abc123-7/stop')
+    ok(jobStop.status === 200 && calls.at(-1).join() === 'stopJob,s-1,term-job-abc123-7', '后台任务停止路由')
+    ok((await post('/remote/v1/sessions/s-1/jobs/term-job-abc123-8/stop', '')).status === 400, '停止后台任务必须带幂等键')
+    ok((await post('/remote/v1/sessions/s-1/jobs/..%2Fx/stop', 'k-abcdefgh')).status === 400, '非法任务 id 拒绝')
+    ok((await get('/remote/v1/sessions/s-1/subagents/sub-abc/patch')).status === 200 && calls.at(-1).join() === 'patch,s-1,sub-abc', '子代理补丁路由')
+    ok((await get('/remote/v1/sessions/s-1/subagents/..%2Fx/patch')).status === 400, '非法子代理 id 拒绝')
+    ok((await fetch(`${base}/remote/v1/sessions/s-1/subagents/sub-abc/patch`)).status === 401, '补丁需要令牌')
+    const created = await fetch(`${base}/remote/v1/sessions/new`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', 'idempotency-key': 'k-newtree1' }, body: JSON.stringify({ worktree: true }) })
+    ok(created.status === 200 && calls.at(-1)[1].action === 'new' && calls.at(-1)[1].worktree === true, '新建会话可带工作树选项')
+    await fetch(`${base}/remote/v1/sessions/new`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', 'idempotency-key': 'k-newtree2' }, body: JSON.stringify({ worktree: 'yes' }) })
+    ok(!('worktree' in calls.at(-1)[1]), '工作树选项只认 true')
     const unauth = await fetch(`${base}/remote/v1/quota`)
     ok(unauth.status === 401, '额度需要令牌')
   } finally {

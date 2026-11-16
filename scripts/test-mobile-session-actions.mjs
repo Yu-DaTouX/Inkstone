@@ -66,6 +66,10 @@ await runSuite(import.meta.url, async (ok) => {
     ok(seen[1].url.endsWith('/subagents/sub-1/merge') && seen[1].body.confirm === true, '合并请求带明确确认')
     await client.sendSubagent('s-1', 'sub-1', '继续')
     ok(seen[2].url.endsWith('/subagents/sub-1/send') && seen[2].body.text === '继续' && !!seen[2].key, '给子代理发消息带幂等键')
+    await client.newSession('p-1', 'k-new', true)
+    ok(seen[3].url.endsWith('/sessions/new') && seen[3].body.projectId === 'p-1' && seen[3].body.worktree === true && seen[3].key === 'k-new', '新建会话可带工作树')
+    await client.newSession(undefined, 'k-new2')
+    ok(!('worktree' in seen[4].body), '不选工作树时不带该字段，旧版电脑照常')
   } finally {
     globalThis.fetch = realFetch
   }

@@ -241,6 +241,15 @@ export interface RemoteJob {
   outputTruncated?: boolean
 }
 
+export interface RemoteSubagentPatch {
+  patch: string
+  truncated: boolean
+  bytes: number
+  files: number
+  additions: number
+  deletions: number
+}
+
 export interface RemoteWorkflowProgress {
   total: number
   done: number

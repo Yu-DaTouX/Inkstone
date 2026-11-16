@@ -601,7 +601,7 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
 }
 
-export async function remoteNewSession(requestedProjectId?: string): Promise<RemoteOperationResult> {
+export async function remoteNewSession(requestedProjectId?: string, worktree = false): Promise<RemoteOperationResult> {
   const settings = await getSettings()
   const project = requestedProjectId ? settings.projects.find((item) => item.id === requestedProjectId && !item.archived) : undefined
   if (requestedProjectId && !project) return { ok: false, status: 404, error: pick('找不到这个项目', 'Project not found') }
@@ -613,8 +613,14 @@ export async function remoteNewSession(requestedProjectId?: string): Promise<Rem
   if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
   const projectId = project?.id ?? host.projectIdForCwd(settings, cwdResult.cwd)
   const scope = projectId ? 'project' as const : 'global' as const
-  const result = await host.runners()!.select({ cwd: cwdResult.cwd, projectId, scope, activate: false })
-  await host.rememberRunnerSession(result, { cwd: cwdResult.cwd, projectId, scope })
+  let cwd = cwdResult.cwd
+  if (worktree) {
+    const opened = await host.openSessionWorktree(cwd)
+    if (!opened.ok) return { ok: false, status: 409, code: 'worktree_failed', error: opened.error }
+    cwd = opened.cwd
+  }
+  const result = await host.runners()!.select({ cwd, projectId, scope, activate: false })
+  await host.rememberRunnerSession(result, { cwd, projectId, scope })
   if (result.ok && result.id) void host.pushRunnerSnapshot(result.id)
   host.pushRunners()
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
@@ -689,7 +695,7 @@ function sessionBusy(sessionId: string): boolean {
 
 export async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
   if (command.action === 'select') return remoteSelectSession(command.sessionId)
-  if (command.action === 'new') return remoteNewSession(command.projectId)
+  if (command.action === 'new') return remoteNewSession(command.projectId, command.worktree === true)
 
   if (command.action === 'send') {
     if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: pick('图片无法解码，请重新选择', 'Cannot decode the image. Choose another') }

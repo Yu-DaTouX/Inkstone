@@ -31,6 +31,12 @@ await runSuite(import.meta.url, async (ok) => {
   ok(M.workflowActions(wf, true).join() === 'pause,stop' && M.workflowActions({ canPause: false, canResume: true, canStop: true }, true).join() === 'resume,stop', '按状态给暂停、继续、停止')
   ok(M.workflowActions(wf, false).length === 0, '电脑不支持控制时不给按钮')
 
+  ok(M.jobStoppable({ live: true, state: 'running' }, true) && !M.jobStoppable({ live: true, state: 'stopping' }, true) && !M.jobStoppable({ live: false, state: 'completed' }, true) && !M.jobStoppable({ live: true, state: 'running' }, false), '只有仍在运行且电脑支持时给停止')
+  const lines = M.patchLines('diff --git a/x b/x\r\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-旧\n+新\n 同\n')
+  ok(lines.lines.map((line) => line.kind).join() === 'file,file,file,hunk,del,add,ctx' && !lines.clipped, '补丁按行着色分类')
+  const many = M.patchLines(Array.from({ length: 10 }, (_, i) => `+${i}`).join('\n'), 4)
+  ok(many.lines.length === 4 && many.clipped, '超过行数上限时截断并标出')
+  ok(M.patchLines('+' + 'x'.repeat(1000)).lines[0].text.length === 401, '超长单行截断')
   const realFetch = globalThis.fetch
   const seen = []
   globalThis.fetch = async (url, init) => {
@@ -44,6 +50,11 @@ await runSuite(import.meta.url, async (ok) => {
     ok((await client.workflows('s-1'))[0].id === 'wf-0000000a', '读取工作流')
     await client.workflowControl('s-1', 'wf-0000000a', 'pause')
     ok(seen[2].method === 'POST' && seen[2].url.endsWith('/workflows/wf-0000000a/pause') && /^m-/.test(seen[2].key), '工作流控制带幂等键')
+    await client.stopJob('s-1', 'term-job-a-1')
+    ok(seen[3].method === 'POST' && seen[3].url.endsWith('/sessions/s-1/jobs/term-job-a-1/stop') && /^m-/.test(seen[3].key), '停止后台任务带幂等键')
+    await client.subagentPatch('s-1', 'sub-a')
+    ok(seen[4].method === 'GET' && seen[4].url.endsWith('/sessions/s-1/subagents/sub-a/patch'), '读取子代理补丁')
+    seen.splice(3, 2)
     ok((await client.quota()).checkedAt === 1 && (await client.usage('30d')).range === '30d' && seen[4].url.endsWith('/usage?range=30d'), '读取额度与用量')
   } finally {
     globalThis.fetch = realFetch

@@ -8,7 +8,8 @@ import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
 import { disposeUsageStatsWorker, readUsageStatsOffThread } from './usage-stats-host'
 import { accountQuotaReport } from './account-quota'
-import { createQuotaCache, remoteJobsFor, remoteQuotaOf, remoteUsageOf, remoteWorkflowControl, remoteWorkflowsFor } from './remote-activity'
+import { createQuotaCache, readTextHead, remoteJobsFor, remoteQuotaOf, remoteStopJob, remoteSubagentPatch, remoteUsageOf, remoteWorkflowControl, remoteWorkflowsFor } from './remote-activity'
+import { stopTerminalJob } from './terminal-job-stop'
 import { disposeGitReadHost } from './git-read-host'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, isAbsolute, resolve } from 'node:path'
@@ -1372,6 +1373,12 @@ async function startRemoteServer(): Promise<void> {
           if (!session.ok) return session
           return { ok: true, data: { jobs: remoteJobsFor(session.keys, listTerminalJobs(), (id) => readTerminal(id)?.buffer ?? null) } }
         },
+        stopJob: async (sessionId, jobId) => {
+          const session = await remoteSessionKeys(sessionId)
+          if (!session.ok) return session
+          return remoteStopJob(session.keys, jobId, listTerminalJobs(), stopTerminalJob)
+        },
+        subagentPatch: async (sessionId, runId) => remoteSubagentPatch(sessionId, runId, (await subagentService.get()).list(), (path) => readTextHead(path)),
         workflows: async (sessionId) => {
           const session = await remoteSessionKeys(sessionId)
           if (!session.ok) return session

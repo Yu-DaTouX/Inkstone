@@ -1,9 +1,11 @@
 import { pick } from '../shared/ui-lang'
 import { accountCardTitle, type AccountQuotaReport } from '../shared/account-quota'
-import { isLiveTerminalJob, terminalJobOwnedBy, type TerminalJob } from '../shared/terminal-jobs'
+import { open, type FileHandle } from 'node:fs/promises'
+import { isLiveTerminalJob, terminalJobOwnedBy, terminalJobStoppable, type TerminalJob } from '../shared/terminal-jobs'
+import type { SubagentRun } from '../shared/subagent-run'
 import type { UsageStatsView } from '../shared/usage-stats'
 import type { WorkflowRunView } from '../shared/workflows'
-import type { RemoteJob, RemoteNotice, RemoteQuota, RemoteUsage, RemoteWorkflow, RemoteWorkflowProgress } from '../shared/remote-protocol'
+import type { RemoteJob, RemoteNotice, RemoteSubagentPatch, RemoteQuota, RemoteUsage, RemoteWorkflow, RemoteWorkflowProgress } from '../shared/remote-protocol'
 import { redactSecretText } from '../shared/redact-diagnostic'
 import { redactCommandSecrets } from '../shared/command-redact'
 import { scrubRemoteError, type RemoteOperationResult } from './remote-server'
@@ -162,4 +164,58 @@ export function remoteUsageOf(view: UsageStatsView): RemoteUsage {
     activeDays: view.activeDays,
     models: view.models.slice(0, 5).map((model) => ({ name: clip(model.key.slice(model.key.lastIndexOf('/') + 1), 80), tokens: model.tokens, cost: model.cost }))
   }
+}
+
+const PATCH_MAX_BYTES = 256 * 1024
+
+export async function readTextHead(path: string, maxBytes: number = PATCH_MAX_BYTES): Promise<{ text: string; truncated: boolean; bytes: number } | null> {
+  let handle: FileHandle | null = null
+  try {
+    handle = await open(path, 'r')
+    const info = await handle.stat()
+    if (!info.isFile()) return null
+    const size = Math.min(info.size, maxBytes)
+    const buffer = Buffer.alloc(size)
+    const { bytesRead } = await handle.read(buffer, 0, size, 0)
+    let text = new TextDecoder('utf-8').decode(buffer.subarray(0, bytesRead))
+    const truncated = info.size > maxBytes
+    if (truncated) {
+      text = text.replace(/\uFFFD+$/, '')
+      const cut = text.lastIndexOf('\n')
+      if (cut > 0) text = text.slice(0, cut + 1)
+    }
+    return { text, truncated, bytes: info.size }
+  } catch {
+    return null
+  } finally {
+    await handle?.close().catch(() => undefined)
+  }
+}
+
+export async function remoteSubagentPatch(
+  sessionId: string,
+  runId: string,
+  runs: readonly SubagentRun[],
+  read: (path: string) => Promise<{ text: string; truncated: boolean; bytes: number } | null>
+): Promise<RemoteOperationResult> {
+  const run = runs.find((item) => item.id === runId && item.parentSessionId === sessionId)
+  if (!run) return { ok: false, status: 404, error: pick('找不到这个子 Agent', 'Subagent not found') }
+  const path = run.diff?.patchPath
+  if (!path || !run.diff?.files) return { ok: false, status: 404, code: 'subagent_no_patch', error: pick('这个子 Agent 没有补丁', 'This subagent has no patch') }
+  const patch = await read(path)
+  if (!patch) return { ok: false, status: 410, code: 'subagent_patch_gone', error: pick('补丁文件已不可用', 'The patch file is no longer available') }
+  const data: RemoteSubagentPatch = { patch: redactSecretText(patch.text), truncated: patch.truncated, bytes: patch.bytes, files: run.diff.files, additions: run.diff.additions, deletions: run.diff.deletions }
+  return { ok: true, data }
+}
+
+export async function remoteStopJob(
+  keys: readonly string[],
+  jobId: string,
+  jobs: readonly TerminalJob[],
+  stop: (jobId: string) => boolean
+): Promise<RemoteOperationResult> {
+  const job = jobs.find((item) => item.id === jobId && keys.some((key) => terminalJobOwnedBy(item, key)))
+  if (!job) return { ok: false, status: 404, error: pick('找不到这个后台任务', 'Background task not found') }
+  if (!terminalJobStoppable(job)) return { ok: false, status: 409, code: 'job_not_running', error: pick('这个后台任务已经结束或正在停止', 'This background task already ended or is stopping') }
+  return stop(job.id) ? { ok: true, data: { id: job.id, state: 'stopping' } } : { ok: false, status: 409, error: pick('停止没成功，请在电脑上处理', 'Could not stop it. Handle it on the desktop') }
 }
