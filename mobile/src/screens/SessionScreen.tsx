@@ -20,8 +20,10 @@ import { useBottomInset } from '../insets'
 import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
 import { RenameSheet } from '../components/RenameSheet'
-import type { RemoteModel, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
+import type { RemoteModel, RemoteQueueOp, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
+import { composerSendPlan, type SendChoice } from '../sessionActions'
+import { NOTICE_SHOW_MS, noticesFor } from '../activity'
 
 const REFRESH_WINDOW = 24
 const INSIGHT_REFRESH_MS = 15_000
@@ -66,7 +68,15 @@ export function SessionScreen({
 }) {
   const p = usePalette()
   const bottomInset = useBottomInset()
-  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread, latestStats } = useRemote()
+  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread, latestStats, notices } = useRemote()
+  const [dismissedNotices, setDismissedNotices] = useState<ReadonlySet<string>>(() => new Set())
+  const [noticeTick, setNoticeTick] = useState(0)
+  const shownNotices = useMemo(() => noticesFor(notices, sessionId, Date.now(), dismissedNotices), [notices, sessionId, dismissedNotices, noticeTick])
+  useEffect(() => {
+    if (!shownNotices.length) return
+    const timer = setTimeout(() => setNoticeTick((tick) => tick + 1), NOTICE_SHOW_MS + 50)
+    return () => clearTimeout(timer)
+  }, [shownNotices])
   const cached = useRef(client.historyCache.get(sessionId)).current
   const [messages, setMessages] = useState<HistoryMessage[]>(cached?.messages.filter((m) => SHOWN_ROLES.has(m.role)) ?? [])
   const [loading, setLoading] = useState(!cached)
@@ -92,6 +102,8 @@ export function SessionScreen({
   const insightAt = useRef(0)
   const detailSeen = useRef(false)
   const [sending, setSending] = useState(false)
+  const [sendChoice, setSendChoice] = useState<SendChoice>('steer')
+  const [held, setHeld] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [voicePhase, setVoicePhase] = useState<SpeechPhase>('idle')
@@ -339,12 +351,15 @@ export function SessionScreen({
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (!text && !photos.length) return
+    const plan = composerSendPlan({ running: !!runner?.running, compacting: !!runner?.compacting, choice: sendChoice })
+    if (plan.action === 'hold') { setHeld(true); setError(null); return }
+    setHeld(false)
     setSending(true)
     const fingerprint = `${text}\n${photos.map((photo) => photo.id).join(',')}`
     const key = sendAttempt.current?.text === fingerprint ? sendAttempt.current.key : idempotencyKey()
     sendAttempt.current = { text: fingerprint, key }
     try {
-      await client.send(sessionId, text, key, photos.length ? photos.map(({ mimeType, data }) => ({ mimeType, data })) : undefined, runner?.running ? 'steer' : undefined)
+      await client.send(sessionId, text, key, photos.length ? photos.map(({ mimeType, data }) => ({ mimeType, data })) : undefined, plan.mode)
       sendAttempt.current = null
       onDraftChange('')
       onPhotosChange([])
@@ -357,6 +372,19 @@ export function SessionScreen({
       setSending(false)
     }
   }
+
+  const sendRef = useRef(send)
+  sendRef.current = send
+  useEffect(() => {
+    if (!held) return
+    if (!draft.trim() && !photos.length) { setHeld(false); return }
+    if (!runner?.compacting && stream === 'open' && !sending) void sendRef.current()
+  }, [draft, held, photos.length, runner?.compacting, sending, stream])
+
+  const editQueue = useCallback(async (op: RemoteQueueOp) => {
+    await client.editQueue(sessionId, op)
+    void load()
+  }, [client, load, sessionId])
 
   const addPhotos = async () => {
     if (picking || sending || photos.length >= 4) return
@@ -395,6 +423,7 @@ export function SessionScreen({
       <View style={styles.flex}>
       {(loading || sending) && !runner?.running ? <View style={styles.loading}><GlyphSpinner /><Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>{sending ? pick('正在发送', 'Sending') : pick('正在读取会话', 'Loading session')}</Text></View> : null}
       {error ? <Text accessibilityRole="alert" style={[styles.error, { color: p.err, backgroundColor: p.errSoft, borderLeftColor: p.err }]}>{error}</Text> : null}
+      {shownNotices.map((notice) => <Pressable key={notice.id} accessibilityRole="button" accessibilityLiveRegion="polite" accessibilityHint={pick('点按关闭', 'Tap to dismiss')} onPress={() => setDismissedNotices((current) => new Set([...current, notice.id]))} style={[styles.notice, { backgroundColor: notice.level === 'error' ? p.errSoft : p.bg3, borderLeftColor: notice.level === 'error' ? p.err : notice.level === 'warning' ? p.warn : p.accent }]}><Text style={{ color: notice.level === 'error' ? p.err : p.fgDim, fontSize: font.sm, lineHeight: 19 }}>{notice.message}</Text></Pressable>)}
       <FlatList
         ref={listRef}
         contentContainerStyle={styles.list}
@@ -456,14 +485,14 @@ export function SessionScreen({
       <View style={[styles.composer, { backgroundColor: p.bg0, paddingBottom: Math.max(space[2], bottomInset) }]}>
         {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('新回复 ↓', 'New reply ↓')}</Text></Pressable> : null}
         {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={pick(`待发送图片 ${index + 1}`, `Pending image ${index + 1}`)} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={pick(`移除图片 ${index + 1}`, `Remove image ${index + 1}`)} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={icon.sm} color={p.fg} /></View></Pressable></View>)}</View> : null}
-        {tabletop && pending.length ? null : runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : runner?.compacting ? <ActivityLine state="run" text={pick('正在压缩上下文', 'Compacting context')} /> : runner?.retry ? <ActivityLine state="run" text={pick(`模型请求失败，自动重试 ${runner.retry.attempt}/${runner.retry.maxAttempts}`, `Model request failed, retrying ${runner.retry.attempt}/${runner.retry.maxAttempts}`)} /> : null}
+        {tabletop && pending.length ? null : runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : runner?.compacting ? <ActivityLine state="run" text={held ? pick('正在压缩上下文，压缩完自动发送', 'Compacting context; your message will send when it finishes') : pick('正在压缩上下文', 'Compacting context')} /> : runner?.retry ? <ActivityLine state="run" text={pick(`模型请求失败，自动重试 ${runner.retry.attempt}/${runner.retry.maxAttempts}`, `Model request failed, retrying ${runner.retry.attempt}/${runner.retry.maxAttempts}`)} /> : null}
         {(todosLeft || subagents.length) && !(tabletop && pending.length) ? <Pressable accessibilityRole="button" accessibilityLabel={pick('查看计划与子代理', 'View plan and subagents')} disabled={!onOpenDetail} onPress={onOpenDetail} style={[styles.strip, { backgroundColor: p.bg3 }]}>
           {plan?.todos.length ? <Text style={{ color: p.fgDim, fontSize: font.sm }}>{pick('计划', 'Plan')} <Text style={{ color: p.fg, fontFamily: mono }}>{plan.todos.length - todosLeft}/{plan.todos.length}</Text></Text> : null}
           {subagents.length ? <View style={styles.stripItem}>{liveSubagents ? <GlyphSpinner /> : null}<Text style={{ color: p.fgDim, fontSize: font.sm }}>{pick('子代理', 'Subagents')} <Text style={{ color: p.fg, fontFamily: mono }}>{subagents.length}</Text></Text></View> : null}
           <View style={styles.flex} />
           {onOpenDetail ? <Icon name="chevron-right" size={icon.sm} color={p.fgMute} /> : null}
         </Pressable> : null}
-        <QueuedMessages queue={queue} />
+        <QueuedMessages queue={queue} onOp={capabilityAllowed(info, 'queue-edit') ? editQueue : undefined} />
         <View style={[styles.inputFrame, { backgroundColor: p.surface, borderColor: p.borderSoft }]}>
         <TextInput
           disableFullscreenUI
@@ -471,7 +500,7 @@ export function SessionScreen({
           value={draft}
           editable={!sending}
           onChangeText={onDraftChange}
-          placeholder={runner?.running ? pick('补充指令…', 'Add instructions…') : pick('描述要构建、修改或修复的内容', 'Describe what to build, change or fix')}
+          placeholder={runner?.running ? (sendChoice === 'steer' ? pick('补充指令…', 'Add instructions…') : pick('本轮结束后再发…', 'Send after this turn…')) : pick('描述要构建、修改或修复的内容', 'Describe what to build, change or fix')}
           placeholderTextColor={p.fgMute}
           multiline
           accessibilityLabel={pick('消息内容', 'Message')}
@@ -481,6 +510,7 @@ export function SessionScreen({
           <SpeechInputButton onText={(text) => onDraftChange(draft.trim() ? `${draft.trimEnd()} ${text}` : text)} onError={setVoiceError} onStateChange={setVoicePhase} disabled={sending} transcribe={capabilityAllowed(info, 'voice-transcribe') ? (wav) => client.transcribe(wav) : undefined} />
           {voicePhase !== 'idle' ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.flex, { color: p.accent, fontSize: font.xs }]}>{voicePhase === 'listening' ? pick('正在听…', 'Listening…') : voicePhase === 'processing' ? pick('转写中…', 'Transcribing…') : pick('准备中…', 'Preparing…')}</Text> : <>
             <View style={styles.flex} />
+            {runner?.running ? <Pressable accessibilityRole="switch" accessibilityState={{ checked: sendChoice === 'followUp' }} accessibilityLabel={sendChoice === 'steer' ? pick('发送方式：插话，点按改为排队', 'Send mode: steer. Tap to queue instead') : pick('发送方式：排队，点按改为插话', 'Send mode: queue. Tap to steer instead')} disabled={sending} onPress={() => setSendChoice(sendChoice === 'steer' ? 'followUp' : 'steer')} style={[styles.chip, { minHeight: touch.min, flexShrink: 0 }]}><Text style={{ color: sendChoice === 'steer' ? p.accent : p.fgDim, fontSize: font.sm }}>{sendChoice === 'steer' ? pick('插话', 'Steer') : pick('排队', 'Queue')}</Text></Pressable> : null}
             <Pressable accessibilityRole="button" accessibilityLabel={pick(`选择模型，当前 ${modelName || '电脑模型'}`, `Choose model, current ${modelName || 'desktop model'}`)} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert(pick('请更新电脑端', 'Update the desktop app'), pick('新版电脑端支持模型选择。', 'Newer desktop versions support model selection.')) }} style={[styles.chip, { minHeight: touch.min }]}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fg, fontSize: font.sm, fontWeight: weight.strong }}>{modelName || pick('模型', 'Model')}</Text></Pressable>
           </>}
           {runner?.running && !draft.trim() && !photos.length ? (
@@ -501,6 +531,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   list: { paddingHorizontal: space[4], paddingTop: space[3], paddingBottom: space[5], gap: space[4] },
   error: { fontSize: font.sm, paddingHorizontal: space[4], paddingVertical: space[2], borderLeftWidth: 2 },
+  notice: { paddingHorizontal: space[4], paddingVertical: space[2], borderLeftWidth: 2 },
   loading: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4] },
   message: { flexDirection: 'row', gap: space[2], maxWidth: '100%' },
   bubble: { alignSelf: 'flex-end', maxWidth: '86%', flexDirection: 'row', borderRadius: radius.bubble, paddingHorizontal: space[3], paddingVertical: space[2] - 1 },

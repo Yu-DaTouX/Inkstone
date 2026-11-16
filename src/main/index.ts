@@ -6,7 +6,9 @@ import { pick } from '../shared/ui-lang'
 import { app, shell, BrowserWindow, crashReporter, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme, session } from 'electron'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
-import { disposeUsageStatsWorker } from './usage-stats-host'
+import { disposeUsageStatsWorker, readUsageStatsOffThread } from './usage-stats-host'
+import { accountQuotaReport } from './account-quota'
+import { createQuotaCache, remoteJobsFor, remoteQuotaOf, remoteUsageOf, remoteWorkflowControl, remoteWorkflowsFor } from './remote-activity'
 import { disposeGitReadHost } from './git-read-host'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, isAbsolute, resolve } from 'node:path'
@@ -61,7 +63,7 @@ import { resolvePi } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
 import { openableExternalUrl } from './external-url'
-import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink, terminalProcessId } from './terminal'
+import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal, setTerminalSink, terminalProcessId } from './terminal'
 import { agentTerminalIds } from './terminal-agent'
 import { installLocalServerControl } from './browser/local-server-owner'
 import { installSessionPermissionBoundary, trustedFrameTrust } from './browser/permission-boundary'
@@ -75,7 +77,7 @@ import { registerShellIpc } from './ipc/shell-ipc'
 import { setSessionBrowserCloser } from './session-browser-cleanup'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
-import { onTerminalJobs } from './terminal-jobs'
+import { listTerminalJobs, onTerminalJobs } from './terminal-jobs'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
@@ -136,7 +138,7 @@ import { activeAccountKey, switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, DANGER_CONFIRM_TIMEOUT_MS, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
-import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, remoteSetSessionFlag, remoteDeleteSession, remoteCompact, remoteBranches, remoteSwitchBranch, remoteSearch, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage } from './remote-host'
+import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, remoteReviewSubagent, remoteSendSubagent, remoteQueueEdit, remoteSessionKeys, remoteSetSessionFlag, remoteDeleteSession, remoteCompact, remoteBranches, remoteSwitchBranch, remoteSearch, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage } from './remote-host'
 import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
@@ -1332,6 +1334,8 @@ const executeControlCommand = createControlExecutor({
 
 const transcribeVoice = voiceTranscriber({ plugins: bundledPlugins, settings: async () => (await getSettings()).voiceInput })
 
+const remoteQuota = createQuotaCache(async () => remoteQuotaOf(await accountQuotaReport()))
+
 async function startRemoteServer(): Promise<void> {
   if (!remoteAccess) {
     remoteAccess = new RemoteAccess(
@@ -1352,6 +1356,32 @@ async function startRemoteServer(): Promise<void> {
           const subagents = await subagentService.get()
           return remoteStopSubagent(sessionId, runId, subagents.list(), (id) => subagents.stop(id))
         },
+        reviewSubagent: async (sessionId, runId, action) => {
+          const subagents = await subagentService.get()
+          return remoteReviewSubagent(sessionId, runId, action, subagents.list(), (id) => action === 'merge' ? subagents.merge(id) : subagents.discard(id))
+        },
+        sendSubagent: async (sessionId, runId, text) => {
+          const subagents = await subagentService.get()
+          return remoteSendSubagent(sessionId, runId, text, subagents.list(), (id, message) => subagents.send(id, message, 'steer', { from: 'user' }))
+        },
+        queue: remoteQueueEdit,
+        jobs: async (sessionId) => {
+          const session = await remoteSessionKeys(sessionId)
+          if (!session.ok) return session
+          return { ok: true, data: { jobs: remoteJobsFor(session.keys, listTerminalJobs(), (id) => readTerminal(id)?.buffer ?? null) } }
+        },
+        workflows: async (sessionId) => {
+          const session = await remoteSessionKeys(sessionId)
+          if (!session.ok) return session
+          return { ok: true, data: { runs: remoteWorkflowsFor(session.id, await workflowService.list()) } }
+        },
+        workflowControl: async (sessionId, workflowId, action) => {
+          const session = await remoteSessionKeys(sessionId)
+          if (!session.ok) return session
+          return remoteWorkflowControl(session.id, workflowId, action, await workflowService.list(), (id, next) => workflowService.control(id, next))
+        },
+        quota: async () => ({ ok: true, data: await remoteQuota() }),
+        usage: async (range) => ({ ok: true, data: remoteUsageOf(await readUsageStatsOffThread(range)) }),
         image: remoteMessageImage,
         command: executeRemoteCommand,
         questions: remoteQuestions,

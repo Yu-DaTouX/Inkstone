@@ -11,6 +11,7 @@ import { deviceInfo } from '../device'
 import { useBottomInset } from '../insets'
 import { useLang, type LangChoice } from '../lang'
 import { UpdateCard } from '../components/UpdateCard'
+import { QuotaSection } from '../components/QuotaSection'
 import type { AppUpdate } from '../appUpdate'
 
 const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone'
@@ -62,6 +63,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
           <Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }} selectable>{connection.baseUrl.replace(/^https?:\/\//, '')}</Text>
           <View style={styles.row}><StatusDot color={stream === 'open' ? p.ok : p.warn} /><Meta color={stream === 'open' ? p.ok : p.warn} style={{ fontSize: font.sm, marginLeft: space[2] }}>{STATUS_TEXT[stream]}</Meta></View>
         </View>
+        <QuotaSection />
         <SectionTitle>{pick('布局', 'Layout')}</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           <View style={styles.row}>

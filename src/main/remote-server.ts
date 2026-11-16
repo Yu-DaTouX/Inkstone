@@ -16,7 +16,8 @@ import {
   type RemoteAnswer,
   type RemoteDeviceSummary,
   type RemoteEventEnvelope,
-  type RemotePendingQuestion
+  type RemotePendingQuestion,
+  type RemoteQueueOp
 } from '../shared/remote-protocol'
 import type { RemoteHumanApproval } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
@@ -55,6 +56,14 @@ export interface RemoteServerHandlers {
   subagents?(sessionId: string): Promise<RemoteOperationResult>
   insight?(sessionId: string): Promise<RemoteOperationResult>
   stopSubagent?(sessionId: string, runId: string): Promise<RemoteOperationResult>
+  reviewSubagent?(sessionId: string, runId: string, action: 'merge' | 'discard'): Promise<RemoteOperationResult>
+  sendSubagent?(sessionId: string, runId: string, text: string): Promise<RemoteOperationResult>
+  queue?(sessionId: string, op: RemoteQueueOp): Promise<RemoteOperationResult>
+  jobs?(sessionId: string): Promise<RemoteOperationResult>
+  workflows?(sessionId: string): Promise<RemoteOperationResult>
+  workflowControl?(sessionId: string, workflowId: string, action: 'pause' | 'resume' | 'stop'): Promise<RemoteOperationResult>
+  quota?(): Promise<RemoteOperationResult>
+  usage?(range: '7d' | '30d' | 'all'): Promise<RemoteOperationResult>
   sessionFlags?(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<RemoteOperationResult>
   deleteSession?(sessionId: string): Promise<RemoteOperationResult>
   compact?(sessionId: string): Promise<RemoteOperationResult>
@@ -137,7 +146,9 @@ const REMOTE_CHANNELS = new Set([
   'approval-close',
   'turn-settled',
   'agent-error',
-  'subagent'
+  'subagent',
+  'terminal-jobs',
+  'workflow'
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -187,6 +198,25 @@ export function scrubRemoteError(text: string): string {
 
 function fingerprintOf(...parts: unknown[]): string {
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex')
+}
+
+export function parseRemoteQueueOp(body: Record<string, unknown>): RemoteQueueOp | null {
+  const target = (value: unknown): { id: string; expect: string } | null => {
+    if (!isRecord(value) || typeof value.id !== 'string' || !/^q-[a-z0-9]{1,16}$/.test(value.id)) return null
+    if (typeof value.expect !== 'string' || !/^[0-9a-f]{64}$/.test(value.expect)) return null
+    return { id: value.id, expect: value.expect }
+  }
+  if (body.op === 'clear') {
+    if (!Array.isArray(body.items) || !body.items.length || body.items.length > 40) return null
+    const items = body.items.map(target)
+    return items.every((item) => item !== null) ? { op: 'clear', items: items as Array<{ id: string; expect: string }> } : null
+  }
+  if (body.op !== 'remove' && body.op !== 'steer' && body.op !== 'edit') return null
+  if (!target(body)) return null
+  if (typeof body.id !== 'string' || typeof body.expect !== 'string') return null
+  if (body.op !== 'edit') return { op: body.op, id: body.id, expect: body.expect }
+  if (!validText(body.text, MAX_MESSAGE_CHARS)) return null
+  return { op: 'edit', id: body.id, expect: body.expect, text: body.text }
 }
 
 function validQuestionId(value: string): boolean {
@@ -661,13 +691,22 @@ export class RemoteServer {
         ...(this.options.handlers.subagents ? ['subagents'] : []),
         ...(this.options.handlers.insight ? ['insight'] : []),
         ...(this.options.handlers.stopSubagent ? ['subagent-stop'] : []),
+        ...(this.options.handlers.reviewSubagent && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['subagent-review'] : []),
+        ...(this.options.handlers.sendSubagent ? ['subagent-send'] : []),
+        ...(this.options.handlers.queue ? ['queue-edit'] : []),
+        'notices',
+        ...(this.options.handlers.jobs ? ['jobs'] : []),
+        ...(this.options.handlers.workflows ? ['workflows'] : []),
+        ...(this.options.handlers.workflowControl ? ['workflow-control'] : []),
+        ...(this.options.handlers.quota ? ['quota'] : []),
+        ...(this.options.handlers.usage ? ['usage'] : []),
         ...(this.options.handlers.sessionFlags ? ['session-flags'] : []),
         ...(this.options.handlers.deleteSession ? ['session-delete'] : []),
         ...(this.options.handlers.compact ? ['compact'] : []),
         ...(this.options.handlers.branches && this.options.handlers.switchBranch ? ['branches'] : []),
         ...(this.options.handlers.search ? ['search'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop', 'session-flags', 'session-delete', 'compact', 'branches', 'search'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop', 'subagent-review', 'subagent-send', 'queue-edit', 'notices', 'jobs', 'workflows', 'workflow-control', 'quota', 'usage', 'session-flags', 'session-delete', 'compact', 'branches', 'search'])]
       const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -744,6 +783,41 @@ export class RemoteServer {
       if (!this.options.handlers.search) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
       const query = (url.searchParams.get('q') ?? '').slice(0, 200)
       this.writeOperation(res, await this.options.handlers.search(query, 30))
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/remote/v1/quota') {
+      if (!this.options.handlers.quota) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      this.writeOperation(res, await this.options.handlers.quota())
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/remote/v1/usage') {
+      if (!this.options.handlers.usage) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      const range = url.searchParams.get('range') ?? '7d'
+      if (range !== '7d' && range !== '30d' && range !== 'all') return writeError(res, 400, pick('统计范围无效', 'Invalid usage range'))
+      this.writeOperation(res, await this.options.handlers.usage(range))
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && (parts[4] === 'jobs' || parts[4] === 'workflows')) {
+      const sessionId = decodeURIComponent(parts[3])
+      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
+      const handler = parts[4] === 'jobs' ? this.options.handlers.jobs : this.options.handlers.workflows
+      if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      this.writeOperation(res, await handler(sessionId))
+      return
+    }
+
+    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'workflows' && (parts[6] === 'pause' || parts[6] === 'resume' || parts[6] === 'stop')) {
+      const sessionId = decodeURIComponent(parts[3])
+      const workflowId = decodeURIComponent(parts[5])
+      if (!validSessionId(sessionId) || !/^wf-[0-9a-f]{8}$/.test(workflowId)) return writeError(res, 400, pick('工作流标识无效', 'Invalid workflow id'))
+      const control = this.options.handlers.workflowControl
+      if (!control) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      await this.readJson(req)
+      const action = parts[6]
+      await this.idempotent(req, res, caller, true, () => control(sessionId, workflowId, action), `workflow-${action}:${sessionId}:${workflowId}`)
       return
     }
 
@@ -842,6 +916,28 @@ export class RemoteServer {
       return
     }
 
+    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && (parts[6] === 'merge' || parts[6] === 'discard' || parts[6] === 'send')) {
+      const sessionId = decodeURIComponent(parts[3])
+      const runId = decodeURIComponent(parts[5])
+      const action = parts[6]
+      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子 Agent标识无效', 'Invalid subagent id'))
+      const body = await this.readJson(req)
+      if (action === 'send') {
+        const send = this.options.handlers.sendSubagent
+        if (!send) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+        if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, pick('消息不能为空且不得超过 20,000 个字符', 'Message must not be empty or exceed 20,000 characters'))
+        const text = body.text
+        await this.idempotent(req, res, caller, true, () => send(sessionId, runId, text), fingerprintOf('subagent-send', sessionId, runId, text))
+        return
+      }
+      const review = this.options.handlers.reviewSubagent
+      if (!review) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('处置子 Agent 的改动需要配对的手机', 'Reviewing subagent changes requires a paired phone'), 'paired_user_required')
+      if (body.confirm !== true) return writeError(res, 400, pick('合并或放弃需要明确确认', 'Merging or discarding requires explicit confirmation'))
+      await this.idempotent(req, res, caller, true, () => review(sessionId, runId, action), `subagent-${action}:${sessionId}:${runId}`)
+      return
+    }
+
     if (parts[2] === 'sessions' && parts.length === 5 && req.method === 'POST') {
       const sessionId = decodeURIComponent(parts[3])
       const operation = parts[4]
@@ -901,6 +997,14 @@ export class RemoteServer {
         if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('删除会话需要配对的手机', 'Deleting a session requires a paired phone'), 'paired_user_required')
         if (body.confirm !== true) return writeError(res, 400, pick('删除需要明确确认', 'Deletion requires explicit confirmation'))
         await this.idempotent(req, res, caller, false, () => handler(sessionId), `delete:${sessionId}`)
+        return
+      }
+      if (operation === 'queue') {
+        const handler = this.options.handlers.queue
+        if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
+        const op = parseRemoteQueueOp(body)
+        if (!op) return writeError(res, 400, pick('排队操作无效', 'Invalid queue operation'))
+        await this.idempotent(req, res, caller, true, () => handler(sessionId, op), fingerprintOf('queue', op))
         return
       }
       if (operation === 'compact') {

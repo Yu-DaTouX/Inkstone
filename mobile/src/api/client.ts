@@ -7,7 +7,7 @@ import type {
   RemotePendingQuestion,
   RemoteResyncEvent
 } from '../../../src/shared/remote-protocol'
-import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
+import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary, RemoteJob, RemoteQueue, RemoteQueueOp, RemoteQuota, RemoteSubagentDiff, RemoteSubagentReview, RemoteUsage, RemoteWorkflow } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
 import { bytesToUtf8, directTunnelUrl, fromB64u, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -283,6 +283,10 @@ export interface SubagentInfo {
   summary?: string
   tokens?: number
   cost?: number
+  review?: RemoteSubagentReview
+  diff?: RemoteSubagentDiff
+  canMerge?: boolean
+  canDiscard?: boolean
 }
 
 export interface RemoteProject {
@@ -300,7 +304,7 @@ export interface PlanTodo {
 export interface HistoryPage {
   messages: HistoryMessage[]
   plan?: { todos: PlanTodo[]; stale: boolean }
-  queue?: { steering: string[]; followUp: string[] }
+  queue?: RemoteQueue
   truncated?: number | boolean
   total?: number
   hasMore?: boolean
@@ -364,6 +368,38 @@ export class RemoteClient {
 
   async stopSubagent(sessionId: string, runId: string): Promise<void> {
     await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/stop`, {}, idempotencyKey())
+  }
+
+  async reviewSubagent(sessionId: string, runId: string, action: 'merge' | 'discard', key = idempotencyKey()): Promise<{ id: string; review: string; warning?: string }> {
+    return (await this.post<{ data: { id: string; review: string; warning?: string } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/${action}`, { confirm: true }, key, SLOW_REQUEST_MS)).data
+  }
+
+  async sendSubagent(sessionId: string, runId: string, text: string, key = idempotencyKey()): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/send`, { text }, key)
+  }
+
+  async jobs(sessionId: string): Promise<RemoteJob[]> {
+    return (await this.get<{ data: { jobs: RemoteJob[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/jobs`)).data.jobs
+  }
+
+  async workflows(sessionId: string): Promise<RemoteWorkflow[]> {
+    return (await this.get<{ data: { runs: RemoteWorkflow[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/workflows`)).data.runs
+  }
+
+  async workflowControl(sessionId: string, workflowId: string, action: 'pause' | 'resume' | 'stop', key = idempotencyKey()): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/${action}`, {}, key)
+  }
+
+  async quota(): Promise<RemoteQuota> {
+    return (await request<{ data: RemoteQuota }>(this.connection, '/remote/v1/quota', { token: this.connection.token, timeoutMs: SLOW_REQUEST_MS })).data
+  }
+
+  async usage(range: '7d' | '30d' | 'all' = '7d'): Promise<RemoteUsage> {
+    return (await request<{ data: RemoteUsage }>(this.connection, `/remote/v1/usage?range=${range}`, { token: this.connection.token, timeoutMs: SLOW_REQUEST_MS })).data
+  }
+
+  async editQueue(sessionId: string, op: RemoteQueueOp, key = idempotencyKey()): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/queue`, op, key)
   }
 
   async setSessionFlags(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<void> {

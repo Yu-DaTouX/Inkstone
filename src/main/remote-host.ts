@@ -11,9 +11,11 @@ import { localizeImage } from './image-store'
 import { cachedTitles, manualTitles, setManualTitle } from './title'
 import { getSettings } from './settings'
 import { listSessions } from './sessions'
-import type { RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
+import { scrubRemoteError, type RemoteArtifactFile, type RemoteCommand, type RemoteOperationResult } from './remote-server'
+import { subagentReviewGate } from '../shared/subagent-review-gate'
+import { remoteNoticeOf } from './remote-activity'
 import { REMOTE_ARTIFACT_MAX_BYTES, REMOTE_INSIGHT_MAX_FILES } from '../shared/remote-protocol'
-import type { RemoteChangedFile, RemoteInsight, RemoteSessionChanges, RemoteSessionStats, RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
+import type { RemoteChangedFile, RemoteInsight, RemoteSessionChanges, RemoteSessionStats, RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval, RemoteQueue, RemoteQueueOp } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
 import { managedAttachment } from './attachment-file'
@@ -24,9 +26,12 @@ import { setSessionFlags } from './session-layout'
 import { closeBrowserForSessions } from './session-browser-cleanup'
 import { searchSessionText } from './session-search'
 import { deleteSessionChain } from './session-delete'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { isSubagentNotice } from '../shared/subagent-notice'
+import { isHostTextNotice } from '../shared/host-notice-text'
+import { planQueueEditOp } from './queue-edit'
 import type { GitChangeEntry } from '../shared/git'
-import type { AssistantArtifact, RunnerStatus, SessionStats, SessionState, SessionSummary, SessionTodo, SubagentRun, UIToolCall } from '../shared/ipc'
+import type { AssistantArtifact, QueueItem, QueueState, RunnerStatus, SessionStats, SessionState, SessionSummary, SessionTodo, SubagentRun, UIToolCall } from '../shared/ipc'
 import { SessionEntriesLite } from './session-entries-lite'
 import { readTaskPlanLog } from './task-plan-store'
 import { taskPlanLogEntry } from '../shared/task-plan'
@@ -166,9 +171,24 @@ function remoteModelError(payload: unknown): Record<string, unknown> {
 const clip = (text: string | undefined, max: number): string | undefined =>
   text === undefined ? undefined : text.length > max ? `${text.slice(0, max)}…` : text
 
+const REMOTE_SUBAGENT_DIFF_PATHS = 20
+
+function remoteSubagentReview(run: SubagentRun): Record<string, unknown> {
+  if (run.isolation !== 'worktree' || run.review === 'none') return {}
+  const gate = subagentReviewGate(run)
+  const diff = run.diff
+  return {
+    review: run.review,
+    ...(diff ? { diff: { files: diff.files, additions: diff.additions, deletions: diff.deletions, paths: diff.paths.slice(0, REMOTE_SUBAGENT_DIFF_PATHS).map((path) => clip(path, 200) ?? ''), truncated: diff.truncated || diff.paths.length > REMOTE_SUBAGENT_DIFF_PATHS } } : {}),
+    ...(gate.canPatch ? { canMerge: true } : {}),
+    ...(gate.canDiscard ? { canDiscard: true } : {})
+  }
+}
+
 export function remoteSubagentRun(run: SubagentRun): Record<string, unknown> {
   const title = run.brief?.title?.trim() || run.task.split('\n')[0].trim()
   return {
+    ...remoteSubagentReview(run),
     id: run.id,
     title: clip(title, 80),
     task: clip(run.task, 600),
@@ -261,6 +281,39 @@ export async function remoteStopSubagent(
   return result.ok ? { ok: true, data: { id: run.id, status: 'cancelled' } } : { ok: false, status: 409, error: result.error ?? pick('停止失败', 'Stop failed') }
 }
 
+export async function remoteReviewSubagent(
+  sessionId: string,
+  runId: string,
+  action: 'merge' | 'discard',
+  runs: readonly SubagentRun[],
+  act: (id: string) => Promise<{ ok: boolean; error?: string; warning?: string }>
+): Promise<RemoteOperationResult> {
+  const run = runs.find((item) => item.id === runId && item.parentSessionId === sessionId)
+  if (!run) return { ok: false, status: 404, error: pick('找不到这个子 Agent', 'Subagent not found') }
+  const gate = subagentReviewGate(run)
+  if (action === 'merge' ? !gate.canPatch : !gate.canDiscard) return { ok: false, status: 409, code: 'subagent_not_reviewable', error: pick('这个子 Agent 没有待处置的改动', 'This subagent has no changes awaiting review') }
+  const result = await act(run.id)
+  if (result.error?.includes('--drop-outputs')) return { ok: false, status: 409, code: 'subagent_outputs_kept', error: pick('子 Agent 留下的大产物没能另存，工作树已保留、改动仍未放弃。要不要丢弃这些产物，请在电脑上处理。', 'Large outputs left by the subagent could not be saved; the worktree was kept and the changes were not discarded. Decide whether to drop those outputs on the desktop.') }
+  if (!result.ok) return { ok: false, status: 409, error: result.error ?? (action === 'merge' ? pick('合并失败', 'Merge failed') : pick('放弃失败', 'Discard failed')) }
+  return { ok: true, data: { id: run.id, review: action === 'merge' ? 'merged' : 'discarded', ...(result.warning ? { warning: scrubRemoteError(result.warning) } : {}) } }
+}
+
+export async function remoteSendSubagent(
+  sessionId: string,
+  runId: string,
+  text: string,
+  runs: readonly SubagentRun[],
+  send: (id: string, text: string) => Promise<{ ok: boolean; error?: string; delivery?: string }>
+): Promise<RemoteOperationResult> {
+  const run = runs.find((item) => item.id === runId && item.parentSessionId === sessionId)
+  if (!run) return { ok: false, status: 404, error: pick('找不到这个子 Agent', 'Subagent not found') }
+  if (run.status === 'cancelled' && run.endReason === 'interrupted' && run.resumable?.ok === false) return { ok: false, status: 409, code: 'subagent_not_resumable', error: pick('这个子 Agent 已不能续接', 'This subagent can no longer be resumed') }
+  const result = await send(run.id, text)
+  if (result.ok) return { ok: true, data: { id: run.id, ...(result.delivery ? { delivery: result.delivery } : {}) } }
+  if (result.error?.includes('--drop-outputs') || result.error?.includes('yan subagent')) return { ok: false, status: 409, error: pick('这个子 Agent 现在收不了消息，请在电脑上处理。', 'This subagent cannot take messages right now. Handle it on the desktop.') }
+  return { ok: false, status: 409, error: result.error ?? pick('没发给子 Agent', 'Message not delivered to the subagent') }
+}
+
 export function remotePushPayload(channel: string, payload: unknown): unknown {
   if (channel === 'stats') return remoteSessionStats(payload as SessionStats | null) ?? {}
   if (channel === 'subagent') {
@@ -270,6 +323,8 @@ export function remotePushPayload(channel: string, payload: unknown): unknown {
   if (channel === 'state') return remoteSessionState((payload ?? null) as SessionState | null)
   if (channel === 'runners') return Array.isArray(payload) ? payload.map((item) => remoteRunnerStatus(item as RunnerStatus)) : payload
   if (channel === 'turn-settled') return remoteTurnSettled(payload)
+  if (channel === 'notify') return remoteNoticeOf(payload) ?? {}
+  if (channel === 'terminal-jobs') return {}
   if (channel === 'agent-error') return remoteModelError(payload)
   const sessionId = asRecord(payload).sessionId
   return typeof sessionId === 'string' ? { sessionId } : {}
@@ -366,6 +421,12 @@ async function resolveChainSession(sessionId: string, options: { allowUnsaved?: 
   return { ok: true, summary: representative }
 }
 
+export async function remoteSessionKeys(sessionId: string): Promise<{ ok: true; id: string; keys: string[] } | { ok: false; status: number; error: string }> {
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
+  if (!resolved.ok) return resolved
+  return { ok: true, id: resolved.summary.id, keys: [resolved.summary.id, resolved.summary.path].filter(Boolean) }
+}
+
 async function remotePlan(sessionFile: string, sessionId: string): Promise<{ todos: SessionTodo[]; stale: boolean } | undefined> {
   const entries = await new SessionEntriesLite().entries(sessionFile).catch(() => null)
   if (!entries) return undefined
@@ -379,21 +440,85 @@ async function remotePlan(sessionFile: string, sessionId: string): Promise<{ tod
 const QUEUE_ITEMS_MAX = 20
 const QUEUE_TEXT_MAX = 500
 
-export function remoteQueueOf(snapshot: { steering: string[]; followUp: string[] } | null | undefined): { steering: string[]; followUp: string[] } | undefined {
+export function remoteQueueOf(
+  snapshot: { steering: string[]; followUp: string[] } | null | undefined,
+  state?: QueueState | null,
+  hidden?: (text: string) => boolean,
+  digest?: (text: string) => string
+): RemoteQueue | undefined {
+  const clipText = (text: string) => text.length > QUEUE_TEXT_MAX ? `${text.slice(0, QUEUE_TEXT_MAX)}…` : text
+  const notice = hidden ?? ((text: string) => text.trimStart().startsWith('<subagent-notification'))
+  if (state) {
+    const pickItems = (list: QueueItem[]) => list
+      .filter((item) => (item.text.trim() || item.images?.length) && !notice(item.text))
+      .slice(0, QUEUE_ITEMS_MAX)
+      .map((item) => ({ id: item.id, text: clipText(item.text), ...(digest ? { digest: digest(item.text) } : {}), ...(item.images?.length ? { images: item.images.length } : {}) }))
+    const steering = pickItems(state.steering)
+    const followUp = pickItems(state.followUp)
+    if (!steering.length && !followUp.length) return undefined
+    return { steering: steering.map((item) => item.text), followUp: followUp.map((item) => item.text), items: { steering, followUp } }
+  }
   if (!snapshot) return undefined
-  const clip = (list: string[]) => list.filter((text) => text.trim() && !text.trimStart().startsWith('<subagent-notification')).slice(0, QUEUE_ITEMS_MAX).map((text) => text.length > QUEUE_TEXT_MAX ? `${text.slice(0, QUEUE_TEXT_MAX)}…` : text)
+  const clip = (list: string[]) => list.filter((text) => text.trim() && !notice(text)).slice(0, QUEUE_ITEMS_MAX).map(clipText)
   const queue = { steering: clip(snapshot.steering), followUp: clip(snapshot.followUp) }
   return queue.steering.length || queue.followUp.length ? queue : undefined
 }
 
-function sessionQueue(sessionId: string): { steering: string[]; followUp: string[] } | undefined {
+export function queueTextDigest(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+export function queueItemHidden(text: string): boolean {
+  return isSubagentNotice(text) || isHostTextNotice(text)
+}
+
+function sessionAgent(sessionId: string): AgentController | null {
   const status = host.runners()?.statuses().find((item) => item.sessionId === sessionId)
-  const agent = status ? host.runners()?.agentOf(status.runId) : null
+  return (status ? host.runners()?.agentOf(status.runId) : null) ?? null
+}
+
+function sessionQueue(sessionId: string): RemoteQueue | undefined {
+  const agent = sessionAgent(sessionId)
   try {
-    return remoteQueueOf(agent?.queueSnapshot())
+    return remoteQueueOf(agent?.queueSnapshot(), agent?.queueItems(), queueItemHidden, queueTextDigest)
   } catch {
     return undefined
   }
+}
+
+type RemoteQueueAgent = Pick<AgentController, 'steerQueued' | 'removeQueued' | 'planQueue'>
+
+const queueChangedText = () => pick('这条排队消息已被接收或已变化，请刷新后再试', 'This queued message was already accepted or changed. Refresh and try again')
+
+export function remoteQueueTarget(state: QueueState, id: string, expect: string): QueueItem | null {
+  const item = [...state.steering, ...state.followUp].find((entry) => entry.id === id)
+  return item && !queueItemHidden(item.text) && queueTextDigest(item.text) === expect ? item : null
+}
+
+export function planRemoteWithdraw(state: QueueState, targets: ReadonlyArray<{ id: string; expect: string }>): { next: QueueState } | { error: string } {
+  if (!targets.length || targets.some((target) => !remoteQueueTarget(state, target.id, target.expect))) return { error: queueChangedText() }
+  const ids = new Set(targets.map((target) => target.id))
+  return { next: { steering: state.steering.filter((item) => !ids.has(item.id)), followUp: state.followUp.filter((item) => !ids.has(item.id)) } }
+}
+
+export async function applyRemoteQueueOp(agent: RemoteQueueAgent | null, op: RemoteQueueOp): Promise<RemoteOperationResult> {
+  const changed = (error: string): RemoteOperationResult => ({ ok: false, status: 409, code: 'queue_changed', error })
+  if (!agent) return changed(pick('这个会话现在没有排队消息', 'This session has no queued messages now'))
+  if (op.op === 'clear') {
+    const result = await agent.planQueue((state) => planRemoteWithdraw(state, op.items))
+    return result.ok ? { ok: true, data: { op: 'clear', count: op.items.length } } : changed(result.error ?? pick('撤回排队失败', 'Could not withdraw queued messages'))
+  }
+  const guard = (state: QueueState) => remoteQueueTarget(state, op.id, op.expect) ? null : queueChangedText()
+  const result = op.op === 'remove' ? await agent.removeQueued(op.id, guard)
+    : op.op === 'steer' ? await agent.steerQueued(op.id, guard)
+    : await agent.planQueue((state) => guard(state) ? { error: queueChangedText() } : planQueueEditOp(state, { op: 'edit', id: op.id, text: op.text }))
+  return result.ok ? { ok: true, data: { op: op.op, id: op.id } } : changed(result.error ?? pick('排队消息没改成', 'Queued message was not changed'))
+}
+
+export async function remoteQueueEdit(sessionId: string, op: RemoteQueueOp): Promise<RemoteOperationResult> {
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
+  if (!resolved.ok) return resolved
+  return applyRemoteQueueOp(sessionAgent(resolved.summary.id), op)
 }
 
 async function streamingMessage(sessionId: string) {

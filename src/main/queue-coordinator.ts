@@ -277,9 +277,21 @@ export class QueueCoordinator {
     })
   }
 
-  editItem(queueId: string, promote: boolean): Promise<EditResult> {
+  rewriteWith(plan: (state: QueueState) => { next: QueueState } | { error: string }): Promise<QueueRewriteResult> {
     return this.run(async () => {
       if (!this.deps.owner().rpc) return { ok: false, error: notReady() }
+      const original = this.copy()
+      const planned = plan(original)
+      if ('error' in planned) return { ok: false, error: planned.error }
+      return applyQueueRewrite(this.rewritePort(), original, planned.next)
+    })
+  }
+
+  editItem(queueId: string, promote: boolean, guard?: (state: QueueState) => string | null): Promise<EditResult> {
+    return this.run(async () => {
+      if (!this.deps.owner().rpc) return { ok: false, error: notReady() }
+      const refused = guard?.(this.copy())
+      if (refused) return { ok: false, error: refused }
       const target = this.itemOf(queueId)
       if (!target) return { ok: false, error: pick('这条排队消息已被接收或撤回', 'This queued message was already accepted or withdrawn') }
       try {

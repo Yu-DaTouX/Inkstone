@@ -1,11 +1,12 @@
 import { pick } from '../../src/shared/ui-lang'
 import { AppState } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel, RemoteSessionStats } from '../../src/shared/remote-protocol'
+import type { RemoteEventEnvelope, RemoteNotice, RemotePendingQuestion, RemoteInfo, RemoteModel, RemoteSessionStats } from '../../src/shared/remote-protocol'
 import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type RemoteProject, type SessionListItem, type StreamState } from './api/client'
 import { deviceInfo, readMarks, writeMarks, type ReadMark } from './device'
 import { saveConnection } from './storage'
 import { planPreviews } from './previewPlan'
+import { addNotice, type ShownNotice } from './activity'
 
 export interface RunnerInfo {
   runId: string
@@ -35,6 +36,7 @@ interface RemoteState {
   error: string | null
   refresh(): Promise<void>
   latestStats(sessionId: string): RemoteSessionStats | undefined
+  notices: ShownNotice[]
   onSessionEvent(sessionId: string, listener: (kinds: ReadonlySet<SessionEventKind>) => void): () => void
 }
 
@@ -48,7 +50,7 @@ export function useRemote(): RemoteState {
 
 const MESSAGE_CHANNELS = new Set(['msg-add', 'msg-update', 'msg-remove', 'tool', 'session-title', 'queue'])
 
-export type SessionEventKind = 'messages' | 'subagents' | 'stats'
+export type SessionEventKind = 'messages' | 'subagents' | 'stats' | 'jobs' | 'workflows'
 const QUESTION_CHANNELS = new Set(['ui-request', 'ui-resolved', 'ui-deadline', 'approval', 'approval-close'])
 const STATUS_CHANNELS = new Set(['state', 'runners', 'proc'])
 
@@ -87,6 +89,7 @@ export function RemoteProvider({
   const eventKinds = useRef(new Map<string, Set<SessionEventKind>>())
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const statsBySession = useRef(new Map<string, RemoteSessionStats>())
+  const [notices, setNotices] = useState<ShownNotice[]>([])
 
   useEffect(() => {
     let alive = true
@@ -223,6 +226,20 @@ export function RemoteProvider({
             notifySession(sessionId, 'stats')
           }
         }
+        if (event.channel === 'notify') {
+          const notice = event.payload as RemoteNotice | undefined
+          if (notice && typeof notice.message === 'string' && notice.message) {
+            const sessionId = sessionOfEvent(event)
+            setNotices((current) => addNotice(current, sessionId && !notice.sessionId ? { ...notice, sessionId } : notice, Date.now()))
+          }
+        }
+        if (event.channel === 'terminal-jobs') {
+          for (const sessionId of listeners.current.keys()) notifySession(sessionId, 'jobs')
+        }
+        if (event.channel === 'workflow') {
+          const sessionId = sessionOfEvent(event)
+          if (sessionId) notifySession(sessionId, 'workflows')
+        }
         if (event.channel === 'subagent') {
           const sessionId = sessionOfEvent(event)
           if (sessionId) notifySession(sessionId, 'subagents')
@@ -270,8 +287,8 @@ export function RemoteProvider({
     return marksReady && !!reply && reply.at > readAt
   }).map((session) => session.id)), [sessions, previews, marks, marksReady, activeSessionId])
   const value = useMemo<RemoteState>(
-    () => ({ client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent, latestStats }),
-    [client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent, latestStats]
+    () => ({ client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent, latestStats, notices }),
+    [client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent, latestStats, notices]
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

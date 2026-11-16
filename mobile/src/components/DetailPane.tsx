@@ -1,5 +1,5 @@
 import { pick } from '../../../src/shared/ui-lang'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { RemoteChangedFile, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
 import type { HistoryMessage, HistoryPage, PlanTodo, SubagentInfo } from '../api/client'
@@ -8,9 +8,11 @@ import { Icon } from '../icons'
 import { GlyphSpinner } from '../motion'
 import { useRemote } from '../state'
 import { useBottomInset } from '../insets'
-import { font, icon, mono, space, touch, usePalette, weight } from '../theme'
+import { font, icon, mono, space, touch, usePalette } from '../theme'
 import { SubagentCard } from './SubagentCard'
 import { BranchSheet } from './BranchSheet'
+import { Section } from './Section'
+import { JobsSection, WorkflowsSection } from './ActivitySections'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import type { IconName } from '../../../src/renderer/src/icons/sprite'
 
@@ -29,20 +31,6 @@ export interface SessionDetail {
 }
 
 const isDone = (todo: PlanTodo) => todo.done || todo.status === 'done'
-
-function Section({ title, value, children, initiallyOpen = true }: { title: string; value?: ReactNode; children: ReactNode; initiallyOpen?: boolean }) {
-  const p = usePalette()
-  const [open, setOpen] = useState(initiallyOpen)
-  return <View>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={title} onPress={() => setOpen(!open)} style={styles.head}>
-      <Text style={[styles.title, { color: p.fgDim }]}>{title}</Text>
-      <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Icon name="chevron-right" size={12} color={p.fgMute} /></View>
-      <Text numberOfLines={1} ellipsizeMode="clip" style={[styles.leader, { color: p.borderStr }]}>{'· '.repeat(60)}</Text>
-      {typeof value === 'string' ? <Text style={[styles.value, { color: p.fgDim }]}>{value}</Text> : value}
-    </Pressable>
-    {open ? <View style={styles.body}>{children}</View> : null}
-  </View>
-}
 
 function UsageSection({ stats }: { stats: RemoteSessionStats }) {
   const p = usePalette()
@@ -143,6 +131,8 @@ export function DetailPane({ detail, onOpenArtifact, onSessionRemoved, backgroun
     {detail.subagents.length ? <Section title={pick('子代理', 'Subagents')} value={String(detail.subagents.length)}>
       <SubagentCard runs={detail.subagents} plain sessionId={detail.sessionId} />
     </Section> : null}
+    <WorkflowsSection sessionId={detail.sessionId} />
+    <JobsSection sessionId={detail.sessionId} />
     <ActionsSection sessionId={detail.sessionId} running={detail.running} pinned={!!session?.pinned} archived={!!session?.archivedAt} onRemoved={onSessionRemoved} />
     <BranchSheet sessionId={detail.sessionId} visible={branchOpen} running={detail.running} onClose={() => setBranchOpen(false)} onSwitched={() => detail.reloadInsight?.()} />
     {detail.artifacts.length ? <Section title={pick('产物', 'Artifacts')} value={String(detail.artifacts.length)}>
@@ -157,11 +147,7 @@ export function DetailPane({ detail, onOpenArtifact, onSessionRemoved, backgroun
 
 const styles = StyleSheet.create({
   root: { paddingHorizontal: space[4], paddingBottom: space[5], flexGrow: 1 },
-  head: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: space[1], marginTop: space[2] },
-  title: { fontSize: font.sm, fontWeight: weight.medium },
-  leader: { flex: 1, minWidth: 0, fontSize: font.xs, marginHorizontal: space[2], overflow: 'hidden' },
   value: { fontSize: font.xs, fontFamily: mono, fontVariant: ['tabular-nums'] },
-  body: { gap: 2 },
   row: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[3] },
   rowText: { flex: 1, minWidth: 0, fontSize: font.base },
   todo: { flexDirection: 'row', alignItems: 'flex-start', gap: space[2], paddingVertical: 4 },

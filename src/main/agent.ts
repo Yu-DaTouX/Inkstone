@@ -3253,16 +3253,24 @@ export class AgentController extends EventEmitter {
     return this.queue.snapshot()
   }
 
+  queueItems(): QueueState {
+    return { steering: [...this.queue.state.steering], followUp: [...this.queue.state.followUp] }
+  }
+
   async restoreQueueSnapshot(snapshot: QueueSnapshot): Promise<{ ok: boolean; error?: string }> {
     return this.queue.restoreSnapshot(snapshot)
   }
 
-  async steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }> {
-    return this.queue.editItem(queueId, true)
+  async steerQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; error?: string }> {
+    return this.queue.editItem(queueId, true, guard)
   }
 
-  async removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
-    return this.queue.editItem(queueId, false)
+  async removeQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
+    return this.queue.editItem(queueId, false, guard)
+  }
+
+  async planQueue(plan: (state: QueueState) => { next: QueueState } | { error: string }): Promise<QueueRewriteResult> {
+    return this.queue.rewriteWith(plan)
   }
 
   async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {

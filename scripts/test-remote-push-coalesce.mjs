@@ -35,7 +35,7 @@ try {
     for (const timer of due) timer.run()
   }
 
-  assert.deepEqual([...REMOTE_COALESCE_CHANNELS].sort(), ['queue', 'runners', 'stats'], '只合并快照类频道')
+  assert.deepEqual([...REMOTE_COALESCE_CHANNELS].sort(), ['queue', 'runners', 'stats', 'terminal-jobs'], '只合并快照类频道')
   assert.equal(REMOTE_COALESCE_INTERVAL_MS, 250, '合并窗口为 250ms')
 
   const coalescer = new RemotePushCoalescer((message) => sent.push(message), 250, schedule)

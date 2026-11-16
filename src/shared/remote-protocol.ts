@@ -193,3 +193,114 @@ export interface RemoteInsight {
 }
 
 export const REMOTE_INSIGHT_MAX_FILES = 40
+
+export interface RemoteQueueItem {
+  id: string
+  text: string
+  digest?: string
+  images?: number
+}
+
+export interface RemoteQueue {
+  steering: string[]
+  followUp: string[]
+  items?: { steering: RemoteQueueItem[]; followUp: RemoteQueueItem[] }
+}
+
+export type RemoteQueueOp =
+  | { op: 'remove'; id: string; expect: string }
+  | { op: 'steer'; id: string; expect: string }
+  | { op: 'edit'; id: string; expect: string; text: string }
+  | { op: 'clear'; items: Array<{ id: string; expect: string }> }
+
+export interface RemoteSubagentDiff {
+  files: number
+  additions: number
+  deletions: number
+  paths: string[]
+  truncated: boolean
+}
+
+export interface RemoteNotice {
+  id: string
+  level: 'info' | 'warning' | 'error' | 'success'
+  message: string
+  sessionId?: string
+}
+
+export interface RemoteJob {
+  id: string
+  command: string
+  state: string
+  live: boolean
+  kind?: 'bash'
+  startedAt: number
+  endedAt?: number
+  exitCode?: number | null
+  output?: string
+  outputTruncated?: boolean
+}
+
+export interface RemoteWorkflowProgress {
+  total: number
+  done: number
+  failed: number
+  running: number
+  queued: number
+  stopped: number
+}
+
+export interface RemoteWorkflow {
+  id: string
+  name: string
+  description: string
+  status: 'running' | 'paused' | 'done' | 'failed' | 'stopped' | 'interrupted'
+  startedAt: number
+  endedAt?: number
+  attempt: number
+  progress: RemoteWorkflowProgress
+  waitingQuota?: boolean
+  cost?: number
+  error?: string
+  logs: string[]
+  canPause: boolean
+  canResume: boolean
+  canStop: boolean
+}
+
+export interface RemoteQuotaWindow {
+  label: string
+  used: number
+  total: number
+  resetAt?: number
+  exceeded?: boolean
+}
+
+export interface RemoteQuotaCard {
+  key: string
+  title: string
+  provider: string
+  plan?: string
+  active?: boolean
+  status: 'ok' | 'limited' | 'expired' | 'error'
+  windows: RemoteQuotaWindow[]
+  balance?: { label: string; amount: number; currency: string }
+  error?: string
+}
+
+export interface RemoteQuota {
+  cards: RemoteQuotaCard[]
+  checkedAt: number
+}
+
+export interface RemoteUsage {
+  range: '7d' | '30d' | 'all'
+  sessions: number
+  messages: number
+  tokens: number
+  cost: number
+  activeDays: number
+  models: Array<{ name: string; tokens: number; cost: number }>
+}
+
+export type RemoteSubagentReview = 'pending' | 'conflict' | 'merged' | 'discarded' | 'archived'
