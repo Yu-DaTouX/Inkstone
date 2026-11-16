@@ -111,7 +111,7 @@ import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
 import { registerFrictionIpc } from './ipc/friction-ipc'
 import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
 import { registerVideoExportIpc } from './ipc/video-export-ipc'
-import { pruneCheckpoints } from './checkpoints'
+import { startDataMaintenance } from './data-maintenance'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
@@ -2281,7 +2281,10 @@ function registerIpc(): void {
       }
     }
   )
-  setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
+  startDataMaintenance({
+    isBusy: () => !runners || runners.statuses().some((runner) => runner.running || runner.waiting) || (subagentService.current()?.list().some((run) => run.status === 'running' || run.status === 'starting') ?? false),
+    trash: (file) => shell.trashItem(file)
+  })
 
   registerRunsIpc(ipc, {
     snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },

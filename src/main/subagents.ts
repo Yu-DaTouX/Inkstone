@@ -571,7 +571,7 @@ export class SubagentController {
     try {
       if (this.opts.pruneHistory && !(await this.opts.pruneHistory())) return
       const dir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
-      const removed = await pruneSubagentArchive(dir, { liveIds: new Set(this.runs.keys()) })
+      const removed = await pruneSubagentArchive(dir, { liveIds: new Set(this.runs.keys()), protect: (id) => this.outputsInUse(id) })
       if (removed.length) this.history.forget(removed)
       await this.pruneOutputs({ gated: true })
     } catch (error) {

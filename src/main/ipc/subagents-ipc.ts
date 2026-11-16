@@ -3,6 +3,9 @@ import type { ExpectedRuntimeOwner } from '../../shared/ipc'
 import type { SubagentService } from '../subagent-service'
 import { normalizeSubagentId } from '../../shared/subagent-id'
 import { pick } from '../../shared/ui-lang'
+import { join } from 'node:path'
+import { YAN_DIR } from '../paths'
+import { cachedSubagentStorageUsage } from '../subagent-prune'
 
 const invalidId = () => ({ ok: false, error: pick('子 Agent id 不合法', 'Invalid subagent id') })
 
@@ -78,6 +81,7 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
   handle('yan:subagents:watch', (ids: unknown) => {
     service.watch(Array.isArray(ids) ? ids.map(normalizeSubagentId).filter((id): id is string => !!id).slice(0, 8) : [])
   })
+  handle('yan:subagents:storage', () => cachedSubagentStorageUsage(join(YAN_DIR, 'subagents')))
   handle('yan:subagents:clear', async (ids: unknown) => {
     const runIds = Array.isArray(ids) ? ids.map(normalizeSubagentId).filter((id): id is string => !!id) : undefined
     await (await service.get()).clearFinished(runIds)

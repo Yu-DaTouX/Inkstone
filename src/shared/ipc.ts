@@ -1057,6 +1057,7 @@ export interface SubagentBridge {
   merge(id: string): Promise<{ ok: boolean; error?: string }>
   discard(id: string): Promise<{ ok: boolean; error?: string }>
   watch(ids: string[]): Promise<void>
+  storage(): Promise<SubagentStorageUsage>
 }
 
 export interface WorkflowBridge {
@@ -1408,6 +1409,17 @@ export interface SearchOpsBridge {
 export interface AttachmentUsage {
   files: number
   bytes: number
+}
+
+export interface SubagentStorageUsage {
+  records: number
+  recordBytes: number
+  sessionBytes: number
+  patchBytes: number
+  untrackedBytes: number
+  outputsBytes: number
+  maxBytes: number
+  outputsMaxBytes: number
 }
 
 export interface AttachmentPruneResult {

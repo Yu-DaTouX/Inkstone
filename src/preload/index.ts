@@ -278,7 +278,8 @@ const api: YanBridge = {
     clearFinished: (ids) => invoke('yan:subagents:clear', ids),
     merge: (id) => invoke('yan:subagents:merge', id),
     discard: (id) => invoke('yan:subagents:discard', id),
-    watch: (ids) => invoke('yan:subagents:watch', ids)
+    watch: (ids) => invoke('yan:subagents:watch', ids),
+    storage: () => invoke('yan:subagents:storage')
   },
 
   workflows: {

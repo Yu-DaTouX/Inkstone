@@ -48,6 +48,7 @@ export interface IpcChannelMap {
   'yan:subagents:merge': Contract<B['subagents']['merge']>
   'yan:subagents:discard': Contract<B['subagents']['discard']>
   'yan:subagents:watch': Contract<B['subagents']['watch']>
+  'yan:subagents:storage': Contract<B['subagents']['storage']>
 
   'yan:workflows:list': Contract<B['workflows']['list']>
 

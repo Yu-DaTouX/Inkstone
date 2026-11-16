@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import type { AttachmentUsage, StorageInfoView } from '../../../../../shared/ipc'
+import type { AttachmentUsage, StorageInfoView, SubagentStorageUsage } from '../../../../../shared/ipc'
 import type { BackupAction, BackupSummary } from '../../../../../shared/data-backup'
 import { useStore } from '../../../state/store'
 import { Button, ConfirmDialog, Notice, Switch } from '../../../ui'
@@ -78,6 +78,33 @@ function ipcReason(cause: unknown): string {
   return describe(cause).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
 }
 
+function SubagentStorageLine(): ReactElement | null {
+  const { t } = useI18n()
+  const [usage, setUsage] = useState<SubagentStorageUsage | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = window.yan.subagents?.storage
+    if (load) void load().then((value) => alive && setUsage(value), () => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  if (!usage) return null
+  return (
+    <span className="settings-row__line" data-testid="v3-data-subagent-storage">
+      {t('set.dataSubagentStorage', {
+        used: bytesText(usage.recordBytes + usage.sessionBytes + usage.patchBytes),
+        cap: bytesText(usage.maxBytes),
+        count: usage.records,
+        outputs: bytesText(usage.outputsBytes),
+        outputsCap: bytesText(usage.outputsMaxBytes)
+      })}
+    </span>
+  )
+}
+
 function AttachmentsRow(): ReactElement {
   const { t } = useI18n()
   const [usage, setUsage] = useState<AttachmentUsage | null>(null)
@@ -115,6 +142,7 @@ function AttachmentsRow(): ReactElement {
         description={
           <>
             {t('pkg.attachDesc')}
+            <span className="settings-row__line">{t('pkg.attachAuto')}</span>
             {size ? <span className="settings-row__line" data-testid="v3-data-attachments-size">{size}</span> : null}
           </>
         }
@@ -366,7 +394,16 @@ export function DataSettings(): ReactElement {
             ) : null}
           </SettingsRow>
           <DataMessageLine message={message} scope="storage" />
-          <SettingsRow settingId="data-subagent-prune" label={t('set.dataSubagentPrune')} description={t('set.dataSubagentPruneDesc')}>
+          <SettingsRow
+            settingId="data-subagent-prune"
+            label={t('set.dataSubagentPrune')}
+            description={
+              <>
+                {t('set.dataSubagentPruneDesc')}
+                <SubagentStorageLine />
+              </>
+            }
+          >
             <Switch
               aria-label={t('set.dataSubagentPrune')}
               isSelected={pruneHistory}
