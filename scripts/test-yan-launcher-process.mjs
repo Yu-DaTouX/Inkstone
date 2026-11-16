@@ -37,10 +37,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const cli = await compile('src/main/yan-cli.ts')
 
   const asciiText = cli.cmdLauncherText('C:/fake/electron.exe', 'C:/fake/yan.mjs')
-  ok(!asciiText.includes('chcp') && asciiText.includes('"C:/fake/electron.exe" "C:/fake/yan.mjs" %* & call exit /b %%ERRORLEVEL%%'), '纯 ASCII 路径的 cmd 启动器不碰代码页，调用 exe 的那一行以 exit /b 结尾')
+  const asciiLines = asciiText.split('\r\n')
+  ok(!asciiText.includes('chcp 65001') && asciiLines.includes('set YAN_CMD="C:/fake/electron.exe" "C:/fake/yan.mjs"') && asciiLines.includes('%YAN_CMD% %*') && asciiLines.includes('exit /b %YAN_EC%'), '纯 ASCII 路径的 cmd 启动器不切代码页，调用 exe 的那一行只到 %* 为止，exit /b 另起一行')
   const wideText = cli.cmdLauncherText('C:/Program Files/砚/砚.exe')
   const lines = wideText.split('\r\n')
   ok(wideText.endsWith('\r\n') && !wideText.includes('\n\n') && lines.findIndex((line) => line.startsWith('chcp 65001')) < lines.findIndex((line) => line.includes('砚.exe')), '含中文的路径只出现在 chcp 65001 之后的行里')
+  const headOf = (text) => text.slice(0, text.indexOf(':cfg\r\n') + 6)
+  const headBytes = (text) => Buffer.byteLength(headOf(text))
+  ok(headOf(asciiText).length > 20 && headOf(asciiText) === headOf(wideText) && headOf(asciiText) === headOf(cli.cmdLauncherText('D:/一/二 三/node.exe')) && headBytes(asciiText) === headBytes(cli.cmdLauncherText('C:/a/very/long/path/'.repeat(20) + 'x.exe')), '各版本启动器在 :cfg 之前的内容与字节偏移完全相同，与路径长短、有无中文无关')
+  ok(!/[^\x00-\x7f]/.test(headOf(wideText)) && !/%\*[^\r]*&/.test(wideText), '启动器头部是纯 ASCII，且 %* 行后面没有 & 拼接')
+  const cpLines = wideText.split('\r\n').filter((line) => /chcp/.test(line))
+  ok(cpLines.some((line) => line.includes('/d /c chcp')) && wideText.includes('delims=0123456789') && wideText.includes('YAN_CP:.='), '取代码页的子 cmd 带 /d，去掉句点并校验为纯数字')
   ok(cli.cmdLauncherText('C:/100%/electron.exe').includes('"C:/100%%/electron.exe"'), '路径里的百分号按批处理转义')
 
   const failDir = join(tmpdir(), `yan-launcher-fail-${process.pid}`)
@@ -113,6 +120,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const failing = viaCmd(nodeCmd, [probe, 'fail'])
     ok(failing.status === 7 && failing.stdout === '["fail"]', 'exe 的退出码原样传给调用方', `${failing.status}`)
 
+    const oddRaw = (launcher, rest) => spawnSync('cmd.exe', ['/d', '/s', '/c', `""${launcher}" ${rest}"`], { encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true, timeout: 30_000 })
+    const odd = oddRaw(nodeCmd, `"${probe}" "a\\"b" c`)
+    ok(odd.status === 0 && odd.stdout === JSON.stringify(['a"b', 'c']) && odd.stderr === '', '参数含奇数个字面双引号时原样传到，exe 不会多收到 &、call、exit 之类的参数（中文路径）', `${odd.status} ${odd.stdout} ${odd.stderr}`)
+    const oddFail = oddRaw(nodeCmd, `"${probe}" fail "x\\"y"`)
+    ok(oddFail.status === 7 && oddFail.stdout === JSON.stringify(['fail', 'x"y']), '奇数引号参数下退出码照样带回', `${oddFail.status} ${oddFail.stdout}`)
+
     const help = viaCmd(made.launcher, ['--help'])
     ok(help.status === 0 && help.stdout.length > 100, 'yan.cmd 在中文路径下也能启动并跑起 yan CLI', `${help.status} ${help.stderr}`)
 
@@ -122,6 +135,35 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const cp = spawnSync('cmd.exe', ['/d', '/s', '/c', `""${probeCp}" & ${inner(nodeCmd, [probe, 'x'])} & "${probeCp}""`], { encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true })
     const seen = cpNumber(cp.stdout.replace('["x"]', '\n'))
     ok(seen.length === 2 && seen[0] === seen[1], '启动器结束后控制台代码页恢复原值，不留给用户终端', JSON.stringify(seen))
+
+    const driver = join(root, 'driver.cmd')
+    writeFileSync(driver, `@echo off\r\nchcp\r\ncall "%YAN_L%" "%YAN_P%" "a\\"b" fail\r\necho EC=%ERRORLEVEL%\r\nchcp\r\n`)
+    const drv = spawnSync('cmd.exe', ['/d', '/s', '/c', `""${driver}""`], { env: { ...process.env, YAN_L: nodeCmd, YAN_P: probe }, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true, timeout: 30_000 })
+    const drvCps = drv.stdout.split(/\r?\n/).map((line) => /: *(\d+)$/.exec(line)?.[1]).filter(Boolean)
+    ok(drvCps.length === 2 && drvCps[0] === drvCps[1] && /EC=0/.test(drv.stdout) && drv.stdout.includes('["a\\"b","fail"]'), '奇数引号参数下中文分支仍恢复代码页，并回到 call 它的批处理继续往下跑', JSON.stringify(drv.stdout))
+
+    const realCp = /(\d+)\D*$/m.exec(spawnSync('cmd.exe', ['/d', '/c', 'chcp'], { encoding: 'utf8', windowsHide: true }).stdout.trim())?.[1]
+    const germanFile = join(root, 'german.txt')
+    writeFileSync(germanFile, `Aktive Codepage: ${realCp}.\r\n`)
+    const germanLauncher = join(root, 'german.cmd')
+    const wideLauncherText = readFileSync(nodeCmd, 'utf8')
+    const germanText = wideLauncherText.replace('"%ComSpec%" /d /c chcp', 'type "%YAN_G%"')
+    writeFileSync(germanLauncher, germanText)
+    const germanDriver = join(root, 'german-driver.cmd')
+    writeFileSync(germanDriver, '@echo off\r\ncall "%YAN_L%" "%YAN_P%" x\r\nchcp\r\n')
+    const german = spawnSync('cmd.exe', ['/d', '/s', '/c', `""${germanDriver}""`], { env: { ...process.env, YAN_L: germanLauncher, YAN_P: probe, YAN_G: germanFile }, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true, timeout: 30_000 })
+    const germanCp = german.stdout.split(/\r?\n/).map((line) => /: *(\d+)$/.exec(line)?.[1]).filter(Boolean)
+    ok(germanText !== wideLauncherText && german.stdout.includes('["x"]') && JSON.stringify(germanCp) === JSON.stringify([realCp]), 'chcp 输出带句点（Aktive Codepage: 936.）时仍恢复成纯数字的原代码页', `${JSON.stringify(german.stdout)} ${realCp}`)
+    spawnSync('cmd.exe', ['/d', '/c', `chcp ${realCp} >nul`], { windowsHide: true })
+
+    const oddDir = join(root, 'a&b^c 100%')
+    mkdirSync(oddDir, { recursive: true })
+    const oddExe = join(oddDir, '砚&^.exe')
+    copyFileSync(process.execPath, oddExe)
+    const oddBin = join(root, 'oddbin')
+    cli.ensureNodeLauncher({ execPath: oddExe, binDir: oddBin })
+    const oddRun = viaCmd(cli.nodeLauncherPath(oddBin), [probe, 'fail'])
+    ok(oddRun.status === 7 && oddRun.stdout === '["fail"]', 'exe 路径含 & ^ % 空格与中文时照样启动，退出码带回', `${oddRun.status} ${oddRun.stdout} ${oddRun.stderr}`)
 
     const scratch = join(root, 'asciicheck')
     mkdirSync(scratch, { recursive: true })
@@ -145,6 +187,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const during = await runSlow(nodeCmd, () => cli.ensureNodeLauncher({ execPath: longer, binDir }))
     ok(during.code === 3 && during.out === 'done\n' && during.err === '', '另一个实例在 exe 运行期间改写 yan-node.cmd，当前这次调用结束后不会执行到新文件的残段', `${during.code} ${JSON.stringify(during.out)} ${JSON.stringify(during.err)}`)
     ok(readFileSync(nodeCmd, 'utf8').includes('zzzz') && !readdirSync(binDir).some((name) => name.endsWith('.tmp')), '改写走临时文件加改名，不留临时文件')
+    cli.ensureNodeLauncher({ execPath: wideExe, binDir })
+    const toAscii = await runSlow(nodeCmd, () => cli.ensureNodeLauncher({ execPath: 'C:/a/b.exe', binDir }))
+    ok(toAscii.code === 3 && toAscii.out === 'done\n' && toAscii.err === '', '中文启动器运行期间被改写成纯 ASCII 版本，也不会执行到残段', `${toAscii.code} ${JSON.stringify(toAscii.out)} ${JSON.stringify(toAscii.err)}`)
+    cli.ensureNodeLauncher({ execPath: wideExe, binDir })
 
     if (!nonAscii.test(tmpdir())) {
       const asciiRoot = join(tmpdir(), `yan-launcher-ascii-${process.pid}`)
@@ -156,7 +202,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
         cli.ensureNodeLauncher({ execPath: asciiExe, binDir: asciiBin })
         const asciiCmd = cli.nodeLauncherPath(asciiBin)
         const asciiRun = viaCmd(asciiCmd, [probe, 'fail'])
-        ok(!readFileSync(asciiCmd, 'utf8').includes('chcp') && asciiRun.status === 7 && asciiRun.stdout === '["fail"]', 'ASCII 路径的启动器直接运行，退出码原样传出')
+        ok(!readFileSync(asciiCmd, 'utf8').includes('chcp 65001') && asciiRun.status === 7 && asciiRun.stdout === '["fail"]', 'ASCII 路径的启动器直接运行，退出码原样传出')
+        const asciiOdd = oddRaw(asciiCmd, `"${probe}" "a\\"b" c`)
+        ok(asciiOdd.status === 0 && asciiOdd.stdout === JSON.stringify(['a"b', 'c']) && asciiOdd.stderr === '', 'ASCII 启动器同样原样传奇数个双引号的参数', `${asciiOdd.status} ${asciiOdd.stdout} ${asciiOdd.stderr}`)
+        const asciiToWide = await runSlow(asciiCmd, () => cli.ensureNodeLauncher({ execPath: join(root, '砚', `${'q'.repeat(50)}.exe`), binDir: asciiBin }))
+        ok(asciiToWide.code === 3 && asciiToWide.out === 'done\n' && asciiToWide.err === '', 'ASCII 启动器运行期间被改写成中文版本，也不会执行到残段', `${asciiToWide.code} ${JSON.stringify(asciiToWide.out)} ${JSON.stringify(asciiToWide.err)}`)
+        cli.ensureNodeLauncher({ execPath: asciiExe, binDir: asciiBin })
         const asciiDuring = await runSlow(asciiCmd, () => cli.ensureNodeLauncher({ execPath: longer.replace(root, asciiRoot).replace(/[^\x00-\x7f]/g, 'x'), binDir: asciiBin }))
         ok(asciiDuring.code === 3 && asciiDuring.out === 'done\n' && asciiDuring.err === '', 'ASCII 启动器运行期间被改写同样不会执行到残段', `${asciiDuring.code} ${JSON.stringify(asciiDuring.err)}`)
       } finally {

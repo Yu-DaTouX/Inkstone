@@ -39,18 +39,31 @@ function batchQuote(value: string): string {
   return `"${value.replace(/%/g, '%%')}"`
 }
 
+const CMD_LAUNCHER_HEAD = [
+  '@echo off',
+  'setlocal',
+  'set "ELECTRON_RUN_AS_NODE=1"',
+  'set "YAN_CP="',
+  'goto :cfg',
+  ':run',
+  '%YAN_CMD% %*',
+  'set "YAN_EC=%ERRORLEVEL%"',
+  'if defined YAN_CP chcp %YAN_CP% >nul',
+  'exit /b %YAN_EC%',
+  ':cfg'
+]
+
+const CMD_LAUNCHER_CODEPAGE = [
+  'for /f "delims=" %%a in (\'"%ComSpec%" /d /c chcp\') do for %%b in (%%a) do set "YAN_CP=%%b"',
+  'set "YAN_CP=%YAN_CP:.=%"',
+  'for /f "delims=0123456789" %%a in ("%YAN_CP%") do set "YAN_CP="',
+  'chcp 65001 >nul'
+]
+
 export function cmdLauncherText(...command: string[]): string {
   const line = command.map(batchQuote).join(' ')
-  const lines = ['@echo off', 'setlocal', 'set "ELECTRON_RUN_AS_NODE=1"']
-  if (/[^\x00-\x7f]/.test(line)) {
-    lines.push(
-      'for /f "delims=" %%a in (\'chcp\') do for %%b in (%%a) do set "YAN_CP=%%b"',
-      'chcp 65001 >nul',
-      `${line} %* & call set "YAN_EC=%%ERRORLEVEL%%" & call chcp %%YAN_CP%% >nul & call exit /b %%YAN_EC%%`
-    )
-  } else {
-    lines.push(`${line} %* & call exit /b %%ERRORLEVEL%%`)
-  }
+  const wide = /[^\x00-\x7f]/.test(line)
+  const lines = [...CMD_LAUNCHER_HEAD, ...(wide ? CMD_LAUNCHER_CODEPAGE : []), `set YAN_CMD=${line}`, 'goto :run']
   return [...lines, ''].join('\r\n')
 }
 
