@@ -73,7 +73,8 @@ const MEASURE = (ms) => `(async () => {
     focus: document.hasFocus(),
     animations: out,
     stuck: finite.filter((f) => f.connected && f.state === 'paused' && f.idleMs > 500 && f.at < f.end),
-    bots: { n: bots.length, updatesPerSec: med(bots.map((b) => b.changes / wall * 1000)) }
+    bots: { n: bots.length, updatesPerSec: med(bots.map((b) => b.changes / wall * 1000)) },
+    clock: window.__yanFrameClock?.() ?? null
   }
 })()`
 
@@ -161,6 +162,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   check('常驻动画播放速度与真实时间一致（0.85–1.15）', off.length === 0, off)
   check('还在文档里的有限动画没有停在半途', measures.every((m) => m.stuck.length === 0), measures.flatMap((m) => m.stuck).slice(0, 5))
   check('录到页面帧', report.cast.frames > 10, report.cast)
+  check('帧时钟仍在接管 CSS 动画', last.clock?.cssTakeover === true, last.clock)
 
   await ev(`window.yan.subagents.stopAll()`)
   await waitFor(`!s.subagents.some((a) => a.status === 'running' || a.status === 'starting')`, 60000, 200)

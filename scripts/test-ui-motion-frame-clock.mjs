@@ -45,7 +45,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   globalThis.requestAnimationFrame = (callback) => frames.request(callback)
   globalThis.cancelAnimationFrame = (handle) => frames.cancel(handle)
   const listeners = new Map()
-  globalThis.window = { addEventListener: (type, fn) => listeners.set(type, fn), removeEventListener() {}, requestAnimationFrame: globalThis.requestAnimationFrame }
+  globalThis.window = { addEventListener: (type, fn) => listeners.set(type, fn), removeEventListener() {}, requestAnimationFrame: globalThis.requestAnimationFrame, setTimeout: (fn) => fn() }
   let timelineNow = 0
   let docFocus = true
   globalThis.document = { hasFocus: () => docFocus, addEventListener() {}, documentElement: { dataset: {} }, timeline: { get currentTime() { return timelineNow } }, getAnimations: () => [] }
@@ -260,7 +260,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   frames.advance(1000 / 279)
   ok(dots.every((animation) => animation.playState === 'paused'), '一批开始事件合并后接管常驻动画')
   ok(scans === 1, `一批开始事件只全文档查找一次（实际 ${scans} 次）`)
-  ok(caret.playState === 'running', '打字光标闪烁不接管（流式时每个字重建）')
+  ok(caret.playState === 'running', '打字光标闪烁不接管（流式时随新块重建）')
 })
 
 await runSuite(import.meta.url, async (ok, compile) => {
@@ -268,7 +268,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
   globalThis.requestAnimationFrame = (callback) => frames.request(callback)
   globalThis.cancelAnimationFrame = (handle) => frames.cancel(handle)
   const listeners = new Map()
-  globalThis.window = { addEventListener: (type, fn) => listeners.set(type, fn), removeEventListener() {}, requestAnimationFrame: globalThis.requestAnimationFrame, setTimeout: (fn, ms) => setTimeout(fn, ms) }
+  const retries = []
+  globalThis.window = { addEventListener: (type, fn) => listeners.set(type, fn), removeEventListener() {}, requestAnimationFrame: globalThis.requestAnimationFrame, setTimeout: (fn, ms) => ms >= 10000 ? retries.push({ fn, ms }) : setTimeout(fn, ms) }
   globalThis.Element = class { constructor() { this.isConnected = true } }
   globalThis.CSSAnimation = class {
     constructor(name, target) {
@@ -298,27 +299,47 @@ await runSuite(import.meta.url, async (ok, compile) => {
   for (let i = 0; i < 10; i++) frames.advance(1000 / 279)
   ok(first.playState === 'paused', '查找很快时接管常驻动画')
 
+  const startOf = (name) => {
+    const target = new globalThis.Element()
+    const animation = new globalThis.CSSAnimation(name, target)
+    live.push(animation)
+    docListeners.get('animationstart')({ animationName: name, target, pseudoElement: '' })
+    return animation
+  }
+  const settle = async (ms) => {
+    await new Promise((resolve) => setTimeout(resolve, ms))
+    frames.advance(1000 / 279)
+    frames.advance(1000 / 279)
+  }
   slow = true
-  const target = new globalThis.Element()
-  const later = new globalThis.CSSAnimation('ui-status-pulse', target)
-  live.push(later)
-  docListeners.get('animationstart')({ animationName: 'ui-status-pulse', target, pseudoElement: '' })
-  await new Promise((resolve) => setTimeout(resolve, 320))
-  frames.advance(1000 / 279)
-  frames.advance(1000 / 279)
-  ok(first.playState === 'running' && later.playState === 'running', '单次全文档查找超过 8ms 时停止接管 CSS 动画并交回原生播放')
+  const later = startOf('ui-status-pulse')
+  await settle(320)
+  ok(first.playState === 'paused' && later.playState === 'paused' && clock.frameClockStatus().slowScans === 1, '只有一次全文档查找超过 8ms 时不停止接管')
+  const later2 = startOf('ui-spin')
+  await settle(650)
+  const stopped = clock.frameClockStatus()
+  ok(first.playState === 'running' && later.playState === 'running' && later2.playState === 'running', '连续两次全文档查找超过 8ms 时停止接管 CSS 动画并交回原生播放')
+  ok(stopped.cssTakeover === false && stopped.stops === 1 && stopped.slowScans === 2, '调试场景可读到「已停止接管」与次数')
   slow = false
-  const third = new globalThis.CSSAnimation('ui-spin', new globalThis.Element())
-  live.push(third)
-  docListeners.get('animationstart')({ animationName: 'ui-spin', target: third.effect.target, pseudoElement: '' })
-  await new Promise((resolve) => setTimeout(resolve, 320))
-  frames.advance(1000 / 279)
-  frames.advance(1000 / 279)
+  const third = startOf('ui-spin')
+  await settle(320)
   ok(third.playState === 'running', '停止接管后不再按开始事件接管')
   const own = fakeAnimation(0)
   clock.driveAnimation(own)
   frames.advance(1000 / 279)
   ok(own.playState === 'paused', '停止接管 CSS 动画后，自己创建的动画仍由帧时钟推进')
+  ok(retries.length === 1 && retries[0].ms >= 30000 && retries[0].ms <= 60000, '停止后安排 30–60 秒后自动重试一次')
+  retries.shift().fn()
+  frames.advance(1000 / 279)
+  ok(first.playState === 'paused' && third.playState === 'paused' && clock.frameClockStatus().retries === 1 && clock.frameClockStatus().cssTakeover, '自动重试时重新扫描并恢复接管')
+  slow = true
+  startOf('ui-spin')
+  await settle(650)
+  startOf('ui-spin')
+  await settle(650)
+  ok(clock.frameClockStatus().stops === 2 && !clock.frameClockStatus().cssTakeover, '重试后又连续超时则再次停止')
+  ok(retries.length === 0, '自动重试只做一次')
+  slow = false
 
   dataset.reduceMotion = 'true'
   listeners.get('yan:reduced-motion')?.()
@@ -358,6 +379,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
   listeners.get('blur')?.()
   const iframe = rates()
   ok(iframe.content > 52 && iframe.decor > 52, `焦点进了页面内的 iframe（窗口 blur 但文档仍有焦点）时正文与装饰动画都保持约 60fps（实际 ${iframe.content.toFixed(1)} / ${iframe.decor.toFixed(1)}fps）`)
+  focus = false
+  rates()
+  const viaIframe = rates()
+  ok(viaIframe.decor > 25 && viaIframe.decor < 38 && viaIframe.content > 52, `焦点经 iframe 切到别的应用、顶层窗口没有再收到 blur 时，定期复查焦点后装饰动画降到约 30fps（实际 ${viaIframe.decor.toFixed(1)}fps）`)
+  focus = true
+  listeners.get('focus')?.()
   focus = false
   listeners.get('blur')?.()
   const away = rates()

@@ -16,7 +16,7 @@ import { installDeepLinkNavigation } from './features/deeplink/navigation'
 import { installBrowserPreloadRecovery } from './lib/preload-recovery'
 import { installIdlePrefetch } from './lib/idle-prefetch'
 import { installFrictionRecorder } from './features/friction/install'
-import { installFrameClock } from './lib/frame-clock'
+import { frameClockStatus, installFrameClock } from './lib/frame-clock'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -29,6 +29,7 @@ declare global {
     __yanRightPanel: typeof useRightPanel
     __yanSplit: typeof useSplitView
     __yanUiV3: typeof useUiV3
+    __yanFrameClock: typeof frameClockStatus
   }
 }
 const probeMode = window.yan.probeMode || (import.meta.env.DEV && new URLSearchParams(window.location.search).get('probe') === '1')
@@ -39,6 +40,7 @@ if (probeMode) {
   window.__yanRightPanel = useRightPanel
   window.__yanSplit = useSplitView
   window.__yanUiV3 = useUiV3
+  window.__yanFrameClock = frameClockStatus
 }
 
 installAudioUnlock()

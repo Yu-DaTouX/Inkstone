@@ -9,6 +9,9 @@ const VSYNC_DRIFT_MS = 0.02
 const SCAN_BUDGET = 0.02
 const SCAN_MIN_GAP_MS = 250
 const SCAN_LIMIT_MS = 8
+const SLOW_SCANS_TO_STOP = 2
+const TAKEOVER_RETRY_MS = 45000
+const FOCUS_RECHECK_MS = 1000
 const AMBIENT_NAMES = new Set([
   'ui-spin',
   'ui-status-pulse',
@@ -45,6 +48,25 @@ let scanDue = false
 let scanTimer = 0
 let nextScanAt = 0
 let cssTakeover = true
+let slowScans = 0
+let retryPending = false
+let retryUsed = false
+let focusCheckedAt = 0
+
+export interface FrameClockStatus {
+  cssTakeover: boolean
+  scans: number
+  slowScans: number
+  stops: number
+  retries: number
+  lastScanMs: number
+}
+
+const status: FrameClockStatus = { cssTakeover: true, scans: 0, slowScans: 0, stops: 0, retries: 0, lastScanMs: 0 }
+
+export function frameClockStatus(): FrameClockStatus {
+  return { ...status }
+}
 let seq = 0
 let frame = 0
 const contentCadence: Cadence = { last: -Infinity, next: -Infinity }
@@ -104,6 +126,12 @@ function handBack(animations: Animation[]): void {
 
 function stopCssTakeover(): void {
   cssTakeover = false
+  status.cssTakeover = false
+  status.stops += 1
+  if (!retryUsed && !retryPending) {
+    retryPending = true
+    window.setTimeout(retryCssTakeover, TAKEOVER_RETRY_MS)
+  }
   starts = new Map()
   scanDue = false
   for (const animation of queued) if (animation instanceof CSSAnimation) queued.delete(animation)
@@ -125,7 +153,12 @@ function scan(wanted?: Map<Element, Set<string>>): void {
   const started = performance.now()
   const found = document.getAnimations().filter((animation) => ambientLoop(animation, wanted))
   const finished = performance.now()
-  if (finished - started > SCAN_LIMIT_MS) {
+  const cost = finished - started
+  status.scans += 1
+  status.lastScanMs = Math.round(cost * 10) / 10
+  slowScans = cost > SCAN_LIMIT_MS ? slowScans + 1 : 0
+  status.slowScans = slowScans
+  if (slowScans >= SLOW_SCANS_TO_STOP) {
     stopCssTakeover()
     return
   }
@@ -141,7 +174,6 @@ function collectStarts(): void {
 }
 
 function planAdoptions(now: number): [Animation, Driven][] {
-  if (scanDue) collectStarts()
   if (!queued.size) return []
   if (prefersReducedMotion()) {
     queued.clear()
@@ -201,6 +233,11 @@ function runCallbacks(now: number): void {
 function tick(now: number): void {
   frame = 0
   sampleVsync(now)
+  if (now - focusCheckedAt > FOCUS_RECHECK_MS) {
+    focusCheckedAt = now
+    focused = document.hasFocus()
+  }
+  if (scanDue) collectStarts()
   if (callbacks.size && due(contentCadence, now, TARGET_FRAME_MS)) runCallbacks(now)
   const moves: [Animation, number][] = []
   const done: Animation[] = []
@@ -267,10 +304,31 @@ function rescan(): void {
   schedule()
 }
 
+function resumeCssTakeover(): void {
+  cssTakeover = true
+  status.cssTakeover = true
+  slowScans = 0
+  status.slowScans = 0
+}
+
+function retryCssTakeover(): void {
+  retryPending = false
+  if (cssTakeover) return
+  retryUsed = true
+  status.retries += 1
+  resumeCssTakeover()
+  rescan()
+}
+
 function onReducedMotionChange(): void {
   releaseAll()
-  cssTakeover = true
+  retryUsed = false
+  resumeCssTakeover()
   rescan()
+}
+
+function recheckFocus(): void {
+  focused = document.hasFocus()
 }
 
 export function installFrameClock(): void {
@@ -278,7 +336,11 @@ export function installFrameClock(): void {
   installed = true
   focused = document.hasFocus()
   window.addEventListener('focus', () => { focused = true })
-  window.addEventListener('blur', () => { focused = document.hasFocus() })
+  window.addEventListener('blur', () => {
+    recheckFocus()
+    window.setTimeout(recheckFocus, 0)
+  })
+  document.addEventListener('visibilitychange', recheckFocus)
   document.addEventListener('animationstart', onAnimationStart, true)
   subscribeReducedMotion(onReducedMotionChange)
   let probes = 8
