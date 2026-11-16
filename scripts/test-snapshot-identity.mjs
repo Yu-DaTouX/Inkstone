@@ -112,7 +112,7 @@ export async function runSnapshotIdentityTests(ok) {
       observeCompaction: async () => {},
       sessionWork: { observePush: noop },
       syncPendingIsolations: async () => {},
-      scheduleIsolationRefresh: noop,
+      isolation: { scheduleRefresh: noop },
       pushRunners: noop,
       readHistoryWithArtifacts: async () => {
         if (opts.chainRead) await opts.chainRead(registryRef)

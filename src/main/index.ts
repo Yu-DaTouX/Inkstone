@@ -145,8 +145,7 @@ import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { sharedCwdNotice } from './cwd-sharing'
-import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, pendingIsolationChanges } from './session-isolation'
-import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
+import { createIsolationView } from './isolation-view'
 import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
 import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
@@ -983,110 +982,17 @@ function readHistoryWithArtifacts(sessionFile: string, liveRunId?: string) {
   })
 }
 
-const autoIsolations = new AutoIsolationStore()
-
-let isolationSweepAt = 0
-const ISOLATION_SYNC_MIN_INTERVAL = 3000
-const isolationBlockedReason = new Map<string, string>()
-
-type IsolationViewState = NonNullable<RunnerStatus['isolation']>
-const isolationView = new Map<string, { state: IsolationViewState; branch: string }>()
-
-function isolationOf(cwd: string): { state: IsolationViewState; branch: string } | undefined {
-  return isolationView.get(isolationCwdKey(cwd))
-}
-
-function setIsolationView(worktree: string, view: { state: IsolationViewState; branch: string } | null): void {
-  const key = isolationCwdKey(worktree)
-  const before = isolationView.get(key)
-  if (view === null) {
-    if (!before) return
-    isolationView.delete(key)
-  } else {
-    if (before && before.state === view.state && before.branch === view.branch) return
-    isolationView.set(key, view)
-  }
-  pushIsolationStatus()
-  pushRunners()
-}
+const isolation = createIsolationView({
+  registry: () => runners,
+  window: () => win,
+  isVisible: (state) => runnerVisibility.includes(state),
+  sessionsDir: SESSIONS_DIR,
+  publishStatus: (text) => push({ ch: 'status', payload: { key: 'isolation', text } }),
+  onChange: () => pushRunners()
+})
 
 function piDown(): string {
   return pick('pi 未运行', 'pi is not running')
-}
-
-function pushIsolationStatus(): void {
-  const pending = [...isolationView.values()].filter((x) => x.state !== 'waiting').length
-  const text = pending === 0 ? undefined : pick(`工作树：${pending} 个有未合并的改动`, `Worktrees: ${pending} with unmerged changes`)
-  push({ ch: 'status', payload: { key: 'isolation', text } })
-}
-
-async function initializeIsolationView(): Promise<void> {
-  const records = await autoIsolations.all().catch(() => [])
-  for (const record of records) setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
-  scheduleIsolationRefresh()
-}
-
-let isolationRefreshTimer: ReturnType<typeof setTimeout> | null = null
-
-function scheduleIsolationRefresh(): void {
-  if (isolationRefreshTimer) return
-  const wait = Math.max(0, ISOLATION_SYNC_MIN_INTERVAL - (Date.now() - isolationSweepAt))
-  isolationRefreshTimer = setTimeout(() => {
-    isolationRefreshTimer = null
-    void refreshIsolationViews()
-  }, wait)
-}
-
-async function discardUnusedIsolations(): Promise<void> {
-  const registry = runners
-  if (!registry) return
-  const discarded = await discardIdleEmptyIsolations({
-    records: () => autoIsolations.all(),
-    runners: () => registry.statuses().map((status) => ({
-      id: status.id,
-      cwd: status.cwd,
-      isActive: status.isActive,
-      busy: status.running || status.waiting,
-      visible: runnerVisibility.includes(registry.agentOf(status.id)?.getState() ?? null),
-      messageCount: registry.agentOf(status.id)?.getState()?.messageCount ?? 0
-    })),
-    stopRunner: (id) => registry.stopOne(id),
-    hasSavedSession: (record) => hasSavedSessionUnder(SESSIONS_DIR, record),
-    discard: discardUnusedIsolation,
-    forget: (record) => autoIsolations.remove(record.worktree)
-  }).catch(() => [])
-  for (const record of discarded) setIsolationView(isolatedSessionCwd(record), null)
-  if (discarded.length) pushRunners()
-}
-
-async function refreshIsolationViews(): Promise<void> {
-  isolationSweepAt = Date.now()
-  if (!runners || !win) {
-    scheduleIsolationRefresh()
-    return
-  }
-  if (win.isDestroyed()) return
-  await discardUnusedIsolations()
-  const records = await autoIsolations.all().catch(() => [])
-  for (const record of records) {
-    if (runners.hasBusyCwd(isolatedSessionCwd(record))) {
-      setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
-      continue
-    }
-    const changes = await pendingIsolationChanges(record)
-    const pending = changes.ok && changes.files + changes.commits > 0
-    if (!pending) {
-      isolationBlockedReason.delete(record.worktree)
-      setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
-      continue
-    }
-    const state: IsolationViewState = isolationBlockedReason.has(record.worktree) ? 'blocked' : 'ready'
-    setIsolationView(isolatedSessionCwd(record), { state, branch: record.branch })
-  }
-  const alive = new Set(records.map((record) => isolationCwdKey(isolatedSessionCwd(record))))
-  for (const key of [...isolationView.keys()]) {
-    if (!alive.has(key)) setIsolationView(key, null)
-  }
 }
 
 const sharedCwdWarned = new Set<string>()
@@ -1120,7 +1026,7 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
   })
   if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
   if (msg.ch === 'state' || msg.ch === 'proc') requestPiPackageActivationTick()
-  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) scheduleIsolationRefresh()
+  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) isolation.scheduleRefresh()
   if (msg.ch === 'state') pushRunners()
   if (msg.ch === 'ui-request' || msg.ch === 'ui-resolved') pushRunners()
 }
@@ -1963,21 +1869,8 @@ async function resolveFileContext(
   return { ok: true, context: { ...provisional, cwd: checked.cwd } }
 }
 
-async function openSessionWorktree(cwd: string): Promise<{ ok: true; cwd: string; branch: string } | { ok: false; error: string }> {
-  const outcome = await isolateCwdForConflict(cwd)
-  if (!outcome.ok) return { ok: false, error: outcome.reason }
-  await autoIsolations.add(outcome.record).catch(() => undefined)
-  const target = isolatedSessionCwd(outcome.record)
-  setIsolationView(target, { state: 'waiting', branch: outcome.record.branch })
-  return { ok: true, cwd: target, branch: outcome.record.branch }
-}
-
-async function sessionWorktrees(): Promise<{ cwd: string; branch: string }[]> {
-  return (await autoIsolations.all()).map((record) => ({ cwd: isolatedSessionCwd(record), branch: record.branch }))
-}
-
 async function isolatedSessionOwner(cwd: string, sessionId: string): Promise<{ projectId?: string; scope: 'global' | 'project' | 'pending' } | undefined> {
-  const record = await autoIsolations.byWorktree(cwd).catch(() => null)
+  const record = await isolation.recordFor(cwd).catch(() => null)
   if (!record) return undefined
   const previous = (await getSessionLayout()).entries.find((entry) => entry.sessionId === sessionId)
   if (previous) return { ...(previous.projectId ? { projectId: previous.projectId } : {}), scope: previous.scope }
@@ -1992,7 +1885,7 @@ async function rememberRunnerSession(
   if (!result.ok || !result.sessionId) return
   const state = result.id ? runners?.agentOf(result.id)?.getState() : undefined
   if (result.sessionId) {
-    void autoIsolations.bindSession(state?.cwd ?? target.cwd, result.sessionId).catch(() => undefined)
+    void isolation.bindSession(state?.cwd ?? target.cwd, result.sessionId).catch(() => undefined)
   }
   const cwd = state?.cwd ?? target.cwd
   const owner = target.projectId ? undefined : await isolatedSessionOwner(cwd, result.sessionId)
@@ -2191,12 +2084,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       const text = `[运行实例回收] ${id} (${sessionId ?? 'unknown'}) 空闲 ${Math.floor(idleMs / 1000)} 秒，释放1个 pi 实例，剩余 ${remaining} 个`
       console.log(text)
       push({ ch: 'log', payload: { text } })
-      void discardUnusedIsolations()
+      void isolation.discardUnused()
     },
     prepareNewSession: async agent => {
       return applyRememberedModel(agent, (await getSettings()).lastMainModel)
     },
-    isolationOf,
+    isolationOf: (cwd) => isolation.of(cwd),
     launchSignature: () => launchResources().signature,
     createAgent: (id, cwd, generation) => {
       const agent: AgentController = new AgentController({
@@ -2435,7 +2328,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       message: pick(`本地模型「${name}」已闲置 10 分钟，已自动卸载；下次发消息时会自动启动`, `Local model "${name}" was idle for 10 minutes and has been unloaded; it will start again when you send a message`) } })
   })
 
-  void initializeIsolationView()
+  void isolation.initialize()
 
   const piProbe = resolvePi(settings.piBin ? { override: settings.piBin } : {})
   const piBin = piProbe.args.at(-1)
@@ -3182,8 +3075,8 @@ const sessionHost: SessionHost = {
   relocateMissingCwd,
   startAgent,
   rememberRunnerSession,
-  openSessionWorktree,
-  sessionWorktrees,
+  openSessionWorktree: (cwd) => isolation.openWorktree(cwd),
+  sessionWorktrees: () => isolation.worktrees(),
   readHistoryWithArtifacts,
   projectIdForCwd
 }
