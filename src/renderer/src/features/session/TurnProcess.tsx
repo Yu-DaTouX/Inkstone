@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
+import { Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type RefCallback, type RefObject } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -154,19 +154,44 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-function useSkipArmed(live: boolean): boolean {
+const SKIP_WIDTH_EPSILON_PX = 0.5
+
+function useSkipArmed(live: boolean, spreadRef: RefObject<HTMLElement | null>): boolean {
   const [armed, setArmed] = useState(false)
+  const [engaged, setEngaged] = useState(live)
   useEffect(() => {
-    if (!live || armed) return undefined
+    if (live) setEngaged(true)
+  }, [live])
+  useEffect(() => {
+    const node = spreadRef.current
+    if (!engaged || !node) return undefined
+    let width = node.getBoundingClientRect().width
+    let outer = 0
     let inner = 0
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setArmed(true))
-    })
-    return () => {
+    const cancel = (): void => {
       cancelAnimationFrame(outer)
       cancelAnimationFrame(inner)
     }
-  }, [live, armed])
+    const arm = (): void => {
+      cancel()
+      outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setArmed(true))
+      })
+    }
+    arm()
+    const observer = new ResizeObserver(() => {
+      const next = node.getBoundingClientRect().width
+      if (Math.abs(next - width) <= SKIP_WIDTH_EPSILON_PX) return
+      width = next
+      setArmed(false)
+      arm()
+    })
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      cancel()
+    }
+  }, [engaged, spreadRef])
   return armed
 }
 
@@ -193,10 +218,11 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const lastGroup = items.findLastIndex((item) => item.kind === 'group')
   const lastNotes = live ? items.findLastIndex((item) => item.kind === 'notes') : -1
   const cutAt = compactionAfter ? items.findLastIndex((item) => item.kind === 'group' && !!splitAtCompaction(item.segments, compactionAfter)) : -1
-  const armed = useSkipArmed(live)
+  const spreadRef = useRef<HTMLDivElement>(null)
+  const armed = useSkipArmed(live, spreadRef)
 
   return (
-    <div className="v3-spread" data-live={live || undefined} data-skip={armed || undefined} data-testid="v3-spread">
+    <div ref={spreadRef} className="v3-spread" data-live={live || undefined} data-skip={armed || undefined} data-testid="v3-spread">
       {overflow ? (
         <Button size="sm" variant="ghost" className="v3-process-more" aria-expanded={showAll === true} onPress={() => setShowAll(showAll !== true)} data-testid="v3-spread-more">
           {showAll === true ? t('proc.showRecent') : tt('moreItems', { n: overflow })}

@@ -206,12 +206,13 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
           await sleep(700)
           await frames(10)
           const widthNow = await ev(`Math.round(document.querySelector('.v3-stream').clientWidth)`)
+          const skipArmed = await ev(`!!document.querySelector('.v3-stream .v3-spread[data-live][data-skip]')`)
           await ev(`(() => { const el = document.querySelector('.v3-stream'); el.scrollTop = el.scrollHeight })()`)
           await frames(10)
           const gapAfter = await bottomGap()
           await scrollUpRecord()
           const summary = summarize(await ev('window.__cvRec.frames'))
-          out.resize[name] = { from, to, streamWidth: widthNow, gapBefore, gapAfter, ...summary }
+          out.resize[name] = { from, to, streamWidth: widthNow, skipArmed, gapBefore, gapAfter, ...summary }
           log(key, 'resize', name, out.resize[name])
         }
       }
@@ -324,6 +325,10 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
       continue
     }
     check(`${key} 往上滚时可见内容不跳（单帧偏差 ≤2px）`, out.scrollUp.maxShiftPx <= 2, out.scrollUp)
+    for (const [name, r] of Object.entries(out.resize ?? {})) {
+      check(`${key} 改宽度（${name}）后往上滚不跳（单帧偏差 ≤2px）`, r.maxShiftPx <= 2, r)
+      check(`${key} 改宽度（${name}）稳定后重新挂上跳过绘制`, r.skipArmed === true, r.skipArmed)
+    }
     check(`${key} 载入后贴底`, out.startGap <= 2, out.startGap)
     check(`${key} 查找命中并滚到可见`, out.find.active === 1 && out.find.inView, out.find)
     check(`${key} 键盘焦点落在叙述链接上`, out.focus.onLink && out.focus.focusVisible, out.focus)
@@ -331,7 +336,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
   }
   for (const [key, out] of Object.entries(results)) {
     if (!out.resize) continue
-    log(key, '改宽度后往上滚（观察，不计验收）', Object.fromEntries(Object.entries(out.resize).map(([name, r]) => [name, { maxShiftPx: r.maxShiftPx, over2: r.shiftFramesOver2, sumShiftPx: r.sumShiftPx, shRange: r.shRange }])))
+    log(key, '改宽度后往上滚', Object.fromEntries(Object.entries(out.resize).map(([name, r]) => [name, { maxShiftPx: r.maxShiftPx, over2: r.shiftFramesOver2, sumShiftPx: r.sumShiftPx, shRange: r.shRange }])))
   }
   const table = Object.entries(results).map(([key, out]) => ({ key, virtual: out.env.virtual, upMax: out.scrollUp.maxShiftPx, upOver2: out.scrollUp.shiftFramesOver2, upSum: out.scrollUp.sumShiftPx, appendMaxDown: out.append.maxDownPx, appendMaxUp: out.append.maxUpPx, appendOver2: out.append.shiftFramesOver2, endTaskMs: out.turnEnd.longestTaskMs, endLayoutMs: out.turnEnd.layoutMs, endShift: out.turnEnd.frames.maxShiftPx, find: out.find.active === 1 && out.find.inView }))
   report.table = table
