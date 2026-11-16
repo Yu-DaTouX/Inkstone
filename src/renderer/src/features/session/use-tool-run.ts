@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState, useSyncExternal
 import { toolExpansion } from './tool-expansion'
 import { holdRunLabel, type HeldRunLabel } from './tool-run-model'
 import { DEFAULT_TRANSCRIPT_VIEW, type TranscriptView } from './transcript-view-model'
+import type { UIToolCall } from '../../../../shared/ipc'
+import { argsRowDueAt } from './tool-summary'
 
 export const ToolExpansionScope = createContext('')
 
@@ -34,4 +36,22 @@ export function useHeldRunLabel(key: string | null, label: string): HeldRunLabel
     return () => window.clearTimeout(timer)
   }, [wakeAt])
   return held
+}
+
+export function useSettledToolRows(tools: UIToolCall[]): UIToolCall[] {
+  const now = Date.now()
+  let dueAt: number | null = null
+  const visible = tools.filter((call) => {
+    const due = argsRowDueAt(call)
+    if (due === null || now >= due) return true
+    dueAt = dueAt === null ? due : Math.min(dueAt, due)
+    return false
+  })
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (dueAt === null) return undefined
+    const timer = window.setTimeout(() => setTick((n) => n + 1), Math.max(0, dueAt - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [dueAt, tick])
+  return dueAt === null ? tools : visible
 }

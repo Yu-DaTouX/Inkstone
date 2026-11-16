@@ -20,6 +20,13 @@ export function generatingArgs(call: UIToolCall): boolean {
   return (call.status === 'running' || call.status === 'pending') && call.args === undefined && !call.incomplete
 }
 
+export const ARGS_ROW_DELAY_MS = 300
+
+export function argsRowDueAt(call: UIToolCall): number | null {
+  if (!generatingArgs(call)) return null
+  return (call.startedAt ?? Number.NEGATIVE_INFINITY) + ARGS_ROW_DELAY_MS
+}
+
 export function summarize(call: UIToolCall): string {
   const target = toolTarget(call)
   return stepCategory(call.name) === 'bash' ? redactCommandSecrets(target) : target

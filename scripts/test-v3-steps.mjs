@@ -402,6 +402,41 @@ async function main() {
     ok(head.props.chevron === 'none' && head.props.rowHover === true, '工具行不再带前置箭头，保留整行反馈')
   }
 
+  group('参数刚开始生成的工具行先不出现，300ms 后才显示（快工具不再依次换三种文字）')
+  {
+    const realWindow = globalThis.window
+    const realNow = Date.now
+    const timers = []
+    globalThis.window = { ...realWindow, setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length }, clearTimeout: () => {} }
+    try {
+      const pendingCall = (id, age) => tool({ id, name: 'write', args: undefined, argsRaw: '{', status: 'pending', startedAt: Date.now() - age })
+      const rt = makeHookRuntime()
+      const props = { tools: [pendingCall('args-fresh', 0)] }
+      const first = renderComponent(rt, ToolSteps, props)
+      ok(first === null, '刚开始生成参数时不出现工具行', first)
+      ok(timers.length === 1 && timers[0].ms > 0 && timers[0].ms <= 300, '只排定一次不超过 300ms 的重渲染', timers.map((t) => t.ms))
+      Date.now = () => realNow() + 350
+      timers[0].fn()
+      const later = renderComponent(rt, ToolSteps, props)
+      ok(byTypeName(later, 'StepNode').length === 1, '300ms 后参数仍在生成就显示工具行', later)
+      ok(timers.length === 1, '显示后不再排定定时器', timers.length)
+
+      timers.length = 0
+      const slow = renderSteps([pendingCall('args-slow', 1200)])
+      ok(byTypeName(slow.tree, 'StepNode').length === 1 && timers.length === 0, '已生成超过 300ms 的调用直接显示，不排定定时器', timers.length)
+
+      const argsIn = renderSteps([tool({ id: 'args-in', name: 'write', args: { path: 'a.txt' }, status: 'running', startedAt: Date.now() })])
+      ok(byTypeName(argsIn.tree, 'StepNode').length === 1 && timers.length === 0, '参数已齐的调用立即显示，不排定定时器', timers.length)
+
+      const mixed = renderSteps([tool({ id: 'mixed-done', name: 'read', args: { path: 'a.ts' } }), pendingCall('mixed-new', 0)])
+      ok(byTypeName(mixed.tree, 'StepNode').length === 1 && byTypeName(mixed.tree, 'ToolGroupRow').length === 0, '已完成的调用照常显示，刚开始生成的调用先不进组', byTypeName(mixed.tree, 'StepNode').length)
+      ok(timers.length === 1, '混合时同样只排定一次', timers.length)
+    } finally {
+      globalThis.window = realWindow
+      Date.now = realNow
+    }
+  }
+
   group('失败：组头可见文字不写失败数（避免和独立失败状态重复），分段只留红字，不再自动展开')
   {
     const { tree } = renderSteps([

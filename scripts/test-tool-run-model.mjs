@@ -14,7 +14,7 @@ async function load(dir) {
   await writeFile(entry, [
     `export * from '${session}/tool-run-model.ts'`,
     `export * from '${session}/tool-expansion.ts'`,
-    `export { generatingArgs, toolRunningLabel } from '${session}/tool-summary.ts'`,
+    `export { ARGS_ROW_DELAY_MS, argsRowDueAt, generatingArgs, toolRunningLabel } from '${session}/tool-summary.ts'`,
     `export { SessionItemProjector } from '${posix(join(ROOT, 'src/main/session-items/projector.ts'))}'`,
     `export { sessionText } from '${session}/text.ts'`
   ].join('\n'))
@@ -115,6 +115,17 @@ async function run() {
       assert.ok(!m.toolRunningLabel(tools[1], '生成参数中…', zh).includes('生成参数中'))
       assert.equal(stopped.added, 55, '保留已完成写入的改动统计')
       assert.equal(tools[0].cancelled, undefined)
+    }
+
+    {
+      const pending = call('late-write', 'write', undefined, { args: undefined, argsRaw: '{"path":"a', status: 'pending', startedAt: 1000 })
+      assert.equal(m.ARGS_ROW_DELAY_MS, 300)
+      assert.equal(m.argsRowDueAt(pending), 1300, '工具行从开始生成参数起 300ms 后才显示')
+      assert.equal(m.argsRowDueAt({ ...pending, status: 'running' }), 1300)
+      assert.equal(m.argsRowDueAt({ ...pending, startedAt: undefined }) <= 0, true, '没有起点时不再拖延')
+      assert.equal(m.argsRowDueAt({ ...pending, args: { path: 'a' } }), null, '参数已齐时立即显示')
+      assert.equal(m.argsRowDueAt({ ...pending, status: 'ok' }), null, '已结束的调用立即显示')
+      assert.equal(m.argsRowDueAt({ ...pending, incomplete: true }), null, '参数不完整的调用不再等待')
     }
 
     const broken = m.buildToolRows([

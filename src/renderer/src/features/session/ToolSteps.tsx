@@ -18,7 +18,7 @@ import { QuestionReceipt } from './QuestionReceipt'
 import { ApprovalReceipt } from './ApprovalReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
-import { ToolExpansionScope, useHeldRunLabel, useToolExpansion } from './use-tool-run'
+import { ToolExpansionScope, useHeldRunLabel, useSettledToolRows, useToolExpansion } from './use-tool-run'
 import { toolExpansion } from './tool-expansion'
 import { useRunNow } from './run-clock'
 import { formatDuration } from '../../../../shared/duration'
@@ -94,8 +94,10 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
   return nodes.some((node) => node.call.id === id || holdsCall(node.children, id))
 }
 
-export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools), alertFailures = true, staged = false }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean; staged?: boolean }): JSX.Element | null {
+export function ToolSteps({ tools: allTools, approvalIds = NO_APPROVALS, glowId: glowProp, alertFailures = true, staged = false }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean; staged?: boolean }): JSX.Element | null {
   const t = useT()
+  const tools = useSettledToolRows(allTools)
+  const glowId = glowProp === undefined ? liveToolGlowId(tools) : glowProp
   const tallied = useContext(ToolTallyScope)
   const scope = useContext(ToolExpansionScope)
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
