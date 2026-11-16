@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { sleep } from './env.mjs'
 import { galleryMarkdown } from './visual-gallery.mjs'
@@ -125,6 +126,7 @@ export const FAKE_TRIGGERS = {
   CRASHBASH: '跑一条 60 秒的 bash，用来测进程被杀后的历史与续接',
   SECRETASK: '先问密码，再用 bash 读密文环境变量，最后回答模型是否收到过测试密文，用来验证密文不进上下文',
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
+  'CMDFILE=<路径>': '按 JSON 数组里的顺序逐条用 bash 工具跑命令（每步一条），用来让场景驱动 yan 命令序列',
   BROWSERLOOP: '用 yan browser 连续导航（BROWSERURL1=<地址> BROWSERURL2=<地址> 轮流，BROWSERSTEPS<n> 步，默认 8），中间夹慢命令，用来看标签按会话归属与 agent 一轮内保持焦点',
   DEVSERVER: '在会话终端里起一个本地 http 服务（DEVSCRIPT=<脚本路径> DEVPORT=<端口>），再用 yan browser open 打开它，用来看本地服务发现与停止',
   TERMJOBS: '用 yan terminal run --background 起 5 个后台任务：长跑、约 20 秒后正常结束、约 20 秒后 exit 3、很长的只读命令、--timeout 5 超时，用来看后台任务列表与终端标签',
@@ -249,7 +251,11 @@ async function respond(res, text, done, requestNo) {
     else if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
     else if (text.includes('[砚宿主通知：工作流')) await streamText('工作流的结果收到了。', 20, 10)
     else if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
-    else if (text.includes('WFAGENT')) {
+    else if (/CMDFILE=\S+/.test(text)) {
+      const list = JSON.parse(readFileSync(/CMDFILE=(\S+)/.exec(text)[1], 'utf8'))
+      if (done < list.length) await callTool('bash', { command: list[done], description: `命令 ${done + 1}` })
+      else await streamText('命令都跑完了。', 20, 10)
+    } else if (text.includes('WFAGENT')) {
       await sleep(Number(/WFDELAY(\d+)/.exec(text)?.[1] ?? 2500))
       const item = /WFITEM=(\S+)/.exec(text)?.[1] ?? 'x'
       if (text.includes('WFJSON')) await streamText(`看完了 ${item}。\n\n\`\`\`json\n${JSON.stringify({ item, ok: true, notes: [`${item} 没有问题`] })}\n\`\`\``, 24, 10)

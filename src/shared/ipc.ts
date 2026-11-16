@@ -965,10 +965,13 @@ export interface BrowserObservation {
     value?: string
     frameId?: string
     frameUrl?: string
+    offscreen?: boolean
   }>
   accessibilityNodeCount: number
   frameCount?: number
   observedFrameCount?: number
+  viewport?: { width: number; height: number }
+  scopeRefs?: string[]
 }
 
 export interface BrowserNetworkEntry {

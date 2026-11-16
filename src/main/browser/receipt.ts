@@ -11,6 +11,11 @@ export interface BrowserActionOptions {
   dialog?: 'accept' | 'dismiss'
 }
 
+export interface BrowserObserveOptions {
+  all?: boolean
+  scope?: string
+}
+
 export interface BrowserActionReceipt {
   dialogs?: BrowserDialogRecord[]
   openedTabs?: { id: string; url: string }[]
@@ -18,7 +23,6 @@ export interface BrowserActionReceipt {
   value?: string | null
   picker?: string
   scroll?: ScrollPosition
-  obscuredBy?: string
 }
 
 export function receiptSummary(receipt: BrowserActionReceipt | undefined): Record<string, unknown> {
@@ -30,6 +34,5 @@ export function receiptSummary(receipt: BrowserActionReceipt | undefined): Recor
   if (receipt.value !== undefined) out.value = receipt.value
   if (receipt.picker) out.picker = receipt.picker
   if (receipt.scroll) out.scroll = receipt.scroll
-  if (receipt.obscuredBy) out.obscuredBy = receipt.obscuredBy
   return out
 }

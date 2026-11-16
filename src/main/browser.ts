@@ -24,7 +24,7 @@ import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
 import { InputController, type SelectOutcome } from './browser/InputController'
-import { Observer } from './browser/Observer'
+import { Observer, type CaptureOptions } from './browser/Observer'
 import { NetworkTracker } from './browser/NetworkTracker'
 import {
   RawCdp,
@@ -39,8 +39,8 @@ import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chr
 import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { createCookieBridge, writeBridgeCookies, type BridgeCookie } from './browser/cookie-bridge'
-import type { BrowserActionOptions, BrowserActionReceipt, BrowserDialogRecord } from './browser/receipt'
-import { SCRIPT_GUIDE, ScriptError, runBrowserScript, type ScriptResult } from './browser/script-runner'
+import type { BrowserActionOptions, BrowserActionReceipt, BrowserDialogRecord, BrowserObserveOptions } from './browser/receipt'
+import { SCRIPT_GUIDE, ScriptError, disposeScriptRuntimes, runBrowserScript, type ScriptResult } from './browser/script-runner'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
@@ -862,6 +862,7 @@ export class BrowserController {
 
   async closeSession(sessionId: string, options: { keepExternal?: boolean } = {}): Promise<BrowserState> {
     this.sessionEpochs.set(sessionId, this.sessionEpoch(sessionId) + 1)
+    disposeScriptRuntimes(sessionId)
     const ids = [...this.tabs.values()].filter((tab) => tab.sessionId === sessionId).map((tab) => tab.id)
     for (const id of ids) await this.closeTab(id, { silent: true })
     this.activeBySession.delete(sessionId)
@@ -1428,9 +1429,15 @@ export class BrowserController {
   }
 
   runScript(code: string, signal?: AbortSignal): Promise<ScriptResult> {
+    const sessionId = this.focusSessionId
     return runBrowserScript(code, {
       navigate: (url) => this.navigate(url),
-      observe: () => this.observe(),
+      observe: (options) => this.observe(options),
+      text: () => this.text(),
+      scope: () => {
+        const p = this.parts()
+        return p ? `${this.getState().activeTabId ?? ''}:${p.registry.generationKey()}` : ''
+      },
       click: (ref, options) => this.click(ref, options),
       type: (ref, text, options) => this.type(ref, text, options),
       select: (ref, value, options) => this.select(ref, value, options),
@@ -1448,6 +1455,8 @@ export class BrowserController {
       closeTab: (id) => this.closeTab(id)
     }, {
       signal,
+      persistKey: sessionId,
+      withSession: (work) => this.sessionScope.run(sessionId, work),
       beforeAction: () => {
         if (this.userControl) throw new ScriptError('USER_CONTROL_ACTIVE', 'USER_CONTROL_ACTIVE: 浏览器当前由用户接管，请等待用户交还 Agent 控制。')
       }
@@ -1459,6 +1468,7 @@ export class BrowserController {
   }
 
   async dispose(): Promise<void> {
+    disposeScriptRuntimes()
     try {
       await this.close()
     } finally {
@@ -1466,20 +1476,39 @@ export class BrowserController {
     }
   }
 
-  async observe(): Promise<BrowserObservation> {
+  private openParts(): TargetParts {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
-    if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
-    return this.observeTarget(p)
+    return p
   }
 
-  private async observeTarget(p: TargetParts): Promise<BrowserObservation> {
+  async observe(options: BrowserObserveOptions = {}): Promise<BrowserObservation> {
+    const p = this.openParts()
+    const scope = options.scope ? p.registry.resolve(options.scope) : undefined
+    if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
+    return this.observeTarget(p, { all: options.all === true, ...(scope ? { scope: { backendNodeId: scope.backendNodeId, sessionId: scope.sessionId } } : {}) })
+  }
+
+  async text(): Promise<{ text: string; url: string; title: string }> {
+    const p = this.openParts()
+    if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
+    await this.readyTarget(p)
+    return p.observer.readText()
+  }
+
+  private async readyTarget(p: TargetParts): Promise<{ tab?: BrowserTab; external: ExternalTarget | null }> {
     const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
     const external = this.external?.observer === p.observer ? this.external : null
     if (!tab && !external) throw new Error('浏览器目标已失效，请重新 observe')
     await p.cdp.attach()
+    if (tab && !external) await this.layoutHiddenTab(tab)
+    return { tab, external }
+  }
+
+  private async observeTarget(p: TargetParts, options: CaptureOptions = {}): Promise<BrowserObservation> {
+    const { tab, external } = await this.readyTarget(p)
     if (external) {
-      const observation = await p.observer.capture(external.url, external.title)
+      const observation = await p.observer.capture(external.url, external.title, options)
       if (this.external?.observer === p.observer) {
         external.url = observation.url
         external.title = observation.title
@@ -1489,8 +1518,7 @@ export class BrowserController {
       }
       return observation
     }
-    await this.layoutHiddenTab(tab!)
-    return p.observer.capture(tab!.state.url, tab!.state.title)
+    return p.observer.capture(tab!.state.url, tab!.state.title, options)
   }
 
   private async layoutHiddenTab(tab: BrowserTab, repaint = false): Promise<void> {
@@ -1541,8 +1569,8 @@ export class BrowserController {
 
   async click(ref: string, options: BrowserActionOptions = {}): Promise<BrowserActionOutcome> {
     return this.act(async (p) => {
-      const { obscuredBy } = await p.input.click(p.registry.resolve(ref))
-      return obscuredBy ? { receipt: { obscuredBy } } : {}
+      await p.input.click(p.registry.resolve(ref))
+      return {}
     }, options)
   }
 

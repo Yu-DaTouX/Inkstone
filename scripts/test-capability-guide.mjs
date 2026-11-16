@@ -8,6 +8,18 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(!mod.capabilityGuide(true, { codemode: false }).includes('codemode') && mod.capabilityGuide(true).includes('codemode'), '能力说明：codemode 关闭时不提 codemode')
   ok(!/short plain prose|no headings or long lists/.test(mod.VISUAL_ANSWER_GUIDE), '可视化说明不再要求只写散文、不用列表')
   {
+    const textOnly = mod.capabilityGuide(false, { model: { input: ['text'] } })
+    const vision = mod.capabilityGuide(false, { model: { input: ['text', 'image'] } })
+    ok(/browser run --code -/.test(guide) && !/screenshot/.test(guide), '能力说明：浏览器一行推荐内联脚本，默认不提截图')
+    ok(/cannot view images/.test(textOnly) && /`observe` and `text`, not `screenshot`/.test(textOnly), '能力说明：不能看图的模型改用 observe / text，不推荐 screenshot')
+    ok(vision === guide && mod.capabilityGuide(false, { model: {} }) === guide, '能力说明：能看图或能力未知的模型保持原文')
+    const handlers = {}
+    mod.default({ on: (name, fn) => { handlers[name] = fn } })
+    const options = { sections: {} }
+    handlers.before_agent_start({ systemPrompt: '', systemPromptOptions: options }, { model: { input: ['text'] } })
+    ok(/cannot view images/.test(options.sections.inkstone_capabilities), '能力说明：按当前模型的 input 能力分支，不看模型名')
+  }
+  {
     const day = new Date(2026, 9, 19, 23, 30)
     const win = mod.environmentGuide(day, 'win32', undefined)
     ok(/Today: 2026-10-19/.test(win) && /Git Bash/.test(win) && /do not prefix commands with a cd/.test(win), '环境说明：本地日期、Windows 走 Git Bash、命令已在工作目录启动')

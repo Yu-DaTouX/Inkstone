@@ -13,7 +13,7 @@ export async function runBrowserSelectTests(ok, mod, errors) {
   ok(registry.resolve(ref).backendNodeId === 7, 'observe 返回含目标身份的有效引用')
   let crossTargetDenied = false
   const other = new errors.ElementRegistry()
-  other.refresh([element])
+  ok(other.refresh([element]).refs[0] !== ref, '另一个 registry 的同一节点拿到不同的 ref')
   try { other.resolve(ref) } catch (error) { crossTargetDenied = error.code === 'STALE_ELEMENT' }
   ok(crossTargetDenied, '另一浏览器目标拒绝相同代次的引用')
   ok(registry.refresh([element]).refs[0] === ref && registry.resolve(ref).backendNodeId === 7, '同一文档重新观察时同一节点保持原引用')

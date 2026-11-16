@@ -11,18 +11,20 @@ import { YAN_DIR } from './paths'
 import type { BrowserObservation, BrowserNetworkSnapshot, BrowserState } from '../shared/ipc'
 import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
 import { receiptSummary, type BrowserActionOptions } from './browser/receipt'
+import { ALL_ITEM_LIMIT, ITEM_LIMIT, diffObservations, elementLine, filterElements, textMatches, type ObservedPage } from './browser/observation-format'
 
 const ACTION_TIMEOUT_MS = 60_000
-const CONFIRMING_ACTIONS = new Set(['state', 'observe', 'wait', 'screenshot'])
-const SUMMARY_ELEMENT_LIMIT = 80
-const SUMMARY_NAME_CHARS = 60
+const CONFIRMING_ACTIONS = new Set(['state', 'observe', 'wait', 'screenshot', 'text'])
+const SCRIPT_MAX_BYTES = 1024 * 1024
+const RESULT_PREVIEW_CHARS = 4000
+const LOG_TAIL_LINES = 20
+const LOG_LINE_CHARS = 300
+const TEXT_DEFAULT_CHARS = 4000
+const TEXT_MAX_CHARS = 20_000
 let browserUncertain = false
 
-function summaryElementLine(element: BrowserObservation['elements'][number]): string {
-  const name = element.name.replace(/\s+/g, ' ').trim()
-  const shown = name.length > SUMMARY_NAME_CHARS ? `${name.slice(0, SUMMARY_NAME_CHARS)}…` : name
-  const value = element.value ? ` =${JSON.stringify(element.value.slice(0, 40))}` : ''
-  return `${element.ref} ${element.role} ${JSON.stringify(shown)}${value}${element.disabled ? ' disabled' : ''}`
+function flag(value: unknown): boolean {
+  return value === true || value === 'true' || value === '' || value === '1'
 }
 
 class ActionTimeoutError extends Error {}
@@ -48,6 +50,7 @@ export class BrowserCommands {
   private readonly owner = `browser-${randomUUID()}`
   private refs = new Set<string>()
   private lastElements = new Map<string, WaitElement>()
+  private lastObservation: ObservedPage | undefined
   private targetId: string | undefined
   private identity?: string
   constructor(private readonly ctl: BrowserCommandsHost) {}
@@ -70,6 +73,7 @@ export class BrowserCommands {
       return await sharedResources.run(resourceId, owner, async () => {
         if (this.identity !== identity) {
           this.refs.clear()
+          this.lastObservation = undefined
           this.targetId = undefined
           this.identity = identity
         }
@@ -80,11 +84,11 @@ export class BrowserCommands {
         if (state.userControl && userMutations.has(action)) {
           throw new CapabilityCommandError('USER_CONTROL_ACTIVE', '浏览器当前由用户接管，请等待用户恢复 Agent 控制。')
         }
-        if (['click', 'type', 'select'].includes(action)) {
-          const ref = this.browserText(params, 'ref')
-          if (ref && !this.refs.has(ref)) throw new CapabilityCommandError('STALE_ELEMENT', `元素引用 ${ref} 不在最新一次观察里：元素已经消失，或页面已导航 / 换了文档。用上一条回执 resultFile 里 elements 的 ref（同一页面上没变的元素 ref 保持不变），或重新 observe。`)
+        if (['click', 'type', 'select'].includes(action) || (action === 'observe' && this.browserText(params, 'in'))) {
+          const ref = this.browserText(params, action === 'observe' ? 'in' : 'ref')
+          if (ref && !this.refs.has(ref)) throw new CapabilityCommandError('STALE_ELEMENT', `元素引用 ${ref} 不在最新一次观察里：元素已经消失，或页面已导航 / 换了文档。重新 observe（或 observe --find <文字>）拿新的 ref；同一页面上没变的元素 ref 保持不变。`)
         }
-        if (['click', 'type', 'select', 'press', 'scroll'].includes(action) && this.targetId !== state.activeTabId) {
+        if ((['click', 'type', 'select', 'press', 'scroll'].includes(action) || (action === 'observe' && this.browserText(params, 'in'))) && this.targetId !== state.activeTabId) {
           throw new CapabilityCommandError('STALE_TARGET', '浏览器目标已改变，请重新 observe 后继续。')
         }
         let result: { data?: unknown; summary: Record<string, unknown> }
@@ -109,14 +113,17 @@ export class BrowserCommands {
         if (observation && Array.isArray(observation.elements)) {
           if (state.activeTabId !== this.browserHost().getState().activeTabId) {
             this.refs.clear()
+            this.lastObservation = undefined
             this.targetId = undefined
             throw new CapabilityCommandError('STALE_TARGET', '操作期间显示目标发生变化，动作可能已完成，请核对结果并重新 observe；不要重放动作。')
           }
           this.refs = new Set(observation.elements.map((e) => e.ref))
           this.lastElements = new Map(observation.elements.map((e) => [e.ref, e]))
+          this.lastObservation = { url: observation.url, title: observation.title, text: observation.text, elements: observation.elements }
           this.targetId = this.browserHost().getState().activeTabId
         } else if (userMutations.has(action)) {
           this.refs.clear()
+          this.lastObservation = undefined
           this.targetId = this.browserHost().getState().activeTabId ?? undefined
         }
         return result
@@ -139,13 +146,21 @@ export class BrowserCommands {
       }
       case 'run': {
         const file = this.browserText(params, 'file')
-        if (!file) throw new CapabilityCommandError('missing_file', 'run 需要 UTF-8 JavaScript 文件：yan browser run --file <路径>')
+        const inline = typeof params.code === 'string' && params.code.trim() ? params.code : undefined
+        if (!file && !inline) throw new CapabilityCommandError('missing_code', 'run 需要 JavaScript：yan browser run --code - （从标准输入读，配 heredoc）、--code "<代码>" 或 --file <路径>')
         if (!host.runScript) throw new CapabilityCommandError('browser_script_unavailable', '当前浏览器不支持脚本')
-        const path = resolve(this.ctl.cwd?.() ?? process.cwd(), file)
-        if ((await stat(path)).size > 1024 * 1024) throw new CapabilityCommandError('script_too_large', '浏览器脚本不能超过 1 MiB')
+        let code: string
+        if (inline) {
+          if (Buffer.byteLength(inline, 'utf8') > SCRIPT_MAX_BYTES) throw new CapabilityCommandError('script_too_large', '浏览器脚本不能超过 1 MiB')
+          code = inline
+        } else {
+          const path = resolve(this.ctl.cwd?.() ?? process.cwd(), file!)
+          if ((await stat(path)).size > SCRIPT_MAX_BYTES) throw new CapabilityCommandError('script_too_large', '浏览器脚本不能超过 1 MiB')
+          code = await readFile(path, 'utf8')
+        }
         let data: unknown
         try {
-          data = await host.runScript(await readFile(path, 'utf8'), signal)
+          data = await host.runScript(code, signal)
         } catch (error) {
           if (error instanceof Error && 'code' in error) {
             const logs = (error as { logs?: string[] }).logs ?? []
@@ -153,16 +168,43 @@ export class BrowserCommands {
           }
           throw error
         }
-        const out = (data ?? {}) as { result?: unknown; logs?: string[]; url?: string; title?: string }
-        const preview = out.result === null || out.result === undefined ? undefined : JSON.stringify(out.result).slice(0, 300)
+        const out = (data ?? {}) as { result?: unknown; logs?: string[]; url?: string; title?: string; runtime?: string }
+        const full = out.result === null || out.result === undefined ? undefined : typeof out.result === 'string' ? out.result : JSON.stringify(out.result)
+        const logs = out.logs ?? []
         return {
           data,
           summary: {
             kind: 'browser', action, ok: true, url: out.url, title: out.title,
-            ...(preview ? { result: preview } : {}),
-            logs: out.logs?.length ?? 0,
-            ...(out.logs?.length ? { logTail: out.logs.slice(-5) } : {})
+            ...(out.runtime ? { runtime: out.runtime } : {}),
+            ...(full !== undefined ? { result: full.slice(0, RESULT_PREVIEW_CHARS) } : {}),
+            ...(full !== undefined && full.length > RESULT_PREVIEW_CHARS ? { resultTruncated: true, resultChars: full.length } : {}),
+            ...(logs.length ? { logs: logs.length, logTail: logs.slice(-LOG_TAIL_LINES).map((line) => line.slice(0, LOG_LINE_CHARS)) } : {})
           }
+        }
+      }
+
+      case 'text': {
+        if (!host.text) throw new CapabilityCommandError('browser_text_unavailable', '当前浏览器不支持读取正文')
+        let page: { text: string; url: string; title: string }
+        try {
+          page = await host.text()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (message.includes('浏览器尚未打开')) throw new CapabilityCommandError('browser_not_open', '内置浏览器还没打开：先用 `yan browser navigate --url <地址>` 打开一个页面')
+          throw error
+        }
+        const total = page.text.length
+        const find = this.browserText(params, 'find')
+        if (find) {
+          const matches = textMatches(page.text, find, 20, 100)
+          return { data: { ...page, find, matches }, summary: { kind: 'browser', action, ok: true, url: page.url, title: page.title, totalChars: total, find, count: matches.length, matches } }
+        }
+        const offset = Math.min(Math.max(Math.floor(this.browserNumber(params, 'offset') ?? 0), 0), total)
+        const size = Math.min(Math.max(Math.floor(this.browserNumber(params, 'max-chars') ?? this.browserNumber(params, 'maxChars') ?? TEXT_DEFAULT_CHARS), 200), TEXT_MAX_CHARS)
+        const endOffset = Math.min(offset + size, total)
+        return {
+          data: page,
+          summary: { kind: 'browser', action, ok: true, url: page.url, title: page.title, totalChars: total, offset, endOffset, ...(endOffset < total ? { nextOffset: endOffset } : {}), text: page.text.slice(offset, endOffset) }
         }
       }
       case 'navigate':
@@ -186,8 +228,10 @@ export class BrowserCommands {
       }
 
       case 'observe': {
-        const observation = await this.browserObserve(action)
-        return { data: observation, summary: this.browserObservationSummary(action, observation, true) }
+        const scope = this.browserText(params, 'in')
+        const all = flag(params.all) || Boolean(this.browserText(params, 'find'))
+        const observation = await this.browserObserve(action, { ...(all ? { all } : {}), ...(scope ? { scope } : {}) })
+        return { data: observation, summary: this.observeSummary(action, observation, params) }
       }
 
       case 'network': {
@@ -213,7 +257,7 @@ export class BrowserCommands {
 
       case 'wait': {
         const observation = await this.browserWaitCommand(params)
-        return { data: observation, summary: this.browserObservationSummary(action, observation, true) }
+        return { data: observation, summary: this.observeSummary(action, observation, {}) }
       }
 
       case 'click':
@@ -224,7 +268,7 @@ export class BrowserCommands {
         if (!res.ok) this.browserFailure(action, res)
         const observation = res.observation ?? (await this.browserObserve(action))
         const target = action === 'click' ? observation.elements.find((element) => element.ref === this.browserText(params, 'ref')) : undefined
-        return { data: res.receipt ? { ...observation, receipt: res.receipt } : observation, summary: { ...this.browserObservationSummary(action, observation), ...receiptSummary(res.receipt), ...(target?.value !== undefined ? { value: target.value } : {}) } }
+        return { data: res.receipt ? { ...observation, receipt: res.receipt } : observation, summary: { ...this.actionSummary(action, observation), ...receiptSummary(res.receipt), ...(target?.value !== undefined ? { value: target.value } : {}) } }
       }
 
       case 'select': {
@@ -239,7 +283,7 @@ export class BrowserCommands {
         const res = await host.select(ref, String(raw), this.actionOptions(params)) as BrowserObservationResult & { chosen?: { value: string; label: string } }
         if (!res.ok) this.browserFailure(action, res)
         const observation = res.observation ?? (await this.browserObserve(action))
-        return { data: res.receipt ? { ...observation, receipt: res.receipt } : observation, summary: { ...this.browserObservationSummary(action, observation), ...receiptSummary(res.receipt), ...(res.chosen ? { value: res.chosen.value, label: res.chosen.label } : {}) } }
+        return { data: res.receipt ? { ...observation, receipt: res.receipt } : observation, summary: { ...this.actionSummary(action, observation), ...receiptSummary(res.receipt), ...(res.chosen ? { value: res.chosen.value, label: res.chosen.label } : {}) } }
       }
 
       case 'back':
@@ -488,12 +532,13 @@ export class BrowserCommands {
     return dialog ? { dialog } : {}
   }
 
-  async browserObserve(action: string): Promise<BrowserObservation> {
+  async browserObserve(action: string, options?: { all?: boolean; scope?: string }): Promise<BrowserObservation> {
     try {
-      return await this.browserHost().observe()
+      return await (options ? this.browserHost().observe(options) : this.browserHost().observe())
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (err instanceof CapabilityCommandError) throw err
+      if (err && typeof err === 'object' && (err as { code?: unknown }).code === 'STALE_ELEMENT') throw new CapabilityCommandError('STALE_ELEMENT', message)
       if (message.includes('浏览器尚未打开')) {
         throw new CapabilityCommandError(
           'browser_not_open',
@@ -517,7 +562,7 @@ export class BrowserCommands {
           '内置浏览器还没打开：先用 `yan browser navigate --url <地址>` 打开一个页面'
         )
       }
-      throw new CapabilityCommandError('browser_screenshot_failed', `截图失败：${message}`)
+      throw new CapabilityCommandError('browser_screenshot_failed', `截图失败：${message}。不必重试截图：用 yan browser observe 看元素、yan browser text 读正文。`)
     }
     const dir = this.ctl.capabilityOpts()?.opsDir ?? join(YAN_DIR, 'ops')
     const path = join(dir, `screenshot-${randomUUID()}.png`)
@@ -563,22 +608,41 @@ export class BrowserCommands {
     }
   }
 
-  browserObservationSummary(
-    action: string,
-    observation: BrowserObservation,
-    listElements = false
-  ): Record<string, unknown> {
+  observeSummary(action: string, observation: BrowserObservation, params: Record<string, unknown>): Record<string, unknown> {
+    const find = this.browserText(params, 'find')
+    const role = this.browserText(params, 'role')
+    const scope = this.browserText(params, 'in')
+    const all = flag(params.all)
+    const widened = all || Boolean(find) || Boolean(scope)
+    const matched = filterElements(observation.elements, { find, role, all, ...(scope ? { scopeRefs: observation.scopeRefs ?? [] } : {}) })
+    const limit = widened ? ALL_ITEM_LIMIT : ITEM_LIMIT
+    const offscreen = widened ? 0 : observation.elements.filter((element) => element.offscreen).length
+    const found = find ? textMatches(observation.text, find, 10, 60) : []
     return {
       kind: 'browser',
       action,
       ok: true,
       url: observation.url,
       title: observation.title,
-      generationId: observation.generationId,
       elements: observation.elements.length,
-      accessibilityNodes: observation.accessibilityNodeCount,
       textChars: observation.text.length,
-      ...(listElements ? { items: observation.elements.slice(0, SUMMARY_ELEMENT_LIMIT).map(summaryElementLine) } : {})
+      ...(offscreen ? { offscreen, hint: `视口外还有 ${offscreen} 个元素：--all 列出，--find <文字> 查找` } : {}),
+      items: matched.slice(0, limit).map(elementLine),
+      ...(matched.length > limit ? { more: matched.length - limit } : {}),
+      ...(find ? { textMatches: found.map((match) => match.snippet) } : {})
+    }
+  }
+
+  actionSummary(action: string, observation: BrowserObservation): Record<string, unknown> {
+    const changes = diffObservations(this.lastObservation, observation)
+    return {
+      kind: 'browser',
+      action,
+      ok: true,
+      url: observation.url,
+      title: observation.title,
+      elements: observation.elements.length,
+      changes: changes.length ? changes : ['页面元素、地址与文字都没有变化']
     }
   }
 }

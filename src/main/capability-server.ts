@@ -124,6 +124,7 @@ export const KNOWN_COMMANDS = new Set([
   'browser.open',
   'browser.state',
   'browser.observe',
+  'browser.text',
   'browser.network',
   'browser.wait',
   'browser.click',

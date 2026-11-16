@@ -22,6 +22,15 @@ export class InvalidKeyError extends Error {
   }
 }
 
+export class ElementObscuredError extends Error {
+  readonly code = 'ELEMENT_OBSCURED'
+
+  constructor(ref: string, readonly blocker: string) {
+    super(`元素 ${ref} 被 ${blocker} 挡住，没有点击。先处理遮挡层（点它的关闭 / 同意按钮或按 Escape），再 observe 后重试。`)
+    this.name = 'ElementObscuredError'
+  }
+}
+
 function staleFromCdp(error: unknown, ref: string): StaleElementError | null {
   const message = error instanceof Error ? error.message : String(error)
   if (/detached|Could not find node|No node with given id|Cannot find context/i.test(message)) {
@@ -57,7 +66,10 @@ const PICKER_VALUE_FN = `function (text) {
   return { picker: true, type: String(el.type), value: String(el.value) }
 }`
 
-const READ_VALUE_FN = `function () {
+export const READ_VALUE_FN = `function () {
+  const type = String(this.type || '').toLowerCase()
+  const auto = String((typeof this.getAttribute === 'function' && this.getAttribute('autocomplete')) || '').toLowerCase()
+  if ('value' in this && typeof this.value === 'string' && (type === 'password' || /(^|\\s)(cc-[a-z-]+|one-time-code)(\\s|$)/.test(auto))) return this.value ? '\u2022\u2022\u2022\u2022' : ''
   if ('value' in this && typeof this.value === 'string') return this.value
   if (this.isContentEditable) return String(this.innerText || '')
   return null
@@ -74,7 +86,7 @@ const DOM_CLICK_FN = `function () {
   return true
 }`
 
-const HIT_TEST_FN = `function (points) {
+export const HIT_TEST_FN = `function (points) {
   let ox = 0
   let oy = 0
   try {
@@ -89,12 +101,21 @@ const HIT_TEST_FN = `function (points) {
   } catch {}
   const root = typeof this.getRootNode === 'function' ? this.getRootNode() : document
   const scope = typeof root.elementFromPoint === 'function' ? root : document
-  let first = null
-  for (let i = 0; i < points.length; i++) {
-    const hit = scope.elementFromPoint(points[i][0] - ox, points[i][1] - oy)
-    if (hit && (hit === this || this.contains(hit) || (hit.shadowRoot && hit.shadowRoot.contains(this)))) return { index: i }
-    if (i === 0) first = hit
+  const doc = this.ownerDocument || document
+  const pageRoots = [doc.documentElement, doc.body, doc.scrollingElement].filter(Boolean)
+  const hits = points.map((point) => scope.elementFromPoint(point[0] - ox, point[1] - oy))
+  const own = (hit) => {
+    if (!hit) return false
+    if (hit === this || this.contains(hit) || (hit.shadowRoot && hit.shadowRoot.contains(this))) return true
+    const label = typeof hit.closest === 'function' ? hit.closest('label') : null
+    return Boolean(label && label.control === this)
   }
+  for (let i = 0; i < hits.length; i++) if (own(hits[i])) return { index: i }
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i]
+    if (hit && !pageRoots.includes(hit) && typeof hit.contains === 'function' && hit.contains(this)) return { index: i }
+  }
+  const first = hits[0] || null
   if (!first) return { index: -1 }
   const id = first.id ? '#' + first.id : ''
   const cls = typeof first.className === 'string' && first.className.trim() ? '.' + first.className.trim().split(/\\s+/)[0] : ''
@@ -147,16 +168,16 @@ export class InputController {
     return { value: String(outcome.value ?? ''), label: String(outcome.label ?? '') }
   }
 
-  async click(element: RegisteredElement): Promise<{ obscuredBy?: string }> {
+  async click(element: RegisteredElement): Promise<void> {
     const { obscuredBy, ...point } = await this.pointAt(element, '点击')
+    if (obscuredBy) throw new ElementObscuredError(element.ref, obscuredBy)
     if (await this.pageHidden(element.sessionId)) {
       await this.callOn(element, DOM_CLICK_FN)
-      return {}
+      return
     }
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, element.sessionId)
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, element.sessionId)
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, element.sessionId)
-    return obscuredBy ? { obscuredBy } : {}
   }
 
   async type(element: RegisteredElement, text: string): Promise<TypeOutcome> {

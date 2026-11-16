@@ -115,7 +115,7 @@ import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shar
 import { titleSampleImages, titleSamples, titleSampleText, type TitleSampleMessage } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import type { QueueEditOp } from '../shared/ipc'
-import type { BrowserActionOptions, BrowserActionReceipt } from './browser/receipt'
+import type { BrowserActionOptions, BrowserActionReceipt, BrowserObserveOptions } from './browser/receipt'
 import { ArtifactStore } from './artifacts'
 import { hasBash } from './git-runtime'
 import { defaultImageModel, detectImageProviders, generateImage, imageProviderEndpoint, imageProviderNeedsConfirmation, isImageProvider, resolveImageProvider, waitForImage, type ImageGenerationRequest } from './image-generation'
@@ -229,7 +229,8 @@ export interface BrowserCommandHost {
   closeTab(id?: string): Promise<BrowserState>
   openExternalChrome(url?: string): Promise<BrowserCommandResult>
   closeExternalChrome(): Promise<BrowserState>
-  observe(): Promise<BrowserObservation>
+  observe(options?: BrowserObserveOptions): Promise<BrowserObservation>
+  text?(): Promise<{ text: string; url: string; title: string }>
   network(): Promise<BrowserNetworkSnapshot>
   click(ref: string, options?: BrowserActionOptions): Promise<BrowserObservationResult>
   type(ref: string, text: string, options?: BrowserActionOptions): Promise<BrowserObservationResult>

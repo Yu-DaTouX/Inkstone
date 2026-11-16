@@ -149,4 +149,53 @@ const makeHost = (overrides = {}) => {
   ok(badNumber && badNumber.code === 'invalid_number', '滚动量必须是数字')
 }
 
+{
+  const elements = [
+    { ref: 'e1', role: 'button', name: 'Go', box: [0, 0, 1, 1] },
+    { ref: 'e2', role: 'textbox', name: 'Query', value: '', box: [0, 0, 1, 1] },
+    { ref: 'e3', role: 'link', name: 'Footer help', box: [0, 900, 1, 1], offscreen: true }
+  ]
+  let current = { url: 'https://example.com', title: 'Example', text: 'hello', elements, accessibilityNodeCount: 9, generationId: 'x'.repeat(38) }
+  const seenOptions = []
+  const host = makeHost({
+    observe: async (options) => { seenOptions.push(options); return { ...current, ...(options?.scope ? { scopeRefs: ['e2'] } : {}) } },
+    type: async () => {
+      current = { ...current, text: 'hello\nResults for alpha', elements: [elements[0], { ...elements[1], value: 'alpha' }, elements[2], { ref: 'e7', role: 'link', name: 'Alpha result', box: [0, 0, 1, 1] }] }
+      return { ok: true, observation: current, receipt: { value: 'alpha' } }
+    },
+    text: async () => ({ url: 'https://example.com', title: 'Example', text: 'abcdefghij'.repeat(1000) + ' needle tail' }),
+    screenshot: async () => { throw new Error('panel hidden') },
+    runScript: async (code) => ({ result: { code }, logs: ['one'], url: 'https://example.com', title: 'Example', runtime: 'kept' })
+  })
+  const commands = new BrowserCommands({ browserHostOrNull: () => host, capabilityOpts: () => ({ sessionId: 's', runnerGeneration: 1 }) })
+  const observed = await commands.runBrowserCommand('observe', {})
+  ok(JSON.stringify(observed.summary.items) === JSON.stringify(['e1 button "Go"', 'e2 textbox "Query"']), 'observe 清单用短 ref，默认只列视口内', JSON.stringify(observed.summary.items))
+  ok(observed.summary.offscreen === 1 && /--all/.test(observed.summary.hint), 'observe 报视口外数量并提示 --all / --find')
+  ok(!('generationId' in observed.summary) && !('accessibilityNodes' in observed.summary), 'stdout 不再带代次长编号')
+  const found = await commands.runBrowserCommand('observe', { find: 'help' })
+  ok(found.summary.items.length === 1 && found.summary.items[0].startsWith('e3 ') && seenOptions.at(-1)?.all === true, '--find 搜含视口外的全部元素')
+  const staleScope = await failure(commands.runBrowserCommand('observe', { in: 'e99' }))
+  ok(staleScope && staleScope.code === 'STALE_ELEMENT', '--in 的 ref 不在最新观察里时报 STALE_ELEMENT')
+  const scoped = await commands.runBrowserCommand('observe', { in: 'e2' })
+  ok(seenOptions.at(-1)?.scope === 'e2' && scoped.summary.items.join() === 'e2 textbox "Query"', '--in 把范围交给宿主并只列范围内元素')
+  const typed = await commands.runBrowserCommand('type', { ref: 'e2', text: 'alpha' })
+  const changes = typed.summary.changes
+  ok(Array.isArray(changes) && changes.includes('~ e2 textbox "Query" ="alpha"') && changes.includes('+ e7 link "Alpha result"') && changes.includes('+ 文本 "Results for alpha"'), '动作回执带变化摘要（值变化、新元素、新文字）', JSON.stringify(changes))
+  ok(!('items' in typed.summary), '动作回执不重复整份清单')
+  const text = await commands.runBrowserCommand('text', { 'max-chars': 500 })
+  ok(text.summary.text.length === 500 && text.summary.nextOffset === 500 && text.summary.totalChars === 10012, 'text 按段读正文并给出 nextOffset')
+  const next = await commands.runBrowserCommand('text', { offset: 9990, 'max-chars': 500 })
+  ok(next.summary.endOffset === 10012 && !('nextOffset' in next.summary), 'text 读到末尾时不再给 nextOffset')
+  const needle = await commands.runBrowserCommand('text', { find: 'NEEDLE' })
+  ok(needle.summary.count === 1 && needle.summary.matches[0].offset === 10001, 'text --find 返回命中位置')
+  const shot = await failure(commands.runBrowserCommand('screenshot', {}))
+  ok(shot && shot.code === 'browser_screenshot_failed' && /observe/.test(shot.message) && /text/.test(shot.message), '截图失败时给出 observe / text 替代')
+  const inline = await commands.runBrowserCommand('run', { code: 'return 1' })
+  ok(inline.summary.result === JSON.stringify({ code: 'return 1' }) && inline.summary.runtime === 'kept' && inline.summary.logTail[0] === 'one', 'run 接受内联代码，回执带 runtime 与日志')
+  const empty = await failure(commands.runBrowserCommand('run', { code: '   ' }))
+  ok(empty && empty.code === 'missing_code', 'run 没有代码时明确报错')
+  const big = await failure(commands.runBrowserCommand('run', { code: 'x'.repeat(1024 * 1024 + 1) }))
+  ok(big && big.code === 'script_too_large', '内联代码同样有 1 MiB 上限')
+}
+
 console.log(`browser-command-boundary: ${checks} assertions passed (fake host, no Electron)`)

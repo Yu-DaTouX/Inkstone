@@ -22,9 +22,17 @@ type PageFrameTree = { frame: PageFrame; childFrames?: PageFrameTree[] }
 type LiveState = { kind?: string; value?: string; label?: string; checked?: boolean; selected?: boolean }
 
 const LIVE_VALUE_LIMIT = 200
-const ELEMENT_LIMIT = 80
-const MEASURE_BATCH = 8
+const ELEMENT_LIMIT = 150
+const ALL_ELEMENT_LIMIT = 400
+const MEASURE_BATCH = 16
 const MAX_MEASURE_FACTOR = 3
+const PAGE_TEXT_LIMIT = 500_000
+const INERT_ROLES = ['presentation', 'none', 'generic']
+
+export interface CaptureOptions {
+  all?: boolean
+  scope?: { backendNodeId: number; sessionId?: string }
+}
 const LIVE_TAGS = ['input', 'textarea', 'select', 'option']
 const LIVE_ROLES = ['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton']
 
@@ -38,13 +46,14 @@ export const LIVE_STATE_FN = `function () {
     const chosen = options[index] || options.find((option) => option.selected) || null
     return { kind: 'select', value: text(el.value), label: chosen ? text(chosen.label || chosen.text) : '' }
   }
+  const secret = /(^|\\s)(cc-[a-z-]+|one-time-code)(\\s|$)/.test(String((typeof el.getAttribute === 'function' && el.getAttribute('autocomplete')) || '').toLowerCase())
   if (tag === 'input') {
     const type = String(el.type || '').toLowerCase()
     if (type === 'checkbox' || type === 'radio') return { kind: 'checked', checked: Boolean(el.checked) }
-    if (type === 'password') return { kind: 'value', value: el.value ? '\u2022\u2022\u2022\u2022' : '' }
+    if (type === 'password' || secret) return { kind: 'value', value: el.value ? '\u2022\u2022\u2022\u2022' : '' }
     return { kind: 'value', value: text(el.value) }
   }
-  if (tag === 'textarea') return { kind: 'value', value: text(el.value) }
+  if (tag === 'textarea') return { kind: 'value', value: secret && el.value ? '\u2022\u2022\u2022\u2022' : text(el.value) }
   if (tag === 'option') return { kind: 'option', value: text(el.value), selected: Boolean(el.selected) }
   if (el.isContentEditable) return { kind: 'value', value: text(el.innerText) }
   if (typeof el.checked === 'boolean') return { kind: 'checked', checked: el.checked }
@@ -57,6 +66,12 @@ function wantsLiveState(node: DOMNode, attributes: Record<string, string>): bool
   if (LIVE_TAGS.includes(name)) return true
   if (attributes.contenteditable === 'true') return true
   return LIVE_ROLES.includes(String(attributes.role ?? '').toLowerCase())
+}
+
+const SECRET_AUTOCOMPLETE = /(^|\s)(cc-[a-z-]+|one-time-code)(\s|$)/
+
+function sensitiveField(attributes: Record<string, string>): boolean {
+  return String(attributes.type ?? '').toLowerCase() === 'password' || SECRET_AUTOCOMPLETE.test(String(attributes.autocomplete ?? '').toLowerCase())
 }
 
 function liveValue(live: LiveState | null | undefined, fallback: string | undefined): string | undefined {
@@ -89,19 +104,28 @@ function textOf(node: DOMNode, limit = 160): string {
 
 function isInteractive(node: DOMNode, attributes: Record<string, string>): boolean {
   const name = String(node.localName || node.nodeName || '').toLowerCase()
+  const role = attributes.role?.trim().toLowerCase()
   return ['a', 'button', 'input', 'textarea', 'select', 'option', 'summary'].includes(name) ||
-    attributes.role !== undefined ||
+    (role !== undefined && !INERT_ROLES.includes(role)) ||
     attributes.tabindex !== undefined ||
     attributes.contenteditable === 'true'
 }
 
-function flatten(root: DOMNode, inheritedFrameId: string, out: Array<{ node: DOMNode; frameId: string }> = []): Array<{ node: DOMNode; frameId: string }> {
+type Flat = { node: DOMNode; frameId: string; inScope: boolean }
+
+function flatten(root: DOMNode, inheritedFrameId: string, isScope: (node: DOMNode) => boolean, inherited = false, out: Flat[] = []): Flat[] {
   const frameId = root.frameId || inheritedFrameId
-  out.push({ node: root, frameId })
-  for (const child of root.children ?? []) flatten(child, frameId, out)
-  for (const child of root.shadowRoots ?? []) flatten(child, frameId, out)
-  if (root.contentDocument) flatten(root.contentDocument, root.contentDocument.frameId || root.frameId || frameId, out)
+  const inScope = inherited || isScope(root)
+  out.push({ node: root, frameId, inScope })
+  for (const child of root.children ?? []) flatten(child, frameId, isScope, inScope, out)
+  for (const child of root.shadowRoots ?? []) flatten(child, frameId, isScope, inScope, out)
+  if (root.contentDocument) flatten(root.contentDocument, root.contentDocument.frameId || root.frameId || frameId, isScope, inScope, out)
   return out
+}
+
+function offscreen(box: [number, number, number, number], viewport: { width: number; height: number } | null): boolean {
+  if (!viewport) return false
+  return box[0] + box[2] <= 0 || box[1] + box[3] <= 0 || box[0] >= viewport.width || box[1] >= viewport.height
 }
 
 function safeFrameUrl(value: string | undefined): string | undefined {
@@ -153,8 +177,23 @@ export class Observer {
     this.sessionSetup.clear()
   }
 
-  async capture(url: string, title: string): Promise<BrowserObservation> {
+  async readText(): Promise<{ text: string; url: string; title: string }> {
+    const result = await this.cdp.send<{ result: { value?: { text?: string; url?: string; title?: string } } }>('Runtime.evaluate', {
+      expression: `({text:(document.body?.innerText||"").slice(0,${PAGE_TEXT_LIMIT}),url:location.href,title:document.title})`,
+      returnByValue: true,
+      awaitPromise: true
+    })
+    const value = result.result.value ?? {}
+    return { text: value.text ?? '', url: value.url ?? '', title: value.title ?? '' }
+  }
+
+  async capture(url: string, title: string, options: CaptureOptions = {}): Promise<BrowserObservation> {
+    const limit = options.all ? ALL_ELEMENT_LIMIT : ELEMENT_LIMIT
+    const scope = options.scope
     await this.enableFrameSessions()
+    const metricsResult = this.cdp
+      .send<{ cssLayoutViewport?: { clientWidth?: number; clientHeight?: number }; layoutViewport?: { clientWidth?: number; clientHeight?: number } }>('Page.getLayoutMetrics')
+      .catch(() => null)
     const [documentResult, axResult, pageResult] = await Promise.all([
       this.cdp.send<{ root: DOMNode }>('DOM.getDocument', { depth: -1, pierce: true }),
       this.cdp.send<{ nodes?: Array<Record<string, unknown>> }>('Accessibility.getFullAXTree', { maxDepth: 12 }),
@@ -164,6 +203,8 @@ export class Observer {
         awaitPromise: true
       })
     ])
+    const layout = (await metricsResult)?.cssLayoutViewport ?? (await metricsResult)?.layoutViewport
+    const viewport = layout?.clientWidth && layout?.clientHeight ? { width: layout.clientWidth, height: layout.clientHeight } : null
     const pageTree = await this.cdp.send<{ frameTree: PageFrameTree }>('Page.getFrameTree').catch(() => null)
     await Promise.all([...this.sessionSetup.values()])
     const frameById = new Map<string, PageFrame>()
@@ -207,10 +248,13 @@ export class Observer {
       }
     }
     const candidates: Omit<RegisteredElement, 'ref'>[] = []
+    const candidateScope: boolean[] = []
     const visited = new Set<string>()
+    const scopeIn = (sessionId: string | undefined) => (node: DOMNode): boolean =>
+      Boolean(scope) && Number(node.backendNodeId) === scope!.backendNodeId && (scope!.sessionId ?? undefined) === sessionId
     const docs = [
-      ...flatten(documentResult.root, rootFrameId).map(({ node, frameId }) => ({ node, frameId, sessionId: frameSessions.get(frameId) })),
-      ...frameDocuments.flatMap((doc) => flatten(doc.root, doc.frameId).map(({ node, frameId }) => ({ node, frameId, sessionId: doc.sessionId })))
+      ...flatten(documentResult.root, rootFrameId, scopeIn(undefined)).map(({ node, frameId, inScope }) => ({ node, frameId, inScope, sessionId: frameSessions.get(frameId) })),
+      ...frameDocuments.flatMap((doc) => flatten(doc.root, doc.frameId, scopeIn(doc.sessionId)).map(({ node, frameId, inScope }) => ({ node, frameId, inScope, sessionId: doc.sessionId })))
     ]
     const interactive: Array<{
       node: DOMNode
@@ -218,47 +262,52 @@ export class Observer {
       sessionId: string | undefined
       backendNodeId: number
       attributes: Record<string, string>
+      inScope: boolean
     }> = []
-    for (const { node, frameId, sessionId } of docs) {
+    const ordered = scope ? [...docs.filter((doc) => doc.inScope), ...docs.filter((doc) => !doc.inScope)] : docs
+    for (const { node, frameId, sessionId, inScope } of ordered) {
       const backendNodeId = Number(node.backendNodeId)
       const key = `${sessionId ?? 'root'}:${backendNodeId}`
       if (visited.has(key)) continue
       visited.add(key)
       const attributes = attrs(node)
       if (!Number.isFinite(backendNodeId) || !isInteractive(node, attributes)) continue
-      interactive.push({ node, frameId, sessionId, backendNodeId, attributes })
-      if (interactive.length >= ELEMENT_LIMIT * MAX_MEASURE_FACTOR) break
+      interactive.push({ node, frameId, sessionId, backendNodeId, attributes, inScope })
+      if (interactive.length >= limit * MAX_MEASURE_FACTOR) break
     }
-    for (let start = 0; start < interactive.length && candidates.length < ELEMENT_LIMIT; start += MEASURE_BATCH) {
+    for (let start = 0; start < interactive.length && candidates.length < limit; start += MEASURE_BATCH) {
       const batch = interactive.slice(start, start + MEASURE_BATCH)
       const measured = await Promise.all(
-        batch.map(async ({ node, frameId, sessionId, backendNodeId, attributes }) => {
+        batch.map(async ({ node, frameId, sessionId, backendNodeId, attributes, inScope }) => {
           const box = await elementBox(this.cdp, backendNodeId, sessionId)
           if (!box || box[2] < 1 || box[3] < 1) return null
           const live = wantsLiveState(node, attributes) ? await this.liveState(backendNodeId, sessionId) : null
-          return { node, frameId, sessionId, backendNodeId, attributes, box, live }
+          return { node, frameId, sessionId, backendNodeId, attributes, box, live, inScope }
         })
       )
       for (const item of measured) {
-        if (!item || candidates.length >= ELEMENT_LIMIT) continue
-        const { node, frameId, sessionId, backendNodeId, attributes, box, live } = item
+        if (!item || candidates.length >= limit) continue
+        const { node, frameId, sessionId, backendNodeId, attributes, box, live, inScope } = item
         const ax = perSessionAx.get(sessionId ?? 'root')?.get(backendNodeId)
         const axRole = (ax?.role as { value?: string } | undefined)?.value
         const axName = (ax?.name as { value?: string } | undefined)?.value
         const role = axRole || attributes.role || String(node.localName || node.nodeName || 'element').toLowerCase()
         const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || (String(node.localName).toLowerCase() === 'select' ? attributes.name || attributes.id || '' : textOf(node))
         const [offsetX, offsetY]: [number, number] = sessionId ? frameOffsets.get(frameId) ?? [0, 0] : [0, 0]
+        const placed: [number, number, number, number] = [box[0] + offsetX, box[1] + offsetY, box[2], box[3]]
+        candidateScope.push(inScope)
         candidates.push({
           backendNodeId,
           sessionId,
           frameOffset: [offsetX, offsetY],
           role,
           name: name || role,
-          box: [box[0] + offsetX, box[1] + offsetY, box[2], box[3]],
+          box: placed,
+          ...(offscreen(placed, viewport) ? { offscreen: true } : {}),
           frameId,
           frameUrl: frameUrls.get(frameId),
           disabled: attributes.disabled !== undefined || attributes['aria-disabled'] === 'true',
-          value: liveValue(live, attributes.value)
+          value: liveValue(live, sensitiveField(attributes) ? (attributes.value ? '\u2022\u2022\u2022\u2022' : undefined) : attributes.value)
         })
       }
     }
@@ -272,7 +321,9 @@ export class Observer {
       elements: refreshed.map(({ backendNodeId: _backend, sessionId: _session, frameOffset: _offset, ...element }) => element),
       accessibilityNodeCount: axResult.nodes?.length ?? 0,
       frameCount: frames.length,
-      observedFrameCount: new Set(candidates.map((candidate) => candidate.frameId).filter(Boolean)).size
+      observedFrameCount: new Set(candidates.map((candidate) => candidate.frameId).filter(Boolean)).size,
+      ...(viewport ? { viewport } : {}),
+      ...(scope ? { scopeRefs: refs.filter((_ref, index) => candidateScope[index]) } : {})
     }
   }
 

@@ -66,7 +66,8 @@ function harness({ fetchFails = false, dnsFails = false, fetchGate, spawnError }
     activeTab: () => null, profileSyncReport: async () => undefined, setupExternalDownloads: async () => {},
     syncExternalTabs: async () => {}, syncExternalHistory: async () => {}, hideOwnedViews() {}, updateState() {},
     pushError: message => calls.push(['error', message]), recordBlockedRequest() {},
-    privateDns: { resolves: async () => { if (dnsFails) throw new Error('dns unavailable'); return false } }
+    privateDns: { resolves: async () => { if (dnsFails) throw new Error('dns unavailable'); return false } },
+    sessionScope: { run: (_sessionId, work) => work() }
   })
   return { host, calls, channels, RawCdp }
 }

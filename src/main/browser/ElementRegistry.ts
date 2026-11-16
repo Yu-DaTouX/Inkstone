@@ -7,6 +7,7 @@ export interface BrowserElement {
   value?: string
   frameId?: string
   frameUrl?: string
+  offscreen?: boolean
 }
 
 export interface RegisteredElement extends BrowserElement {
@@ -45,12 +46,36 @@ export class SelectOptionNotFoundError extends Error {
   }
 }
 
+const TAG_LETTERS = 'bcdfghjkmnpqrstvwxz'
+const usedTags = new Set<string>()
+
+function freshTag(): string {
+  if (usedTags.size > TAG_LETTERS.length ** 3 / 2) usedTags.clear()
+  for (;;) {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(3))
+    const tag = [...bytes].map((byte) => TAG_LETTERS[byte % TAG_LETTERS.length]).join('')
+    if (usedTags.has(tag)) continue
+    usedTags.add(tag)
+    return tag
+  }
+}
+
 export class ElementRegistry {
   private readonly targetId = globalThis.crypto.randomUUID()
   private generation = 0
   private nextIndex = 1
   private readonly indexByNode = new Map<string, number>()
   private elements = new Map<string, RegisteredElement>()
+
+  readonly tag: string
+
+  constructor(tag?: string) {
+    this.tag = tag ?? freshTag()
+  }
+
+  generationKey(): string {
+    return `${this.targetId}:${this.generation}`
+  }
 
   refresh(elements: Omit<RegisteredElement, 'ref'>[]): { generationId: string; refs: string[] } {
     const generationId = `${this.targetId}:${this.generation}`
@@ -62,7 +87,7 @@ export class ElementRegistry {
         index = this.nextIndex++
         this.indexByNode.set(node, index)
       }
-      const ref = `${generationId}:e${index}`
+      const ref = `${this.tag}${index}`
       next.set(ref, { ...element, ref })
       return ref
     })
@@ -79,7 +104,6 @@ export class ElementRegistry {
 
   clear(): void {
     this.generation += 1
-    this.nextIndex = 1
     this.indexByNode.clear()
     this.elements.clear()
   }

@@ -20,6 +20,12 @@ const CLI_ONLY_GROUPS = [
   '- tasks: the user\'s to-do panel (see above); skip it for one- or two-step work'
 ]
 const CLI_ONLY_WEB_TOOLS = ['web_docs']
+const BROWSER_GROUP = '- browser: open or operate pages in the built-in browser; `browser run --code -` runs a multi-step script in one call'
+const BROWSER_TEXT_ONLY_GROUP = '- browser: open or operate pages in the built-in browser; `browser run --code -` runs a multi-step script in one call; this model cannot view images, so read pages with `observe` and `text`, not `screenshot`'
+
+export function modelSeesImages(model) {
+  return !(Array.isArray(model?.input) && !model.input.includes('image'))
+}
 
 const GUIDE_LINES = [
   'Capabilities beyond your tools come through the `yan` CLI (on PATH): run `yan <group> --help` before first use. Results give a summary and a `resultFile` path; read only what you need. Use `yan` (not custom scripts) for Inkstone pages, artifacts and state, and let Inkstone attach artifacts rather than pasting paths.',
@@ -27,7 +33,7 @@ const GUIDE_LINES = [
   CODEMODE_WRITES,
   '',
   'Command groups:',
-  '- browser: open or operate pages in the built-in browser; `browser run --file` runs multi-step scripts',
+  BROWSER_GROUP,
   '- terminal: the session terminal the user sees; read it, run commands the user should watch, long-running servers or interactive programs',
   PHONE_GROUP,
   SEARCH_GROUP,
@@ -42,9 +48,11 @@ const GUIDE_LINES = [
   'Prefer, in order: existing local tools or scripts → a fitting skill → the publisher\'s CLI or API → MCP only when needed.'
 ]
 
-export function capabilityGuide(tools = false, { codemode = true, phoneTools = false } = {}) {
+export function capabilityGuide(tools = false, { codemode = true, phoneTools = false, model } = {}) {
+  const textOnly = !modelSeesImages(model)
   return GUIDE_LINES
     .filter((line) => (codemode || line !== CODEMODE_WRITES) && (!tools || !CLI_ONLY_GROUPS.includes(line)))
+    .map((line) => (line === BROWSER_GROUP && textOnly ? BROWSER_TEXT_ONLY_GROUP : line))
     .map((line) => (!tools ? line : line === PLAN_WITH_CLI ? PLAN_WITH_TOOL : line === SEARCH_GROUP ? SEARCH_DOCS_GROUP : line === PHONE_GROUP && phoneTools ? PHONE_TOOL_GROUP : line))
     .join('\n')
 }
@@ -97,7 +105,7 @@ const COMPUTER_USE_VISION = 'Observe with Snapshot or Screenshot before clicking
 const COMPUTER_USE_TEXT_ONLY = 'The current model cannot read images, so never call Screenshot and never use use_vision=true. Observe with Snapshot and use_vision=false before clicking or typing, and read the UI tree it returns; never repeat an input whose result is uncertain, check the screen first. If the task can only be done by looking at the picture, tell the user to switch to a model that supports image input.'
 
 export function computerUseGuide(model) {
-  const textOnly = Array.isArray(model?.input) && !model.input.includes('image')
+  const textOnly = !modelSeesImages(model)
   return `${COMPUTER_USE_BASE} ${textOnly ? COMPUTER_USE_TEXT_ONLY : COMPUTER_USE_VISION}`
 }
 
@@ -215,7 +223,7 @@ export default function capabilityGuideExtension(pi) {
   registerWriteLineEndings(pi)
   pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')
-    const guideText = capabilityGuide(tools, { codemode: codemodeWanted(ctx?.model), phoneTools: tools && phoneToolsSearchable(pi) })
+    const guideText = capabilityGuide(tools, { codemode: codemodeWanted(ctx?.model), phoneTools: tools && phoneToolsSearchable(pi), model: ctx?.model })
     const visual = visualAnswersEnabled()
     let sessionSkills = ''
     try {

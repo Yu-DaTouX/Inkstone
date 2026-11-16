@@ -84,6 +84,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(/--url/.test(String(missingBody?.error ?? '')), 'yan CLI：漏参数指出缺哪个 flag')
   ok(!looksLikeStack(missingArg.stderr ?? ''), 'yan CLI：漏参数不抛堆栈')
 
+  const noCode = runYan(['browser', 'run'])
+  ok(noCode.status === 2 && /--code -/.test(jsonOf(noCode.stderr)?.error ?? ''), 'yan CLI：run 没有代码时提示 --code - / --file')
+  const piped = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'browser', 'run', '--code', '-'], { encoding: 'utf8', env, input: 'return 1\n' })
+  ok(piped.status === 3, 'yan CLI：run --code - 从标准输入读到代码后才去连宿主')
+  const help = runYan(['browser', '--help'])
+  ok(/run --code -/.test(help.stdout) && /text +\[--offset/.test(help.stdout) && /--find/.test(help.stdout) && /element_obscured/.test(help.stdout), 'yan CLI：browser 帮助写明内联脚本、text、--find 与遮挡失败')
+
   const noHost = runYan(['browser', 'observe'])
   ok(noHost.status === 3, 'yan CLI：没有宿主环境变量时走「不可用」退出码 3')
   ok(/宿主能力服务不可用/.test(noHost.stderr ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')

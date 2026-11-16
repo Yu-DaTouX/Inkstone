@@ -44,7 +44,8 @@ function harness(options = {}) {
     TabQuotaError: quota.TabQuotaError,
     SessionClosedError: quota.SessionClosedError,
     session: { fromPartition: () => ({}) },
-    attachPinnedNetworkGuard: async (...args) => { log.guardCalls += 1; return attach(log.guardCalls, ...args) }
+    attachPinnedNetworkGuard: async (...args) => { log.guardCalls += 1; return attach(log.guardCalls, ...args) },
+    disposeScriptRuntimes: (key) => { (log.scriptsDisposed ??= []).push(key) }
   }
   const Harness = new Function(...Object.keys(deps), `${js}; return Harness`)(...Object.values(deps))
   const host = new Harness()
@@ -123,6 +124,7 @@ function harness(options = {}) {
   ok([...host.tabs.keys()].sort().join() === 'B-0,B-1', '关闭会话只移除该会话的标签，他会话标签保留', [...host.tabs.keys()])
   ok(!host.activeBySession.has('A') && host.activeBySession.get('B') === 'B-0', '别的会话的活动标签记录不变')
   ok(log.externalClosed === 0, '关闭非焦点会话不影响当前正在看的会话的外接 Chrome')
+  ok(log.scriptsDisposed?.join() === 'A', '关闭会话时只回收该会话的常驻脚本进程', log.scriptsDisposed)
 }
 
 {

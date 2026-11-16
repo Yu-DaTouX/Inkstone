@@ -446,23 +446,35 @@ req.json（UTF-8 JSON）：
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
   api                           读取脚本里 page / task 的接口说明
-  run --file <路径>             执行 UTF-8 JavaScript 文件（async 函数体），提供 page、task、console、sleep
-                                 例如 await page.goto('https://example.com'); return await page.title()
-                                 return 的值和 console.log 都会带回；默认 120 秒超时
+  run --code - <<'JS' … JS       一次跑完多步：async 函数体，提供 page、task、console、sleep（也可 --code "<代码>" 或 --file <路径>）
+                                 例如：
+                                   yan browser run --code - <<'JS'
+                                   await page.goto('https://example.com/search')
+                                   await page.fill({ role: 'searchbox' }, 'alpha')
+                                   const r = await page.click(/^搜索$/)
+                                   return { changes: r.changes, hits: await page.text({ find: 'alpha' }) }
+                                   JS
+                                 return 的值和 console.log 直接带回；默认 120 秒超时；globalThis 上的变量在同一页面的下一次 run 里还在；
+                                 动作目标可写 ref 或查询（文字、正则、{ role, name }），全部接口见 yan browser api
   navigate --url <地址>          打开 http(s) 页面（about:blank 也可以）
   navigate --file <路径>         打开本地 HTML（相对路径按当前目录；也接受 file:// 地址）：
                                  砚在 127.0.0.1 上临时托管它所在的项目目录，相对链接与样式照常加载
   open     --url <地址>          navigate 的别名（同样支持 --file）
   state                          当前状态：是否打开 / 标签列表 / 活动标签
-  observe                        观察当前页面：stdout 的 items 每行一个元素「ref 角色 "名称"」，可直接拿 ref 去 click / type；
-                                 可见文本与坐标在结果文件里
+  observe  [--find <文字>] [--role <角色>] [--in <ref>] [--all]
+                                 观察当前页面：items 每行一个元素「ref 角色 "名称" =值」（ref 形如 kqd12：字母标识标签页，数字是元素编号）；
+                                 默认只列视口内；--all 含视口外，--find 按名称或值找元素并列出正文里的命中片段，
+                                 --in 只看某个元素内部（如一个表单或弹窗）
+  text     [--offset <n>] [--max-chars <n>] [--find <文字>]
+                                 读页面可见正文：默认前 4000 字，用回执的 nextOffset 续读；--find 返回命中位置与片段
   network                        最近 80 条请求的 URL / 方法 / 状态 / 资源类型（无请求头、正文或 Cookie）
   wait     [--ref <ref>] [--text <文本>] [--url <子串>] [--timeout <毫秒>]
                                  等条件成立（可叠加，是“且”）；--gone 配 --ref 等元素**消失**。
                                  默认 10000ms，上限 60000；超时回 code=wait_timeout +
                                  最后看到的样子（url / 元素数 / 文本片段）
   click    --ref <ref> [--dialog accept|dismiss]
-                                 点击一个元素（ref 来自 observe）；网页弹窗：alert 自动确认，confirm 默认取消，
+                                 点击一个元素（ref 来自 observe）；被别的元素挡住时不点，回 code=element_obscured 并写明遮挡者；
+                                 网页弹窗：alert 自动确认，confirm 默认取消，
                                  --dialog accept 才确认；回执 dialogs 写明弹了什么、怎么处理；
                                  window.prompt 不支持：页面拿到 null，回执里记为 unsupported
   type     --ref <ref> --text <文本>
@@ -475,7 +487,8 @@ req.json（UTF-8 JSON）：
   new-tab  [--url <地址> | --file <路径>]  新标签页
   switch-tab  --id <标签id>      切到某个标签（id 从 state 里取）
   close-tab   [--id <标签id>]    关闭标签（不带 --id 关当前活动标签），回执 closed 是被关的标签 id
-  screenshot                     截图（PNG 落盘，摘要里给路径，用 read 看图）；右侧面板收起时也能截
+  screenshot                     截图（PNG 落盘，摘要里给路径，用 read 看图）；只在模型能看图、且要判断外观时用，
+                                 读内容用 observe / text
   download [--wait] [--timeout <毫秒>]
                                  最近一次完成的下载；还在下载时回执 pending 列出文件名，--wait 等它下完（默认 30 秒）
   request-user-control [--reason <原因>]
@@ -484,19 +497,19 @@ req.json（UTF-8 JSON）：
   disconnect-chrome              断开并关闭砚启动的那个 Chrome
 
 说明：
-  · 先用 state 看标签与当前状态，操作前用 observe 拿元素 ref，不猜 ref；
+  · 操作前用 observe 拿元素 ref，不猜 ref；多步任务优先写一段 run 脚本，把「打开 → 找元素 → 操作 → 回读核对」一次跑完；
   · screenshot 只是落盘截图：要判断外观，得用读取工具真正打开那张图；
-  · 关键操作后读回执里的页面观察，必要时再 observe 或截图核对；没确认上次提交的结果前，不要重复提交；
+  · click / type / select / press / scroll 的回执 changes 是动作前后的变化：url / title 变化、新增 + / 消失 - / 改变 ~ 的元素、
+    新出现的文字（最多 15 行），够用时不必再 observe；没确认上次提交的结果前，不要重复提交；
   · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
   · 原生下拉框展开的选项不是 DOM 元素（observe 看不到）→ 选值用 select，不要先 click 再点选项；
     目标不是下拉框回 code=not_select，没有这个可选值回 code=option_not_found（并附上可选值）；
-  · 每个 click / type / select / press / scroll 的回执都是一次新观察；同一页面上没变的元素 ref 保持不变，
-    页面导航或换了文档后 ref 才失效（报 stale_element 时用回执里的 elements[].ref 或重新 observe）；
+  · 同一页面上没变的元素 ref 保持不变，页面导航或换了文档后 ref 才失效（报 stale_element 时重新 observe）；
   · 回执 openedTabs 表示点击打开了新标签（用 switch-tab 切过去），downloadStarted 表示开始下载（完成后用 download 取路径）；
   · 动作超时会回 code=browser_action_timeout：结果未确认，先 observe / state 核对，不要直接重放；
   · 浏览器还没打开时，除 navigate / open / run 外的动作回 code=browser_not_open；
   · type --text "" 清空输入框；
-  · 多步操作或批量提取用 run --file；先用 api 查看 page / task 接口。
+  · 多步操作或批量提取用 run；先用 api 查看 page / task 接口。
 `
 }
 
@@ -662,6 +675,7 @@ const GROUP_SPECS = {
       'open',
       'state',
       'observe',
+      'text',
       'network',
       'wait',
       'click',
@@ -686,8 +700,7 @@ const GROUP_SPECS = {
       type: ['ref', 'text'],
       press: ['key'],
       scroll: ['delta-y'],
-      'switch-tab': ['id'],
-      run: ['file']
+      'switch-tab': ['id']
     }
   }
 }
@@ -817,8 +830,25 @@ if (params.readOnly === undefined && params['read-only'] !== undefined) {
   params.readOnly = params['read-only']
 }
 
-if (positional[0] === 'browser' && positional[1] === 'run' && typeof params.file === 'string' && params.file.trim()) {
-  params.file = resolvePath(process.cwd(), params.file.trim())
+if (positional[0] === 'browser' && positional[1] === 'run') {
+  if (params.code === '-' || params.file === '-') {
+    if (process.stdin.isTTY) {
+      fail(EXIT.usage, 'browser run --code - 从标准输入读代码，但现在标准输入是终端', { detail: "配 heredoc 或管道使用：yan browser run --code - <<'JS' … JS；也可 --code \"<代码>\" 或 --file <路径>" })
+    }
+    try {
+      params.code = readFileSync(0, 'utf8')
+    } catch (err) {
+      fail(EXIT.usage, 'browser run 读不到标准输入', { detail: String(err?.message ?? err) })
+    }
+    delete params.file
+  } else if (typeof params.file === 'string' && params.file.trim()) {
+    let scriptPath = params.file.trim()
+    if (process.platform === 'win32') scriptPath = scriptPath.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:')
+    params.file = resolvePath(process.cwd(), scriptPath)
+  }
+  if (!(typeof params.code === 'string' && params.code.trim()) && !(typeof params.file === 'string' && params.file.trim())) {
+    fail(EXIT.usage, 'browser run 缺少代码：--code - （配 heredoc 从标准输入读）、--code "<代码>" 或 --file <路径>', { detail: '用 yan browser --help 看用法' })
+  }
 }
 
 if (positional[0] === 'workflow' && (positional[1] === 'run' || positional[1] === 'resume') && typeof params.file === 'string' && params.file.trim()) {

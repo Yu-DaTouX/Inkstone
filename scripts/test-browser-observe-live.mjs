@@ -197,4 +197,13 @@ assert.equal(released, resolved, '每次实时读取都要释放远程对象')
   assert.equal(pageFn.call({ tagName: 'INPUT', type: 'password', value: '' }).value, '', '空密码框就是空')
 }
 
+{
+  const attr = (value) => (name) => (name === 'autocomplete' ? value : null)
+  const card = pageFn.call({ tagName: 'INPUT', type: 'text', value: '4111111111111111', getAttribute: attr('cc-number') })
+  assert.equal(card.value, '\u2022\u2022\u2022\u2022', '卡号字段（autocomplete=cc-*）只表示已填')
+  assert.equal(pageFn.call({ tagName: 'INPUT', type: 'tel', value: '123456', getAttribute: attr('one-time-code') }).value, '\u2022\u2022\u2022\u2022', '验证码字段只表示已填')
+  assert.equal(pageFn.call({ tagName: 'TEXTAREA', value: '999', getAttribute: attr('section-x cc-csc') }).value, '\u2022\u2022\u2022\u2022', '带分组前缀的 cc-csc 也遮蔽')
+  assert.equal(pageFn.call({ tagName: 'INPUT', type: 'text', value: 'Ann', getAttribute: attr('name') }).value, 'Ann', '普通 autocomplete 不遮蔽')
+}
+
 console.log('browser-observe-live: 输入框实时值、下拉框当前项文案、复选框勾选状态、长度上限、元素字段结构 通过')
