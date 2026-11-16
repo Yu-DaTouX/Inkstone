@@ -269,6 +269,7 @@
   "cap.nativeMcpActionTimeout": "没有等到 pi 的结果，可以点「查看原生服务器状态」确认。",
   "cap.nativeMcpLoading": "正在读取原生服务器状态…",
   "cap.nativeMcpTimeout": "30 秒内未收到 pi 的状态响应，请重试。",
+  "cap.mcpToolsChanged": "托管服务的工具列表有变化（{names}）：新会话生效；当前会话空闲时可点击“应用到当前会话”，不会打断正在运行的任务。",
   "ctx.compactingReason": "压缩中 · {reason}",
   "ctx.compactingElapsed": "已用 {seconds} 秒",
   "ctx.growthAfter": "此后新增 {tokens}",

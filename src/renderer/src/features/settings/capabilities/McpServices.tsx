@@ -175,6 +175,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       {error ? <Warn>{error}</Warn> : null}
       {errorDetail ? <pre className="caps-raw" data-testid="mcp-check-error">{errorDetail}</pre> : null}
       {notice ? <Meta>{notice}</Meta> : null}
+      {snapshot?.managedToolsChanged?.length ? <div data-testid="mcp-tools-changed"><Meta>{t('cap.mcpToolsChanged', { names: snapshot.managedToolsChanged.join(lang === 'en-US' ? ', ' : '、') })}</Meta></div> : null}
       {snapshot?.errors.map((problem) => <Warn key={problem}>{problem}</Warn>)}
       {adding && snapshot ? <McpServiceForm snapshot={snapshot} initialScope={scope} onSave={change} onCancel={() => setAdding(false)} busy={busy} /> : null}
       {loading && !snapshot ? <ListSkeleton rows={3} /> : <div className="caps-list" data-testid="mcp-services">

@@ -2,7 +2,7 @@ import { pick } from '../../shared/ui-lang'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioTreeClientTransport } from './stdio-tree-transport'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
+import { ToolListChangedNotificationSchema, type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
 import { sharedResources, INTERACTIVE_RESOURCE } from '../interactive-resources'
 import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
@@ -125,8 +125,29 @@ export class McpConnectionManager {
   }
 
   private readonly toolCache = new Map<string, { tools: McpToolDescriptor[]; at: number }>()
+  private readonly toolsListChangedListeners = new Set<(serverId: string) => void>()
   private activeRequests = 0
   private idleWaiters: Array<() => void> = []
+
+  onToolsListChanged(listener: (serverId: string) => void): () => void {
+    this.toolsListChangedListeners.add(listener)
+    return () => {
+      this.toolsListChangedListeners.delete(listener)
+    }
+  }
+
+  private handleToolsListChanged(conn: Connection, generation: number): void {
+    if (generation !== conn.generation || this.connections.get(conn.config.id) !== conn) return
+    conn.tools = undefined
+    this.toolCache.delete(conn.config.id)
+    for (const listener of [...this.toolsListChangedListeners]) {
+      try {
+        listener(conn.config.id)
+      } catch (error) {
+        console.warn('[mcp] tools/list_changed listener failed:', error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
 
   isBusy(): boolean {
     if (this.activeRequests > 0 || this.activeInputCalls > 0) return true
@@ -314,6 +335,9 @@ export class McpConnectionManager {
         client.onerror = (error) => {
           if (conn.client === client) conn.transportError = error
         }
+        client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+          this.handleToolsListChanged(conn, generation)
+        })
         client.onclose = () => {
           if (conn.client !== client) return
           conn.client = null

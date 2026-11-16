@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import codemodePolicy, { binaryAvailable, codemodeMode, codemodeWanted, configuredIndirectMcp, searchToolsToAdd } from '../resources/pi-extensions/codemode-policy.js'
+import codemodePolicy, { TOOL_SEARCH_IN_SCRIPT_REASON, binaryAvailable, codemodeMode, codemodeWanted, configuredIndirectMcp, scriptCallsToolSearch, searchToolsToAdd } from '../resources/pi-extensions/codemode-policy.js'
 
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-codemode-policy-'))
 process.env.YAN_DATA_DIR = dir
@@ -196,6 +196,33 @@ deferred = []
   assert(tools.includes('ls') && tools.includes('grep') && !tools.includes('codemode'), '原本就在活动工具里的 ls 不收回')
   delete process.env.PI_CODING_AGENT_DIR
   process.env.PATH = path
+}
+
+{
+  await save({ codemode: 'on' })
+  const call = (toolName, input) => hooks.get('tool_call').map(handler => handler({ toolName, input })).find(result => result?.block)
+  for (const code of [
+    'const r = await tools.tool_search({ query: "mcp" }); return r',
+    'return await tools . tool_search({ query: "x" })',
+    'return await tools["tool_search"]({ query: "x" })',
+    "return await tools['tool_search']({ query: 'x' })"
+  ]) {
+    const blocked = call('codemode', { code })
+    assert(blocked && blocked.reason === TOOL_SEARCH_IN_SCRIPT_REASON, `a script calling tools.tool_search is stopped before it runs: ${code}`)
+    assert.equal(scriptCallsToolSearch({ code }), true)
+  }
+  assert(/searchTools/.test(TOOL_SEARCH_IN_SCRIPT_REASON) && /outside codemode/.test(TOOL_SEARCH_IN_SCRIPT_REASON), 'the reason names the in-script alternative and the outer call')
+  for (const code of [
+    'return await searchTools("mcp", { limit: 3 })',
+    'const r = await tools.read({ path: "a.txt" }); return r',
+    'return ALL_TOOLS.filter(tool => tool.name === "tool_search")',
+    'return await tools.tool_search_helper({})'
+  ]) assert.equal(call('codemode', { code }), undefined, `other scripts run untouched: ${code}`)
+  assert.equal(call('bash', { code: 'tools.tool_search({})' }), undefined, 'only codemode calls are inspected')
+  assert.equal(call('codemode', undefined), undefined)
+  assert.equal(call('codemode', { code: 7 }), undefined)
+  await save({ codemode: 'off' })
+  assert.equal(call('codemode', { code: 'return 1' }).reason, 'Codemode is turned off in Inkstone settings.', 'the opt-out reason still wins')
 }
 
 await save({ theme: 'light', codemodeEnabled: false })

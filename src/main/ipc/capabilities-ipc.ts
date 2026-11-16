@@ -137,6 +137,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
       project: project && runner ? { id: project.id, name: project.name, cwd: runner.cwd } : null,
       projectTrusted, projects: st.projects, nativeConfigChanged,
       busy: busy(), isBusy: busy,
+      managedToolsChanged: () => mcpAppProxyService().toolsChangedServers(agent?.capabilityProjectId ?? undefined),
       refreshManagedTools: async () => {
         const result = await mcpAppProxyService().refresh({ callerProjectId: agent?.capabilityProjectId ?? undefined, allowEmpty: true })
         const problems = [

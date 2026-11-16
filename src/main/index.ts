@@ -3027,6 +3027,10 @@ app.whenReady().then(async () => {
     }
   })
 
+  mcpAppHost().onToolsChanged(() => {
+    if (win && !win.isDestroyed()) win.webContents.send('yan:push', { ch: 'mcp-tools-changed', payload: null } satisfies MainPush)
+  })
+
   try {
     mcpAppViewService = new McpAppViewService({
       proxy: mcpAppProxyService(),

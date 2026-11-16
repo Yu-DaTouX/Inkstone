@@ -1127,6 +1127,7 @@ export type MainPushBody =
   | { ch: 'runners'; payload: RunnerStatus[] }
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   | { ch: 'tray-new-session'; payload: null }
+  | { ch: 'mcp-tools-changed'; payload: null }
   | { ch: 'github-clone'; payload: import('./github').GithubCloneProgress }
   | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string; continued?: boolean; continuationError?: string } }
   | {

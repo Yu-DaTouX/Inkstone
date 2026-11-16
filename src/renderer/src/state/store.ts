@@ -860,6 +860,9 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'tray-new-session':
         void get().newSession({ scope: 'global' })
         break
+      case 'mcp-tools-changed':
+        window.dispatchEvent(new Event('inkstone:mcp-settings-changed'))
+        break
       case 'tray-select-session': {
         const target = m.payload
         if (target.sessionFile) {

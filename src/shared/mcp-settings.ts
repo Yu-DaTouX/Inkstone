@@ -28,6 +28,7 @@ export interface McpSettingsSnapshot {
   errors: string[]
   busy: boolean
   nativeConfigChanged: boolean | null
+  managedToolsChanged?: string[]
 }
 
 export type McpSettingsMutation = {

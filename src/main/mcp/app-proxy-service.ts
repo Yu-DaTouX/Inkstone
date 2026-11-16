@@ -141,6 +141,8 @@ interface McpAppProxyHostLike {
     options?: { signal?: AbortSignal; projectId?: string }
   ): Promise<McpAppCallOutcome>
   statusOf(serverId: string): { status: string; error?: string }
+  toolsChangedVersions?(): ReadonlyMap<string, number>
+  acknowledgeToolsChanged?(serverId: string, version: number): void
 }
 
 interface McpAppProxyServiceOptions {
@@ -278,7 +280,7 @@ export class McpAppProxyService {
       generatedAt: snapshot.generatedAt || null,
       ageMs,
       stale,
-      needsRefresh: stale
+      needsRefresh: stale || (this.host.toolsChangedVersions?.().size ?? 0) > 0
     }
   }
 
@@ -321,9 +323,11 @@ export class McpAppProxyService {
     const servers: McpAppProxySnapshotServer[] = []
     const excluded: McpAppProxySnapshotExcluded[] = []
     const errors: Array<{ serverId: string; error: string }> = []
+    const acknowledged: Array<{ serverId: string; version: number }> = []
 
     for (const server of targets) {
       try {
+        const changedVersion = this.host.toolsChangedVersions?.().get(server.id)
         const list = await this.host.listToolsWithMeta(server.id, {
           ...(callerProjectId ? { projectId: callerProjectId } : {}),
           ...(options.signal ? { signal: options.signal } : {})
@@ -345,6 +349,7 @@ export class McpAppProxyService {
           })
           count += 1
         }
+        if (changedVersion !== undefined) acknowledged.push({ serverId: server.id, version: changedVersion })
         const status = this.host.statusOf(server.id)
         servers.push({
           id: server.id,
@@ -393,6 +398,7 @@ export class McpAppProxyService {
         excluded
       }
     })
+    for (const entry of acknowledged) this.host.acknowledgeToolsChanged?.(entry.serverId, entry.version)
     return {
       ok: errors.length === 0,
       path: this.snapshotPath(),
@@ -407,10 +413,17 @@ export class McpAppProxyService {
     }
   }
 
+  toolsChangedServers(callerProjectId?: string): string[] {
+    const changed = this.host.toolsChangedVersions?.()
+    if (!changed || changed.size === 0) return []
+    return this.host.listManagedServers(callerProjectId).map((server) => server.id).filter((id) => changed.has(id))
+  }
+
   needsRefreshFor(callerProjectId?: string): boolean {
     const managed = this.host.listManagedServers(callerProjectId)
     const snapshot = this.readSnapshot()
     if (!snapshot) return managed.length > 0
+    if (this.toolsChangedServers(callerProjectId).length > 0) return true
     const managedIds = new Set(managed.map((server) => server.id))
     const knownIds = new Set(snapshot.servers.map((server) => server.id))
     if (managed.some((server) => !knownIds.has(server.id))) return true

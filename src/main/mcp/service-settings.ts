@@ -22,6 +22,7 @@ export interface McpSettingsHost {
   nativeConfigChanged: boolean | null
   assertContext?(): void
   refreshManagedTools?(): Promise<{ ok: boolean; warning?: string }>
+  managedToolsChanged?(): string[]
 }
 
 const MANAGED_REFRESH_TIMEOUT_MS = 15_000
@@ -149,7 +150,9 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
     if (host.project) projectServices.push({ ...global[global.length - 1], inherited: true })
   }
   if (host.project && !host.projectTrusted && Object.keys(data.project?.servers ?? {}).length) errors.push(pick('项目尚未受信任，项目配置暂不生效', 'Project is not trusted. Project config is not in effect'))
-  return { context: host.context, revision: data.revision, project: host.project, projectTrusted: host.projectTrusted, global, projectServices, errors, busy: host.busy, nativeConfigChanged: host.nativeConfigChanged }
+  const listedHosts = new Set([...global, ...projectServices].filter((service) => service.backend === 'host' && service.enabled).map((service) => service.name))
+  const managedToolsChanged = (host.managedToolsChanged?.() ?? []).filter((name) => listedHosts.has(name))
+  return { context: host.context, revision: data.revision, project: host.project, projectTrusted: host.projectTrusted, global, projectServices, errors, busy: host.busy, nativeConfigChanged: host.nativeConfigChanged, ...(managedToolsChanged.length ? { managedToolsChanged } : {}) }
 }
 
 function nativeText(doc: Document): string {

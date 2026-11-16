@@ -181,6 +181,9 @@ export class McpAppHost {
   private readonly createManager: (config: McpAppServerConfig, timeoutMs: number) => McpConnectionManager
   private readonly pool = new Map<string, PooledServer>()
   private readonly poolTails = new Map<string, Promise<unknown>>()
+  private readonly toolsChanged = new Map<string, number>()
+  private readonly toolsChangedListeners = new Set<(serverId: string) => void>()
+  private toolsChangedSeq = 0
   private ownership: McpAppOwnershipGuard
 
   constructor(options: McpAppHostOptions = {}) {
@@ -199,6 +202,33 @@ export class McpAppHost {
 
   listManagedServers(projectId?: string): McpAppServerConfig[] {
     return mcpServersForProject(loadMcpServersCached(this.env).servers, projectId).filter(isInkstoneManaged)
+  }
+
+  toolsChangedVersions(): ReadonlyMap<string, number> {
+    return this.toolsChanged
+  }
+
+  acknowledgeToolsChanged(serverId: string, version: number): void {
+    if (this.toolsChanged.get(serverId) === version) this.toolsChanged.delete(serverId)
+  }
+
+  onToolsChanged(listener: (serverId: string) => void): () => void {
+    this.toolsChangedListeners.add(listener)
+    return () => {
+      this.toolsChangedListeners.delete(listener)
+    }
+  }
+
+  private noteToolsChanged(serverId: string, manager: McpConnectionManager): void {
+    if (this.pool.get(serverId)?.manager !== manager) return
+    this.toolsChanged.set(serverId, ++this.toolsChangedSeq)
+    for (const listener of [...this.toolsChangedListeners]) {
+      try {
+        listener(serverId)
+      } catch (error) {
+        console.warn('[mcp-app] tools-changed listener failed:', messageOf(error))
+      }
+    }
   }
 
   statusOf(serverId: string): { status: McpServerStatus; error?: string } {
@@ -281,6 +311,7 @@ export class McpAppHost {
       }
       const pooled: PooledServer = { fingerprint, manager: this.createManager(config, this.timeoutMs) }
       this.pool.set(serverId, pooled)
+      pooled.manager.onToolsListChanged?.((changedId) => this.noteToolsChanged(changedId, pooled.manager))
       return pooled
     })
   }
@@ -345,6 +376,7 @@ export class McpAppHost {
     const config = original ? { ...original, enabled: enabledSomewhere(original) } : undefined
     const managed = Boolean(config && isInkstoneManaged(config))
     if (!config || !managed) {
+      this.toolsChanged.delete(serverId)
       const closed = await this.runPool(serverId, () => this.dropPooled(serverId))
       return {
         serverId,

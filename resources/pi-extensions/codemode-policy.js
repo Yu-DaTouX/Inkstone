@@ -57,6 +57,12 @@ export function codemodeWanted(model, mode = codemodeMode()) {
 }
 
 const PIGGYBACK_TOOLS = /^phone_/
+const SCRIPT_CALLS_TOOL_SEARCH = /\btools\s*(?:\.\s*tool_search\b|\[\s*(['"`])tool_search\1\s*\])/
+export const TOOL_SEARCH_IN_SCRIPT_REASON = 'tool_search cannot be called from a codemode script, and this script did not run. In a script, find tools with `await searchTools(query, { limit })`; call tool_search itself outside codemode.'
+
+export function scriptCallsToolSearch(input) {
+  return typeof input?.code === 'string' && SCRIPT_CALLS_TOOL_SEARCH.test(input.code)
+}
 
 function applyCodemodePreference(pi, names, searchTools, model, cwd) {
   const all = pi.getAllTools?.() ?? []
@@ -87,6 +93,9 @@ export default function codemodePolicy(pi) {
   pi.on('tool_call', event => {
     if (event.toolName === 'codemode' && codemodeMode() === 'off') {
       return { block: true, reason: 'Codemode is turned off in Inkstone settings.' }
+    }
+    if (event.toolName === 'codemode' && scriptCallsToolSearch(event.input)) {
+      return { block: true, reason: TOOL_SEARCH_IN_SCRIPT_REASON }
     }
   })
 }
