@@ -63,6 +63,7 @@ async function flowFull(lang) {
   const ctx = await boot({ lang })
   const { desk, h } = ctx
   const tag = `[${lang}]`
+  await h.waitFor(() => h.matchLabel(/^第一个会话/).length, `${tag} 会话列表出现`)
   check(h.has(t('第一个会话', '第一个会话')) && h.has(t('项目', 'Projects')), `${tag} 首页显示项目与会话`)
   await openSession(h, '第一个会话')
   check(h.has('你好，我能帮你做什么？'), `${tag} 会话显示历史消息`)
