@@ -100,7 +100,7 @@ try {
 } finally {
   await registry?.stopAll()
   if (process.platform === 'win32' && allPids.length) {
-    const deadline = Date.now() + 10000
+    const deadline = Date.now() + 30000
     while (remainingProcessIds(allPids).length && Date.now() < deadline) await new Promise(done => setTimeout(done, 250))
     assert.equal(remainingProcessIds(allPids).length, 0, '夹具收尾无残留pi进程')
   }

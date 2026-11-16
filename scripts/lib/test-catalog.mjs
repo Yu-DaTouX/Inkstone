@@ -56,7 +56,8 @@ export const serialScripts = {
   'test-pinned-network': 'real-timer-race',
   'test-workspace-changes': 'wall-clock-upper-bound',
   'test-files-watch': 'wall-clock-upper-bound',
-  'test-auto-compact': 'real-timer-race'
+  'test-auto-compact': 'real-timer-race',
+  'test-runner-reclaim-live': 'real-process-reclaim'
 }
 
 export async function discoverTests(directory = 'scripts') {
