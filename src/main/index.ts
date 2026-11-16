@@ -11,7 +11,8 @@ import { disposeGitReadHost } from './git-read-host'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, isAbsolute, resolve } from 'node:path'
 import { release as osRelease } from 'node:os'
-import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { constants as fsConstants, appendFileSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { logMainEvent, mainLogDir as crashLogDir } from './main-log'
 import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
@@ -173,15 +174,6 @@ const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 let exitReason: string | undefined
 let exitSource: string | undefined
 
-function crashLogDir(): string {
-  const dir = join(YAN_DIR, 'logs')
-  try {
-    mkdirSync(dir, { recursive: true })
-  } catch {
-  }
-  return dir
-}
-
 installStdioGuard(
   { stdout: process.stdout, stderr: process.stderr },
   { onError: (stream, error) => reportMainError(`stdio/${stream}`, error) }
@@ -204,14 +196,6 @@ function reportMainError(kind: string, error: unknown): void {
   try {
     const stamp = new Date().toISOString()
     appendFileSync(join(crashLogDir(), `main-${stamp.slice(0, 10)}.log`), `${stamp} ${text}\n`, 'utf8')
-  } catch {
-  }
-}
-
-function logMainEvent(kind: string, text: string): void {
-  try {
-    const stamp = new Date().toISOString()
-    appendFileSync(join(crashLogDir(), `main-${stamp.slice(0, 10)}.log`), `${stamp} [主进程/${kind}] ${text}\n`, 'utf8')
   } catch {
   }
 }

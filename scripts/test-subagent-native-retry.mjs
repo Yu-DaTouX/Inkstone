@@ -510,12 +510,23 @@ await withQuotaController([async () => ({ windows: [{ id: 'five', label: '5 小�
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   const stub = { name: 'stub-switch', setup(b) { b.onResolve({ filter: /^\.\/(account-quota|api-key-pool|codex-accounts|oauth-accounts|settings)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const accountQuotaReport = async () => ({ cards: [] }); export const invalidateAccountQuotaReport = () => {}; export const captureActiveApiKey = async () => ({ ok: true }); export const switchCodexAccount = async () => ({ ok: true }); export const switchOAuthAccount = async () => ({ ok: true }); export const getSettings = async () => ({})', loader: 'js' })) } }
   await build({ entryPoints: ['src/main/account-autoswitch.ts'], outfile: `${BUILD_DIR}/account-autoswitch.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [stub] })
-  const { pickSpareAccount } = await import(`../${BUILD_DIR}/account-autoswitch.mjs`)
+  const { pickSpareAccount, markRefreshFailed } = await import(`../${BUILD_DIR}/account-autoswitch.mjs`)
   const card = (key, used, extra = {}) => ({ key, source: 'yan', provider: 'openai-codex', name: 'ChatGPT', switchable: true, status: used >= 100 ? 'limited' : 'ok', windows: [{ id: 'five', label: '5 小时', used, total: 100 }], checkedAt: 0, ...extra })
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 70), card('c', 20), card('d', 100)], 'openai-codex')?.key === 'c', '挑剩余额度最多的可用账号')
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 100), card('c', 5, { staleError: '读取失败' })], 'openai-codex') === null, '都用完或额度读不准时不换')
   ok(pickSpareAccount([card('a', 10, { active: true }), card('b', 0)], 'openai-codex')?.key === 'a', '当前账号已可用时不再换（别的子代理刚换过）')
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 0, { provider: 'anthropic' }), card('c', 0, { source: 'codex-cli' })], 'openai-codex') === null, '只在同一服务商、砚自己管理的账号间换')
+  const expired = (key, extra = {}) => card(key, 0, { status: 'expired', refreshable: true, windows: [], ...extra })
+  ok(pickSpareAccount([card('a', 100, { active: true }), expired('b')], 'openai-codex', new Set())?.key === 'b', '备用账号访问令牌过期但有刷新令牌时视为可用（pi 使用时会刷新）')
+  ok(pickSpareAccount([card('a', 100, { active: true }), expired('b'), card('c', 90)], 'openai-codex', new Set())?.key === 'c', '额度已知的账号优先，过期的排在最后')
+  ok(pickSpareAccount([card('a', 100, { active: true }), expired('b', { refreshable: false })], 'openai-codex', new Set()) === null, '没有刷新令牌的过期账号不换')
+  ok(pickSpareAccount([card('a', 100, { active: true }), expired('b')], 'openai-codex', new Set(['b'])) === null, '刷新失败过的账号标记为不可用')
+  const failed = new Set()
+  const cards = [expired('a', { active: true }), expired('b')]
+  ok(pickSpareAccount(cards, 'openai-codex', failed)?.key === 'a', '当前账号令牌过期但未刷新失败时继续用它')
+  ok(markRefreshFailed(cards, 'openai-codex', failed) === 'a' && failed.has('a'), '刷新失败时记下当前账号')
+  ok(pickSpareAccount(cards, 'openai-codex', failed)?.key === 'b', '当前账号刷新失败后换到另一个可刷新的账号')
+  ok(markRefreshFailed([card('a', 10, { active: true })], 'openai-codex', new Set()) === null, '当前账号令牌有效时不标记')
 }
 
 await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) => {

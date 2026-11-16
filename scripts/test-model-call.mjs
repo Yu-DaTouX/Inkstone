@@ -34,6 +34,7 @@ function fakeRpcFactory(plan) {
 const delta = (text) => ({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: text } })
 const end = (message) => ({ type: 'message_end', message: { role: 'assistant', ...message } })
 const settled = { type: 'agent_settled' }
+const start = () => ({ type: 'message_start', message: { role: 'assistant', content: [] } })
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const { callModel, modelCallArgs, modelCallTimeout, ModelCallError, MODEL_CALL_DEFAULT_TIMEOUT_MS, MODEL_CALL_MAX_TIMEOUT_MS } = await compile('src/main/model-call.ts')
@@ -80,6 +81,47 @@ await runSuite(import.meta.url, async (ok, compile) => {
     let error
     try { await callModel({ model: 'fake/m1', prompt: 'p' }, rt) } catch (e) { error = e }
     ok(error instanceof ModelCallError && error.kind === 'model' && error.message.includes('exceeded your current quota'), '模型报错原样带回，不吞掉', String(error?.message))
+  }
+
+  {
+    const { runtime: rt } = runtime({ events: [
+      { type: 'message_start', message: { role: 'user', content: 'p' } },
+      start(), end({ stopReason: 'error', errorMessage: '529 Overloaded' }),
+      { type: 'auto_retry_start', attempt: 1 },
+      start(), delta('成功'), end({ provider: 'fake', model: 'm1', stopReason: 'stop' }),
+      { type: 'auto_retry_end', success: true },
+      settled
+    ] })
+    const result = await callModel({ model: 'fake/m1', prompt: 'p' }, rt)
+    ok(result.text === '成功' && result.stopReason === 'stop', '先错后成：pi 重试成功后以最终结果为准，不报失败', JSON.stringify(result))
+  }
+
+  {
+    const { runtime: rt } = runtime({ events: [
+      start(), delta('半截'), end({ stopReason: 'error', errorMessage: 'terminated' }),
+      start(), delta('完整'), delta('回答'), end({ stopReason: 'stop' }),
+      settled
+    ] })
+    const result = await callModel({ model: 'fake/m1', prompt: 'p' }, rt)
+    ok(result.text === '完整回答', '部分文本后失败：失败那次的部分文本不拼进结果', JSON.stringify(result))
+  }
+
+  {
+    const { runtime: rt } = runtime({ events: [delta('半截'), end({ stopReason: 'error', errorMessage: 'terminated' }), delta('完整'), end({ stopReason: 'stop' }), settled] })
+    const result = await callModel({ model: 'fake/m1', prompt: 'p' }, rt)
+    ok(result.text === '完整', '没有 message_start 时也以最后一次成功的文本为准', JSON.stringify(result))
+  }
+
+  {
+    const { runtime: rt } = runtime({ events: [
+      start(), delta('一'), end({ stopReason: 'error', errorMessage: '529 Overloaded' }),
+      start(), end({ stopReason: 'error', errorMessage: '503 Service Unavailable' }),
+      start(), delta('二'), end({ stopReason: 'error', errorMessage: '529 Overloaded again' }),
+      settled
+    ] })
+    let error
+    try { await callModel({ model: 'fake/m1', prompt: 'p' }, rt) } catch (e) { error = e }
+    ok(error instanceof ModelCallError && error.kind === 'model' && /Overloaded again/.test(error.message) && !/一|二/.test(error.message), '一直失败：报最后一次的错误，不带部分文本', String(error?.message))
   }
 
   {

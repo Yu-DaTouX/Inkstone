@@ -103,6 +103,17 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   assert.equal(result.compaction.details.capacityRetries, 1)
   assert.ok(Math.abs(result.compaction.usage.cost.total - 0.6) < 1e-9, '失败那次的费用也计入')
 }
+for (const text of ['This model maximum context length is exceeded', 'prompt is too long: 210000 tokens > 200000 maximum', 'Input exceeds the context window of this model', '413 request_too_large', 'context_length_exceeded', 'Your input exceeds the maximum number of tokens']) {
+  assert.ok(mod.isCapacityError(text), `上下文超长认成容量不足：${text}`)
+}
+for (const text of ['429 rate limit exceeded', 'Rate limit exceeded for requests per minute', 'You exceeded your current quota, please check your plan and billing details', 'Request too large for gpt-4o on tokens per min (TPM): Limit 30000, Requested 50000', 'usage limit exceeded', '429 Too Many Requests', 'Request timed out', '529 Overloaded']) {
+  assert.ok(!mod.isCapacityError(text), `限流、额度和其他错误不当成上下文超长：${text}`)
+}
+{
+  const h = harness(() => ({ stopReason: 'error', errorMessage: '429 rate limit exceeded', content: [], usage: { input: 3 } }))
+  assert.equal(await h.run(), undefined, '限流时不减半重发，交给 pi 默认压缩（带 pi 的重试）')
+  assert.equal(h.calls.length, 1, '限流只请求一次')
+}
 {
   const h = harness(() => ({ stopReason: 'error', errorMessage: 'boom', content: [], usage: { input: 7 } }))
   assert.equal(await h.run(), undefined, '出错退回默认压缩')
@@ -385,6 +396,12 @@ function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, sent
   assert.equal(result.compaction.details.path, 'chunked')
   assert.ok(result.compaction.details.fastError.startsWith('tool-call'), '记下快速路径失败原因')
   assert.equal(result.compaction.usage.input, 6, '失败那次的用量也计入')
+}
+{
+  const h = fastHarness(() => ({ stopReason: 'error', errorMessage: 'Rate limit exceeded, please retry later', content: [], usage: { input: 2 } }))
+  h.request()
+  assert.equal(await h.run(), undefined, '快速路径遇到限流直接交给 pi 默认压缩')
+  assert.equal(h.calls.length, 1, '限流后不再立刻走分块路径重发')
 }
 for (const [label, opts, expected] of [
   ['溢出触发的压缩不走快速路径（原请求本身就放不下）', { reason: 'overflow' }, 'overflow'],

@@ -31,7 +31,7 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'auth',
     label: '认证或权限',
-    re: /\b401\b|\b403\b|unauthorized|unauthenticated|forbidden|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|authentication|insufficient permissions|token.{0,12}expired|not logged in|登录|凭证|密钥/i
+    re: /\b401\b|\b403\b|oauth (?:token )?refresh failed|token refresh (?:failed|unauthorized)|invalid_grant|refresh[ _-]?token.{0,40}(?:expired|invalid|revoked|not found|reused)|unauthorized|unauthenticated|forbidden|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|authentication|insufficient permissions|token.{0,12}expired|not logged in|登录|凭证|密钥/i
   },
   {
     kind: 'context',
@@ -99,6 +99,17 @@ export function modelErrorText(value: unknown, depth = 0): string {
   return [...new Set(parts)].join('；').slice(0, 900)
 }
 
+const OAUTH_REFRESH_RE = /oauth (?:token )?refresh failed|token refresh (?:failed|unauthorized)|invalid_grant|refresh[ _-]?token.{0,40}(?:expired|invalid|revoked|not found|reused)/i
+
+export function isOAuthRefreshFailure(text: unknown): boolean {
+  const info = classifyModelError(text)
+  return info.kind === 'auth' && OAUTH_REFRESH_RE.test(info.text)
+}
+
+function oauthRefreshProvider(text: string): string {
+  return text.match(/oauth (?:token )?refresh failed for ([\w.-]+)/i)?.[1] ?? ''
+}
+
 export function apiKeyLooksUnusable(text: unknown): boolean {
   const info = classifyModelError(text)
   if (info.kind === 'quota') return info.quotaScope === 'usage'
@@ -107,6 +118,7 @@ export function apiKeyLooksUnusable(text: unknown): boolean {
 
 export function isAuthRejected(text: unknown): boolean {
   const info = classifyModelError(text)
+  if (info.kind === 'auth' && OAUTH_REFRESH_RE.test(info.text)) return true
   return info.kind === 'auth' && !/\b403\b|forbidden|insufficient permissions/i.test(info.text) &&
     /\b401\b|unauthorized|unauthenticated|authentication[ _]error|invalid authentication/i.test(info.text)
 }
@@ -148,6 +160,7 @@ export type ModelErrorCause =
   | 'quotaBalance'
   | 'quotaUsage'
   | 'auth'
+  | 'authExpired'
   | 'context'
   | 'aborted'
   | 'request'
@@ -172,6 +185,8 @@ export function modelErrorCause(errorText: unknown): ModelErrorCause {
       if (OVERLOAD_RE.test(info.text)) return 'overload'
       if (UNREACHABLE_RE.test(info.text)) return 'unreachable'
       return 'unknown'
+    case 'auth':
+      return OAUTH_REFRESH_RE.test(info.text) ? 'authExpired' : 'auth'
     default:
       return info.kind
   }
@@ -203,7 +218,13 @@ export function modelErrorNotice(errorText: unknown): string {
       }
       break
     }
-    case 'auth': explanation = '模型认证或访问权限失败。请在设置中重新登录、检查凭证及模型访问权限。'; break
+    case 'auth': {
+      if (OAUTH_REFRESH_RE.test(info.text)) {
+        const provider = oauthRefreshProvider(info.text)
+        explanation = `${provider ? `${provider} 账号的` : '账号的'}登录已失效（令牌刷新失败）。请到 设置 → 模型 重新登录${provider ? ` ${provider} ` : '这个'}账号；若刚断过网，可稍后重试。`
+      } else explanation = '模型认证或访问权限失败。请在设置中重新登录、检查凭证及模型访问权限。'
+      break
+    }
     case 'context': explanation = '请求超过模型的上下文或输入长度限制。请压缩会话、减少附件，或选择支持更长上下文的模型。'; break
     case 'aborted': explanation = '本轮请求已取消。已执行的工具操作可能保留，继续前请先核对进度。'; break
     case 'request': explanation = '服务商拒绝了模型或请求配置。请核对模型 ID、接口地址、工具格式及不受支持的参数。'; break

@@ -26,6 +26,7 @@ import { CapabilityServer, type CapabilityCommandResult } from './capability-ser
 import { BackgroundBashCommands } from './background-bash'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { logModelEvent, modelErrorLogFields } from './main-log'
 import { redactCredentialShapes, redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
@@ -2078,6 +2079,7 @@ export class SubagentController {
         if (raw.stopReason === 'error') {
           run.error = modelErrorNotice(raw.errorMessage)
           run.lastModelErrorText = modelErrorText(raw.errorMessage)
+          if (type === 'message_end') logModelEvent('error', { ...modelErrorLogFields(raw.errorMessage), model: run.model, subagent: run.id, afterRetry: run.retryAttempt !== undefined })
         }
       }
 
@@ -2155,6 +2157,7 @@ export class SubagentController {
       const maxAttempts = finiteCount(evt.maxAttempts)
       run.retryAttempt = attempt
       run.retryMaxAttempts = maxAttempts
+      logModelEvent('retry', { ...modelErrorLogFields(evt.errorMessage ?? evt.error), attempt, max: maxAttempts, delayMs: Number(evt.delayMs ?? 0) || undefined, model: run.model, subagent: run.id })
       if (this.opts.quotaWatch && isQuotaWaitError(modelErrorText(evt.errorMessage ?? evt.error))) void run.rpc.command('abort_retry').catch(() => undefined)
       run.recovery = { ...run.recovery, piRetries: attempt, piMaxRetries: maxAttempts }
       run.latestActivity = retryActivity(attempt, maxAttempts)
@@ -2164,6 +2167,7 @@ export class SubagentController {
 
     if (type === 'auto_retry_end') {
       if (this.closedForEvents(run)) return
+      logModelEvent('retry-end', { success: typeof evt.success === 'boolean' ? evt.success : 'unknown', attempt: run.retryAttempt, ...(evt.success === false ? modelErrorLogFields(evt.finalError ?? evt.error) : {}), model: run.model, subagent: run.id })
       if (evt.success === false) {
         run.stopReason = 'error'
         run.error = run.error ?? modelErrorNotice(evt.finalError ?? evt.error)
@@ -2300,6 +2304,7 @@ export class SubagentController {
 
   private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {
     const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run)).catch(() => null)
+    logModelEvent('account-switch', { reason: 'quota', outcome: label ? 'switched' : 'none', to: label ?? undefined, model: run.model, subagent: run.id })
     if (!label || !live()) return false
     await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`), continuationPrompt('account-switch', 'subagent'))
     return true
@@ -2377,6 +2382,7 @@ export class SubagentController {
     run.progressWarning = undefined
     run.endedAt = Date.now()
     if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
+    if (modelFailed) logModelEvent('subagent-model-error', { ...modelErrorLogFields(run.lastModelErrorText), model: run.model, subagent: run.id, piRetries: run.recovery?.piRetries, resumed: run.recovery?.resumed })
     if (unsent) {
       run.error = [run.error, pick(`额度等待期间收下的 ${unsent} 条追加信息没有送出；续接后再发`, `${unsent} queued message(s) were not delivered while waiting for quota; send them again after resuming`)].filter(Boolean).join('\n')
     }

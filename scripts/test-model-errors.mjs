@@ -132,6 +132,16 @@ export async function runModelErrorTests(ok, modules) {
   ok(shared.isAuthRejected('401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"},"request_id":"req_x"}'), 'Anthropic 401 认证拒绝识别为可续跑一次的认证闪断')
   ok(!shared.isAuthRejected('403 Forbidden: insufficient permissions'), '403 权限不足不当作认证闪断')
   ok(!shared.isAuthRejected('429 rate limit'), '限流不当作认证闪断')
+  for (const text of ['OAuth refresh failed for anthropic', 'OAuth refresh failed for openai-codex: Error: 400 {"error":"invalid_grant","error_description":"Refresh token expired"}', 'invalid_grant', 'Kimi Code token refresh unauthorized (status 401)', 'refresh token has been revoked']) {
+    ok(shared.classifyModelError(text).kind === 'auth', `OAuth 刷新失败认成认证错误：${text}`)
+    ok(shared.isOAuthRefreshFailure(text) && shared.isAuthRejected(text), `OAuth 刷新失败可走 401 补救与换号：${text}`)
+    ok(shared.modelErrorCause(text) === 'authExpired', `OAuth 刷新失败单独给出重新登录提示：${text}`)
+  }
+  const refreshNotice = shared.modelErrorNotice('OAuth refresh failed for anthropic')
+  ok(/登录已失效/.test(refreshNotice) && /设置 → 模型/.test(refreshNotice) && refreshNotice.includes('anthropic') && refreshNotice.includes('原因：OAuth refresh failed for anthropic'), '提示到设置里重新登录对应服务商的账号，并保留原文', refreshNotice)
+  ok(!/abc123/.test(shared.modelErrorNotice('OAuth refresh failed for anthropic: refresh_token=abc123')), '刷新失败原文里的刷新令牌被遮掉')
+  ok(!shared.isOAuthRefreshFailure('401 Unauthorized') && shared.modelErrorCause('401 Unauthorized') === 'auth', '普通 401 仍是通用认证提示')
+  ok(shared.classifyModelError('OAuth refresh failed for anthropic: 429 rate limit').kind === 'quota', '刷新接口被限流仍按限流处理')
   ok(shared.modelErrorNotice('upstream request cancelled').includes('upstream request cancelled'), '取消类原文仍保留在错误内容里')
   ok(/quota/.test(shared.modelErrorNotice({ error: { code: 'insufficient_quota', message: 'quota exhausted' } })), '嵌套服务商错误字段可读取')
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')

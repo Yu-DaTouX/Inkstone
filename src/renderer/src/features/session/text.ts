@@ -70,6 +70,7 @@ export type SessionTextKey =
   | 'errHintQuotaUsage'
   | 'errHintQuotaReset'
   | 'errHintAuth'
+  | 'errHintAuthExpired'
   | 'errHintContext'
   | 'errHintAborted'
   | 'errHintRequest'
@@ -369,6 +370,7 @@ const ZH: Record<SessionTextKey, string> = {
   errHintQuotaUsage: '等额度恢复或换模型',
   errHintQuotaReset: '恢复时间：{time}',
   errHintAuth: '在设置中重新登录或检查凭证',
+  errHintAuthExpired: '登录已失效，到 设置 → 模型 重新登录这个账号',
   errHintContext: '压缩会话或换长上下文模型',
   errHintAborted: '已执行的工具操作可能保留',
   errHintRequest: '核对模型 ID、接口地址与参数',
@@ -669,6 +671,7 @@ const EN: Record<SessionTextKey, string> = {
   errHintQuotaUsage: 'Wait for quota or switch models',
   errHintQuotaReset: 'Resets: {time}',
   errHintAuth: 'Sign in again or check credentials in Settings',
+  errHintAuthExpired: 'Sign-in expired; sign in to this account again in Settings → Models',
   errHintContext: 'Compact the session or use a longer-context model',
   errHintAborted: 'Tool actions already run may remain',
   errHintRequest: 'Check the model ID, endpoint and parameters',

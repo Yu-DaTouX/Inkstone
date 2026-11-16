@@ -36,7 +36,8 @@ import { QueueCoordinator } from './queue-coordinator'
 import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
 import { StreamProjection, streamGenerationTiming, streamSpeed, type StreamingState } from './stream-projection'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
-import { apiKeyLooksUnusable, isAuthRejected, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { apiKeyLooksUnusable, isAuthRejected, isOAuthRefreshFailure, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { logModelEvent, modelErrorLogFields } from './main-log'
 import { readAuthEntry } from './credentials'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
@@ -480,7 +481,7 @@ export class AgentController extends EventEmitter {
   private readonly operations = new SessionOperationGate()
   private getPermissionMode?: () => Promise<'danger' | 'all'>
   private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
-  private switchSpareAccount?: (provider: string) => Promise<{ label: string; switched: boolean } | null>
+  private switchSpareAccount?: (provider: string, opts?: { refreshFailed?: boolean }) => Promise<{ label: string; switched: boolean } | null>
   private dangerGuardExtension?: string
   private providerExtensions: string[] = []
   private yanCliEnv?: YanCliEnv
@@ -773,7 +774,7 @@ export class AgentController extends EventEmitter {
     retireApprovals?: (owner: ApprovalOwner) => void
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
-    switchSpareAccount?: (provider: string) => Promise<{ label: string; switched: boolean } | null>
+    switchSpareAccount?: (provider: string, opts?: { refreshFailed?: boolean }) => Promise<{ label: string; switched: boolean } | null>
     dangerGuardExtension?: string
     providerExtensions?: string[]
     yanCliEnv?: YanCliEnv
@@ -2201,6 +2202,7 @@ export class AgentController extends EventEmitter {
         this.pendingTruncated = m.stopReason === 'length'
         if (m.stopReason !== 'aborted') this.quotaExhausted = m.stopReason === 'error' && isQuotaWaitError(modelErrorText(m.errorMessage))
         if (m.stopReason === 'error') {
+          logModelEvent('error', { ...modelErrorLogFields(m.errorMessage), provider: (m as { provider?: string }).provider ?? this.state?.model?.provider, model: (m as { model?: string }).model ?? this.state?.model?.id, session: this.state?.sessionId, afterRetry: this.retrySeenThisRun })
           this.push({
             ch: 'agent-error',
             payload: { message: modelErrorNotice(m.errorMessage), text: modelErrorText(m.errorMessage), source: 'stop-reason' }
@@ -2358,7 +2360,7 @@ export class AgentController extends EventEmitter {
           : undefined
         const task = continuation ? this.continueAfterLoopGuard(continuation)
           : errorContinuation ? this.continueAfterModelError(errorContinuation)
-            : authBlip && failedProvider ? this.continueAfterAuthBlip(authBlip, failedProvider).then((ok) => ok || !failover ? ok : failover())
+            : authBlip && failedProvider ? this.continueAfterAuthBlip(authBlip, failedProvider, !!modelError && isOAuthRefreshFailure(modelError.text)).then((ok) => ok || !failover ? ok : failover())
               : failover ? failover() : undefined
         if (task) {
           this.loopGuardContinueTask = task
@@ -2506,6 +2508,7 @@ export class AgentController extends EventEmitter {
           break
         }
         const retryError = modelErrorText(evt.errorMessage ?? evt.error)
+        logModelEvent('retry', { ...modelErrorLogFields(retryError), attempt: Number(evt.attempt ?? 1), max: Number(evt.maxAttempts ?? evt.attempt ?? 1), delayMs: Number(evt.delayMs ?? 0), provider: this.state?.model?.provider, model: this.state?.model?.id, session: this.state?.sessionId })
         if (isQuotaWaitError(retryError)) {
           this.push({
             ch: 'notify',
@@ -2534,6 +2537,7 @@ export class AgentController extends EventEmitter {
 
       case 'auto_retry_end':
         this.setRetryRun(null)
+        logModelEvent('retry-end', { success: typeof evt.success === 'boolean' ? evt.success : 'unknown', attempt: Number(evt.attempt ?? 0) || undefined, ...(evt.success === false ? modelErrorLogFields(evt.finalError) : {}), provider: this.state?.model?.provider, model: this.state?.model?.id, session: this.state?.sessionId })
         if (evt.success === true) {
           this.retrySeenThisRun = false
           this.pendingModelError = undefined
@@ -2877,6 +2881,7 @@ export class AgentController extends EventEmitter {
       if ((await getSettings()).apiKeyFailover !== true) return false
       if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue()) || this.loopGuardAutoContinueCount >= 1) return false
       const moved = await failoverApiKey(provider)
+      logModelEvent('key-failover', { provider, outcome: moved ? (moved.switched ? 'switched' : 'recent') : 'none', from: moved?.from, to: moved?.to, session: scope.sessionId })
       if (!moved || !this.canContinueAfterLoopGuard(scope)) return false
       this.quotaExhausted = false
       this.push({ ch: 'quota-wait', payload: { cancel: true } } as unknown as MainPush)
@@ -2896,6 +2901,7 @@ export class AgentController extends EventEmitter {
     if (!this.canContinueAfterLoopGuard(scope)) return false
     scope = { ...scope, reason: 'account-switch' }
     const account = this.loopGuardAutoContinueCount < 1 ? await this.switchSpareAccount?.(provider).catch(() => null) : null
+    if (this.loopGuardAutoContinueCount < 1) logModelEvent('account-switch', { provider, reason: 'quota', outcome: account ? (account.switched ? 'switched' : 'recent') : 'none', to: account?.label, session: scope.sessionId })
     if (!account || !this.canContinueAfterLoopGuard(scope)) {
       if (this.canContinueAfterLoopGuard(scope)) this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
       return false
@@ -2915,9 +2921,18 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async continueAfterAuthBlip(scope: AutoContinueScope, provider: string): Promise<boolean> {
+  private async continueAfterAuthBlip(scope: AutoContinueScope, provider: string, refreshFailed = false): Promise<boolean> {
     const entry = await readAuthEntry(provider).catch(() => undefined) as { type?: unknown } | undefined
     if (entry?.type !== 'oauth') return false
+    if (refreshFailed) {
+      const account = await this.switchSpareAccount?.(provider, { refreshFailed: true }).catch(() => null)
+      logModelEvent('account-switch', { provider, reason: 'oauth-refresh', outcome: account ? (account.switched ? 'switched' : 'recent') : 'none', to: account?.label, session: scope.sessionId })
+      if (account?.switched && this.canContinueAfterLoopGuard(scope)) {
+        this.push({ ch: 'notify', payload: { id: `account-switch-${Date.now()}`, method: 'notify', notifyType: 'info',
+          message: pick(`当前账号登录已失效，已换到 ${account.label} 继续`, `The current account's sign-in expired; continuing on ${account.label}`) } })
+        return this.continueAfterModelError(scope)
+      }
+    }
     await new Promise((done) => setTimeout(done, AUTH_BLIP_RETRY_MS))
     return this.continueAfterModelError(scope)
   }

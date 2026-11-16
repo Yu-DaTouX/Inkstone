@@ -24,6 +24,7 @@ const CAUSE_HINT: Record<ModelErrorCause, SessionTextKey> = {
   quotaBalance: 'errHintQuotaBalance',
   quotaUsage: 'errHintQuotaUsage',
   auth: 'errHintAuth',
+  authExpired: 'errHintAuthExpired',
   context: 'errHintContext',
   aborted: 'errHintAborted',
   request: 'errHintRequest',

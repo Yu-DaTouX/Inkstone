@@ -62,7 +62,7 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   return settle(base, async () => {
     if (!t.credential) {
       return t.problem === 'expired'
-        ? { status: 'expired', hint: pick('登录令牌已过期，下次对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it on the next chat.') }
+        ? { status: 'expired', refreshable: true, hint: pick('登录令牌已过期，下次对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it on the next chat.') }
         : { status: 'error', error: t.problem ?? pick('没有可用的登录凭证', 'No usable sign-in credentials') }
     }
     const [usage, resetCredits] = await Promise.all([
@@ -75,7 +75,7 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
 
 function yanClaudeCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
   return settle({ key: account.key, source: 'yan', provider: 'anthropic', name: 'Claude', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
-    if (account.credential.expires <= Date.now()) return { status: 'expired', hint: pick('登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it when you chat with a Claude model after switching.') }
+    if (account.credential.expires <= Date.now()) return { status: 'expired', refreshable: !!account.credential.refresh, hint: pick('登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it when you chat with a Claude model after switching.') }
     const usage = await claudeUsage(account.credential.access) as { cedar_ember?: unknown }
     const windows = claudeUsageWindows(usage)
     const resetCredits = claudeResetCredits(usage?.cedar_ember, Date.now())

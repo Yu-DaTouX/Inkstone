@@ -514,7 +514,13 @@ class SummaryError extends Error {
   }
 }
 
-const CAPACITY_PATTERN = /context[ _-]?(length|window)|too long|too large|maximum (context|input)|exceed|input tokens/i
+const CAPACITY_PATTERN = /context[ _-]?(length|window)|prompt is too long|input is too long|(request|payload|input|prompt)s? (is )?too large|request_too_large|maximum (context|input)|exceeds? (the )?(model'?s? )?(context|maximum|max|token|input)|too many (input )?tokens|input tokens|token limit/i
+const RATE_LIMIT_PATTERN = /rate[ _-]?limit|too many requests|\b429\b|quota|usage limit|resource_exhausted|per min(ute)?\b|\b[TR]PM\b/i
+
+export function isCapacityError(message) {
+  const text = String(message ?? '')
+  return !RATE_LIMIT_PATTERN.test(text) && CAPACITY_PATTERN.test(text)
+}
 
 async function summarize(ctx, model, text, previousSummary, customInstructions, maxTokens, signal, shorter = false, language = null) {
   let prompt = `<conversation>\n${text}\n</conversation>\n\n`
@@ -532,7 +538,7 @@ async function summarize(ctx, model, text, previousSummary, customInstructions, 
   }, options)
   if (response.stopReason === 'error' || response.stopReason === 'aborted') {
     const message = response.errorMessage || 'summarization failed'
-    const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : CAPACITY_PATTERN.test(message) ? 'capacity' : 'error'
+    const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : isCapacityError(message) ? 'capacity' : RATE_LIMIT_PATTERN.test(message) ? 'rate' : 'error'
     throw new SummaryError(category, message, response.usage)
   }
   if (response.stopReason === 'length') throw new SummaryError('length', 'summary hit the token cap', response.usage)
@@ -556,7 +562,7 @@ async function summarizeFast(ctx, model, request, tail, customInstructions, maxT
   }, { maxTokens, signal, ...(sessionId ? { sessionId } : {}), onPayload: () => payload })
   if (response.stopReason === 'error' || response.stopReason === 'aborted') {
     const message = response.errorMessage || 'summarization failed'
-    const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : CAPACITY_PATTERN.test(message) ? 'capacity' : 'error'
+    const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : isCapacityError(message) ? 'capacity' : RATE_LIMIT_PATTERN.test(message) ? 'rate' : 'error'
     throw new SummaryError(category, message, response.usage)
   }
   if (response.stopReason === 'length') throw new SummaryError('length', 'summary hit the token cap', response.usage)
@@ -695,7 +701,7 @@ export default function contextCompactExtension(pi) {
           path = 'prefix'
         } catch (error) {
           usage = addUsage(usage, error?.usage)
-          if (signal?.aborted) throw error
+          if (signal?.aborted || error?.category === 'rate') throw error
           fastError = `${error?.category ?? 'error'}: ${String(error?.message ?? error).slice(0, 200)}`
         }
         fastMs = Date.now() - fastStart

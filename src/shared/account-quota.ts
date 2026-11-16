@@ -40,6 +40,7 @@ export interface AccountQuotaCard {
   switchable?: boolean
   alsoIn?: AccountQuotaSource[]
   status: AccountQuotaStatus
+  refreshable?: boolean
   hint?: string
   error?: string
   windows: QuotaWindow[]

@@ -145,7 +145,12 @@ export async function callModel(req: ModelCallRequest, runtime: ModelCallRuntime
       }
       rpc.on('event', (event: Record<string, unknown>) => {
         if (settled) return
-        if (event.type === 'message_update') {
+        if (event.type === 'message_start') {
+          const message = event.message as Record<string, unknown> | undefined
+          if (message?.role !== 'assistant') return
+          text = ''
+          failure = ''
+        } else if (event.type === 'message_update') {
           const update = event.assistantMessageEvent as Record<string, unknown> | undefined
           if (update?.type === 'text_delta') {
             text += String(update.delta ?? '')
@@ -154,7 +159,9 @@ export async function callModel(req: ModelCallRequest, runtime: ModelCallRuntime
         } else if (event.type === 'message_end') {
           const message = event.message as Record<string, unknown> | undefined
           if (message && message.role !== undefined && message.role !== 'assistant') return
-          if (typeof message?.errorMessage === 'string' && message.errorMessage.trim()) failure = modelErrorText(message.errorMessage) || message.errorMessage.trim()
+          const errorMessage = typeof message?.errorMessage === 'string' ? message.errorMessage.trim() : ''
+          failure = errorMessage ? modelErrorText(errorMessage) || errorMessage : ''
+          if (failure) text = ''
           if (typeof message?.stopReason === 'string') stopReason = message.stopReason
           usage = usageOf(message?.usage) ?? usage
           if (typeof message?.provider === 'string' && typeof message.model === 'string') actualModel = `${message.provider}/${message.model}`
