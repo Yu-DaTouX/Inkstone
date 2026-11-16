@@ -9,7 +9,7 @@ import {
 } from '../../../../../shared/remote-protocol'
 import { pairInviteAddress, pairInviteLink } from '../../../../../shared/pair-invite'
 import { useStore } from '../../../state/store'
-import { Badge, Button, EmptyState, ListBoxItem, Notice, QrCode, Select, Switch } from '../../../ui'
+import { Badge, Button, EmptyState, ListBoxItem, Notice, QrCode, Select, settingCardClass, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { formatWhen } from './general-model'
@@ -108,7 +108,7 @@ export function DeviceList({
   ]
   if (entries.length === 0) {
     return (
-      <EmptyState size="sm" align="start" inset="none" className="settings-list-empty" title={text.devicesNone} data-testid="v3-devices-empty" />
+      <EmptyState size="sm" align="start" inset="none" className={settingCardClass('rows', 'settings-list-empty')} title={text.devicesNone} data-testid="v3-devices-empty" />
     )
   }
   const active = entries.filter((entry) => entry.revokedAt === null)
@@ -117,7 +117,7 @@ export function DeviceList({
     <Badge tone="neutral">{entry.via === 'relay' ? local.viaRelay : local.viaDirect}</Badge>
   )
   return (
-    <ul className="settings-devices" data-testid="v3-device-list">
+    <ul className={settingCardClass('rows', 'settings-devices')} data-testid="v3-device-list">
       {active.map((entry) => (
         <li className="settings-device" key={entry.key} data-testid="v3-device" data-via={entry.via}>
           <div className="settings-device__main">
@@ -436,7 +436,7 @@ function DevicesSettingsInner(): ReactElement {
             />
           ) : null}
           {pairing && status?.hostFingerprint ? (
-            <div className="settings-device" data-testid="v3-devices-host-fingerprint">
+            <div className="settings-device dd-fingerprint" data-testid="v3-devices-host-fingerprint">
               <span className="settings-value">
                 {t('devices.hostFingerprint')}: <strong className="ui-num">{status.hostFingerprint}</strong>
               </span>

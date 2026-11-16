@@ -159,7 +159,7 @@ export function SessionSettings(): ReactElement {
         <SettingsRow
           settingId="session-compress-archived"
           label={text.sessionCompress}
-          description={compression && !compression.supported ? text.sessionCompressUnsupported : `${text.sessionCompressDesc} ${compressing ? text.sessionCompressRunning : compression && compression.files > 0 ? text.sessionCompressSaved.replace('{n}', String(compression.files)).replace('{size}', `${Math.round(compression.savedBytes / 1_048_576)} MB`) : compressEnabled && compression ? text.sessionCompressNone : ''}`.trim()}
+          description={compression && !compression.supported ? text.sessionCompressUnsupported : [text.sessionCompressDesc, compressing ? text.sessionCompressRunning : compression && compression.files > 0 ? text.sessionCompressSaved.replace('{n}', String(compression.files)).replace('{size}', `${Math.round(compression.savedBytes / 1_048_576)} MB`) : compressEnabled && compression ? text.sessionCompressNone : ''].filter(Boolean).join(lang === 'en-US' ? ' ' : '')}
         >
           <Switch
             aria-label={text.sessionCompress}

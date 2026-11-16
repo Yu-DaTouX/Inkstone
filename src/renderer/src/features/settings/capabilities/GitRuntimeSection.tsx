@@ -4,7 +4,7 @@ import { useStore } from '../../../state/store'
 import type { GitInstallProgress, GitRuntimeStatus, ToolchainStatus, ToolStatus } from '../../../../../shared/ipc'
 import { Button, ProgressBar } from '../../../ui'
 import { useConfirm } from './confirm'
-import { Actions, Group, Meta, StatusBadge, Warn } from './parts'
+import { Actions, Entry, Group, Meta, StatusBadge, Warn } from './parts'
 
 const BUSY_PHASES: ReadonlySet<GitInstallProgress['phase']> = new Set(['downloading', 'verifying', 'extracting'])
 
@@ -114,28 +114,19 @@ export function GitRuntimeSection(): ReactElement | null {
   return (
     <div data-testid="cap-git-runtime">
       <Group title={t('git.sectionTitle')} desc={t('git.sectionDesc')} card>
-        <Actions>
-          {toolBadge(tools?.git, 'Git', t)}
-          {toolBadge(tools?.bash, 'bash', t)}
-        </Actions>
-        {runtime.managedInstalled ? (
-          <Meta>{t('git.managedVersion', { v: runtime.managedVersion ?? '?' })}</Meta>
-        ) : healthy ? (
-          <Meta>{t('git.systemOk')}</Meta>
-        ) : (
-          <Meta>{t('notice.toolsMissing')}</Meta>
-        )}
-        {busy && BUSY_PHASES.has(progress.phase) ? <InstallProgress progress={progress} onCancel={cancel} /> : null}
-        {progress.phase === 'error' && cancelled ? <Meta>{t('git.cancelled')}</Meta> : null}
-        {progress.phase === 'error' && !cancelled ? (
-          <Warn>
-            <span data-testid="git-install-error">{progress.message}</span>
-          </Warn>
-        ) : null}
-        {progress.phase === 'done' && runtime.managedInstalled ? <Meta>{progress.message ?? t('git.installed')}</Meta> : null}
-        {removeError ? <Warn>{removeError}</Warn> : null}
-        {busy ? null : (
-          <Actions>
+        <Entry
+          name={toolBadge(tools?.git, 'Git', t)}
+          badge={toolBadge(tools?.bash, 'bash', t)}
+          metaWrap
+          meta={[
+            runtime.managedInstalled
+              ? t('git.managedVersion', { v: runtime.managedVersion ?? '?' })
+              : healthy
+                ? t('git.systemOk')
+                : t('notice.toolsMissing')
+          ]}
+          actions={busy ? null : (
+          <>
             {!healthy || runtime.managedInstalled ? (
               <Button
                 variant={healthy ? 'secondary' : 'primary'}
@@ -164,8 +155,19 @@ export function GitRuntimeSection(): ReactElement | null {
             <Button variant="secondary" isDisabled={removing} onPress={() => void refresh()}>
               {t('set.extRecheck')}
             </Button>
-          </Actions>
-        )}
+          </>
+          )}
+        >
+          {busy && BUSY_PHASES.has(progress.phase) ? <InstallProgress progress={progress} onCancel={cancel} /> : null}
+          {progress.phase === 'error' && cancelled ? <Meta>{t('git.cancelled')}</Meta> : null}
+          {progress.phase === 'error' && !cancelled ? (
+            <Warn>
+              <span data-testid="git-install-error">{progress.message}</span>
+            </Warn>
+          ) : null}
+          {progress.phase === 'done' && runtime.managedInstalled ? <Meta>{progress.message ?? t('git.installed')}</Meta> : null}
+          {removeError ? <Warn>{removeError}</Warn> : null}
+        </Entry>
       </Group>
     </div>
   )

@@ -26,6 +26,7 @@ export interface ImageConfigView {
   complexity: ImageComplexity | 'default'
   keys: Partial<Record<ImageKeyService, ImageKeySource>>
   codex: boolean
+  codexSource: 'yan' | 'codex-cli' | null
   local: boolean
   defaults: Record<ImageModelService, string>
   resolved: ImageProviderChoice | 'unavailable' | 'mock'

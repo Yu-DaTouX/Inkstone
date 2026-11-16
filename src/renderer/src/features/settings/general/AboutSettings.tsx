@@ -123,7 +123,9 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
           label={text.aboutUpdates}
           description={
             <>
-              <span data-testid="v3-about-update-state">{detail ? `${phase} · ${detail}` : phase}</span>
+              <span data-testid="v3-about-update-state" className={status?.phase === 'error' ? 'settings-row__desc--error' : undefined}>
+                {detail ? `${phase} · ${detail}` : phase}
+              </span>
               {percent !== null ? (
                 <ProgressBar aria-label={text.aboutPhaseDownloading} value={percent} className="about-update-progress" data-testid="v3-about-update-progress" />
               ) : null}
@@ -187,7 +189,7 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
           description={
             <>
               {text.aboutPiDesc.replace(/[。.]$/, '')} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
-              {piInfo?.error ? ` · ${piInfo.error}` : ''}
+              {piInfo?.error ? <span className="settings-row__line settings-row__desc--error">{piInfo.error}</span> : null}
             </>
           }
         >

@@ -243,8 +243,9 @@
     flex: none;
   }
 
-  .ui-settings-search__hint {
+  .ui-settings-search > .ui-settings-search__hint {
     flex: none;
+    color: var(--fg2);
   }
 
   .ui-settings-search__input {
@@ -381,6 +382,26 @@
     min-height: 0;
     padding: var(--s-16) var(--settings-pad) var(--s-24);
     overflow: auto;
+    scrollbar-gutter: stable;
+    container: settings-content / inline-size;
+  }
+
+  @container settings-content (max-width: 740px) {
+    .ui-settings__content > * {
+      --ui-settings-md: 1;
+    }
+  }
+
+  @container settings-content (max-width: 560px) {
+    .ui-settings__content > * {
+      --ui-settings-sm: 1;
+    }
+  }
+
+  @container settings-content (max-width: 480px) {
+    .ui-settings__content > * {
+      --ui-settings-xs: 1;
+    }
   }
 
   .ui-settings__content::after {
@@ -546,6 +567,43 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--s-8);
+  }
+
+  .ui-setting-section[data-variant='group'] > .ui-setting-section__head .ui-setting-section__title {
+    color: var(--fg2);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    font-weight: 600;
+  }
+
+  @container style(--ui-settings-sm: 1) {
+    .ui-setting-section[data-variant='group'] > .ui-setting-section__head:has(> .ui-setting-section__actions) {
+      flex-wrap: wrap;
+    }
+
+    .ui-setting-section[data-variant='group'] > .ui-setting-section__head > .ui-setting-section__titles {
+      flex-basis: 18rem;
+    }
+  }
+
+  .ui-setting-row:has(> .ui-setting-row__ctl > [data-ui-row-fill]) {
+    container: ui-setting-row / inline-size;
+  }
+
+  .ui-setting-row__ctl > [data-ui-row-fill] {
+    width: 240px;
+    max-width: 100%;
+  }
+
+  @container ui-setting-row (max-width: 495px) {
+    .ui-setting-row__ctl:has(> [data-ui-row-fill]) {
+      --ui-row-wrapped: 1;
+      flex: 1 1 100%;
+    }
+
+    .ui-setting-row__ctl > [data-ui-row-fill] {
+      width: 100%;
+    }
   }
 
   .ui-setting-row {

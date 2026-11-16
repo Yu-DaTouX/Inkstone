@@ -242,7 +242,7 @@ const ZH: SettingsText = {
   contextCompactAtActual: '实际 {e} 触发',
   contextProjectIgnored: '项目 .pi/settings.json 的压缩设置未生效：项目未受信任。',
   contextCompactNow: '立即压缩',
-  contextUsed: '已用',
+  contextUsed: '当前会话已用',
   contextWindowLabel: '窗口',
   contextUnknown: '未知',
 
@@ -383,7 +383,7 @@ const EN: SettingsText = {
   contextCompactAtActual: 'Actually triggers at {e}',
   contextProjectIgnored: 'Project .pi/settings.json compaction ignored: project is untrusted.',
   contextCompactNow: 'Compact now',
-  contextUsed: 'Used',
+  contextUsed: 'Used in this session',
   contextWindowLabel: 'Window',
   contextUnknown: 'unknown',
 

@@ -3402,7 +3402,1056 @@ async function treeTarget({ kit: S, ev, sleep, until, check, log, report, newSes
   report.audit.tree = await S.audit(pane)
 }
 
-const TARGETS = { tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget,  browserfinal: browserFinalTarget,  browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget }
+const SETTINGS_PAGES = [
+  ['appearance', 'v3-settings-nav-appearance'],
+  ['session', 'v3-settings-nav-session'],
+  ['notifications', 'v3-settings-nav-notifications'],
+  ['security', 'v3-settings-nav-security'],
+  ['shortcuts', 'v3-settings-nav-shortcuts'],
+  ['models', 'v3-settings-nav-models'],
+  ['caps-skills', 'caps-tab-skills'],
+  ['caps-mcp', 'caps-tab-mcp'],
+  ['caps-tools', 'caps-tab-tools'],
+  ['caps-market', 'caps-tab-market'],
+  ['code', 'v3-settings-nav-code'],
+  ['devices', 'v3-settings-nav-devices'],
+  ['data', 'v3-settings-nav-data'],
+  ['about', 'v3-settings-nav-about']
+]
+
+async function settingsBatch2({ S, ev, sleep, until, check, report, newSession, go, into, both, keyCombo, scrollTo, modal, R }) {
+  await go('v3-settings-nav-shortcuts')
+  await into('[data-testid="v3-shortcut-newSession"]')
+  R.shortcutRecord = await S.click('[data-testid="v3-shortcut-record-newSession"]', 600)
+  await S.unhover()
+  await both('settings-60-shortcuts-recording')
+  await keyCombo('b', 'KeyB', 66, 2)
+  R.shortcutConflict = await ev(`document.querySelector('[data-testid="v3-shortcut-notice-newSession"]')?.textContent ?? null`)
+  await both('settings-61-shortcuts-conflict')
+  await keyCombo('n', 'KeyN', 78, 3)
+  await sleep(600)
+  R.shortcutModified = await ev(`document.querySelector('[data-testid="v3-shortcut-newSession"]')?.getAttribute('data-modified') ?? null`)
+  await both('settings-62-shortcuts-modified')
+  report.hover.push(['settings-shortcut-reset-hover', await S.hover('[data-testid="v3-shortcut-reset-newSession"]', 1200)])
+  await S.clip('settings-62-shortcuts-reset-hover-dark', modal, 0)
+  await S.unhover()
+  await scrollTo(0)
+  await sleep(300)
+  await S.clip('settings-63-shortcuts-top-modified-dark', modal, 0)
+  await ev(`window.__yanStore.getState().patchSettings({ shortcutOverrides: {} })`)
+  await sleep(500)
+
+  await go('v3-settings-nav-models')
+  await sleep(1200)
+  await ev(`(() => { for (const b of document.querySelectorAll('.ui-settings__content .settings-fold__toggle[aria-expanded="false"]')) b.click(); return true })()`)
+  await sleep(1200)
+  if (await into('[data-testid="ms-custom-add"]')) {
+    await S.click('[data-testid="ms-custom-add"]', 900)
+    await S.unhover()
+    await into('[data-testid="ms-custom-form"]')
+    await both('settings-64-models-custom-form')
+  }
+  if (await into('[data-testid^="ms-local-launch-row-"]')) await both('settings-65-models-local-launch')
+  report.hover.push(['settings-models-row-hover', await S.hover('[data-testid^="ms-local-launch-detect-"]', 900)])
+  await S.clip('settings-65-models-local-launch-hover-dark', modal, 0)
+  await S.unhover()
+
+  await go('caps-tab-mcp')
+  await sleep(1200)
+  if (await S.click('[data-testid="mcp-add"]', 900)) {
+    await S.unhover()
+    await both('settings-66-mcp-add-form')
+    await S.click('[data-testid="mcp-add"]', 600)
+  }
+  await go('caps-tab-tools')
+  await sleep(1200)
+  if (await S.click('[data-testid="cap-computer-use-more"]', 900)) {
+    await S.shot('settings-67-tools-cu-menu-dark')
+    await S.key('Escape')
+  }
+  await S.unhover()
+
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-skills-'))
+  writeFileSync(join(dir, 'README.md'), '# skills fixture\n')
+  const names = ['pdf-report-writer', 'release-notes', 'a-very-long-skill-name-that-should-truncate-in-the-settings-list-nicely', 'code-review', 'data-cleanup', '中文技能示例', 'screenshot-diff', 'translate-docs', 'sql-helper', 'ui-polish']
+  for (const name of names) {
+    mkdirSync(join(dir, '.pi', 'skills', name), { recursive: true })
+    writeFileSync(join(dir, '.pi', 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: 示例技能 ${name}，用来看设置页技能列表很多条时的显示；fixture skill with a reasonably long description for layout checks.\n---\n\n# ${name}\n`)
+  }
+  check('设置：技能夹具不在仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const trustBefore = await ev(`window.yan.piNativeSettings().then((r) => r.settings?.defaultProjectTrust ?? null)`)
+  R.skillsTrust = await ev(`window.yan.setPiNativeSettings({ defaultProjectTrust: 'always' }).then((r) => r.ok)`)
+  await ev(`(window.__yanStore.getState().closeSettings(), true)`)
+  await sleep(600)
+  await newSession(dir)
+  await sleep(2500)
+  await ev(`(window.__yanStore.getState().openSettings(), true)`)
+  await until(`!!document.querySelector('.ui-settings')`, 15000, 100)
+  await go('caps-tab-skills')
+  await S.click('[data-testid="caps-skills-reload"]', 2500)
+  await S.unhover()
+  R.skillsMany = await ev(`[...document.querySelectorAll('[data-testid="caps-skill"]')].length`)
+  await both('settings-68-skills-many')
+  await scrollTo(99999)
+  await sleep(400)
+  await S.clip('settings-68-skills-many-end-dark', modal, 0)
+  report.hover.push(['settings-skill-hover', await S.hover('[data-testid="caps-skill"]', 900)])
+  await S.clip('settings-68-skills-hover-dark', modal, 0)
+  await S.unhover()
+  R.skillsTrustRestore = await ev(`window.yan.setPiNativeSettings({ defaultProjectTrust: ${trustBefore ? JSON.stringify(trustBefore) : 'undefined'} }).then((r) => r.ok)`)
+}
+
+function fiberHook(ev) {
+  return (selector, finder, value, mode = 'dispatch') => ev(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) return 'no-element'
+    const key = Object.keys(el).find((name) => name.startsWith('__reactFiber$'))
+    const finder = ${finder}
+    for (let fiber = el[key]; fiber; fiber = fiber.return) {
+      const hooks = []
+      for (let h = fiber.memoizedState; h && typeof h === 'object' && 'next' in h; h = h.next) hooks.push(h)
+      if (!hooks.length) continue
+      let index = -1
+      try { index = finder(hooks.map((h) => h.memoizedState)) } catch {}
+      if (typeof index !== 'number' || index < 0) continue
+      const hook = hooks[index]
+      if (${JSON.stringify(mode)} === 'call') { hook.memoizedState[0](${JSON.stringify(value)}); return 'ok' }
+      if (!hook.queue?.dispatch) return 'no-dispatch'
+      hook.queue.dispatch(${JSON.stringify(value)})
+      return 'ok'
+    }
+    return 'no-hook'
+  })()`)
+}
+
+async function settingsReview2({ S, ev, sleep, report, go, into, scrollTo, modal, R }) {
+  const fh = fiberHook(ev)
+  R.e2 = {}
+  const log = (name, value) => { R.e2[name] = value; return value }
+  const now = Date.now()
+  const day = 86_400_000
+  const freezeTimers = (on) => ev(on ? `(window.__uiPolishSI = window.__uiPolishSI || window.setInterval, window.setInterval = () => 0, true)` : `(window.__uiPolishSI && (window.setInterval = window.__uiPolishSI), true)`)
+  const setLang = (lang) => ev(`window.__yanStore.getState().patchSettings({ lang: ${JSON.stringify(lang)} }).then(() => document.documentElement.lang)`)
+  const openAdvanced = () => ev(`(() => { let n = 0; for (const b of document.querySelectorAll('.ui-settings__content .settings-advanced > button[aria-expanded="false"]')) { b.click(); n++ } return n })()`)
+  const shotBoth = async (name, prep, selector) => {
+    for (const mode of ['dark', 'light']) {
+      if (mode === 'light') await S.theme('light')
+      if (prep) log(`${name}-${mode}`, await prep())
+      await sleep(500)
+      if (selector) await into(selector)
+      await S.unhover()
+      await S.clip(`${name}-${mode}`, modal, 0)
+    }
+    await S.theme('dark')
+  }
+  const testIdWith = (prefix, text) => ev(`(() => { const el = [...document.querySelectorAll('.caps-entry[data-testid^="${prefix}"]')].find((n) => n.innerText.includes(${JSON.stringify(text)})); return el ? el.getAttribute('data-testid') : null })()`)
+
+  const petStatus = { installed: true, version: '0.3.7', running: true, autoStart: true, model: null, installDir: 'C:\\Users\\demo\\AppData\\Local\\Inkstone\\plugins\\dsh-pet', edges: { state: 'failed', done: 3, total: 12, message: 'ffmpeg exited with code 1' }, log: ['[pet] starting dsh-pet 0.3.7', '[pet] loaded 12 animations', '[pet] bridge connected on 127.0.0.1:48211', '[pet] edges: ffmpeg exited with code 1'] }
+  const mcStatus = { installed: true, configured: true, conflict: false, skill: true, pluginDir: 'C:\\Users\\demo\\.pi\\agent\\extensions\\minecraft', installedVersion: '0.1.0', latestVersion: '0.1.1' }
+  const pkgs = Array.from({ length: 6 }, (_, i) => ({ name: i === 1 ? '@some-very-long-scope-name/pi-extension-with-an-extremely-long-package-name' : `pi-demo-package-${i + 1}`, version: `1.${i}.0`, publisher: `author${i}`, description: i % 2 ? '给 pi 增加一个示例能力，用来检查搜索结果的显示。' : 'Example pi package with a fairly long description for layout checks.', source: `npm:pi-demo-package-${i + 1}`, npmUrl: 'https://www.npmjs.com/', homepage: 'https://example.com/' }))
+  const svc = (key, title, extra = {}) => ({ key, name: key, title, backend: 'native', owner: 'pi', scope: 'global', enabled: true, inherited: false, overridden: false, transport: 'stdio', source: 'C:\\Users\\demo\\.pi\\agent\\mcp.json', connection: 'npx -y @modelcontextprotocol/server-filesystem C:\\work', ...extra })
+  const mcpSnapshot = { context: 'ui-polish', revision: 'r1', project: null, projectTrusted: false, errors: [], busy: false, nativeConfigChanged: false, projectServices: [], global: [
+    svc('filesystem', 'filesystem'),
+    svc('github-issues-and-pull-requests-long-name', 'github-issues-and-pull-requests-long-name', { backend: 'host', owner: 'inkstone', transport: 'http', connection: 'https://mcp.example.com/github', enabled: false }),
+    svc('playwright', 'playwright', { conflict: true })
+  ] }
+  const listing = (n) => ({ ok: true, agentDir: 'C:\\Users\\demo\\.pi\\agent', userSettings: '', projectSettings: '', entries: Array.from({ length: n }, (_, i) => ({ source: `npm:pi-ext-${i + 1}`, scope: i % 3 === 2 ? 'project' : 'user', name: i === 1 ? '@some-very-long-scope-name/pi-extension-with-an-extremely-long-package-name' : `pi-ext-${i + 1}`, version: `0.${i + 1}.0`, description: 'Example extension for layout checks.', repository: 'https://github.com/example/pi-ext', license: 'MIT', installed: i !== 3, path: null })) })
+  const voiceStatus = (download) => ({ hardware: { cpuModel: 'AMD Ryzen 9 7950X 16-Core Processor', threads: 32, totalMemoryMB: 65_536, freeMemoryMB: 30_100, cpuLoad: 0.21, gpu: 'NVIDIA GeForce RTX 4080' }, candidates: [
+    { spec: { id: 'base', tier: 'light', file: 'ggml-base.bin', approxBytes: 148_000_000, approxMemoryMB: 388, minThreads: 2, minFreeMemoryMB: 600 }, recommended: false, strain: null, installed: true },
+    { spec: { id: 'small', tier: 'balanced', file: 'ggml-small.bin', approxBytes: 488_000_000, approxMemoryMB: 852, minThreads: 4, minFreeMemoryMB: 1200 }, recommended: true, strain: null, installed: false },
+    { spec: { id: 'large-v3', tier: 'quality', file: 'ggml-large-v3.bin', approxBytes: 3_100_000_000, approxMemoryMB: 3900, minThreads: 8, minFreeMemoryMB: 5000 }, recommended: false, strain: '内存和 CPU 都可能吃紧，转写会慢。', installed: false }
+  ], binary: { path: 'C:\\Users\\demo\\AppData\\Local\\Inkstone\\voice\\whisper.cpp\\bin\\whisper-cli.exe', source: 'custom' }, backend: 'cuda', model: { label: 'base', path: 'C:\\Users\\demo\\voice\\ggml-base.bin', catalogId: 'base' }, language: 'auto', ready: true, storageDir: 'C:\\Users\\demo\\AppData\\Local\\Inkstone\\voice', download })
+  const voiceFinder = `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'candidates' in v)) && (s[i + 1] === null || (s[i + 1] && typeof s[i + 1] === 'object' && 'planId' in s[i + 1])) && typeof s[i + 2] === 'string' && typeof s[i + 3] === 'boolean')`
+  const voicePlanFinder = `(s) => { const i = (${voiceFinder})(s); return i < 0 ? -1 : i + 1 }`
+  const voicePlan = { planId: 'p1', target: { kind: 'model', id: 'small' }, label: 'ggml-small.bin', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin', bytes: 488_000_000, sizeKnown: true, destination: 'C:\\Users\\demo\\AppData\\Local\\Inkstone\\voice\\models' }
+  const savedSettings = await ev(`JSON.stringify(window.__yanStore.getState().settings?.voiceInput ?? null)`)
+  const setVoiceSaved = () => ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, voiceInput: { ...(s.settings?.voiceInput ?? {}), binaryPath: 'C:\\\\tools\\\\whisper\\\\whisper-cli.exe' } } }); return true })()`)
+  const android = (install) => ({ sdkRoot: 'C:\\Users\\demo\\AppData\\Local\\Android\\Sdk', sdkSource: 'managed', avds: ['Pixel_8_API_35', 'Medium_Tablet_API_34'], install, components: [
+    { id: 'platformTools', state: 'installed', path: 'C:\\Users\\demo\\AppData\\Local\\Android\\Sdk\\platform-tools' },
+    { id: 'emulator', state: 'missing' },
+    { id: 'systemImage', state: 'missing' },
+    { id: 'jdk', state: 'installed', path: 'C:\\Users\\demo\\AppData\\Local\\Inkstone\\jdk-21' },
+    { id: 'accel', state: 'unknown', detail: 'needs-emulator' }
+  ] })
+  const androidFinder = `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'components' in v)) && typeof s[i + 1] === 'string')`
+
+  const marketStates = async () => {
+    const comfy = await testIdWith('caps-market-', 'ComfyUI')
+    const out = {}
+    if (comfy) out.comfy = await fh(`[data-testid="${comfy}"]`, `(s) => s.findIndex((v, i) => typeof v === 'boolean' && Array.isArray(s[i + 1]) && typeof s[i + 1][0] === 'function' && typeof s[i + 2] === 'boolean' && typeof s[i + 3] === 'string') + 1 || -1`, true, 'call')
+    out.pet = await fh('[data-testid="caps-market-desktop-pet"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'edges' in v)) && Array.isArray(s[i + 1]) && typeof s[i + 2] === 'string')`, petStatus)
+    out.mc = await fh('[data-testid="caps-market-minecraft"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'pluginDir' in v)) && typeof s[i + 1] === 'string' && (s[i + 2] === null || typeof s[i + 2] === 'object'))`, mcStatus)
+    return out
+  }
+  const marketErrors = async () => ({
+    mcNote: await fh('[data-testid="caps-market-minecraft"]', `(s) => { const i = s.findIndex((v, j) => v && typeof v === 'object' && 'pluginDir' in v && typeof s[j + 1] === 'string'); return i < 0 ? -1 : i + 2 }`, { kind: 'err', text: '安装失败：无法写入 extensions 目录（EPERM）。' }),
+    petLog: await fh('[data-testid="caps-market-desktop-pet"]', `(s) => { const i = s.findIndex((v) => v && typeof v === 'object' && 'edges' in v); return i < 0 ? -1 : i + 4 }`, true)
+  })
+  const marketResults = () => fh('[data-testid="caps-market-search-btn"]', `(s) => { const i = s.findIndex((v, j) => typeof v === 'string' && typeof s[j + 1] === 'string' && typeof s[j + 2] === 'number' && (s[j + 3] === null || (s[j + 3] && typeof s[j + 3] === 'object')) && typeof s[j + 4] === 'boolean'); return i < 0 ? -1 : i + 3 }`, { ok: true, entries: pkgs, total: 6 })
+  const mcpInject = async () => ({
+    snapshot: await fh('[data-testid="mcp-add"]', `(s) => s.findIndex((v, i) => s[i + 2] === 'global' && typeof s[i + 3] === 'boolean' && typeof s[i + 4] === 'string')`, mcpSnapshot)
+  })
+  const mcpDetails = () => ev(`(() => { const b = document.querySelector('[data-testid="mcp-service"] button[aria-expanded="false"]'); b?.click(); return !!b })()`)
+  const pkgInject = (n) => fh('[data-setting-id="caps-extensions"]', `(s) => s.findIndex((v, i) => s[i + 1] === '' && s[i + 3] === 'install')`, listing(n))
+  const voiceInstalled = async (on) => {
+    const id = await testIdWith('caps-market-', on ? '语音' : '语音') || await testIdWith('caps-market-', 'Voice')
+    if (!id) return 'no-voice-row'
+    return fh(`[data-testid="${id}"]`, `(s) => s.findIndex((v, i) => typeof v === 'boolean' && Array.isArray(s[i + 1]) && typeof s[i + 1][0] === 'function' && typeof s[i + 2] === 'boolean' && typeof s[i + 3] === 'string') + 1 || -1`, on, 'call')
+  }
+
+  const originalLang = await ev(`window.__yanStore.getState().settings?.lang ?? 'zh-CN'`)
+  await go('caps-tab-market')
+  await sleep(2000)
+  await freezeTimers(true)
+
+  const e2Pick = (process.env.UI_POLISH_E2_WIDTHS || 'w700,w880,wide').split(',')
+  const e2Widths = [[700, 'w700'], [880, 'w880'], [0, 'wide']].filter(([, label]) => e2Pick.includes(label))
+  for (const [width, label] of e2Widths) {
+    if (width) await S.narrow(width, 960)
+    for (const lang of label === 'w700' ? ['zh-CN', 'en-US'] : label === 'w880' ? ['en-US'] : ['zh-CN']) {
+      log(`lang-${label}-${lang}`, await setLang(lang))
+      log(`content-${label}`, await ev(`(() => { const c = document.querySelector('.ui-settings__content'); if (!c) return null; const s = getComputedStyle(c); return Math.round(c.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) })()`))
+      await sleep(600)
+      const tag = label !== 'wide' ? `r2b-e1-${label}-${lang === 'zh-CN' ? 'zh' : 'en'}` : 'r2b-e2'
+      const shoot = async (name, prep, selector) => {
+        if (label === 'w880' && name !== 'market-installed' && name !== 'tools-voice-setup') return
+        if (label !== 'wide') {
+          if (prep) log(`${tag}-${name}`, await prep())
+          await sleep(500)
+          if (selector) await into(selector)
+          await S.unhover()
+          await S.clip(`${tag}-${name}-dark`, modal, 0)
+          if (lang === 'zh-CN') {
+            await S.theme('light')
+            if (prep) await prep()
+            await sleep(500)
+            if (selector) await into(selector)
+            await S.clip(`${tag}-${name}-light`, modal, 0)
+            await S.theme('dark')
+          }
+        } else await shotBoth(`${tag}-${name}`, prep, selector)
+      }
+
+      await go('caps-tab-market')
+      await sleep(1500)
+      await shoot('market-installed', marketStates, '[data-testid="caps-market-desktop-pet"]')
+      if (label === 'wide') await shoot('market-errors', async () => [await marketStates(), await marketErrors()], '[data-testid="caps-market-minecraft"]')
+      await shoot('market-results', marketResults, '[data-testid="caps-market-results"]')
+      log(`voiceOn-${label}-${lang}`, await voiceInstalled(true))
+
+      await go('caps-tab-mcp')
+      await sleep(1800)
+      await shoot('mcp-services', mcpInject, '[data-testid="mcp-services"]')
+      if (label === 'wide') await shoot('mcp-details', async () => [await mcpInject(), await sleep(300), await mcpDetails(), await fh('[data-testid="mcp-add"]', `(s) => { const i = s.findIndex((v, j) => s[j + 2] === 'global' && typeof s[j + 3] === 'boolean' && typeof s[j + 4] === 'string'); return i < 0 ? -1 : i + 4 }`, '保存失败：mcp.json 被其他程序占用，稍后重试。')], '[data-testid="mcp-services"]')
+      if (label === 'wide') {
+        await openAdvanced()
+        await sleep(900)
+        await shoot('mcp-legacy', async () => [
+          await fh('[data-setting-id="caps-mcp-native-status"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'servers' in v)) && (s[i + 1] === null || typeof s[i + 1] === 'string'))`, { skills: [], configWarning: false, nativeMcpAvailable: true, servers: [
+            { id: 'legacy-filesystem', title: 'legacy-filesystem', transport: 'stdio', enabled: true, effect: 'write', projectScoped: false, status: 'ready', toolCount: 14, ownedBy: 'inkstone' },
+            { id: 'remote-search-with-a-long-server-identifier', title: 'remote-search-with-a-long-server-identifier', transport: 'http', enabled: true, effect: 'read', projectScoped: true, endpointOrigin: 'https://search.example.com', status: 'needs-auth', toolCount: null, ownedBy: 'inkstone' },
+            { id: 'old-tool', title: 'old-tool', transport: 'stdio', enabled: false, effect: 'external-action', projectScoped: false, status: 'error', toolCount: 0, ownedBy: 'inkstone' }
+          ] })
+        ], '[data-setting-id="caps-mcp-native-status"]')
+      }
+
+      await go('caps-tab-tools')
+      await sleep(1800)
+      await openAdvanced()
+      await sleep(900)
+      await shoot('tools-search', async () => [
+        await fh('[data-testid="cap-search-api"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'providers' in v)) && Array.isArray(s[i + 1]))`, { configured: true, hintDismissed: false, deepseekModelKey: true, providers: { tavily: { configured: true, source: 'file' }, brave: { configured: true, source: 'env' }, firecrawl: { configured: false }, context7: { configured: false } } }),
+        await ev(`(() => { const b = document.querySelector('[data-testid="cap-search-api-add-firecrawl"]'); b?.click(); return !!b })()`),
+        await sleep(300),
+        await fh('[data-testid="cap-search-api-firecrawl"]', `(s) => s.findIndex((v, i) => typeof v === 'string' && typeof s[i + 1] === 'string' && typeof s[i + 2] === 'boolean' && s[i + 3] === true)`, 'fc-1234567890abcdef'),
+        await fh('[data-testid="cap-search-api-firecrawl"]', `(s) => s.findIndex((v, i) => typeof s[i - 1] === 'string' && typeof v === 'string' && typeof s[i + 1] === 'boolean' && s[i + 2] === true)`, '保存失败：Key 格式不对（应以 fc- 开头）。'),
+        await ev(`document.activeElement?.blur?.()`)
+      ], '[data-testid="cap-search-api"]')
+      await shoot('tools-android', () => fh('[data-testid="settings-android"]', androidFinder, android({ queue: ['emulator', 'systemImage'], current: 'systemImage', phase: 'download', received: 820_000_000, total: 1_900_000_000, done: ['emulator'], state: 'running' })), '[data-testid="settings-android"]')
+      if (label === 'wide') await shoot('tools-android-failed', () => fh('[data-testid="settings-android"]', androidFinder, android({ queue: ['emulator'], current: null, phase: 'idle', received: 0, total: 0, done: [], state: 'failed', error: 'sdkmanager exited with code 1：网络超时。' })), '[data-testid="settings-android"]')
+      await shoot('tools-voice', async () => [await setVoiceSaved(), await fh('[data-testid="settings-voice"]', voiceFinder, voiceStatus({ planId: 'p0', label: 'ggml-small.bin', received: 210_000_000, total: 488_000_000, state: 'running' })), await fh('[data-testid="settings-voice"]', voicePlanFinder, voicePlan)], '[data-testid="settings-voice"]')
+      await shoot('tools-voice-setup', async () => [await setVoiceSaved(), await fh('[data-testid="settings-voice"]', voiceFinder, voiceStatus(null)), await fh('[data-testid="settings-voice"]', voicePlanFinder, voicePlan)], '[data-testid="settings-voice-setup"]')
+
+      await go('caps-tab-skills')
+      await sleep(1800)
+      await shoot('packages', async () => [await pkgInject(5), await ev(`(() => { const b = document.querySelector('[data-testid="caps-pkg-detail"]'); b?.click(); return !!b })()`)], '[data-setting-id="caps-extensions"]')
+      if (label === 'wide') {
+        await shoot('packages-failed', async () => [await pkgInject(2), await fh('[data-setting-id="caps-extensions"]', `(s) => s.findIndex((v, i) => s[i + 1] === 'install' && s[i - 1] === '')`, { ok: false, error: 'npm ERR! code ETARGET No matching version found for pi-ext-2@^9.0.0', detail: 'npm ERR! code ETARGET\nnpm ERR! notarget No matching version found for pi-ext-2@^9.0.0.' })], '[data-setting-id="caps-extensions"]')
+        const skillSnap = { servers: [], configWarning: false, skills: [
+          { id: 's1', title: 'draft-release-notes', description: '本会话里刚写的技能', origin: 'session', location: 'C:\\tmp\\s1\\SKILL.md' },
+          { id: 's2', title: 'a-session-skill-with-a-really-long-name-for-layout-checks', description: '', origin: 'session', location: 'C:\\tmp\\s2\\SKILL.md' },
+          { id: 'u1', title: 'pdf-report-writer', description: 'PDF 报告', origin: 'user', acquired: true, sourceUrl: 'https://github.com/example/skills/tree/main/pdf-report-writer', location: 'C:\\Users\\demo\\.agents\\skills\\pdf-report-writer\\SKILL.md', enabled: true, manage: { scope: 'yan', dir: 'C:\\Users\\demo\\.agents\\skills\\pdf-report-writer' } },
+          { id: 'u2', title: 'code-review', description: '', origin: 'user', location: 'C:\\Users\\demo\\.agents\\skills\\code-review\\SKILL.md', enabled: false, manage: { scope: 'pi', dir: 'C:\\Users\\demo\\.pi\\agent\\skills\\code-review' } },
+          { id: 'b1', title: 'artifact', description: '', origin: 'bundled', location: 'C:\\Program Files\\Inkstone\\resources\\skills\\artifact\\SKILL.md' }
+        ] }
+        await shoot('skills-session', () => fh('[data-testid="caps-skills-reload"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'skills' in v)) && typeof s[i + 1] === 'boolean')`, skillSnap), '[data-testid="caps-skills-reload"]')
+        const prompts = async () => {
+          const sample = await ev(`JSON.stringify((window.__yanStore.getState().commands ?? [])[0] ?? null)`)
+          const base = JSON.parse(sample || 'null') ?? {}
+          const list = ['review-pr', 'summarize-changes-with-a-very-long-prompt-template-name', 'translate'].map((name, i) => ({ ...base, name, source: 'prompt', description: i === 1 ? '把这次改动整理成中文提交说明，列出文件和风险。' : 'Prompt template for layout checks', location: i === 2 ? 'project' : 'user', usage: i === 0 ? '<pr-number>' : undefined, hiddenInMenu: i === 2 }))
+          await ev(`(() => { const s = window.__yanStore.getState(); if (!window.__uiPolishCommands) window.__uiPolishCommands = s.commands; window.__yanStore.setState({ commands: [...(s.commands ?? []).filter((c) => c.source !== 'prompt'), ...${JSON.stringify(list)}] }); return true })()`)
+          await sleep(200)
+          return fh('[data-testid="caps-prompts-reload"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'user' in v)) && (s[i + 1] === null || typeof s[i + 1] === 'string') && typeof s[i + 2] === 'string' && typeof s[i + 3] === 'boolean')`, { user: 'C:\\Users\\demo\\.pi\\agent\\prompts', project: 'C:\\work\\a-project-with-a-long-folder-name-for-layout\\.pi\\prompts' })
+        }
+        await shoot('prompts', prompts, '[data-testid="caps-prompts-reload"]')
+        await ev(`(() => { if (window.__uiPolishCommands) window.__yanStore.setState({ commands: window.__uiPolishCommands }); delete window.__uiPolishCommands; return true })()`)
+      }
+    }
+    if (width) await S.wide()
+  }
+  await setLang(originalLang)
+  await freezeTimers(false)
+  await ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, voiceInput: ${savedSettings} ?? undefined } }); return true })()`)
+  await go('caps-tab-market')
+  await sleep(1500)
+  log('voiceOff', await voiceInstalled(false))
+  await scrollTo(0)
+}
+
+async function settingsBatch3({ S, ev, sleep, until, check, report, go, into, scrollTo, modal, R }) {
+  const hook = async (selector, test, value, offset = 0) => {
+    let result = 'no-hook'
+    let thawed = false
+    for (let attempt = 0; attempt < 50; attempt++) {
+      result = await hookOnce(selector, test, value, offset)
+      if (result !== 'no-hook' && result !== 'no-element') break
+      if (attempt === 3 && frozen) {
+        thawed = true
+        await ev(`(delete document.visibilityState, document.dispatchEvent(new Event('visibilitychange')), true)`)
+      }
+      await sleep(300)
+    }
+    if (thawed) await freeze(true)
+    return result
+  }
+  let frozen = false
+  const hookOnce = (selector, test, value, offset = 0) => ev(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) return 'no-element'
+    const key = Object.keys(el).find((name) => name.startsWith('__reactFiber$'))
+    const test = ${test}
+    for (let fiber = el[key]; fiber; fiber = fiber.return) {
+      for (const copy of [fiber, fiber.alternate]) {
+        if (!copy) continue
+        const hooks = []
+        for (let h = copy.memoizedState; h && typeof h === 'object' && 'next' in h; h = h.next) hooks.push(h)
+        for (let i = 0; i < hooks.length; i++) {
+          let ok = false
+          try { ok = !!hooks[i].queue && !!test(hooks[i].memoizedState) } catch {}
+          if (!ok) continue
+          const target = hooks[i + ${offset}]
+          if (!target?.queue?.dispatch) return 'no-target'
+          target.queue.dispatch(${JSON.stringify(value)})
+          return 'ok'
+        }
+      }
+    }
+    return 'no-hook'
+  })()`)
+  const freeze = (on) => (frozen = on, ev(on ? `(Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }), true)` : `(delete document.visibilityState, document.visibilityState)`))
+  const twice = async (name, prep, selector) => {
+    R.b3[name] = []
+    for (const mode of ['dark', 'light']) {
+      if (mode === 'light') await S.theme('light')
+      if (prep) R.b3[name].push(await prep())
+      await sleep(450)
+      if (selector) await into(selector)
+      await S.unhover()
+      await S.clip(`${name}-${mode}`, modal, 0)
+    }
+    await S.theme('dark')
+  }
+  const hoverShot = async (name, selector) => {
+    await into(selector)
+    report.hover.push([name, await S.hover(selector, 700)])
+    await S.clip(`${name}-dark`, modal, 0)
+    await S.theme('light')
+    report.hover.push([`${name}-light`, await S.hover(selector, 700)])
+    await S.clip(`${name}-light`, modal, 0)
+    await S.theme('dark')
+    await S.unhover()
+  }
+  const focusShot = async (name, _start, presses) => {
+    await ev(`(() => {
+      const c = document.querySelector('.ui-settings__content')
+      if (!c) return false
+      const top = c.getBoundingClientRect().top
+      const list = [...c.querySelectorAll('button:not([disabled]), input:not([disabled]), a[href], [tabindex="0"], [role="switch"]')]
+      const first = list.find((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.top >= top }) ?? list[0]
+      if (!first) return false
+      first.setAttribute('data-ui-polish-first', '1')
+      return true
+    })()`)
+    report.focus.push([name, await S.focusThenTab('[data-ui-polish-first]', { presses: Math.max(1, presses - 1) })])
+    await ev(`document.querySelector('[data-ui-polish-first]')?.removeAttribute('data-ui-polish-first')`)
+    await ev(`document.activeElement?.scrollIntoView?.({ block: 'center' })`)
+    await sleep(300)
+    await S.clip(`${name}-dark`, modal, 0)
+    await S.theme('light')
+    await S.clip(`${name}-light`, modal, 0)
+    await S.theme('dark')
+    await ev(`document.activeElement?.blur?.()`)
+    await S.unhover()
+  }
+  R.b3 = {}
+  const now = Date.now()
+
+  await go('caps-tab-market')
+  await sleep(1800)
+  await freeze(true)
+  const pkgs = Array.from({ length: 12 }, (_, i) => ({
+    name: i === 2 ? '@some-very-long-scope-name/pi-extension-with-an-extremely-long-package-name-for-layout' : `pi-demo-package-${i + 1}`,
+    version: `1.${i}.0`,
+    publisher: i % 3 === 0 ? '社区作者' : `author${i}`,
+    description: i % 2 ? '给 pi 增加一个示例能力，用来检查插件市场搜索结果在条目很多、说明很长时的显示与截断效果。' : 'Example pi package with a fairly long description to check truncation in the market list.',
+    source: `npm:pi-demo-package-${i + 1}`,
+    npmUrl: 'https://www.npmjs.com/',
+    homepage: i % 4 === 1 ? undefined : 'https://example.com/'
+  }))
+  const marketInput = '[data-testid="caps-market-search"] input'
+  await ev(`(() => { const i = document.querySelector(${JSON.stringify(marketInput)}) || document.querySelector('[data-testid="caps-market-search"]'); i?.focus(); return !!i })()`)
+  await S.typeText('zzqx-no-such-package-ui-polish', 300)
+  await ev(`document.activeElement?.blur?.()`)
+  const loading = async () => {
+    const a = await hook('[data-testid="caps-market-search-btn"]', `(v) => typeof v === 'string' && v.startsWith('zzqx')`, 'zzqx-no-such-package-ui-polish', 1)
+    const b = await hook('[data-testid="caps-market-search-btn"]', `(v) => typeof v === 'string' && v.startsWith('zzqx')`, true, 4)
+    return [a, b]
+  }
+  await twice('r3-market-01-search-loading', loading, '[data-testid="caps-market-search"]')
+  const setCatalog = (value) => async () => {
+    await hook('[data-testid="caps-market-search-btn"]', `(v) => typeof v === 'string' && v.startsWith('zzqx')`, false, 4)
+    return hook('[data-testid="caps-market-search-btn"]', `(v) => typeof v === 'string' && v.startsWith('zzqx')`, value, 3)
+  }
+  await twice('r3-market-02-search-results', setCatalog({ ok: true, entries: pkgs, total: 57 }), '[data-testid="caps-market-search"]')
+  await into('.caps-pager')
+  await S.clip('r3-market-02-search-results-pager-dark', modal, 0)
+  await hoverShot('r3-market-03-result-hover', '[data-testid="caps-market-choose"]')
+  await twice('r3-market-04-search-empty', setCatalog({ ok: true, entries: [], total: 0 }), '[data-testid="caps-market-search"]')
+  await twice('r3-market-05-search-error', setCatalog({ ok: false, entries: [], total: 0, error: 'fetch failed: getaddrinfo ENOTFOUND registry.npmjs.org（网络不可用或被代理拦截）' }), '[data-testid="caps-market-search"]')
+  await setCatalog({ ok: true, entries: pkgs, total: 57 })()
+  await sleep(400)
+  R.b3.choose = await S.click('[data-testid="caps-market-choose"]', 700)
+  await S.unhover()
+  const pkgResult = async () => hook('[data-testid="caps-pkg-source"]', `(v) => v === 'install'`, { ok: false, error: 'npm ERR! code E404 404 Not Found - GET https://registry.npmjs.org/pi-demo-package-1 - Not found', detail: 'npm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/pi-demo-package-1\nnpm ERR! 404 \nnpm ERR! 404  \'pi-demo-package-1@latest\' is not in this registry.\nnpm ERR! A complete log of this run can be found in: C:\\Users\\demo\\AppData\\Local\\npm-cache\\_logs\\debug-0.log' }, -1)
+  await twice('r3-market-06-chosen-and-failed', pkgResult, '[data-testid="caps-pkg-source"]')
+  await hoverShot('r3-market-07-plugin-hover', '[data-testid="caps-market-inkstone"] .caps-entry button')
+  await focusShot('r3-market-08-focus', '[data-testid="caps-market-catalog-refresh"]', 3)
+  await freeze(false)
+
+  await go('v3-settings-nav-code')
+  await sleep(2200)
+  await freeze(true)
+  const isAccount = `(v) => v && typeof v === 'object' && 'installed' in v && !('pluginDir' in v)`
+  R.b3.githubSettled = await until(`!document.querySelector('[data-testid="v3-github-refresh"]')?.hasAttribute('data-pending') && !/正在检测|Checking/.test(document.querySelector('[data-testid="v3-github-status"]')?.textContent ?? '')`, 40000, 300)
+  R.b3.githubProbe = await ev(`(() => {
+    const el = document.querySelector('[data-testid="v3-github-refresh"]')
+    if (!el) return 'no-element'
+    const key = Object.keys(el).find((name) => name.startsWith('__reactFiber$'))
+    const out = []
+    for (let fiber = el[key], depth = 0; fiber && depth < 40; fiber = fiber.return, depth++) {
+      const states = []
+      for (let h = fiber.memoizedState; h && typeof h === 'object' && 'next' in h; h = h.next) states.push(h.queue ? (h.memoizedState === null ? 'null' : typeof h.memoizedState === 'object' ? 'obj:' + Object.keys(h.memoizedState).slice(0, 4).join('|') : typeof h.memoizedState) : '-')
+      if (states.some((s) => s !== '-')) out.push([depth, typeof fiber.type === 'function' ? fiber.type.name : String(fiber.type), states.slice(0, 6).join(',')])
+    }
+    return out.slice(0, 12)
+  })()`)
+  await twice('r3-code-01-github-authed', () => hook('[data-testid="v3-github-refresh"]', isAccount, { installed: true, authed: true, login: 'a-rather-long-github-login-name-for-layout' }))
+  await twice('r3-code-02-github-missing', () => hook('[data-testid="v3-github-refresh"]', isAccount, { installed: false, authed: false }))
+  await twice('r3-code-03-github-checking', () => hook('[data-testid="v3-github-refresh"]', isAccount, true, 1))
+  await hook('[data-testid="v3-github-refresh"]', isAccount, false, 1)
+  const gitStore = (value) => ev(`(window.__yanStore.setState({ gitInstall: ${JSON.stringify(value)} }), true)`)
+  const isTools = `(v) => v && typeof v === 'object' && 'git' in v && 'bash' in v && 'platform' in v`
+  const isRuntime = `(v) => v && typeof v === 'object' && 'downloadSize' in v && 'supported' in v`
+  const original = await ev(`JSON.stringify(window.__yanStore.getState().gitInstall ?? { phase: 'idle' })`)
+  await twice('r3-code-04-git-missing', () => hook('[data-testid="cap-git-runtime"]', isTools, { platform: 'win32', git: { ok: false, reason: 'missing' }, bash: { ok: false, reason: 'missing' } }), '[data-testid="cap-git-runtime"]')
+  await gitStore({ phase: 'downloading', received: 27_400_000, total: 60_027_568 })
+  await sleep(600)
+  await twice('r3-code-05-git-downloading', null, '[data-testid="cap-git-runtime"]')
+  await gitStore({ phase: 'error', message: '下载失败：连接 github.com 超时，已改用镜像仍失败（ETIMEDOUT）。请检查网络或代理后重试。' })
+  await sleep(1500)
+  await twice('r3-code-06-git-error', () => hook('[data-testid="cap-git-runtime"]', isTools, { platform: 'win32', git: { ok: false, reason: 'missing' }, bash: { ok: false, reason: 'missing' } }), '[data-testid="cap-git-runtime"]')
+  await gitStore(JSON.parse(original))
+  await sleep(1500)
+  await twice('r3-code-07-git-managed', async () => [
+    await hook('[data-testid="cap-git-runtime"]', isRuntime, { supported: true, systemGit: false, systemBash: false, managedInstalled: true, managedVersion: '2.56.0.2', installing: false, downloadSize: 60_027_568 }),
+    await hook('[data-testid="cap-git-runtime"]', isTools, { platform: 'win32', git: { ok: true, managed: true }, bash: { ok: true, managed: true } })
+  ], '[data-testid="cap-git-runtime"]')
+  await hoverShot('r3-code-08-hover', '[data-testid="v3-github-clone-dir-choose"]')
+  await focusShot('r3-code-09-focus', '[data-testid="settings-search"] input', 4)
+  await freeze(false)
+
+  await go('v3-settings-nav-devices')
+  await sleep(2000)
+  await freeze(true)
+  const isStatus = `(v) => v && typeof v === 'object' && 'devices' in v && 'running' in v`
+  const savedRemote = await ev(`JSON.stringify(window.__yanStore.getState().settings?.remoteAccess ?? null)`)
+  const setSaved = (patch) => ev(`(() => { const s = window.__yanStore.getState(); const base = s.settings?.remoteAccess ?? {}; window.__yanStore.setState({ settings: { ...s.settings, remoteAccess: { ...base, ...${JSON.stringify(patch)} } } }); return true })()`)
+  const day = 86_400_000
+  const devices = [
+    { id: 'd1', name: 'Pixel 8 Pro', kind: 'phone', createdAt: now - 30 * day, lastSeenAt: now - 120_000, encrypted: true, revokedAt: null, tunnelClientId: 'r1' },
+    { id: 'd2', name: '小米 14 Ultra（工作机）', kind: 'phone', createdAt: now - 12 * day, lastSeenAt: now - 3 * day, encrypted: false, revokedAt: null },
+    { id: 'd3', name: 'office-desktop-with-a-really-long-hostname.corp.example.com', kind: 'peer', createdAt: now - 60 * day, lastSeenAt: now - 7 * day, revokedAt: null },
+    { id: 'd4', name: 'iPad Air', kind: 'phone', createdAt: now - 4 * day, lastSeenAt: null, encrypted: true, revokedAt: null },
+    { id: 'd5', name: 'Galaxy S21', kind: 'phone', createdAt: now - 200 * day, lastSeenAt: now - 90 * day, encrypted: true, revokedAt: now - 80 * day },
+    { id: 'd6', name: '旧手机', kind: 'phone', createdAt: now - 300 * day, lastSeenAt: now - 250 * day, encrypted: false, revokedAt: now - 240 * day }
+  ]
+  const relayClients = [
+    { id: 'r1', name: 'Pixel 8 Pro', kind: 'phone', addedAt: now - 30 * day, lastSeenAt: now - 60_000, revokedAt: null, online: true },
+    { id: 'r2', name: 'Hermes agent', kind: 'agent', addedAt: now - 2 * day, lastSeenAt: now - 600_000, revokedAt: null, online: false }
+  ]
+  const base = { enabled: true, hostFingerprint: 'SHA256:4f9c 1a2b 77de 0c3f 9e21 5b6a', running: true, host: '100.88.12.34', port: 8787, addresses: [{ kind: 'tailscale', address: '100.88.12.34' }, { kind: 'lan', address: '192.168.1.23' }, { kind: 'lan', address: '10.0.0.8' }, { kind: 'loopback', address: '127.0.0.1' }], pairing: null, devices, error: null, relay: { enabled: true, url: 'https://relay.example.com', connected: true, detail: null, clients: relayClients, pairing: null } }
+  const devicesPrep = (status, saved) => async () => {
+    if (saved) await setSaved(saved)
+    await sleep(150)
+    return hook('[data-testid="v3-devices-settings"] [data-testid="v3-devices-enable"]', isStatus, status)
+  }
+  await twice('r3-devices-01-many', devicesPrep(base, { enabled: true, bind: 'tailscale', relay: { enabled: true, url: 'https://relay.example.com' } }))
+  await twice('r3-devices-02-list', devicesPrep(base, { enabled: true, bind: 'tailscale', relay: { enabled: true, url: 'https://relay.example.com' } }), '[data-testid="v3-device-list"]')
+  await hoverShot('r3-devices-03-revoke-hover', '[data-testid="v3-device"] button')
+  await twice('r3-devices-04-pairing', devicesPrep({ ...base, pairing: { code: '482913', expiresAt: now + 10 * 60_000 } }, { enabled: true, bind: 'tailscale' }), '[data-testid="v3-devices-pairing"]')
+  await twice('r3-devices-05-relay-pairing', devicesPrep({ ...base, relay: { ...base.relay, pairing: { kind: 'phone', link: 'https://relay.example.com/pair#k=AbCdEf0123456789&h=demo', expiresAt: now + 10 * 60_000 } } }, { enabled: true, bind: 'tailscale', relay: { enabled: true, url: 'https://relay.example.com' } }), '[data-testid="v3-relay-pairing"]')
+  await twice('r3-devices-06-start-error', devicesPrep({ ...base, running: false, devices: [], relay: { ...base.relay, clients: [], connected: false, detail: '连接中继失败：403 Forbidden（令牌无效）' }, error: 'listen EADDRINUSE: address already in use 0.0.0.0:8787' }, { enabled: true, bind: '192.168.1.23', relay: { enabled: true, url: 'https://relay.example.com' } }))
+  await twice('r3-devices-07-lan-select', devicesPrep(base, { enabled: true, bind: '192.168.1.23', relay: { enabled: false, url: '' } }), '[data-testid="v3-devices-bind"]')
+  await focusShot('r3-devices-08-focus', '[data-testid="settings-search"] input', 3)
+  await ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, remoteAccess: ${savedRemote} ?? s.settings?.remoteAccess } }); return true })()`)
+  await freeze(false)
+  await go('v3-settings-nav-appearance')
+
+  await go('v3-settings-nav-data')
+  await sleep(1500)
+  await freeze(true)
+  await ev(`(() => { for (const b of document.querySelectorAll('.ui-settings__content .settings-advanced > button[aria-expanded="false"]')) b.click(); return true })()`)
+  await sleep(900)
+  const isInfo = `(v) => v && typeof v === 'object' && 'realDir' in v && 'movable' in v`
+  const dataSel = '[data-testid="v3-data-backup-create"]'
+  const realInfo = { agentDir: 'D:\\InkstoneData\\pi-agent', realDir: 'C:\\Users\\demo\\.pi\\agent', relocated: true, movable: true, bytes: 2_634_000_000, pendingTarget: 'E:\\Backups\\Inkstone\\a-long-folder-name-for-layout-checks\\pi-agent', strandedBackup: 'C:\\Users\\demo\\.pi\\agent.moving-backup-20261101', lastResult: { ok: false, at: now - day, from: 'C:\\Users\\demo\\.pi\\agent', to: 'D:\\InkstoneData', error: 'EPERM: operation not permitted, rename (文件被占用)' } }
+  await twice('r3-data-01-storage-errors', () => hook(dataSel, isInfo, realInfo), '[data-setting-id="data-location"]')
+  await twice('r3-data-02-move-target', async () => [
+    await hook(dataSel, isInfo, { ...realInfo, relocated: false, pendingTarget: undefined, strandedBackup: undefined, lastResult: undefined }),
+    await hook(dataSel, isInfo, 'D:\\InkstoneData\\a-very-long-target-folder-name-to-check-wrapping', 1)
+  ], '[data-setting-id="data-move"]')
+  await twice('r3-data-03-backup-summary', () => hook(dataSel, isInfo, { action: 'create', value: { files: 12_843, bytes: 412_000_000, path: 'C:\\Users\\demo\\Documents\\Inkstone\\backups\\inkstone-backup-2026-11-16T05-40-12.zip' } }, 3), '[data-setting-id="data-backup-create"]')
+  await twice('r3-data-04-backup-error', async () => [
+    await hook(dataSel, isInfo, null, 3),
+    await hook(dataSel, isInfo, { scope: 'backup', tone: 'fail', text: '备份失败：目标磁盘空间不足（需要 412 MB，可用 120 MB）。' }, 4)
+  ], '[data-setting-id="data-backup-create"]')
+  await hook(dataSel, isInfo, null, 4)
+  await hoverShot('r3-data-05-hover', '[data-testid="v3-data-backup-verify"]')
+  await focusShot('r3-data-06-focus', '[data-testid="settings-search"] input', 3)
+  await twice('r3-data-07-loading', () => hook(dataSel, isInfo, null), '[data-setting-id="data-location"]')
+  await freeze(false)
+  await go('v3-settings-nav-appearance')
+
+  await go('v3-settings-nav-about')
+  await sleep(1500)
+  await freeze(true)
+  const isUpdate = `(v) => v && typeof v === 'object' && 'phase' in v && 'automatic' in v`
+  const upd = { current: '0.15.4', automatic: true, packaged: true, releaseUrl: 'https://github.com/Yu-DaTouX/Inkstone/releases' }
+  const aboutSel = '[data-testid="v3-about-update-check"]'
+  await twice('r3-about-01-available', () => hook(aboutSel, isUpdate, { ...upd, phase: 'available', latest: '0.15.5' }))
+  await twice('r3-about-02-downloading', () => hook(aboutSel, isUpdate, { ...upd, phase: 'downloading', latest: '0.15.5', percent: 42 }))
+  await twice('r3-about-03-downloaded', () => hook(aboutSel, isUpdate, { ...upd, phase: 'downloaded', latest: '0.15.5', percent: 100 }))
+  await twice('r3-about-04-error', async () => [
+    await hook(aboutSel, isUpdate, { ...upd, phase: 'error', error: 'net::ERR_CONNECTION_RESET（github.com）' }),
+    await hook(aboutSel, isUpdate, '检查更新失败：net::ERR_CONNECTION_RESET', 3)
+  ])
+  await hook(aboutSel, isUpdate, '', 3)
+  await twice('r3-about-05-manual', () => hook(aboutSel, isUpdate, { ...upd, phase: 'manual', latest: '0.15.5', packaged: false }))
+  const piInfo = await ev(`JSON.stringify(window.__yanStore.getState().piInfo ?? null)`)
+  await twice('r3-about-06-pi-error', () => ev(`(() => { const p = window.__yanStore.getState().piInfo ?? {}; window.__yanStore.setState({ piInfo: { ...p, error: 'spawn C:\\\\Users\\\\demo\\\\AppData\\\\Roaming\\\\npm\\\\pi.cmd ENOENT：找不到 pi，可在终端运行 npm i -g @mariozechner/pi-coding-agent' } }); return true })()`), '[data-setting-id="about-pi-redetect"]')
+  await ev(`(window.__yanStore.setState({ piInfo: ${piInfo} }), true)`)
+  await hoverShot('r3-about-07-hover', '[data-testid="v3-about-repo"]')
+  await focusShot('r3-about-08-focus', '[data-testid="settings-search"] input', 3)
+  await freeze(false)
+  await scrollTo(0)
+}
+
+async function settingsLayoutProbe({ S, ev, sleep, go, R }) {
+  R.probe = {}
+  const collect = () => ev(`(() => {
+    const c = document.querySelector('.ui-settings__content')
+    if (!c) return null
+    const top = c.getBoundingClientRect().top - c.scrollTop
+    const out = []
+    const path = (n) => { const parts = []; for (let e = n; e && e !== c && parts.length < 3; e = e.parentElement) parts.unshift((e.getAttribute('data-testid') || e.getAttribute('data-setting-id') || [...e.classList].filter((k) => !k.startsWith('ui-')).slice(0, 2).join('.') || e.tagName.toLowerCase())); return parts.join(' > ') }
+    for (const n of c.querySelectorAll('*')) {
+      const s = getComputedStyle(n)
+      const b = n.getBoundingClientRect()
+      if (!b.width || !b.height) continue
+      const card = s.boxShadow !== 'none' && s.backgroundColor !== 'rgba(0, 0, 0, 0)' && parseFloat(s.borderTopLeftRadius) >= 8
+      const head = n.tagName === 'H3'
+      if (!card && !head) continue
+      out.push([path(n), Math.round(b.left), Math.round(b.top - top), Math.round(b.width), Math.round(b.height), card ? [s.borderTopLeftRadius, s.backgroundColor, s.boxShadow.slice(0, 60), s.padding].join(' ') : [s.color, s.fontSize, s.fontWeight, s.lineHeight].join(' ')])
+    }
+    return out
+  })()`)
+  const expand = () => ev(`(() => { let n = 0; for (const b of document.querySelectorAll('.ui-settings__content .settings-advanced > button[aria-expanded="false"], .ui-settings__content .settings-fold__toggle[aria-expanded="false"]')) { b.click(); n++ } return n })()`)
+  for (const [width, label] of [[0, 'wide'], [880, 'w880'], [700, 'w700'], [560, 'w560']]) {
+    if (width) await S.narrow(width, 960)
+    for (const [name, id] of SETTINGS_PAGES) {
+      await go(id)
+      await sleep(name === 'models' || name.startsWith('caps') || name === 'code' ? 1500 : 500)
+      if (await expand()) await sleep(1200)
+      R.probe[`${name}-${label}`] = await collect()
+    }
+    if (width) await S.wide()
+  }
+}
+
+async function settingsRelayConnecting({ S, ev, sleep, go, into, modal, R }) {
+  R.relay = {}
+  await go('v3-settings-nav-devices')
+  await sleep(2000)
+  await ev(`(Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }), true)`)
+  const savedRemote = await ev(`JSON.stringify(window.__yanStore.getState().settings?.remoteAccess ?? null)`)
+  const setSaved = () => ev(`(() => { const s = window.__yanStore.getState(); const base = s.settings?.remoteAccess ?? {}; window.__yanStore.setState({ settings: { ...s.settings, remoteAccess: { ...base, enabled: true, bind: 'tailscale', relay: { enabled: true, url: 'https://relay.example.com' } } } }); return true })()`)
+  const status = { enabled: true, hostFingerprint: 'SHA256:4f9c 1a2b 77de 0c3f 9e21 5b6a', running: true, host: '100.88.12.34', port: 8787, addresses: [{ kind: 'tailscale', address: '100.88.12.34' }], pairing: null, devices: [], error: null, relay: { enabled: true, url: 'https://relay.example.com', connected: false, detail: '正在连接中继…', clients: [], pairing: null } }
+  const inject = () => ev(`(() => {
+    const el = document.querySelector('[data-testid="v3-devices-enable"]')
+    if (!el) return 'no-element'
+    const key = Object.keys(el).find((name) => name.startsWith('__reactFiber$'))
+    for (let fiber = el[key]; fiber; fiber = fiber.return) {
+      for (const copy of [fiber, fiber.alternate]) {
+        if (!copy) continue
+        for (let h = copy.memoizedState; h && typeof h === 'object' && 'next' in h; h = h.next) {
+          const v = h.memoizedState
+          if (h.queue?.dispatch && v && typeof v === 'object' && 'devices' in v && 'running' in v) { h.queue.dispatch(${JSON.stringify(status)}); return 'ok' }
+        }
+      }
+    }
+    return 'no-hook'
+  })()`)
+  for (const mode of ['dark', 'light']) {
+    if (mode === 'light') await S.theme('light')
+    await setSaved()
+    await sleep(300)
+    R.relay[mode] = await inject()
+    await sleep(500)
+    await into('[data-testid="v3-relay-enable"]')
+    R.relay[`${mode}-text`] = await ev(`(() => { const row = document.querySelector('[data-setting-id="devices-relay"]'); return row ? row.innerText.replace(/\\s+/g, ' ').slice(0, 200) + ' | alert=' + !!row.querySelector('[role="alert"]') : null })()`)
+    await S.unhover()
+    await S.clip(`r3c-relay-connecting-${mode}`, modal, 0)
+  }
+  await S.theme('dark')
+  await ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, remoteAccess: ${savedRemote} ?? s.settings?.remoteAccess } }); return true })()`)
+  await ev(`(delete document.visibilityState, true)`)
+}
+
+async function settingsBatch3Wrap({ S, ev, sleep, go, into, scrollTo, modal, R }) {
+  R.r3w = {}
+  const hook = async (selector, test, value) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = await ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (!el) return 'no-element'
+        const key = Object.keys(el).find((name) => name.startsWith('__reactFiber$'))
+        const test = ${test}
+        for (let fiber = el[key]; fiber; fiber = fiber.return) {
+          for (let h = fiber.memoizedState; h && typeof h === 'object' && 'next' in h; h = h.next) {
+            let ok = false
+            try { ok = !!h.queue && !!test(h.memoizedState) } catch {}
+            if (ok) { h.queue.dispatch(${JSON.stringify(value)}); return 'ok' }
+          }
+        }
+        return 'no-hook'
+      })()`)
+      if (result === 'ok') return result
+      await sleep(300)
+    }
+    return 'no-hook'
+  }
+  const isTools = `(v) => v && typeof v === 'object' && 'git' in v && 'bash' in v && 'platform' in v`
+  const isRuntime = `(v) => v && typeof v === 'object' && 'downloadSize' in v && 'supported' in v`
+  const missing = { platform: 'win32', git: { ok: false, reason: 'missing' }, bash: { ok: false, reason: 'missing' } }
+  const gitStore = (value) => ev(`(window.__yanStore.setState({ gitInstall: ${JSON.stringify(value)} }), true)`)
+  const originalGit = await ev(`JSON.stringify(window.__yanStore.getState().gitInstall ?? { phase: 'idle' })`)
+  const originalLang = await ev(`window.__yanStore.getState().settings?.lang ?? 'zh-CN'`)
+  const setLang = (lang) => ev(`window.__yanStore.getState().patchSettings({ lang: ${JSON.stringify(lang)} }).then(() => document.documentElement.lang)`)
+  const shot = async (name, prep, selector) => {
+    for (const mode of ['dark', 'light']) {
+      if (mode === 'light') await S.theme('light')
+      if (prep) R.r3w[`${name}-${mode}`] = await prep()
+      await sleep(500)
+      if (selector) await into(selector)
+      await S.unhover()
+      await S.clip(`${name}-${mode}`, modal, 0)
+    }
+    await S.theme('dark')
+  }
+  for (const [width, label, lang] of [[0, 'wide', 'en-US'], [880, 'w880', 'en-US'], [700, 'w700', 'zh-CN']]) {
+    if (width) await S.narrow(width, 960)
+    R.r3w[`lang-${label}`] = await setLang(lang)
+    await sleep(600)
+    const tag = `r3w-${label}-${lang === 'en-US' ? 'en' : 'zh'}`
+    await go('v3-settings-nav-code')
+    await sleep(2000)
+    R.r3w[`content-${label}`] = await ev(`(() => { const c = document.querySelector('.ui-settings__content'); if (!c) return null; const s = getComputedStyle(c); return Math.round(c.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) })()`)
+    await shot(`${tag}-git-missing`, () => hook('[data-testid="cap-git-runtime"]', isTools, missing), '[data-testid="cap-git-runtime"]')
+    await gitStore({ phase: 'error', message: 'Download failed: timed out connecting to github.com; the mirror failed too (ETIMEDOUT). Check your network or proxy and retry.' })
+    await sleep(1500)
+    await shot(`${tag}-git-error`, () => hook('[data-testid="cap-git-runtime"]', isTools, missing), '[data-testid="cap-git-runtime"]')
+    await gitStore(JSON.parse(originalGit))
+    await sleep(1500)
+    await shot(`${tag}-git-managed`, async () => [
+      await hook('[data-testid="cap-git-runtime"]', isRuntime, { supported: true, systemGit: false, systemBash: false, managedInstalled: true, managedVersion: '2.56.0.2', installing: false, downloadSize: 60_027_568 }),
+      await hook('[data-testid="cap-git-runtime"]', isTools, { platform: 'win32', git: { ok: true, managed: true }, bash: { ok: true, managed: true } })
+    ], '[data-testid="cap-git-runtime"]')
+    R.r3w[`${tag}-git-clipped`] = await ev(`[...document.querySelectorAll('.caps-entry > .caps-meta, .caps-entry .caps-name')].filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.slice(0, 60))`)
+    await go('caps-tab-mcp')
+    await sleep(1800)
+    await ev(`(() => { for (const b of document.querySelectorAll('.ui-settings__content .settings-advanced > button[aria-expanded="false"]')) b.click(); return true })()`)
+    await sleep(900)
+    await shot(`${tag}-mcp-app-refresh`, null, '[data-testid="v3-mcp-app-refresh"]')
+    R.r3w[`${tag}-meta-clipped`] = await ev(`[...document.querySelectorAll('.caps-entry > .caps-meta')].filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.slice(0, 60))`)
+    if (width) await S.wide()
+  }
+  await setLang(originalLang)
+  await scrollTo(0)
+}
+
+async function settingsBatch3Extra({ S, ev, sleep, go, into, scrollTo, modal, R }) {
+  R.r3x = {}
+  const twice = async (name, prep, selector) => {
+    for (const mode of ['dark', 'light']) {
+      if (mode === 'light') await S.theme('light')
+      if (prep) R.r3x[`${name}-${mode}`] = await prep()
+      await sleep(450)
+      if (selector) await into(selector)
+      await S.unhover()
+      await S.clip(`${name}-${mode}`, modal, 0)
+    }
+    await S.theme('dark')
+  }
+  const click = (selector) => ev(`(() => { const b = document.querySelector(${JSON.stringify(selector)}); if (!b) return false; b.click(); return true })()`)
+
+  await go('v3-settings-nav-shortcuts')
+  await sleep(800)
+  await twice('r3x-shortcuts-top', () => scrollTo(0))
+  await twice('r3x-shortcuts-split', null, '[data-testid^="v3-shortcut-split"]')
+  R.r3x.keyEdges = await ev(`(() => { const out = []; for (const row of document.querySelectorAll('.settings-shortcut')) { const fixed = row.querySelector('.settings-shortcut-fixed-keys'); const btn = row.querySelector('button[data-testid^="v3-shortcut-record"]'); const kbd = btn?.querySelector('.ui-kbd:last-child'); const el = fixed ?? btn; if (!el) continue; const b = el.getBoundingClientRect(); const k = (fixed ?? kbd)?.querySelector?.('.ui-kbd:last-child')?.getBoundingClientRect?.() ?? kbd?.getBoundingClientRect(); out.push([row.getAttribute('data-testid'), fixed ? 'fixed' : 'button', Math.round(b.right), k ? Math.round(k.right) : null]) } return out.slice(0, 40) })()`)
+
+  await go('v3-settings-nav-appearance')
+  await sleep(800)
+  R.r3x.sliders = await ev(`[...document.querySelectorAll('.ui-settings__content input[type="range"]')].map((n) => [n.closest('.ui-slider')?.getAttribute('aria-label') ?? n.getAttribute('aria-label') ?? n.closest('[aria-label]')?.getAttribute('aria-label'), n.getAttribute('aria-valuetext'), n.value])`)
+
+  for (const [query, tag] of [['模型', 'models'], ['重试', 'retry']]) {
+    for (const mode of ['dark', 'light']) {
+      if (mode === 'light') await S.theme('light')
+      await ev(`(() => { const i = document.querySelector('[data-testid="settings-search"] input'); i?.focus(); return !!i })()`)
+      await S.typeText(query, 200)
+      await sleep(700)
+      R.r3x[`search-${tag}-${mode}`] = await ev(`[...document.querySelectorAll('.ui-settings-search__result')].map((n) => (n.hasAttribute('data-highlighted') ? '*' : '') + n.getAttribute('data-kind') + ':' + n.innerText.replace(/\\s+/g, ' ').trim()).slice(0, 20)`)
+      await S.clip(`r3x-search-${tag}-${mode}`, modal, 0)
+      await S.key('Escape')
+      await sleep(300)
+    }
+    await S.theme('dark')
+  }
+
+  await go('caps-tab-mcp')
+  await sleep(1800)
+  R.r3x.mcpAdd = await click('[data-testid="mcp-add"]')
+  await sleep(600)
+  await click('[data-testid="mcp-form-advanced"]')
+  await sleep(600)
+  await twice('r3x-mcp-form', null, '[data-testid="mcp-service-form"]')
+  R.r3x.mcpFormEdges = await ev(`(() => { const f = document.querySelector('[data-testid="mcp-service-form"]'); if (!f) return null; const r = (el) => el ? Math.round(el.getBoundingClientRect().left) : null; return { form: r(f), field: r(f.querySelector('.ui-field')), advanced: r(f.querySelector('.settings-advanced > button')), chevron: r(f.querySelector('.settings-advanced > button svg')), seg: [...f.querySelectorAll('.ui-seg')].map((s) => [s.getAttribute('aria-label'), s.getAttribute('aria-labelledby')]) } })()`)
+  await ev(`(() => { const b = [...document.querySelectorAll('[data-testid="mcp-service-form"] .caps-actions button')][0]; b?.click(); return !!b })()`)
+  await sleep(500)
+  await ev(`(() => { for (const b of document.querySelectorAll('.ui-settings__content .settings-advanced > button[aria-expanded="false"]')) b.click(); return true })()`)
+  await sleep(900)
+  await twice('r3x-mcp-app-refresh', null, '[data-testid="v3-mcp-app-refresh"]')
+
+  await go('v3-settings-nav-models')
+  await sleep(1800)
+  await click('[data-setting-id="models-image-generation"] .settings-fold__toggle[aria-expanded="false"]')
+  await sleep(900)
+  await click('[data-testid="ms-image-toggle-codex"]')
+  await sleep(600)
+  await twice('r3x-image-codex', null, '[data-testid="ms-image-codex"]')
+  R.r3x.local = await ev(`document.querySelectorAll('[data-testid^="ms-local-launch-row-"]').length`)
+  if (R.r3x.local) await twice('r3x-local-launch', null, '[data-testid^="ms-local-launch-row-"]')
+
+  await go('v3-settings-nav-security')
+  await sleep(800)
+  R.r3x.mono = await ev(`(async () => {
+    const fam = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim()
+    try { await document.fonts.load('13px "Maple Mono CN"', '示例') } catch {}
+    const g = document.createElement('canvas').getContext('2d')
+    const m = (font, text) => { g.font = font; return Math.round(g.measureText(text).width * 100) / 100 }
+    return { fam, mapleLoaded: document.fonts.check('13px "Maple Mono CN"', '示'), maple: { latin: m('13px "Maple Mono CN"', 'M'), cjk: m('13px "Maple Mono CN"', '示') }, stack: { latin: m('13px ' + fam, 'M'), cjk: m('13px ' + fam, '示') }, yahei: { cjk: m('13px "Microsoft YaHei UI"', '示') } }
+  })()`)
+  await scrollTo(0)
+}
+
+async function settingsTarget({ kit: S, ev, cdp, sleep, until, check, report, newSession }) {
+  report.settings = { pages: {}, audit: {}, contrast: {} }
+  const R = report.settings
+  const modal = '.ui-settings-modal'
+  const only = String(process.env.UI_POLISH_SETTINGS_PAGES || '').split(',').map((item) => item.trim()).filter(Boolean)
+  const pages = only.length ? SETTINGS_PAGES.filter(([name]) => only.includes(name)) : SETTINGS_PAGES
+  const extraEnv = process.env.UI_POLISH_SETTINGS_EXTRA ?? 'root,b1,b2,narrow'
+  const extra = extraEnv !== '0'
+  const sets = new Set(extraEnv.split(',').map((item) => item.trim()))
+  const narrowPages = String(process.env.UI_POLISH_SETTINGS_NARROW || 'appearance,session,notifications,security,models,devices').split(',').map((item) => item.trim())
+  const keyCombo = async (key, code, vk, modifiers) => {
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, modifiers })
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, modifiers })
+    await sleep(500)
+  }
+  const into = async (selector) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.scrollIntoView({ block: 'center' }); return true })()`)
+    await sleep(350)
+    return ok
+  }
+  const both = async (name) => {
+    await S.clip(`${name}-dark`, modal, 0)
+    await S.theme('light')
+    await S.clip(`${name}-light`, modal, 0)
+    await S.theme('dark')
+  }
+  const open = async () => {
+    await ev(`(window.__yanStore.getState().openSettings(), true)`)
+    return until(`!!document.querySelector('.ui-settings')`, 15000, 100)
+  }
+  const go = async (id) => {
+    const ok = await ev(`(() => { const b = document.querySelector('[data-testid="${id}"]'); if (!b) return false; b.click(); return true })()`)
+    await sleep(900)
+    await ev(`document.activeElement?.blur?.()`)
+    await S.unhover()
+    return ok
+  }
+  const scrollTo = (top) => ev(`(() => { const c = document.querySelector('.ui-settings__content'); if (!c) return null; c.scrollTop = ${top}; return [c.scrollTop, c.scrollHeight, c.clientHeight] })()`)
+  const pagesOf = async (name) => {
+    const first = await scrollTo(0)
+    await sleep(350)
+    await S.clip(name, modal, 0)
+    if (!first) return 1
+    const step = first[2] - 80
+    let prev = 0
+    let n = 1
+    while (n < 8) {
+      const now = await scrollTo(n * step)
+      if (!now || now[0] <= prev + 1) break
+      prev = now[0]
+      await sleep(350)
+      n += 1
+      await S.clip(`${name}-p${n}`, modal, 0)
+    }
+    await scrollTo(0)
+    return n
+  }
+  const expandAll = async () => ev(`(() => { let n = 0; for (const b of document.querySelectorAll('.ui-settings__content .settings-advanced > button[aria-expanded="false"], .ui-settings__content .settings-fold__toggle[aria-expanded="false"]')) { b.click(); n++ } return n })()`)
+  const pageInfo = () => ev(`(() => { const c = document.querySelector('.ui-settings__content'); if (!c) return null; return { overflowX: c.scrollWidth - c.clientWidth, height: c.scrollHeight, client: c.clientHeight, text: c.innerText.replace(/\\s+/g, ' ').slice(0, 1200) } })()`)
+  const contrast = () => S.textAudit ? S.textAudit('.ui-settings-modal') : null
+
+  if (process.env.UI_POLISH_SETTINGS_SHELL === '1') {
+    const wasOpen = await ev(`!!document.querySelector('[data-testid="rp-column-0"]')`)
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'context', kind: 'context' }); rp.setOpen(true); return true })()`)
+    await sleep(1200)
+    await S.unhover()
+    await S.shot('settings-00-shell-rightpanel-dark')
+    await S.theme('light')
+    await S.shot('settings-00-shell-rightpanel-light')
+    await S.theme('dark')
+    if (wasOpen === false) await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+    await sleep(600)
+  }
+  check('设置：打开', await open())
+  await sleep(800)
+  await S.shot('settings-00-open-dark')
+  for (const [name, id] of pages) {
+    const index = SETTINGS_PAGES.findIndex(([page]) => page === name) + 1
+    const tag = `settings-${String(index).padStart(2, '0')}-${name}`
+    if (!check(`设置：切到 ${name}`, await go(id))) continue
+    await sleep(name === 'models' || name.startsWith('caps') || name === 'code' ? 1500 : 400)
+    const info = await pageInfo()
+    const count = await pagesOf(`${tag}-dark`)
+    const lowDark = await contrast()
+    R.contrast[`${name}-dark`] = Array.isArray(lowDark) ? lowDark.filter((item) => item.ratio < 4.5).slice(0, 30) : null
+    const expanded = await expandAll()
+    if (expanded > 0) {
+      await sleep(1500)
+      await pagesOf(`${tag}-open-dark`)
+    }
+    await S.theme('light')
+    await sleep(300)
+    await pagesOf(`${tag}-light`)
+    R.audit[name] = await S.audit('.ui-settings__content')
+    const low = await contrast()
+    R.contrast[name] = Array.isArray(low) ? low.filter((item) => item.ratio < 4.5).slice(0, 30) : null
+    await S.theme('dark')
+    R.pages[name] = { count, expanded, info }
+  }
+  if (!extra) return
+
+  if (sets.has('root')) {
+  await go('v3-settings-nav-appearance')
+  report.hover.push(['settings-nav-hover', await S.hover('[data-testid="v3-settings-nav-security"]', 600)])
+  await S.clip('settings-20-nav-hover-dark', modal, 0)
+  await S.theme('light')
+  report.hover.push(['settings-nav-hover-light', await S.hover('[data-testid="v3-settings-nav-security"]', 600)])
+  await S.clip('settings-20-nav-hover-light', modal, 0)
+  await S.theme('dark')
+  await S.unhover()
+  report.focus.push(['settings-nav-focus', await S.focusThenTab('[data-testid="settings-search"] input', { presses: 1 })])
+  await S.key('ArrowDown')
+  await S.key('ArrowDown')
+  report.focus.push(['settings-nav-arrow', await ev(`document.activeElement?.getAttribute('data-testid') ?? null`)])
+  await S.clip('settings-21-nav-focus-dark', modal, 0)
+  await S.theme('light')
+  await S.clip('settings-21-nav-focus-light', modal, 0)
+  await S.theme('dark')
+  await ev(`(() => { const c = document.querySelector('.ui-settings__content'); const f = c?.querySelector('button, [role="radio"], input, [role="switch"], [tabindex="0"]'); f?.focus(); return !!f })()`)
+  await S.key('Tab')
+  await S.key('Tab')
+  report.focus.push(['settings-content-focus', await ev(`(document.activeElement?.getAttribute('data-testid') || document.activeElement?.getAttribute('aria-label') || document.activeElement?.tagName || '').slice(0, 60)`)])
+  await S.clip('settings-22-content-focus-dark', modal, 0)
+  await S.theme('light')
+  await S.clip('settings-22-content-focus-light', modal, 0)
+  await S.theme('dark')
+  await ev(`document.activeElement?.blur?.()`)
+
+  const search = async (text, name) => {
+    await ev(`(() => { const i = document.querySelector('[data-testid="settings-search"] input'); i.focus(); return true })()`)
+    await ev(`(() => { const i = document.querySelector('[data-testid="settings-search"] input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+    await S.typeText(text, 600)
+    R[name] = await ev(`[...document.querySelectorAll('.ui-settings-search__result')].map((n) => n.getAttribute('data-kind') + ':' + n.innerText.replace(/\\s+/g, ' ').trim()).slice(0, 30)`)
+    await S.clip(`${name}-dark`, modal, 0)
+    await S.theme('light')
+    await S.clip(`${name}-light`, modal, 0)
+    await S.theme('dark')
+  }
+  await search('字体', 'settings-30-search-font')
+  await search('模型', 'settings-31-search-many')
+  await S.key('ArrowDown')
+  await S.key('ArrowDown')
+  await S.key('ArrowDown')
+  await S.clip('settings-31-search-many-arrow-dark', modal, 0)
+  await search('zzqx', 'settings-32-search-empty')
+  await search('重试', 'settings-33-search-retry')
+  await S.key('Enter', { waitMs: 2200 })
+  R.revealFocus = await ev(`document.activeElement?.getAttribute('data-setting-id') ?? null`)
+  await S.clip('settings-34-search-revealed-dark', modal, 0)
+  await ev(`document.activeElement?.blur?.()`)
+  }
+
+  if (sets.has('b1')) {
+  await go('v3-settings-nav-appearance')
+  await ev(`window.__yanStore.getState().patchSettings({ fontUi: 'custom', fontUiCustom: '' })`)
+  await sleep(700)
+  await ev(`(() => { const i = document.querySelector('.settings-font-field input'); i?.focus(); return !!i })()`)
+  await S.typeText('Bad;{Font}', 500)
+  await ev(`document.querySelector('[data-setting-id="appearance-font-read"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(300)
+  await S.clip('settings-40-appearance-font-invalid-dark', modal, 0)
+  await S.theme('light')
+  await S.clip('settings-40-appearance-font-invalid-light', modal, 0)
+  await S.theme('dark')
+  await ev(`document.activeElement?.blur?.()`)
+  await ev(`window.__yanStore.getState().patchSettings({ fontUi: 'sans', fontUiCustom: '' })`)
+  await sleep(500)
+
+  await go('v3-settings-nav-notifications')
+  const sound = await ev(`JSON.stringify(window.__yanStore.getState().settings?.sound ?? null)`)
+  await ev(`(() => { const s = window.__yanStore.getState(); return s.patchSettings({ sound: { ...(s.settings?.sound ?? {}), enabled: false } }).then(() => true) })()`)
+  await sleep(700)
+  await S.clip('settings-41-notifications-off-dark', modal, 0)
+  await S.theme('light')
+  await S.clip('settings-41-notifications-off-light', modal, 0)
+  await S.theme('dark')
+  await ev(`window.__yanStore.getState().patchSettings({ sound: ${sound} ?? undefined })`)
+  await sleep(500)
+
+  await go('v3-settings-nav-security')
+  const roots = await ev(`JSON.stringify(window.__yanStore.getState().settings?.guardAllowRoots ?? [])`)
+  const many = ['C:\\Users\\demo\\projects\\a-very-long-project-name-for-layout-checks\\packages\\renderer\\src\\features', 'D:\\work\\砚-示例项目\\资料', 'E:\\data', ...Array.from({ length: 6 }, (_, i) => `C:\\Users\\demo\\code\\repo-${i + 1}`)]
+  const setRoots = (list) => ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, guardAllowRoots: ${list} } }); return true })()`)
+  await setRoots(JSON.stringify(many))
+  await sleep(800)
+  await ev(`document.querySelector('[data-setting-id="security-allow-roots"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(300)
+  await S.clip('settings-42-security-roots-dark', modal, 0)
+  await S.theme('light')
+  await setRoots(JSON.stringify(many))
+  await sleep(800)
+  await ev(`document.querySelector('[data-setting-id="security-allow-roots"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(300)
+  await S.clip('settings-42-security-roots-light', modal, 0)
+  await S.theme('dark')
+  await setRoots(JSON.stringify(many))
+  await sleep(800)
+  await ev(`document.querySelector('[data-setting-id="security-allow-roots"]')?.scrollIntoView({ block: 'center' })`)
+  await sleep(300)
+  report.hover.push(['settings-security-root-hover', await S.hover('.settings-root button', 600)])
+  await S.clip('settings-42-security-roots-hover-dark', modal, 0)
+  await S.unhover()
+  await setRoots(roots)
+  await sleep(500)
+
+  await ev(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: null }); window.__uiPolishSettings = s.settings; return true })()`)
+  await sleep(300)
+  await S.clip('settings-43-loading-dark', modal, 0)
+  await ev(`(() => { window.__yanStore.setState({ settings: window.__uiPolishSettings }); return true })()`)
+  await sleep(600)
+  }
+
+  if (sets.has('b2')) await settingsBatch2({ S, ev, sleep, until, check, report, newSession, go, into, both, keyCombo, scrollTo, modal, R })
+
+  if (sets.has('e2')) await settingsReview2({ S, ev, sleep, report, go, into, scrollTo, modal, R })
+
+  if (sets.has('b3')) await settingsBatch3({ S, ev, sleep, until, check, report, go, into, scrollTo, modal, R })
+
+  if (sets.has('r3x')) await settingsBatch3Extra({ S, ev, sleep, go, into, scrollTo, modal, R })
+
+  if (sets.has('r3w')) await settingsBatch3Wrap({ S, ev, sleep, go, into, scrollTo, modal, R })
+
+  if (sets.has('relay')) await settingsRelayConnecting({ S, ev, sleep, go, into, modal, R })
+
+  if (sets.has('probe')) await settingsLayoutProbe({ S, ev, sleep, go, R })
+
+  if (sets.has('sr1')) {
+    R.sr1 = {}
+    for (const [width, label] of [[1781, 'wide'], [880, 'w880'], [700, 'w700']]) {
+      if (label !== 'wide') await S.narrow(width, 960)
+      for (const [page, nav, sid] of [['appearance', 'v3-settings-nav-appearance', 'appearance-stream-width'], ['notifications', 'v3-settings-nav-notifications', 'notifications-volume']]) {
+        await go(nav)
+        await sleep(600)
+        await into(`[data-setting-id="${sid}"]`)
+        R.sr1[`${page}-${label}`] = await ev(`(() => { const row = document.querySelector('[data-setting-id="${sid}"]'); const c = document.querySelector('.ui-settings__content'); if (!row || !c) return null; const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)] }; return { content: Math.round(c.clientWidth - parseFloat(getComputedStyle(c).paddingLeft) - parseFloat(getComputedStyle(c).paddingRight)), row: r(row), label: r(row.querySelector('.ui-setting-row__label')), slider: r(row.querySelector('.settings-range__slider')), value: r(row.querySelector('.settings-range__value')), reset: r(row.querySelector('.settings-range__reset')) } })()`)
+        if (label === 'wide') continue
+        await S.shot(`settings-70-${label}-${page}-slider-dark`)
+        await S.theme('light')
+        await S.shot(`settings-70-${label}-${page}-slider-light`)
+        await S.theme('dark')
+      }
+      if (label !== 'wide') await S.wide()
+    }
+  }
+
+  if (sets.has('narrow')) for (const [width, label] of [[880, 'w880'], [700, 'w700']]) {
+    await S.narrow(width, 960)
+    for (const [name, id] of SETTINGS_PAGES.filter(([page]) => narrowPages.includes(page))) {
+      await go(id)
+      await sleep(500)
+      R.audit[`${name}-${label}`] = await S.audit('.ui-settings__content')
+      await S.shot(`settings-5${label === 'w880' ? 0 : 1}-${label}-${name}-dark`)
+      if (process.env.UI_POLISH_SETTINGS_NARROW_LIGHT === '1') {
+        await S.theme('light')
+        await S.shot(`settings-5${label === 'w880' ? 0 : 1}-${label}-${name}-light`)
+        await S.theme('dark')
+      }
+    }
+    await S.theme('light')
+    await S.shot(`settings-5${label === 'w880' ? 0 : 1}-${label}-${SETTINGS_PAGES.filter(([page]) => narrowPages.includes(page)).at(-1)?.[0] ?? 'devices'}-light`)
+    await S.theme('dark')
+    await S.wide()
+  }
+  await ev(`(window.__yanStore.getState().closeSettings(), true)`)
+  await sleep(500)
+}
+
+const TARGETS = { tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget, browserfinal: browserFinalTarget, browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget, settings: settingsTarget }
 
 export default async function run(ctx) {
   const { cdp, until, sleep, log, check, report } = ctx
@@ -3436,6 +4485,6 @@ export default async function run(ctx) {
     }
   }
   await kit.theme('dark')
-  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, tabgap: report.tabgap, logs: report.logs, device: report.device, prs: report.prs, subagents: report.subagents, shell: report.shell, overview: report.overview, library: report.library, usage: report.usage, tree: report.tree, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
+  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, tabgap: report.tabgap, logs: report.logs, device: report.device, prs: report.prs, subagents: report.subagents, shell: report.shell, overview: report.overview, library: report.library, usage: report.usage, tree: report.tree, settings: report.settings, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
   check('截图数量', kit.files.length > 0, kit.files.length)
 }

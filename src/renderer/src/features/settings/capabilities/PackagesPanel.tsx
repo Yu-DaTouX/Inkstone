@@ -149,7 +149,7 @@ export function PackagesPanel({
           <Meta>{result.ok ? (result.output ?? 'ok') : (result.error ?? t('pkg.failed'))}</Meta>
           {result.detail ? (
             <>
-              <Button variant="ghost" onPress={() => setShowRaw((value) => !value)} data-testid="caps-pkg-detail-toggle">
+              <Button variant="plain" flush onPress={() => setShowRaw((value) => !value)} data-testid="caps-pkg-detail-toggle">
                 {showRaw ? t('pkg.hideRaw') : t('pkg.showRaw')}
               </Button>
               {showRaw ? <pre className="caps-raw">{result.detail}</pre> : null}

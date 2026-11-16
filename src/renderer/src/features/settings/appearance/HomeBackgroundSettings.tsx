@@ -2,10 +2,10 @@ import { useState, type ReactElement } from 'react'
 import { Flower, ImagePlus, Palette, Trash2 } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, Slider } from '../../../ui'
+import { Button } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { BLOSSOM_PARAMS, BUILTIN_BLOSSOM, BUILTIN_PAINTING, HOME_BLUR_MAX, updateHomeParams, homeBackgroundMode, homeImageSource, shrinkImage, updateHomeBackground, useHomeBackground, type HomeBackgroundMode } from '../../ambient/home-background'
-import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
+import { Segmented, SettingsGroup, SettingsRange, SettingsRow } from '../root/controls'
 import { HomeEffectSettings } from './HomeEffectSettings'
 import './home-background-settings.css'
 
@@ -242,19 +242,17 @@ export function HomeBackgroundSettings(): ReactElement {
           </SettingsRow>
           {background.effect !== 'none' ? <HomeEffectSettings target={background.effect === 'dither' ? 'image-dither' : 'image-halftone'} params={background.params} /> : null}
           {background.effect === 'none' ? <SettingsRow settingId="appearance-home-image-blur" label={text.blur} description={text.blurDesc}>
-            <div className="home-bg-slider">
-              <Slider
-                className="home-bg-range"
-                aria-label={text.blur}
-                minValue={0}
-                maxValue={HOME_BLUR_MAX}
-                step={2}
-                value={background.blur}
-                onChange={(value) => updateHomeBackground({ blur: Array.isArray(value) ? value[0] : value })}
-                data-testid="v3-home-bg-blur"
-              />
-              <output className="home-bg-value ui-num" aria-hidden>{`${background.blur}px`}</output>
-            </div>
+            <SettingsRange
+              label={text.blur}
+              min={0}
+              max={HOME_BLUR_MAX}
+              step={2}
+              value={background.blur}
+              format={(value) => `${value}px`}
+              unit="px"
+              onChange={(blur) => updateHomeBackground({ blur })}
+              testId="v3-home-bg-blur"
+            />
           </SettingsRow> : null}
           <SettingsRow settingId="appearance-home-image-tone" label={text.tone} description={text.toneDesc}>
             <Segmented
@@ -269,19 +267,17 @@ export function HomeBackgroundSettings(): ReactElement {
             />
           </SettingsRow>
           <SettingsRow settingId="appearance-home-image-fade" label={text.fade} description={text.fadeDesc}>
-            <div className="home-bg-slider">
-              <Slider
-                className="home-bg-range"
-                aria-label={text.fade}
-                minValue={0}
-                maxValue={0.9}
-                step={0.05}
-                value={background.fade}
-                onChange={(value) => updateHomeBackground({ fade: Array.isArray(value) ? value[0] : value })}
-                data-testid="v3-home-bg-fade"
-              />
-              <output className="home-bg-value ui-num" aria-hidden>{`${Math.round(background.fade * 100)}%`}</output>
-            </div>
+            <SettingsRange
+              label={text.fade}
+              min={0}
+              max={0.9}
+              step={0.05}
+              value={background.fade}
+              format={(value) => `${Math.round(value * 100)}%`}
+              unit="fraction"
+              onChange={(fade) => updateHomeBackground({ fade })}
+              testId="v3-home-bg-fade"
+            />
           </SettingsRow>
         </>
       ) : null}

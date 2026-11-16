@@ -82,7 +82,7 @@ function numberOptions(values: number[], label: (n: number) => string, prefix: s
 
 function PiNativeError({ error }: { error: string }): ReactElement | null {
   return error ? (
-    <Notice tone="fail" compact>
+    <Notice tone="fail" compact className="settings-pi-error">
       {error}
     </Notice>
   ) : null

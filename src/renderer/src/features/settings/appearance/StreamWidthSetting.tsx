@@ -4,8 +4,7 @@ import tokens from '../../../design/tokens.json'
 import { useT } from '../../../i18n'
 import { applyAppearanceV3 } from '../../../lib/appearance-v3'
 import { useStore } from '../../../state/store'
-import { Button, Slider } from '../../../ui'
-import { SettingsRow } from '../root/controls'
+import { SettingsRange, SettingsRow } from '../root/controls'
 
 export function StreamWidthSetting(): ReactElement {
   const t = useT()
@@ -38,24 +37,24 @@ export function StreamWidthSetting(): ReactElement {
 
   return (
     <SettingsRow settingId="appearance-stream-width" label={t('set.streamWidth')} description={t('set.streamWidthDesc')}>
-      <Slider
-        className="settings-slider"
-        aria-label={t('set.streamWidth')}
+      <SettingsRange
+        label={t('set.streamWidth')}
         value={shown}
-        minValue={STREAM_WIDTH_MIN}
-        maxValue={STREAM_WIDTH_MAX}
+        min={STREAM_WIDTH_MIN}
+        max={STREAM_WIDTH_MAX}
         step={16}
-        showValue
-        isDisabled={saving}
-        onChange={(value) => setDraft(Array.isArray(value) ? value[0] : value)}
-        onChangeEnd={(value) => void save(Array.isArray(value) ? value[0] : value)}
-        data-testid="v3-stream-width"
+        format={(value) => `${value}px`}
+        unit="px"
+        disabled={saving}
+        onChange={setDraft}
+        onChangeEnd={(value) => void save(value)}
+        reset={
+          draft !== null || settings?.streamWidth !== undefined
+            ? { label: t('set.streamWidthReset', { n: tokens.size.chat }), disabled: saving, onPress: () => void save(undefined), testId: 'v3-stream-width-reset' }
+            : undefined
+        }
+        testId="v3-stream-width"
       />
-      {draft !== null || settings?.streamWidth !== undefined ? (
-        <Button variant="ghost" size="sm" aria-label={t('set.streamWidthReset')} isDisabled={saving} onPress={() => void save(undefined)}>
-          {t('set.streamWidthDefault', { n: tokens.size.chat })}
-        </Button>
-      ) : null}
     </SettingsRow>
   )
 }

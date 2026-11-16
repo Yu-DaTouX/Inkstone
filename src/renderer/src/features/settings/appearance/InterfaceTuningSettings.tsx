@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { RotateCcw } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import type { AppSettings } from '../../../../../shared/ipc'
 import {
@@ -18,10 +17,9 @@ import {
   type WindowGlass
 } from '../../../../../shared/appearance'
 import { useStore } from '../../../state/store'
-import { IconButton, Slider, Switch } from '../../../ui'
+import { Switch } from '../../../ui'
 import { fileViewSettingsStore } from '../../preview/use-file-view-settings'
-import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
-import './interface-tuning-settings.css'
+import { Segmented, SettingsGroup, SettingsRange, SettingsRow, type RangeUnit } from '../root/controls'
 
 interface TuningText {
   group: string
@@ -95,8 +93,9 @@ function reportSaveFailure(error: unknown): void {
   useStore.getState().notify('error', error instanceof Error ? error.message : String(error))
 }
 
-function SliderRow({ settingKey, label, description, min, max, step, fallback, format, resetLabel }: {
+function SliderRow({ settingKey, label, description, min, max, step, fallback, format, unit, resetLabel }: {
   settingKey: NumberKey
+  unit: RangeUnit
   label: string
   description: string
   min: number
@@ -116,25 +115,19 @@ function SliderRow({ settingKey, label, description, min, max, step, fallback, f
   }
   return (
     <SettingsRow settingId={SETTING_IDS[settingKey]} label={label} description={description}>
-      <div className="tuning-control">
-        {saved !== undefined ? (
-          <IconButton size="sm" aria-label={resetLabel} tooltip={resetLabel} onPress={() => save(undefined)} data-testid={`v3-reset-${settingKey}`}>
-            <RotateCcw size={13} aria-hidden />
-          </IconButton>
-        ) : null}
-        <Slider
-          className="tuning-slider"
-          aria-label={label}
-          minValue={min}
-          maxValue={max}
-          step={step}
-          value={value}
-          onChange={(next) => setDraft(Array.isArray(next) ? next[0] : next)}
-          onChangeEnd={(next) => save(Array.isArray(next) ? next[0] : next)}
-          data-testid={`v3-slider-${settingKey}`}
-        />
-        <output className="tuning-value ui-num" aria-hidden>{format(value)}</output>
-      </div>
+      <SettingsRange
+        label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        format={format}
+        unit={unit}
+        onChange={setDraft}
+        onChangeEnd={save}
+        reset={saved !== undefined ? { label: resetLabel, onPress: () => save(undefined), testId: `v3-reset-${settingKey}` } : undefined}
+        testId={`v3-slider-${settingKey}`}
+      />
     </SettingsRow>
   )
 }
@@ -173,6 +166,7 @@ export function InterfaceTuningSettings(): ReactElement {
           step={5}
           fallback={WINDOW_GLASS_OPACITY_DEFAULT}
           format={(value) => `${value}%`}
+          unit="percent"
           resetLabel={text.reset(text.windowOpacity)}
         />
       ) : null}
@@ -185,6 +179,7 @@ export function InterfaceTuningSettings(): ReactElement {
         step={5}
         fallback={GLASS_OPACITY_DEFAULT}
         format={(value) => `${value}%`}
+        unit="percent"
         resetLabel={text.reset(text.glass)}
       />
       <SliderRow
@@ -196,6 +191,7 @@ export function InterfaceTuningSettings(): ReactElement {
         step={5}
         fallback={CONTRAST_DEFAULT}
         format={(value) => `${value}%`}
+        unit="percent"
         resetLabel={text.reset(text.contrast)}
       />
       <SettingsRow settingId="appearance-code-wrap" label={text.wrap} description={text.wrapDesc}>
@@ -210,6 +206,7 @@ export function InterfaceTuningSettings(): ReactElement {
         step={50}
         fallback={PANEL_MOTION_DEFAULT}
         format={(value) => (value === 0 ? text.instant : `${value}ms`)}
+        unit="ms"
         resetLabel={text.reset(text.panel)}
       />
     </SettingsGroup>

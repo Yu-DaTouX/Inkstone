@@ -13,6 +13,7 @@ import {
   EmptyState,
   Kbd,
   Notice,
+  settingCardClass,
   Spinner,
   StatusDot,
   TextField,
@@ -599,7 +600,7 @@ export function ModelsSettings(): ReactElement {
 
       {subscriptions.length > 0 ? (
         <SettingsGroup title={t('auth.subs')} settingId="models-subscriptions" className="ms-group" plain>
-          <div className="settings-rows ms-rows">
+          <div className={settingCardClass('rows', 'settings-rows ms-rows')}>
             <SettingsRow settingId="models-account-failover" label={text('accountFailover')} description={text('accountFailoverDesc')}>
               <Switch aria-label={text('accountFailover')} isSelected={accountFailover} onChange={(on) => void patchSettings({ accountFailover: on })} data-testid="ms-account-failover" />
             </SettingsRow>
@@ -610,7 +611,7 @@ export function ModelsSettings(): ReactElement {
 
       {keys.length > 0 ? (
         <SettingsGroup title={t('auth.keys')} settingId="models-api-keys" className="ms-group" plain>
-          <div className="settings-rows ms-rows">
+          <div className={settingCardClass('rows', 'settings-rows ms-rows')}>
             <SettingsRow settingId="models-key-failover" label={text('keyFailover')} description={text('keyFailoverDesc')}>
               <Switch aria-label={text('keyFailover')} isSelected={keyFailover} onChange={(on) => void patchSettings({ apiKeyFailover: on })} data-testid="ms-key-failover" />
             </SettingsRow>
@@ -645,7 +646,7 @@ export function ModelsSettings(): ReactElement {
 
       <SettingsAdvanced label={labels.advanced} testId="ms-advanced">
         <SettingsGroup title={labels.groupModelsIntegrations} className="ms-group" plain>
-          <div className="settings-rows ms-rows">
+          <div className={settingCardClass('rows', 'settings-rows ms-rows')}>
             <div data-setting-id="models-claude-code">
               <ClaudeCodeBridgeRow />
             </div>

@@ -17,7 +17,7 @@ const ZH = {
   hostNote: '由砚连接', piNote: '由 pi 连接', source: '配置位置', connection: '连接信息',
   busy: '有任务正在运行，结束后可调整此服务。', untrusted: '当前项目尚未受信任，项目配置暂不生效，也不能修改。可在「权限」里调整项目信任策略。',
   conflict: '存在重复连接配置，请在配置文件中删除其中一份。', computer: '电脑操作', computerHint: '在本机工具中管理。', openTools: '前往本机工具',
-  failed: '操作失败，请重试。', envInvalid: '环境变量需要填写 JSON 字符串键值对象。', scopeLabel: '管理范围',
+  failed: '操作失败，请重试。', envInvalid: '环境变量需要填写 JSON 字符串键值对象。', scopeLabel: '管理范围', scopeGlobalOnly: '管理范围：全局服务', scopeAllOnly: '使用范围：所有会话',
   owner: '由谁连接', ownerPi: 'pi 原生', ownerHost: '砚托管（MCP App 界面）', ownerHint: '添加后不能改由另一方连接。带界面的 MCP App 选砚托管，其余选 pi 原生。',
   showAdvanced: '显示高级选项', loaded: '连接状态以实际检查结果为准，启用开关不代表已经连接。'
 }
@@ -41,7 +41,7 @@ const EN: Labels = {
   hostNote: 'Connected by Inkstone', piNote: 'Connected by pi', source: 'Configuration file', connection: 'Connection details',
   busy: 'A task is running. Adjust this service after it finishes.', untrusted: 'This project is not trusted. Its configuration is inactive and cannot be edited. Adjust project trust in Permissions.',
   conflict: 'Duplicate connection definitions. Remove one of them from its config file.', computer: 'Computer use', computerHint: 'Managed in Local tools.', openTools: 'Open local tools',
-  failed: 'Operation failed. Please retry.', envInvalid: 'Enter environment variables as a JSON object with string values.', scopeLabel: 'Management scope',
+  failed: 'Operation failed. Please retry.', envInvalid: 'Enter environment variables as a JSON object with string values.', scopeLabel: 'Management scope', scopeGlobalOnly: 'Management scope: global services', scopeAllOnly: 'Available in: all sessions',
   owner: 'Connected by', ownerPi: 'pi native', ownerHost: 'Inkstone-hosted (MCP App UI)', ownerHint: 'Cannot be moved to the other side later. Choose Inkstone-hosted for MCP Apps with a UI; otherwise pi native.',
   showAdvanced: 'Advanced options', loaded: 'Connection status comes from actual checks. An enabled switch does not mean connected.'
 }

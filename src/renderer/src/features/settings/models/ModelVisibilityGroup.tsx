@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import { Star } from '../../../ui/icons'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, CollapsibleChevron, EmptyState, IconButton, SearchField, Switch } from '../../../ui'
+import { Button, CollapsibleChevron, EmptyState, IconButton, SearchField, settingCardClass, Switch } from '../../../ui'
 import { modelKey } from '../../../../../shared/model-selection'
 import type { ModelInfo } from '../../../../../shared/ipc'
 import { SettingsGroup } from '../root/controls'
@@ -94,7 +94,7 @@ export function ModelVisibilityGroup(): ReactElement {
         </div>
         {models.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('visNoModels')} /> : null}
         {models.length > 0 && shown.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('visEmpty')} /> : null}
-        <div className="ms-vis-list">
+        <div className={settingCardClass('tight', 'ms-vis-list')}>
         {groups.map(([provider, list]) => {
           const allHidden = list.every((m) => isFavorite(favorites, m) || isHidden(hidden, m))
           const open = !!q || expanded.has(provider)

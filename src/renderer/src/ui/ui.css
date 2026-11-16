@@ -101,6 +101,10 @@
     flex: 1;
     justify-content: flex-start;
   }
+  .ui-btn.ui-btn--flush {
+    padding-inline: 0;
+    border-inline-width: 0;
+  }
   .ui-btn__icon {
     display: inline-flex;
     align-items: center;
@@ -556,6 +560,12 @@
   }
   .ui-seg[data-disabled] {
     opacity: 0.4;
+  }
+  .ui-seg-field {
+    align-items: flex-start;
+  }
+  .ui-seg-field[data-disabled] > .ui-seg {
+    opacity: 1;
   }
   .ui-seg__item {
     position: relative;
@@ -2029,5 +2039,25 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+@layer primitives {
+  .ui-setting-card {
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+  }
+  .ui-setting-card.ui-setting-card--rows {
+    padding-inline: var(--s-16);
+  }
+  .ui-setting-card.ui-setting-card--list {
+    padding: var(--s-4) var(--s-16);
+  }
+  .ui-setting-card.ui-setting-card--tight {
+    padding: var(--s-8);
+  }
+  .ui-setting-card.ui-setting-card--compact {
+    padding: var(--s-6) var(--s-12);
   }
 }

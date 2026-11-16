@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import { Button, Slider } from '../../../ui'
+import { Button } from '../../../ui'
 import { HOME_PARAM_DEFAULTS, HOME_PARAM_RANGES, updateHomeParams, type HomeEffectParams } from '../../ambient/home-background'
-import { Segmented, SettingsRow } from '../root/controls'
+import { Segmented, SettingsRange, SettingsRow } from '../root/controls'
 
 type RangeKey = keyof typeof HOME_PARAM_RANGES
 type Target = 'dither' | 'dither-image' | 'dither-halftone' | 'image-dither' | 'image-halftone'
@@ -92,19 +92,17 @@ function RangeRow({ id, k, label, description, params, format }: { id: string; k
   const [min, max, step] = HOME_PARAM_RANGES[k]
   return (
     <SettingsRow settingId={id} label={label} description={description}>
-      <div className="home-bg-slider">
-        <Slider
-          className="home-bg-range"
-          aria-label={label}
-          minValue={min}
-          maxValue={max}
-          step={step}
-          value={params[k]}
-          onChange={(value) => updateHomeParams({ [k]: Array.isArray(value) ? value[0] : value })}
-          data-testid={`v3-home-param-${k}`}
-        />
-        <output className="home-bg-value ui-num" aria-hidden>{format(params[k])}</output>
-      </div>
+      <SettingsRange
+        label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={params[k]}
+        format={format}
+        unit={format === percent ? 'fraction' : undefined}
+        onChange={(value) => updateHomeParams({ [k]: value })}
+        testId={`v3-home-param-${k}`}
+      />
     </SettingsRow>
   )
 }

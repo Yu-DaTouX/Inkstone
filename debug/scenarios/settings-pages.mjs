@@ -80,7 +80,7 @@ export default async function run({ cdp, check, sleep }) {
   await cdp.call('Input.insertText', { text: '重试' })
   await sleep(600)
   await cdp.shot(`${tag}-search-retry`, EVIDENCE)
-  const hit = await cdp.evaluate(`(() => { const n = document.querySelector('[data-testid^="settings-hit-"]'); if (!n) return null; const id = n.getAttribute('data-testid'); n.click(); return id })()`)
+  const hit = await cdp.evaluate(`(() => { const n = document.querySelector('[data-kind="child"][data-testid^="settings-hit-"]'); if (!n) return null; const id = n.getAttribute('data-testid'); n.click(); return id })()`)
   check('搜索「重试」有结果', !!hit, hit)
   await sleep(1800)
   const open = await cdp.evaluate(`document.querySelector('[data-testid="v3-session-advanced"]')?.getAttribute('aria-expanded')`)

@@ -3,7 +3,7 @@ import type { LocalLauncherInput, LocalLauncherView } from '../../../../../share
 import { useT } from '../../../i18n'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import { SettingsGroup } from '../root/controls'
-import { Badge, Button, Notice, Switch, TextField } from '../../../ui'
+import { Badge, Button, Notice, settingCardClass, Switch, TextField } from '../../../ui'
 import './models-settings.css'
 
 function errorText(error: unknown): string {
@@ -151,19 +151,22 @@ export function LocalLaunchSettings(): ReactElement | null {
       plain
     >
       {list?.length ? (
-        <div className="settings-rows ms-rows">
+        <div className={settingCardClass('rows', 'settings-rows ms-rows')}>
           {list.map((item) => (
             <div className="ms-custom-row" key={item.provider} data-testid={`ms-local-launch-row-${item.provider}`}>
-              <div className="ms-custom-main">
-                <div className="ms-custom-name">
-                  {item.name}
-                  <Badge tone={item.command ? 'accent' : 'neutral'}>
-                    {item.command ? t('localLaunch.on') : t('localLaunch.off')}
-                  </Badge>
+              <div className="ms-custom-main ms-local-main">
+                <div className="ms-local-head">
+                  <div className="ms-custom-name">
+                    {item.name}
+                    <Badge tone={item.command ? 'accent' : 'neutral'}>
+                      {item.command ? t('localLaunch.on') : t('localLaunch.off')}
+                    </Badge>
+                  </div>
+                  <div className="ms-custom-meta">
+                    <span>{item.baseUrl}</span>
+                  </div>
                 </div>
-                <div className="ms-custom-meta">
-                  <span>{item.baseUrl}</span>
-                </div>
+                <div className="ms-local-section">
                 {commandRow(item, 'command')}
                 {commandRow(item, 'stopCommand')}
                 <div className="ms-custom-actions">
@@ -184,6 +187,8 @@ export function LocalLaunchSettings(): ReactElement | null {
                     {t('localLaunch.save')}
                   </Button>
                 </div>
+                </div>
+                <div className="ms-local-section ms-local-section--tight">
                 <Switch
                   isSelected={!!item.command && item.idleUnload}
                   isDisabled={!!busy || !item.command}
@@ -193,7 +198,9 @@ export function LocalLaunchSettings(): ReactElement | null {
                   {t('localLaunch.idleUnload')}
                 </Switch>
                 <p className="ms-note">{t(item.command ? (item.stopCommand ? 'localLaunch.idleHintStop' : 'localLaunch.idleHintKill') : 'localLaunch.idleNeedsCommand')}</p>
-                {item.models.length ? <p className="ms-note">{t('localLaunch.modelsHint')}</p> : null}
+                </div>
+                {item.models.length ? <div className="ms-local-section">
+                <p className="ms-note">{t('localLaunch.modelsHint')}</p>
                 {item.models.map((model) => {
                   const key = nameKey(item.provider, model.id)
                   const value = nameOf(item.provider, model)
@@ -218,6 +225,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                     </div>
                   )
                 })}
+                </div> : null}
               </div>
             </div>
           ))}

@@ -29,7 +29,7 @@ export function AllowRootsList({ roots, emptyText, removeText, onRemove }: Allow
       {roots.map((path) => (
         <li className="settings-root" key={path} data-testid="v3-security-root">
           <MiddleTruncate className="settings-root__path" value={path} />
-          <Button variant="danger" onPress={() => onRemove(path)}>
+          <Button size="sm" variant="danger" onPress={() => onRemove(path)}>
             {removeText}
           </Button>
         </li>

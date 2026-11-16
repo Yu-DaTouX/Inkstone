@@ -77,6 +77,11 @@ async function readYanCodexAuth(): Promise<CodexImageAuth | null> {
   }
 }
 
+export async function codexImageSource(): Promise<CodexImageAuth['source'] | null> {
+  if (isCodexCredential(await readAuthEntry('openai-codex'))) return 'yan'
+  return (await readCodexCliAuth()) ? 'codex-cli' : null
+}
+
 export const hostImageCredentials: ImageCredentialSource = {
   async hasCodex() {
     return isCodexCredential(await readAuthEntry('openai-codex')) || !!(await readCodexCliAuth())

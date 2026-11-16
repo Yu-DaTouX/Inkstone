@@ -166,6 +166,8 @@ export {
   SettingRow,
   SettingRows,
   SettingSection,
+  settingCardClass,
+  type SettingCardPad,
   type SettingRowProps,
   type SettingRowsProps,
   type SettingSectionProps

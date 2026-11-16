@@ -289,6 +289,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
           <Entry
             testId="voice-confirm"
             name={t('voice.confirmTitle')}
+            metaWrap
             meta={[
               t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` }),
               t('voice.confirmWhere', { path: plan.destination }),

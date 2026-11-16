@@ -156,10 +156,10 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       <Button isPending={loading} isDisabled={busy} onPress={() => void refresh()} data-testid="caps-mcp-reload">{text.refresh}</Button>
       <Button isDisabled={busy || loading || runtimeBusy || !runtime?.nativeMcpAvailable || !useStore.getState().session?.sessionId || !!useStore.getState().peekedPath || !!useStore.getState().peekedSessionId} onPress={() => void apply()} data-testid="mcp-apply">{text.apply}</Button>
     </>}>
-      <SegmentedControl label={text.scopeLabel} value={scope} onChange={(value) => { setScope(value); setAdding(false); setNotice('') }} isDisabled={busy || loading} options={[
+      {snapshot?.project ? <SegmentedControl className="mcp-scope-seg" label={text.scopeLabel} value={scope} onChange={(value) => { setScope(value); setAdding(false); setNotice('') }} isDisabled={busy || loading} options={[
         { value: 'global', label: text.global, testId: 'mcp-scope-global' },
-        ...(snapshot?.project ? [{ value: 'project' as const, label: `${text.project}：${snapshot.project.name || snapshot.project.cwd.split(/[\\/]/).filter(Boolean).pop() || ''}`, testId: 'mcp-scope-project' }] : [])
-      ]} />
+        { value: 'project' as const, label: `${text.project}：${snapshot.project.name || snapshot.project.cwd.split(/[\\/]/).filter(Boolean).pop() || ''}`, testId: 'mcp-scope-project' }
+      ]} /> : snapshot ? <Meta>{text.scopeGlobalOnly}</Meta> : null}
       <Meta>{scope === 'global' ? text.globalHint : text.projectHint}</Meta>
       {!snapshot?.project && !loading ? <Meta>{text.noProject}</Meta> : null}
       {scope === 'project' && snapshot && !snapshot.projectTrusted ? <Warn>{text.untrusted}</Warn> : null}

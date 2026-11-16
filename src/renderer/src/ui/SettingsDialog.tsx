@@ -327,6 +327,7 @@ export interface SettingsSearchResult {
   primary: string
   secondary?: string
   label: string
+  preferred?: boolean
   'data-testid'?: string
 }
 
@@ -374,9 +375,11 @@ export const SettingsSearch = forwardRef<HTMLInputElement, SettingsSearchProps>(
   const open = focused && value.trim() !== ''
   const safeActive = results.length === 0 ? -1 : Math.min(active, results.length - 1)
 
+  const preferred = Math.max(0, results.findIndex((result) => result.preferred))
+
   useEffect(() => {
-    setActive(0)
-  }, [value])
+    setActive(preferred)
+  }, [value, preferred])
 
   useEffect(() => {
     if (!open || safeActive < 0) return

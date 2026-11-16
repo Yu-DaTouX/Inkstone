@@ -41,6 +41,17 @@ export function ShortcutsSettings(): ReactElement {
   const defs = useMemo(() => applyShortcutOverrides(overrides), [overrides])
   const conflicts = useMemo(() => findShortcutConflicts(defs), [defs])
   const hasOverrides = Object.keys(overrides).length > 0
+  const groups = useMemo(() => {
+    const general: typeof defs = []
+    const panels: typeof defs = []
+    const split: typeof defs = []
+    for (const def of defs) {
+      if (def.id.startsWith('split')) split.push(def)
+      else if (def.id === 'openTerminal' || def.id === 'toggleWorkspace' || def.id.startsWith('workspace')) panels.push(def)
+      else general.push(def)
+    }
+    return { general, panels, split }
+  }, [defs])
 
   const persist = useCallback(
     (next: ShortcutOverrides) => {
@@ -95,6 +106,69 @@ export function ShortcutsSettings(): ReactElement {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [recordingId, overrides, persist, names, text])
 
+  const renderRow = (def: (typeof defs)[number], prefix?: string): ReactElement => {
+    const modified = overrides[def.id] !== undefined
+    const recording = recordingId === def.id
+    const rowNotice = notice?.id === def.id ? notice.text : null
+    const purpose = names.purposes[def.purposeKey]
+    const rest = prefix && purpose.startsWith(prefix) ? purpose.slice(prefix.length) : ''
+    const label = rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : purpose
+    return (
+      <SettingRow
+        key={def.id}
+        className="settings-row settings-shortcut"
+        label={label}
+        description={
+          modified || rowNotice ? (
+            <>
+              {modified ? text.modified : null}
+              {rowNotice ? (
+                <span className="settings-row__line settings-row__desc--error" role="status" data-testid={`v3-shortcut-notice-${def.id}`}>
+                  {rowNotice}
+                </span>
+              ) : null}
+            </>
+          ) : undefined
+        }
+        data-testid={`v3-shortcut-${def.id}`}
+        data-modified={modified ? '1' : '0'}
+      >
+        <span className="settings-shortcut-ctl">
+          {def.rebindable && modified ? (
+            <IconButton
+              variant="ghost"
+              tooltip={text.restoreDefault}
+              aria-label={`${text.restoreDefault} · ${purpose}`}
+              data-testid={`v3-shortcut-reset-${def.id}`}
+              onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
+            >
+              <RotateCcw size={16} />
+            </IconButton>
+          ) : null}
+          {def.rebindable ? (
+            <Button
+              variant={recording ? 'primary' : 'secondary'}
+              isDisabled={recordingId !== null && !recording}
+              data-testid={`v3-shortcut-record-${def.id}`}
+              aria-label={`${text.recording} · ${purpose}`}
+              onPress={() => {
+                setRecordingId(recording ? null : def.id)
+                setNotice(null)
+              }}
+            >
+              {recording ? text.recording : <Keys tokens={def.keys} />}
+            </Button>
+          ) : (
+            <>
+              <span className="settings-shortcut-fixed">{text.fixed}</span>
+              <Keys className="settings-shortcut-fixed-keys" tokens={def.keys} />
+            </>
+          )}
+        </span>
+      </SettingRow>
+    )
+  }
+
   return (
     <section className="settings-section" aria-label={settingsText(lang).sectionShortcuts} data-testid="v3-shortcuts-settings">
       <SettingsGroup
@@ -118,67 +192,12 @@ export function ShortcutsSettings(): ReactElement {
           </span>
         }
       >
-        {defs.map((def) => {
-          const modified = overrides[def.id] !== undefined
-          const recording = recordingId === def.id
-          const rowNotice = notice?.id === def.id ? notice.text : null
-          const purpose = names.purposes[def.purposeKey]
-          return (
-            <SettingRow
-              key={def.id}
-              className="settings-row settings-shortcut"
-              label={purpose}
-              description={
-                modified || rowNotice ? (
-                  <>
-                    {modified ? text.modified : null}
-                    {rowNotice ? (
-                      <span className="settings-row__line settings-row__desc--error" role="status" data-testid={`v3-shortcut-notice-${def.id}`}>
-                        {rowNotice}
-                      </span>
-                    ) : null}
-                  </>
-                ) : undefined
-              }
-              data-testid={`v3-shortcut-${def.id}`}
-              data-modified={modified ? '1' : '0'}
-            >
-              <span className="settings-shortcut-ctl">
-                {def.rebindable && modified ? (
-                  <IconButton
-                    variant="ghost"
-                    tooltip={text.restoreDefault}
-                    aria-label={`${text.restoreDefault} · ${purpose}`}
-                    data-testid={`v3-shortcut-reset-${def.id}`}
-                    onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
-                  >
-                    <RotateCcw size={16} />
-                  </IconButton>
-                ) : null}
-                {def.rebindable ? (
-                  <Button
-                    variant={recording ? 'primary' : 'secondary'}
-                    isDisabled={recordingId !== null && !recording}
-                    data-testid={`v3-shortcut-record-${def.id}`}
-                    aria-label={`${text.recording} · ${purpose}`}
-                    onPress={() => {
-                      setRecordingId(recording ? null : def.id)
-                      setNotice(null)
-                    }}
-                  >
-                    {recording ? text.recording : <Keys tokens={def.keys} />}
-                  </Button>
-                ) : (
-                  <>
-                    <span className="settings-shortcut-fixed">{text.fixed}</span>
-                    <Keys className="settings-shortcut-fixed-keys" tokens={def.keys} />
-                  </>
-                )}
-              </span>
-            </SettingRow>
-          )
-        })}
+        {groups.general.map((def) => renderRow(def))}
       </SettingsGroup>
+
+      <SettingsGroup title={t('set.shortcutsGroupPanels')}>{groups.panels.map((def) => renderRow(def))}</SettingsGroup>
+
+      <SettingsGroup title={t('set.shortcutsGroupSplit')}>{groups.split.map((def) => renderRow(def, t('set.shortcutsSplitPrefix')))}</SettingsGroup>
 
       <SettingsGroup
         title={text.composerTitle}

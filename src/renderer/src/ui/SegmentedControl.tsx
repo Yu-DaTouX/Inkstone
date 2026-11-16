@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import { useId, type ReactElement, type ReactNode } from 'react'
 import { SelectionIndicator, ToggleButton, ToggleButtonGroup, type Key } from 'react-aria-components'
 import { cx } from './cx'
 
@@ -19,6 +19,7 @@ export interface SegmentedControlProps<T extends string> {
   variant?: 'track' | 'plain'
   isDisabled?: boolean
   className?: string
+  showLabel?: boolean
 }
 
 export function SegmentedControl<T extends string>({
@@ -28,15 +29,18 @@ export function SegmentedControl<T extends string>({
   onChange,
   variant = 'track',
   isDisabled,
-  className
+  className,
+  showLabel
 }: SegmentedControlProps<T>): ReactElement {
+  const labelId = useId()
   const select = (keys: Set<Key>): void => {
     const next = [...keys][0]
     if (next != null && next !== value) onChange(String(next) as T)
   }
-  return (
+  const group = (
     <ToggleButtonGroup
-      aria-label={label}
+      aria-label={showLabel ? undefined : label}
+      aria-labelledby={showLabel ? labelId : undefined}
       selectionMode="single"
       disallowEmptySelection
       selectedKeys={[value]}
@@ -59,5 +63,14 @@ export function SegmentedControl<T extends string>({
         </ToggleButton>
       ))}
     </ToggleButtonGroup>
+  )
+  if (!showLabel) return group
+  return (
+    <div className="ui-field ui-seg-field" data-disabled={isDisabled ? '' : undefined}>
+      <span className="ui-field__label" id={labelId}>
+        {label}
+      </span>
+      {group}
+    </div>
   )
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { useI18n } from '../../../i18n'
 import { Button } from '../../../ui'
 import type { McpAppViewApi } from '../../../../../shared/mcp-app-view'
-import { Group, Meta, Warn } from './parts'
+import { Entry, Group, StatusBadge, Warn } from './parts'
 
 interface RefreshLabels {
   title: string
@@ -119,20 +119,20 @@ export function McpAppRefresh(): ReactElement {
 
   return (
     <Group title={labels.title} desc={labels.desc} card>
-      <Meta>
-        <span data-testid="v3-mcp-app-refresh-count">
-          {toolCount === null ? labels.upToDate : withCount(labels.toolCount, toolCount)}
-        </span>
-        {needsRefresh ? <span data-testid="v3-mcp-app-refresh-needed">{` · ${labels.needsRefresh}`}</span> : null}
-      </Meta>
-      <div className="caps-actions caps-actions--start">
-        <Button variant="secondary" isDisabled={busy} onPress={() => void refresh()} data-testid="v3-mcp-app-refresh">
-          {busy ? labels.refreshing : labels.refresh}
-        </Button>
-      </div>
-      {done ? <p className="caps-result" role="status" data-testid="v3-mcp-app-refresh-done">{done}</p> : null}
-      {error ? <Warn>{error}</Warn> : null}
-      <Meta>{labels.schemaNote}</Meta>
+      <Entry
+        name={<span data-testid="v3-mcp-app-refresh-count">{toolCount === null ? labels.upToDate : withCount(labels.toolCount, toolCount)}</span>}
+        badge={needsRefresh ? <span data-testid="v3-mcp-app-refresh-needed"><StatusBadge tone="ask">{labels.needsRefresh}</StatusBadge></span> : null}
+        metaWrap
+        meta={[labels.schemaNote]}
+        actions={
+          <Button variant="secondary" isDisabled={busy} onPress={() => void refresh()} data-testid="v3-mcp-app-refresh">
+            {busy ? labels.refreshing : labels.refresh}
+          </Button>
+        }
+      >
+        {done ? <p className="caps-result" role="status" data-testid="v3-mcp-app-refresh-done">{done}</p> : null}
+        {error ? <Warn>{error}</Warn> : null}
+      </Entry>
     </Group>
   )
 }

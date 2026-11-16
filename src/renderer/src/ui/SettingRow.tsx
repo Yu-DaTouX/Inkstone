@@ -38,11 +38,19 @@ export function SettingRows({ label, className, children, ...rest }: SettingRows
   )
 }
 
+export type SettingCardPad = 'rows' | 'list' | 'tight' | 'compact'
+
+export function settingCardClass(pad: SettingCardPad = 'rows', className?: string): string {
+  return cx('ui-setting-card', `ui-setting-card--${pad}`, className)
+}
+
 export interface SettingSectionProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   title?: ReactNode
   description?: ReactNode
   actions?: ReactNode
   plain?: boolean
+  variant?: 'group'
+  card?: boolean
 }
 
 export function SettingSection({
@@ -50,13 +58,15 @@ export function SettingSection({
   description,
   actions,
   plain,
+  variant,
+  card,
   className,
   children,
   ...rest
 }: SettingSectionProps): ReactElement {
   const head = title != null || description != null || actions != null
   return (
-    <section {...rest} className={cx('ui-setting-section', className)}>
+    <section {...rest} className={cx('ui-setting-section', className)} data-variant={variant}>
       {head ? (
         <header className="ui-setting-section__head">
           <div className="ui-setting-section__titles">
@@ -66,7 +76,7 @@ export function SettingSection({
           {actions != null ? <div className="ui-setting-section__actions">{actions}</div> : null}
         </header>
       ) : null}
-      {plain ? children : <div className="ui-setting-rows">{children}</div>}
+      {plain ? children : <div className={card ? settingCardClass('rows', 'ui-setting-rows') : 'ui-setting-rows'}>{children}</div>}
     </section>
   )
 }

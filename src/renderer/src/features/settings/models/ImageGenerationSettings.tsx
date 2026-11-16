@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { IMAGE_SERVICES, type ImageComplexity, type ImageConfigView, type ImageKeyService, type ImageModelService, type ImageProviderChoice, type ImageService } from '../../../../../shared/image-config'
-import { useI18n } from '../../../i18n'
-import { Badge, Button, CollapsibleChevron, ListBoxItem, Notice, Select, TextField } from '../../../ui'
+import { useI18n, useT } from '../../../i18n'
+import { Badge, Button, CollapsibleChevron, ListBoxItem, Notice, Select, settingCardClass, TextField } from '../../../ui'
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
+import { requestSettingReveal } from '../search/search-model'
+import { useStore } from '../../../state/store'
 import { imageText } from './image-text'
 import './models-settings.css'
 
@@ -13,6 +15,7 @@ const hasModelField = (service: ImageService): service is ImageModelService => s
 export function ImageGenerationSettings(): ReactElement {
   const { lang } = useI18n()
   const text = imageText(lang)
+  const t = useT()
   const [view, setView] = useState<ImageConfigView | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
@@ -34,8 +37,20 @@ export function ImageGenerationSettings(): ReactElement {
       if (alive.current) setMsg({ kind: 'fail', text: error instanceof Error ? error.message : String(error) })
     }
   }, [])
+  const authProviders = useStore((s) => s.authProviders)
   useEffect(() => {
     void reload()
+  }, [reload, authProviders])
+  useEffect(() => {
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') void reload()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
   }, [reload])
 
   const run = async (action: Promise<{ ok: boolean; error?: string }>, done?: string): Promise<boolean> => {
@@ -67,6 +82,7 @@ export function ImageGenerationSettings(): ReactElement {
 
   return (
     <SettingsGroup title={text.title} description={text.description} settingId="models-image-generation" className="ms-group" plain testId="ms-image-generation" fold={{ summary: text.current.replace('{name}', labelOf(view.provider === 'auto' ? view.resolved : view.provider)) }}>
+      <div className={settingCardClass('rows', 'settings-rows')}>
       <SettingsRow label={text.defaultService} description={view.provider === 'auto' ? text.autoHint.replace('{name}', labelOf(view.resolved)) : undefined}>
         <Select
           aria-label={text.defaultService}
@@ -95,6 +111,7 @@ export function ImageGenerationSettings(): ReactElement {
           onChange={(value) => void run(window.yan.image.update({ complexity: value as ImageComplexity | 'default' }))}
         />
       </SettingsRow>
+      </div>
       {IMAGE_SERVICES.map((service) => {
         const state = status(service)
         const modelField = `model:${service}`
@@ -104,13 +121,27 @@ export function ImageGenerationSettings(): ReactElement {
         const savedModel = hasModelField(service) ? view.models[service] ?? '' : ''
         const keySource = hasKeyField(service) ? view.keys[service] : undefined
         return (
-          <div className="ms-image-card" key={service} data-testid={`ms-image-${service}`}>
+          <div className={settingCardClass('compact', 'ms-image-card')} key={service} data-testid={`ms-image-${service}`}>
             <Button variant="ghost" className="ms-image-head" aria-expanded={cardOpen} icon={<CollapsibleChevron expanded={cardOpen} />} onPress={() => toggleCard(service)} data-testid={`ms-image-toggle-${service}`}>
               <span className="ms-image-name">{text.service[service]}</span>
               <Badge tone={state.tone}>{state.label}</Badge>
               {view.provider === service ? <Badge tone="accent">{text.inUse}</Badge> : null}
             </Button>
             {cardOpen ? <div className="ms-image-note">{text.note[service]}</div> : null}
+            {cardOpen && service === 'codex' ? (
+              <div className="ms-image-source" data-testid="ms-image-codex-source" data-source={view.codexSource ?? 'none'}>
+                {view.codexSource ? (
+                  <span>{t(view.codexSource === 'yan' ? 'set.imageCodexYan' : 'set.imageCodexCli')}</span>
+                ) : (
+                  <>
+                    <span>{t('set.imageCodexMissing')}</span>
+                    <Button variant="secondary" onPress={() => requestSettingReveal({ section: 'models', id: 'models-subscriptions' })} data-testid="ms-image-codex-signin">
+                      {t('set.imageCodexSignIn')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            ) : null}
             {cardOpen ? <div className="ms-image-fields">
               {service === 'compatible' ? (
                 <TextField
@@ -154,6 +185,7 @@ export function ImageGenerationSettings(): ReactElement {
                 >
                   <TextField
                     label="API key"
+                    className="ms-image-key-field"
                     type="password"
                     autoComplete="off"
                     placeholder={keySource === 'file' ? text.keyReplace : keySource === 'other' ? text.keyOverride : text.keyPlaceholder}

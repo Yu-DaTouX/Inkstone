@@ -1,6 +1,18 @@
 @layer features {
   .dd-message {
-    margin: var(--s-8) var(--s-16);
+    margin: var(--s-4) 0 var(--s-12);
+  }
+
+  .dd-fingerprint {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .dd-pairing,
+  .dd-fingerprint {
+    flex: 1 1 100%;
   }
 
   .dd-pairing {

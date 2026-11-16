@@ -3,11 +3,11 @@ import { Volume2 } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import type { SoundEvent, SoundSettings } from '../../../../../shared/ipc'
 import { useStore } from '../../../state/store'
-import { Button, IconButton, Slider, Switch } from '../../../ui'
+import { Button, IconButton, Switch } from '../../../ui'
 import { previewSound } from '../../../lib/sound'
 import { generalText } from './general-text'
 import { DEFAULT_SOUND_SETTINGS, mergeSound } from './general-model'
-import { SettingsGroup, SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRange, SettingsRow } from '../root/controls'
 import { settingsText } from '../settings-text'
 
 const EVENT_KEYS: readonly { id: SoundEvent; textKey: 'notifEventDone' | 'notifEventQuestion' | 'notifEventError' }[] = [
@@ -16,7 +16,6 @@ const EVENT_KEYS: readonly { id: SoundEvent; textKey: 'notifEventDone' | 'notifE
   { id: 'error', textKey: 'notifEventError' }
 ]
 
-const PERCENT_FORMAT: Intl.NumberFormatOptions = { style: 'percent' }
 
 function modelRef(): { model?: { provider: string; id: string } } {
   const model = useStore.getState().session?.model
@@ -64,24 +63,22 @@ export function NotificationsSettings(): ReactElement {
         </SettingsRow>
 
         <SettingsRow nested settingId="notifications-volume" label={text.notifVolume}>
-          <Slider
-            className="settings-slider"
-            aria-label={text.notifVolume}
-            minValue={0}
-            maxValue={1}
+          <SettingsRange
+            label={text.notifVolume}
+            min={0}
+            max={1}
             step={0.05}
             value={shown}
-            showValue
-            formatOptions={PERCENT_FORMAT}
-            isDisabled={!sound.enabled}
-            data-testid="v3-notif-volume"
-            onChange={(next) => setDraft(next as number)}
-            onChangeEnd={(next) => commitVolume(next as number)}
+            format={(value) => `${Math.round(value * 100)}%`}
+            unit="fraction"
+            disabled={!sound.enabled}
+            testId="v3-notif-volume"
+            onChange={setDraft}
+            onChangeEnd={commitVolume}
           />
         </SettingsRow>
 
         <SettingsRow
-          nested
           settingId="notifications-system"
           label={text.notifSystem}
           description={text.notifSystemDesc}

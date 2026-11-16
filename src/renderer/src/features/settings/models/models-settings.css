@@ -221,6 +221,10 @@
     flex-direction: column;
   }
 
+  .ms-vis-list:empty {
+    display: none;
+  }
+
   .ms-vis-group {
     display: flex;
     flex-direction: column;
@@ -603,10 +607,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
-    padding: var(--s-6) var(--s-12);
-    border: var(--hair, 1px) solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
   }
 
   .ms-image-head {
@@ -625,6 +625,14 @@
     color: var(--fg3);
   }
 
+  .ms-image-source {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8) var(--s-12);
+    color: var(--fg2);
+  }
+
   .ms-image-fields {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -640,7 +648,7 @@
     flex-wrap: wrap;
   }
 
-  .ms-image-key .ui-field {
+  .ms-image-key-field {
     flex: 1 1 200px;
     min-width: 0;
   }
@@ -657,6 +665,35 @@
 
   .ms-custom-form .ms-custom-input {
     font-family: var(--font-mono);
+  }
+
+  .ms-custom-form .ms-custom-input::placeholder {
+    font-family: var(--font-ui);
+  }
+
+  .ms-local-main {
+    gap: var(--s-16);
+  }
+
+  .ms-local-head,
+  .ms-local-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .ms-local-head {
+    gap: var(--s-2);
+  }
+
+  .ms-local-section:has(> .ms-custom-actions) {
+    gap: var(--s-12);
+  }
+
+  .ms-local-section--tight {
+    align-items: flex-start;
+    gap: var(--s-4);
   }
 
   .ms-custom-model {
@@ -701,13 +738,13 @@
     color: var(--ok-t);
   }
 
-  @media (max-width: 720px) {
+  @container style(--ui-settings-sm: 1) {
     .ms-custom-model {
       grid-template-columns: minmax(0, 1fr);
     }
   }
 
-  @media (max-width: 560px) {
+  @container style(--ui-settings-xs: 1) {
     .ms-service {
       grid-template-columns: minmax(0, 1fr);
     }

@@ -114,17 +114,17 @@ export function MarketSection(): ReactElement {
                   meta={metaParts}
                   actions={
                     <>
-                      <Button variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
-                        {t('market.choose')}
-                      </Button>
-                      <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
-                        npm
-                      </Button>
                       {pkg.homepage ? (
                         <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
                           {t('market.source')}
                         </Button>
                       ) : null}
+                      <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
+                        npm
+                      </Button>
+                      <Button variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
+                        {t('market.choose')}
+                      </Button>
                     </>
                   }
                 />

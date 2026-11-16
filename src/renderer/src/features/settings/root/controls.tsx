@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
-import { Button, CollapsibleChevron, cx, SegmentedControl, SettingRow, SettingSection } from '../../../ui'
+import { Button, CollapsibleChevron, cx, IconButton, SegmentedControl, SettingRow, SettingSection, Slider } from '../../../ui'
+import { RotateCcw } from '../../../ui/icons'
 import { getSettingReveal, settingSelector, subscribeSettingReveal } from '../search/search-model'
 
 export interface SettingsRowProps {
@@ -64,6 +65,7 @@ export function SettingsGroup({
     return (
       <SettingSection
         className={cx('settings-group', 'settings-fold', className)}
+        variant="group"
         title={
           <Button
             variant="ghost"
@@ -96,6 +98,8 @@ export function SettingsGroup({
   return (
     <SettingSection
       className={cx('settings-group', className)}
+      variant="group"
+      card
       title={title}
       description={description}
       actions={actions}
@@ -150,6 +154,83 @@ export function SettingsAdvanced({ label, testId, children }: SettingsAdvancedPr
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+export interface SettingsRangeProps {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  format: (value: number) => string
+  formatOptions?: Intl.NumberFormatOptions
+  unit?: RangeUnit
+  onChange: (value: number) => void
+  onChangeEnd?: (value: number) => void
+  disabled?: boolean
+  reset?: { label: string; onPress: () => void; disabled?: boolean; testId?: string }
+  testId?: string
+}
+
+const firstValue = (value: number | number[]): number => (Array.isArray(value) ? value[0] ?? 0 : value)
+
+export type RangeUnit = 'fraction' | 'percent' | 'ms' | 'px'
+
+const UNIT_FORMAT: Record<Exclude<RangeUnit, 'px'>, Intl.NumberFormatOptions> = {
+  fraction: { style: 'percent' },
+  percent: { style: 'unit', unit: 'percent' },
+  ms: { style: 'unit', unit: 'millisecond' }
+}
+
+export function SettingsRange({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  formatOptions,
+  unit,
+  onChange,
+  onChangeEnd,
+  disabled,
+  reset,
+  testId
+}: SettingsRangeProps): ReactElement {
+  const options = formatOptions ?? (unit && unit !== 'px' ? UNIT_FORMAT[unit] : undefined)
+  return (
+    <div className="settings-range" data-disabled={disabled ? '1' : undefined} data-ui-row-fill>
+      {reset ? (
+        <IconButton
+          size="sm"
+          className="settings-range__reset"
+          aria-label={reset.label}
+          tooltip={reset.label}
+          isDisabled={reset.disabled}
+          onPress={reset.onPress}
+          data-testid={reset.testId}
+        >
+          <RotateCcw size={13} aria-hidden />
+        </IconButton>
+      ) : null}
+      <Slider
+        className="settings-range__slider"
+        aria-label={unit === 'px' ? `${label} (px)` : label}
+        minValue={min}
+        maxValue={max}
+        step={step}
+        value={value}
+        formatOptions={options}
+        isDisabled={disabled}
+        onChange={(next) => onChange(firstValue(next))}
+        onChangeEnd={onChangeEnd ? (next) => onChangeEnd(firstValue(next)) : undefined}
+        data-testid={testId}
+      />
+      <output className="settings-range__value ui-num" aria-hidden>
+        {format(value)}
+      </output>
     </div>
   )
 }

@@ -295,20 +295,20 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
       if (!nav) continue
       const entries = byNav.get(key) ?? []
       const heading = navLabel(nav)
-      const [first, ...rest] = entries
-      const firstLabel = first ? (lang === 'en-US' ? first.en : first.zh) : undefined
+      const pageHit = heading.toLowerCase().includes(needle)
+      const leading = results.length === 0
       const hitKey = `${key}:hit`
-      targets.set(hitKey, { entry: first, nav })
+      targets.set(hitKey, { nav })
       results.push({
         key: hitKey,
         kind: 'hit',
         icon: SECTION_ICON[nav.icon],
         primary: heading,
-        secondary: firstLabel,
-        label: firstLabel ? text.searchIn.replace('{label}', firstLabel).replace('{section}', heading) : heading,
-        'data-testid': first ? `settings-hit-${first.id}` : `settings-hit-${key}`
+        label: heading,
+        'data-testid': `settings-hit-${key}`
       })
-      for (const entry of rest.slice(0, SEARCH_CHILDREN)) {
+      const limit = pageHit ? SEARCH_CHILDREN : SEARCH_CHILDREN + 1
+      for (const [index, entry] of entries.slice(0, limit).entries()) {
         const label = lang === 'en-US' ? entry.en : entry.zh
         const childKey = `${key}:${entry.id}`
         targets.set(childKey, { entry, nav })
@@ -317,10 +317,11 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
           kind: 'child',
           primary: label,
           label: text.searchIn.replace('{label}', label).replace('{section}', heading),
+          preferred: leading && index === 0 && !pageHit ? true : undefined,
           'data-testid': `settings-hit-${entry.id}`
         })
       }
-      const more = rest.length - SEARCH_CHILDREN
+      const more = entries.length - limit
       if (more > 0) {
         const moreKey = `${key}:more`
         targets.set(moreKey, { nav })

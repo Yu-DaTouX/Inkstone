@@ -64,7 +64,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'security-project-trust', section: 'security', zh: '项目默认信任', en: 'Default project trust', keywords: ['信任', '新项目', 'trust'], more: true },
 
   { id: 'shortcuts-keys', section: 'shortcuts', zh: '快捷键', en: 'Keyboard shortcuts', keywords: ['键位', '改键', '热键', 'keybinding', 'hotkey', 'shortcut'] },
-  { id: 'shortcuts-reset-all', section: 'shortcuts', zh: '全部恢复默认', en: 'Reset all', keywords: ['恢复默认键位', '重置快捷键', 'reset shortcuts'] },
+  { id: 'shortcuts-reset-all', section: 'shortcuts', zh: '全部快捷键恢复默认', en: 'Reset all shortcuts', keywords: ['恢复默认键位', '重置快捷键', 'reset shortcuts'] },
 
   { id: 'about-version', section: 'about', zh: '版本', en: 'Version', keywords: ['构建', '版本号', 'build', 'version'] },
   { id: 'about-update-check', section: 'about', zh: '应用更新', en: 'App updates', keywords: ['检查更新', 'check for updates', '升级', '下载', 'update', 'upgrade'] },

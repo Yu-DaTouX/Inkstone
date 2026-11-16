@@ -1,5 +1,5 @@
 import { IMAGE_KEY_SERVICES, type ImageConfigView, type ImageKeyService } from '../shared/image-config'
-import { hostImageCredentials } from './image-credentials'
+import { codexImageSource, hostImageCredentials } from './image-credentials'
 import { IMAGE_MODEL_DEFAULTS, detectImageProviders, resolveImageProvider } from './image-generation'
 import { imageConfigSnapshot, imageFileKey, refreshImageConfig } from './image-config'
 
@@ -18,6 +18,7 @@ export async function imageConfigView(): Promise<ImageConfigView> {
     complexity: file.complexity ?? 'default',
     keys,
     codex: availability.codex,
+    codexSource: availability.codex ? await codexImageSource() : null,
     local: !!availability.local,
     defaults: { ...IMAGE_MODEL_DEFAULTS },
     resolved: resolveImageProvider(undefined, availability)

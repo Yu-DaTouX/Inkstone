@@ -1,5 +1,5 @@
 import { Fragment, type ReactElement, type ReactNode } from 'react'
-import { Badge, EmptyState, Notice, SettingSection, Skeleton, type BadgeTone } from '../../../ui'
+import { Badge, EmptyState, Notice, SettingSection, Skeleton, settingCardClass, type BadgeTone } from '../../../ui'
 import { cx } from '../../../ui/cx'
 
 export function Panel({ children, label }: { children: ReactNode; label: string }): ReactElement {
@@ -54,6 +54,7 @@ export function Entry({
   control,
   meta,
   metaTitle,
+  metaWrap,
   actions,
   children,
   testId,
@@ -65,6 +66,7 @@ export function Entry({
   control?: ReactNode
   meta?: readonly EntryMetaPart[]
   metaTitle?: string
+  metaWrap?: boolean
   actions?: ReactNode
   children?: ReactNode
   testId?: string
@@ -74,18 +76,22 @@ export function Entry({
   const title = metaTitle ?? (parts.every((part) => typeof part === 'string')
     ? parts.map((part, index) => (index < parts.length - 1 ? trimSentenceEnd(part as string) : part)).join(' · ')
     : undefined)
+  const side = actions || control ? (
+    <div className="caps-entry-side">
+      {actions ? <div className="caps-actions">{actions}</div> : null}
+      {control}
+    </div>
+  ) : null
   return (
-    <article className="caps-item" data-testid={testId} data-setting-id={settingId}>
+    <article className="caps-item caps-entry" data-testid={testId} data-setting-id={settingId} data-meta={parts.length > 0 ? '1' : '0'}>
       <div className="caps-item-head">
         <span className="caps-name" title={nameTitle}>
           {name}
         </span>
         {badge}
-        <span className="caps-spacer" />
-        {control}
       </div>
       {parts.length > 0 ? (
-        <p className="caps-meta caps-meta--line" title={title}>
+        <p className={metaWrap ? 'caps-meta' : 'caps-meta caps-meta--line'} title={metaWrap ? undefined : title}>
           {parts.map((part, index) => (
             <Fragment key={index}>
               {index > 0 && !joinsWithoutSeparator(part) ? <span className="caps-meta-sep" aria-hidden="true"> · </span> : null}
@@ -94,8 +100,8 @@ export function Entry({
           ))}
         </p>
       ) : null}
-      {children}
-      {actions ? <div className="caps-actions">{actions}</div> : null}
+      {side}
+      {children != null && children !== false ? <div className="caps-entry-body">{children}</div> : null}
     </article>
   )
 }
@@ -116,8 +122,8 @@ export function Group({
   children: ReactNode
 }): ReactElement {
   return (
-    <SettingSection className="caps-group" title={title} description={desc} actions={actions} plain data-setting-id={settingId}>
-      <div className={card ? 'caps-card' : 'caps-group-body'}>{children}</div>
+    <SettingSection className="caps-group" variant="group" title={title} description={desc} actions={actions} plain data-setting-id={settingId}>
+      <div className={settingCardClass('list', card ? 'caps-card' : 'caps-group-body')}>{children}</div>
     </SettingSection>
   )
 }
