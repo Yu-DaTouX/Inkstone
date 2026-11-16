@@ -135,7 +135,7 @@ const REFRESH_BARE_RE = /token refresh (?:failed|unauthorized|request failed|err
 const REFRESH_DEFINITIVE_RE = /invalid_grant|invalid_client|unauthorized_client|access_denied|login[ _-]required|(?:sign|log)[ _-]?in again|re-?(?:login|authenticat|connect)|please reconnect|\b(?:400|401|403)\b|unauthorized|forbidden|revoked|reused|refresh[ _-]?token.{0,40}(?:expired|invalid|not found)|token.{0,12}expired/i
 const REFRESH_SERVER_ERROR_RE = /(?:status(?: code)?|http)[\s:=(]*5\d\d\b|\(5\d\d\)|^\s*5\d\d\b|\b5\d\d\s+(?:internal server error|bad gateway|service unavailable|gateway time-?out)/i
 
-const REFRESH_TRANSPORT_RE = /\bfetch failed\b|\bE(?:CONN[A-Z]+|TIMEDOUT|NOTFOUND|AI_AGAIN|HOSTUNREACH|NETUNREACH|PIPE)\b|\bUND_ERR_[A-Z_]+\b|getaddrinfo|socket hang up|\bTimeoutError\b|aborted due to timeout|connect timeout error/i
+const REFRESH_TRANSPORT_RE = /\bfetch failed\b|\bE(?:CONN[A-Z]+|TIMEDOUT|NOTFOUND|AI_AGAIN|HOSTUNREACH|NETUNREACH|PIPE)\b|\bUND_ERR_[A-Z_]+\b|getaddrinfo|socket hang up|\bTimeoutError\b|aborted due to timeout|connect timeout error|request timed out|timed out after \d|operation was aborted|\bconnection error\b|upstream connect error|connection (?:reset|refused|closed)|\bnetwork error\b/i
 
 function oauthRefreshCause(text: string): string | null {
   const prefixed = REFRESH_PREFIX_RE.exec(text)

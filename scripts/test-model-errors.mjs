@@ -223,6 +223,16 @@ export async function runModelErrorTests(ok, modules) {
     ok(shared.classifyModelError(text).kind === 'retryable' && !shared.isOAuthRefreshFailure(text) && shared.modelErrorCause(text) === cause, `错误码锚定的传输层失败仍算瞬时：${text}`, shared.modelErrorCause(text))
     ok(shared.isTransientModelError(text), `错误码锚定的传输层失败按瞬时续跑：${text}`)
   }
+  for (const text of [
+    'OAuth refresh failed for anthropic: Request timed out.',
+    'OAuth refresh failed for anthropic: Request timed out after 30000ms',
+    'OAuth refresh failed for openai-codex: Connection error.',
+    'OAuth refresh failed for anthropic: upstream connect error or disconnect/reset before headers. reset reason: connection failure',
+    'OAuth refresh failed for anthropic: Network error'
+  ]) {
+    ok(shared.classifyModelError(text).kind === 'retryable' && !shared.isOAuthRefreshFailure(text) && shared.isTransientModelError(text), `不带错误码的超时与断连仍算瞬时，不换号：${text.slice(0, 70)}`, shared.classifyModelError(text).kind)
+  }
+  ok(shared.classifyModelError('OAuth refresh failed for anthropic: This operation was aborted').kind !== 'auth' && !shared.isOAuthRefreshFailure('OAuth refresh failed for anthropic: This operation was aborted'), '刷新被中止不算登录失效，不换号')
   ok(shared.modelErrorNotice('upstream request cancelled').includes('upstream request cancelled'), '取消类原文仍保留在错误内容里')
   ok(/quota/.test(shared.modelErrorNotice({ error: { code: 'insufficient_quota', message: 'quota exhausted' } })), '嵌套服务商错误字段可读取')
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')

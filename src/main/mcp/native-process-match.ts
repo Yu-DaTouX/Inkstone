@@ -18,8 +18,11 @@ function readServers(path: string): Record<string, unknown> {
   try {
     const root = JSON.parse(readFileSync(path, 'utf8')) as { mcpServers?: unknown }
     const servers = root?.mcpServers
-    return servers && typeof servers === 'object' && !Array.isArray(servers) ? (servers as Record<string, unknown>) : {}
-  } catch {
+    if (servers && typeof servers === 'object' && !Array.isArray(servers)) return servers as Record<string, unknown>
+    if (root && typeof root === 'object' && 'mcpServers' in root) console.warn('[pi-process-tree] mcpServers in', path, 'is not an object; no pi native MCP process will be matched from it')
+    return {}
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('[pi-process-tree] could not read', path, error instanceof Error ? error.message : String(error))
     return {}
   }
 }
