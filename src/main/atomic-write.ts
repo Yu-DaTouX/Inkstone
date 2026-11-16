@@ -62,7 +62,7 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
-function renameSyncWithRetry(from: string, to: string): void {
+export function renameSyncWithRetry(from: string, to: string): void {
   for (let attempt = 0; ; attempt += 1) {
     try {
       renameSync(from, to)

@@ -37,7 +37,7 @@ import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-e
 import { StreamProjection, streamGenerationTiming, streamSpeed, type StreamingState } from './stream-projection'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { apiKeyLooksUnusable, isOAuthRefreshFailure, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
-import { accountLogId, logModelEvent, modelErrorLogFields } from './main-log'
+import { accountLogId, logMainEvent, logModelEvent, modelErrorLogFields } from './main-log'
 import { isAuthBlip, providerUsesOAuth, waitAuthBlip } from './auth-blip'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
@@ -897,7 +897,8 @@ export class AgentController extends EventEmitter {
         packagedResourcesDir: process.resourcesPath,
         devResourcesDir: opts.devResourcesDir,
         execPath: process.execPath,
-        binDir: opts.binDir
+        binDir: opts.binDir,
+        onNodeLauncherError: (error) => logMainEvent('yan-node', `yan-node launcher update failed: ${error instanceof Error ? error.message : String(error)}`)
       })
       if (!launcher) {
         server.stop()
