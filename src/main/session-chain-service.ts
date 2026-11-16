@@ -1,8 +1,8 @@
 import { pick } from '../shared/ui-lang'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './atomic-write'
+import { readPersistedJson, validatePersistedDocument } from './persisted-document'
 import {
   SESSION_CHAIN_FILE_NAME,
   appendSegment,
@@ -46,7 +46,9 @@ export class SessionChainStore {
   private readonly root: string
   private readonly now: () => number
   private doc: SessionChainDocument = { version: 1, chains: [], updatedAt: 0 }
-  private loaded = false
+  private committed: SessionChainDocument = this.doc
+  private loading: Promise<void> | null = null
+  private loadError: unknown = null
   private tail: Promise<unknown> = Promise.resolve()
 
   constructor(options: SessionChainStoreOptions = {}) {
@@ -68,6 +70,7 @@ export class SessionChainStore {
 
   async link(fromFile: string, toFile: string, handoffId: string | null): Promise<SessionChain | null> {
     return this.enqueue(async () => {
+      await this.ready()
       const from = normalizeChainKey(fromFile)
       const to = normalizeChainKey(toFile)
       if (!from || !to || from === to) return null
@@ -104,6 +107,7 @@ export class SessionChainStore {
 
   async forget(sessionFile: string): Promise<boolean> {
     return this.enqueue(async () => {
+      await this.ready()
       const key = normalizeChainKey(sessionFile)
       if (!key) return false
       const before = this.doc.chains.length
@@ -117,15 +121,31 @@ export class SessionChainStore {
     })
   }
 
-  async load(): Promise<void> {
-    if (this.loaded) return
-    this.loaded = true
+  load(): Promise<void> {
+    this.loading ??= this.readDisk().finally(() => {
+      if (this.loadError) this.loading = null
+    })
+    return this.loading
+  }
+
+  private async ready(): Promise<void> {
+    await this.load()
+    if (this.loadError) throw this.loadError
+  }
+
+  private async readDisk(): Promise<void> {
     try {
-      const text = await readFile(sessionChainDocumentPath(this.root), 'utf8')
-      this.doc = sanitizeSessionChainDocument(JSON.parse(text))
-    } catch {
+      this.doc = await readPersistedJson(
+        sessionChainDocumentPath(this.root),
+        (value) => sanitizeSessionChainDocument(validatePersistedDocument(value, {})),
+        () => ({ version: 1, chains: [], updatedAt: 0 })
+      )
+      this.loadError = null
+    } catch (error) {
       this.doc = { version: 1, chains: [], updatedAt: 0 }
+      this.loadError = error
     }
+    this.committed = { ...this.doc, chains: [...this.doc.chains] }
   }
 
   snapshot(): SessionChainDocument {
@@ -147,20 +167,12 @@ export class SessionChainStore {
   }
 
   private async persist(): Promise<void> {
-    const path = sessionChainDocumentPath(this.root)
-    const temp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
     try {
-      await mkdir(dirname(path), { recursive: true })
-      await writeFile(temp, JSON.stringify(this.doc), 'utf8')
-      await rename(temp, path)
-    } catch {
-      try {
-        const text = await readFile(path, 'utf8')
-        this.doc = sanitizeSessionChainDocument(JSON.parse(text))
-      } catch {
-        this.doc = { version: 1, chains: [], updatedAt: 0 }
-      }
-      throw new Error(pick('会话链落盘失败', 'Failed to save the session chain'))
+      await atomicWriteFile(sessionChainDocumentPath(this.root), JSON.stringify(this.doc), { durable: true })
+    } catch (error) {
+      this.doc = { ...this.committed, chains: [...this.committed.chains] }
+      throw new Error(pick('会话链落盘失败', 'Failed to save the session chain'), { cause: error })
     }
+    this.committed = { ...this.doc, chains: [...this.doc.chains] }
   }
 }

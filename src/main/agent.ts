@@ -4001,7 +4001,7 @@ export class AgentController extends EventEmitter {
     const sessionId = this.state?.sessionId
     if (!sessionId) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     try {
-      setUltracodeOn(sessionId, on)
+      await setUltracodeOn(sessionId, on)
     } catch (error) {
       return { ok: false, error: String(error) }
     }

@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
 async function compile(entry, outfile) {
-  await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } })
   return import(pathToFileURL(outfile).href)
 }
 

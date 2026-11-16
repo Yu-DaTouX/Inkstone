@@ -5,8 +5,11 @@ import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import './test-isolate.mjs'
 
+export const CJS_REQUIRE_BANNER = "import { createRequire as __inkstoneCreateRequire } from 'node:module'; const require = __inkstoneCreateRequire(import.meta.url);"
+
 export function buildTest(entry, outfile, options = {}) {
-  return build({ ...(options.stdin ? {} : { entryPoints: [entry] }), outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', ...options })
+  const banner = { ...options.banner, js: `${CJS_REQUIRE_BANNER}${options.banner?.js ?? ''}` }
+  return build({ ...(options.stdin ? {} : { entryPoints: [entry] }), outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', ...options, banner })
 }
 
 export async function runSuite(url, run) {

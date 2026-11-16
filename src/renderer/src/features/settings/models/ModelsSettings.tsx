@@ -104,12 +104,22 @@ export function ModelsSettings(): ReactElement {
   const [showAllKeys, setShowAllKeys] = useState(false)
   const [showPath, setShowPath] = useState(false)
   const [vaultErrors, setVaultErrors] = useState<Record<string, string>>({})
-  const [backupCount, setBackupCount] = useState(0)
+  const [backupInfo, setBackupInfo] = useState({ count: 0, startsLeft: 0, daysLeft: 0 })
+  const backupCount = backupInfo.count
   const [confirmBackups, setConfirmBackups] = useState(false)
 
   const loadBackups = async (): Promise<void> => {
     const info = await window.yan.credentialBackups().catch(() => null)
-    setBackupCount(info?.count ?? 0)
+    setBackupInfo(info ?? { count: 0, startsLeft: 0, daysLeft: 0 })
+  }
+
+  const backupProgressText = (): string => {
+    const { startsLeft, daysLeft } = backupInfo
+    const vars = { starts: startsLeft, days: daysLeft }
+    if (startsLeft > 0 && daysLeft > 0) return t('auth.backupsProgressBoth', vars)
+    if (startsLeft > 0) return t('auth.backupsProgressStarts', vars)
+    if (daysLeft > 0) return t('auth.backupsProgressDays', vars)
+    return t('auth.backupsProgressReady')
   }
 
   const removeBackups = async (): Promise<void> => {
@@ -589,7 +599,9 @@ export function ModelsSettings(): ReactElement {
         ) : null}
         {backupCount > 0 ? (
           <div className="ms-backups" data-testid="ms-plaintext-backups">
-            <span className="ms-backups-text">{text('backupsFound').replace('{n}', String(backupCount))}</span>
+            <span className="ms-backups-text">
+              {text('backupsFound').replace('{n}', String(backupCount))} {backupProgressText()} {t('auth.backupsRule')}
+            </span>
             <Button variant="secondary" size="sm" isDisabled={busy} data-testid="ms-backups-delete" onPress={() => setConfirmBackups(true)}>
               {text('backupsDelete')}
             </Button>

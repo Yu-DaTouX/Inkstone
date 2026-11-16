@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFileSync } from './atomic-write'
 
 export type SourceKind = 'image' | 'file' | 'web'
 
@@ -269,7 +270,7 @@ export function linkSources(params: {
   try {
     const dir = sourcesDir(params.sessionId)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    writeFileSync(linksFile(params.sessionId), JSON.stringify(next, null, 2))
+    atomicWriteFileSync(linksFile(params.sessionId), JSON.stringify(next, null, 2))
   } catch (error) {
     return { ok: false, added: 0, skipped, error: error instanceof Error ? error.message : String(error) }
   }

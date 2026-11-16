@@ -1652,7 +1652,7 @@ export interface YanBridge {
   renameApiKey(provider: string, id: string, label: string): Promise<{ ok: boolean; error?: string }>
   removeApiKey(provider: string, id: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }>
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
-  credentialBackups(): Promise<{ count: number }>
+  credentialBackups(): Promise<{ count: number; startsLeft: number; daysLeft: number }>
   removeCredentialBackups(): Promise<{ ok: boolean; removed: number; failed: number; skipped: number; error?: string }>
   accountQuota(): Promise<AccountQuotaReport>
   accountResetCredit(provider: string, key: string, creditId: string): Promise<ResetCreditResult>

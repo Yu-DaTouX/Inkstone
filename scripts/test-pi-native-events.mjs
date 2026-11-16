@@ -42,7 +42,8 @@ async function bundle(entry, outName, platform, plugins = []) {
     platform,
     external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
     plugins,
-    logLevel: 'silent'
+    logLevel: 'silent',
+    ...(platform === 'node' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {})
   })
   return import(`${pathToFileURL(join(process.cwd(), outfile)).href}?t=${Date.now()}`)
 }

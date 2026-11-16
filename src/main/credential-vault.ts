@@ -15,7 +15,8 @@ const BACKUP_MARK = '.plaintext-'
 const PLAINTEXT_ARG = '--yan-plaintext-credentials'
 const STATE_FILE = 'credential-vault-state.json'
 const STABLE_STARTS = 5
-const BACKUP_MIN_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
+const BACKUP_MIN_AGE_MS = 7 * DAY_MS
 const CREDENTIAL_FILES = ['api-keys.json', 'codex-accounts.json', 'image-config.json', 'oauth-accounts.json', 'relay-bridge.json', 'search-config.json']
 
 export interface CredentialCipher {
@@ -30,9 +31,16 @@ type AsyncSafeStorage = Pick<Electron.SafeStorage, 'isAsyncEncryptionAvailable' 
 export interface CredentialVault {
   read(file: string): Promise<string | null>
   write(file: string, text: string, options?: { background?: boolean }): Promise<void>
-  sweep(files: string[]): Promise<void>
+  sweep(files: string[], options?: { countStart?: boolean }): Promise<void>
   backups(files: string[]): Promise<string[]>
+  backupProgress(files: string[]): Promise<BackupProgress>
   removeBackups(files: string[], remove: (file: string) => Promise<void>): Promise<{ removed: string[]; failed: string[]; skipped: string[] }>
+}
+
+export interface BackupProgress {
+  count: number
+  startsLeft: number
+  daysLeft: number
 }
 
 export interface CredentialVaultIo {
@@ -489,7 +497,8 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
     write(file, text, options = {}) {
       return locked(file, () => put(file, text, false, options.background === true))
     },
-    async sweep(files) {
+    async sweep(files, options = {}) {
+      const countStarts = options.countStart !== false
       for (const file of files) {
         const decrypted = await locked(file, async (): Promise<boolean> => {
           const current = await readRaw(file)
@@ -520,12 +529,32 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
           return null
         })
         if (decrypted === null) continue
-        const okStarts = await countStart(file, decrypted).catch(() => 0)
+        const okStarts = countStarts
+          ? await countStart(file, decrypted).catch(() => 0)
+          : decrypted ? ((await readState(dirname(file))).files[basename(file)]?.okStarts ?? 0) : 0
         if (decrypted) await pruneBackups(file, okStarts)
       }
     },
     async backups(files) {
       return (await Promise.all(files.map(backupsOf))).flat()
+    },
+    async backupProgress(files) {
+      let count = 0
+      let startsLeft = 0
+      let daysLeft = 0
+      for (const file of files) {
+        const copies = await backupsOf(file)
+        if (!copies.length) continue
+        count += copies.length
+        const okStarts = (await readState(dirname(file))).files[basename(file)]?.okStarts ?? 0
+        startsLeft = Math.max(startsLeft, Math.max(0, STABLE_STARTS - okStarts))
+        for (const copy of copies) {
+          const created = await stat(copy).then((info) => backupCreatedAt(copy, info.mtimeMs), () => null)
+          if (created === null) continue
+          daysLeft = Math.max(daysLeft, Math.ceil((created + BACKUP_MIN_AGE_MS - now()) / DAY_MS))
+        }
+      }
+      return { count, startsLeft, daysLeft: Math.max(0, daysLeft) }
     },
     async removeBackups(files, remove) {
       const removed: string[] = []
@@ -588,7 +617,23 @@ export function removeCredentialBackups(remove: (file: string) => Promise<void>,
   return credentialVault.removeBackups(credentialFilesIn(dir), remove)
 }
 
-export async function sweepCredentialFiles(dir: string = YAN_DIR): Promise<void> {
-  if (PORTABLE_DATA_DIR) await logLine(join(dir, LOG_FILE), 'portable build: credentials are kept in plaintext because DPAPI keys do not travel with the portable folder')
-  await credentialVault.sweep(credentialFilesIn(dir))
+export function credentialBackupProgress(dir: string = YAN_DIR): Promise<BackupProgress> {
+  return credentialVault.backupProgress(credentialFilesIn(dir))
+}
+
+export async function sweepCredentialFiles(dir: string = YAN_DIR, options: { countStart?: boolean } = {}): Promise<void> {
+  if (PORTABLE_DATA_DIR && options.countStart !== false) await logLine(join(dir, LOG_FILE), 'portable build: credentials are kept in plaintext because DPAPI keys do not travel with the portable folder')
+  await credentialVault.sweep(credentialFilesIn(dir), options)
+}
+
+export function startDailyCredentialSweep(
+  onError: (error: unknown) => void,
+  sweep: () => Promise<void> = () => sweepCredentialFiles(YAN_DIR, { countStart: false }),
+  intervalMs: number = DAY_MS
+): () => void {
+  const timer = setInterval(() => {
+    void sweep().catch(onError)
+  }, intervalMs)
+  timer.unref()
+  return () => clearInterval(timer)
 }

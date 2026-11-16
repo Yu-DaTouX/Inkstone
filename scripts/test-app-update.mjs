@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
@@ -51,6 +51,7 @@ export async function runAppUpdateTests(ok) {
     ok((await run('whatsNew')) === null && JSON.parse(await readFile(prefsFile, 'utf8')).notes === undefined, '看过后不再弹，并清掉暂存内容')
     await writeFile(prefsFile, JSON.stringify({ automatic: true, seenVersion: '0.0.1' }))
     ok((await run('whatsNew')) === null, '取不到更新说明时不弹空窗口')
+    ok((await readdir(directory)).every((name) => !name.endsWith('.tmp') && name !== 'update-preferences.json.tmp'), '偏好写入走原子写，不留固定名 .tmp 临时文件', (await readdir(directory)).join(','))
   } finally {
     delete globalThis.__inkstoneUpdateTest; delete globalThis.__inkstoneTestUpdater
     await rm(directory, { recursive: true, force: true })

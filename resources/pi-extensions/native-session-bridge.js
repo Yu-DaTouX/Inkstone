@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +7,9 @@ export const NATIVE_COMMAND = '__inkstone_native'
 export const RECEIPT_PREFIX = '__inkstone_native_receipt__:'
 export const ENVELOPE_VERSION = 1
 const MAX_ARG_BYTES = 256 * 1024
+const LOCK_STALE_MS = 10_000
+const LOCK_ATTEMPTS = 10
+const LOCK_RETRY_MS = 20
 
 function resolveAgentDir() {
   const envDir = process.env.PI_CODING_AGENT_DIR?.trim()
@@ -50,6 +53,52 @@ function writeFileAtomic(file, text) {
     } catch {
     }
     throw error
+  }
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+export function withFileLockSync(file, run) {
+  const lockDir = `${file}.lock`
+  mkdirSync(dirname(file), { recursive: true })
+  let held = false
+  for (let attempt = 1; attempt <= LOCK_ATTEMPTS && !held; attempt++) {
+    try {
+      mkdirSync(lockDir)
+      held = true
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      let age
+      try {
+        age = Date.now() - statSync(lockDir).mtimeMs
+      } catch (statError) {
+        if (statError?.code === 'ENOENT') continue
+        throw statError
+      }
+      if (age > LOCK_STALE_MS) {
+        try {
+          rmdirSync(lockDir)
+        } catch {
+        }
+        continue
+      }
+      if (attempt < LOCK_ATTEMPTS) sleepSync(LOCK_RETRY_MS)
+    }
+  }
+  if (!held) {
+    const error = new Error(`${file} 正被另一个进程写入，已放弃这次修改（没有写入）`)
+    error.code = 'ELOCKED'
+    throw error
+  }
+  try {
+    return run()
+  } finally {
+    try {
+      rmdirSync(lockDir)
+    } catch {
+    }
   }
 }
 
@@ -103,17 +152,19 @@ export function readEnabledModels(file) {
 }
 
 export function writeEnabledModels(file, patterns) {
-  const settings = readJsonObject(file)
-  if (patterns === undefined || patterns === null || (Array.isArray(patterns) && patterns.length === 0)) {
-    delete settings.enabledModels
-  } else {
-    if (!Array.isArray(patterns) || patterns.some((item) => typeof item !== 'string' || !item.trim())) {
-      throw new Error('patterns 必须是非空字符串数组')
+  return withFileLockSync(file, () => {
+    const settings = readJsonObject(file)
+    if (patterns === undefined || patterns === null || (Array.isArray(patterns) && patterns.length === 0)) {
+      delete settings.enabledModels
+    } else {
+      if (!Array.isArray(patterns) || patterns.some((item) => typeof item !== 'string' || !item.trim())) {
+        throw new Error('patterns 必须是非空字符串数组')
+      }
+      settings.enabledModels = patterns.map((item) => item.trim())
     }
-    settings.enabledModels = patterns.map((item) => item.trim())
-  }
-  writeFileAtomic(file, JSON.stringify(settings, null, 2))
-  return { settingsFile: file, patterns: settings.enabledModels }
+    writeFileAtomic(file, JSON.stringify(settings, null, 2))
+    return { settingsFile: file, patterns: settings.enabledModels }
+  })
 }
 
 export function parseEnvelope(text) {

@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './atomic-write'
 import { getSessionLayout } from './session-layout'
 import { normalizeLayoutPath } from '../shared/session-path'
 import { selectCompressible, type CompressCandidate } from '../shared/session-compress'
@@ -140,7 +141,7 @@ async function sweep(input: { busyFiles: readonly (string | undefined)[]; now?: 
       }
       if (after.size === item.size && after.mtimeMs === item.mtimeMs) state[normalizeLayoutPath(path)] = { path, size: item.size, mtimeMs: item.mtimeMs, disk }
     }
-    await writeFile(COMPRESS_STATE_FILE, JSON.stringify(state), 'utf8')
+    await atomicWriteFile(COMPRESS_STATE_FILE, JSON.stringify(state))
   }
   return summarize(state, true)
 }

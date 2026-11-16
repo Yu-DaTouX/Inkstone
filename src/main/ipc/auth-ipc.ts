@@ -1,13 +1,14 @@
 import { pick } from '../../shared/ui-lang'
 import { existsSync } from 'node:fs'
-import { BrowserWindow, dialog, shell, type OpenDialogOptions } from 'electron'
+import { rm } from 'node:fs/promises'
+import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron'
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
 import type { CustomProviderInput, LocalLauncherInput } from '../../shared/custom-provider'
 import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders } from '../credentials'
-import { listCredentialBackups, removeCredentialBackups } from '../credential-vault'
+import { credentialBackupProgress, removeCredentialBackups } from '../credential-vault'
 import { addApiKey, captureActiveApiKey, clearApiKeys, listApiKeyPools, removeApiKey, renameApiKey, switchApiKey } from '../api-key-pool'
 import { detectToolchain } from '../toolchain'
 import { detectLocalModelServers } from '../local-models'
@@ -77,10 +78,10 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     return r
   })
   handle('yan:authFileInfo', async () => authFileInfo())
-  handle('yan:credentialBackups', async () => ({ count: (await listCredentialBackups()).length }))
+  handle('yan:credentialBackups', async () => credentialBackupProgress())
   handle('yan:removeCredentialBackups', async () => {
     try {
-      const { removed, failed, skipped } = await removeCredentialBackups((file) => shell.trashItem(file))
+      const { removed, failed, skipped } = await removeCredentialBackups((file) => rm(file))
       return { ok: failed.length === 0, removed: removed.length, failed: failed.length, skipped: skipped.length }
     } catch (error) {
       return { ok: false, removed: 0, failed: 0, skipped: 0, error: error instanceof Error ? error.message : String(error) }

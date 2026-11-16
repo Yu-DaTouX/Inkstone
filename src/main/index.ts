@@ -163,7 +163,8 @@ import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { cachedTitlesSync, primeCachedTitles } from './title'
-import { sweepCredentialFiles } from './credential-vault'
+import { startDailyCredentialSweep, sweepCredentialFiles } from './credential-vault'
+import { sweepStaleTemps } from './stale-temp-sweep'
 import { MODELS_FILE } from './custom-providers'
 import { watchModelsFile, type ModelsWatcher } from './models-watch'
 import { planSessionSyncAgainst } from './session-sync-plan'
@@ -2886,6 +2887,8 @@ app.whenReady().then(async () => {
   installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
   void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
+  startDailyCredentialSweep((error) => reportMainError('credential-vault', error))
+  void sweepStaleTemps({ dirs: [YAN_DIR, PI_AGENT_DIR] }).catch((error) => reportMainError('stale-temp-sweep', error))
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
   void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json'), undefined, { cachePath: join(YAN_DIR, 'native-mcp-describe-cache.json') }).catch((error) => reportMainError('mcp-describe', error))
   trayLanguage = (await getSettings()).lang

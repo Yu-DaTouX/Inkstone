@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -113,6 +113,39 @@ export async function runSessionChainTests(ok, shared, service) {
     await old.load()
     ok(old.chains().length === 0, '旧形状（没有 chains）→ 空，不抛')
 
+    const corruptText = '{ 坏 JSON，但里面可能有用户的会话链'
+    await writeFile(file, corruptText, 'utf8')
+    const healed = new service.SessionChainStore({ root })
+    await healed.load()
+    const corruptCopies = []
+    for (const name of (await readdir(root)).filter((entry) => entry.startsWith(`${service.SESSION_CHAIN_FILE_NAME}.corrupt-`))) {
+      if ((await readFile(join(root, name), 'utf8')) === corruptText) corruptCopies.push(name)
+    }
+    ok(corruptCopies.length === 1, '读到损坏 JSON：先把原文件备份成 .corrupt-<时间>，内容一字不差')
+    ok((await healed.link(A, B, 'h-1'))?.segments.length === 2 && JSON.parse(await readFile(file, 'utf8')).chains.length === 1, '备份之后才允许在空文档上重新写入')
+    ok((await readFile(join(root, corruptCopies[0]), 'utf8')) === corruptText, '重新写入不碰备份')
+
+    for (const [label, text] of [['未知版本', JSON.stringify({ version: 2, chains: [{ chainId: A, segments: [seg(A), seg(B)] }] })], ['不是对象', '[]']]) {
+      await writeFile(file, text, 'utf8')
+      const refusing = new service.SessionChainStore({ root })
+      await refusing.load()
+      ok(refusing.chains().length === 0, `${label}：load 不抛错，读历史照常（按没有链处理）`)
+      let refused = ''
+      try {
+        await refusing.link(A, B, 'h-1')
+      } catch (error) {
+        refused = String(error?.message ?? error)
+      }
+      ok(refused !== '' && (await readFile(file, 'utf8')) === text, `${label}：写入被拒绝且原文件保持原样`)
+      let forgot = ''
+      try {
+        await refusing.forget(A)
+      } catch (error) {
+        forgot = String(error?.message ?? error)
+      }
+      ok(forgot !== '' && (await readFile(file, 'utf8')) === text, `${label}：forget 同样拒绝覆盖`)
+    }
+
     const rootBad = await mkdtemp(join(tmpdir(), 'yan-chain-bad-'))
     try {
       const badStore = new service.SessionChainStore({ root: rootBad })
@@ -126,6 +159,7 @@ export async function runSessionChainTests(ok, shared, service) {
       }
       ok(threw, '落盘失败时抛错（不许「内存有链、磁盘没有」）')
       ok(badStore.chainOf(A) === null, '失败后内存态回退')
+      ok((await readdir(rootBad)).every((name) => !name.endsWith('.tmp')), '落盘失败后不留 .tmp 临时文件')
     } finally {
       await rm(rootBad, { recursive: true, force: true })
     }

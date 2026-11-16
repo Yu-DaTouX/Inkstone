@@ -2,7 +2,11 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { autoCompactAt } from '../shared/context-limits'
 import { delay } from '../shared/delay'
+import { pick } from '../shared/ui-lang'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { atomicWriteFile } from './atomic-write'
+import { readPersistedJson } from './persisted-document'
+import { withPiSettingsFileLock } from './pi-settings-file-lock'
 
 const DEFAULT_RESERVE_TOKENS = 16_384
 
@@ -103,38 +107,45 @@ function isRetryableWriteError(e: unknown): boolean {
 
 type SettingsModifyOutcome<T> = { next: Json; result: T } | { result: T }
 
-export async function modifyPiSettings<T>(
+export function modifyPiSettings<T>(
   file: string,
   modify: (settings: Json | undefined) => SettingsModifyOutcome<T>
 ): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    const settings = await readJson(file)
-    const outcome = modify(settings)
-    if (!('next' in outcome)) return outcome.result
-    try {
-      await writeAtomic(file, outcome.next)
-      return outcome.result
-    } catch (e) {
-      if (attempt >= SETTINGS_RETRY_ATTEMPTS || !isRetryableWriteError(e)) throw e
-      await delay(SETTINGS_RETRY_DELAY_MS * attempt)
+  return withPiSettingsFileLock(file, async () => {
+    for (let attempt = 1; ; attempt++) {
+      const settings = await readJson(file)
+      const outcome = modify(settings)
+      if (!('next' in outcome)) return outcome.result
+      try {
+        await writeAtomic(file, outcome.next)
+        return outcome.result
+      } catch (e) {
+        if (attempt >= SETTINGS_RETRY_ATTEMPTS || !isRetryableWriteError(e)) throw e
+        await delay(SETTINGS_RETRY_DELAY_MS * attempt)
+      }
     }
-  }
+  })
 }
 
 export function syncNativeCompactionLines(models: LineModel[], cap: number): Promise<void> {
   const run = async (): Promise<void> => {
     const file = join(PI_AGENT_DIR, 'settings.json')
     const recordFile = join(YAN_DIR, 'compaction-lines.json')
-    const rawOwned = await readJson(recordFile)
-    const owned: Record<string, number> = {}
-    for (const [key, value] of Object.entries(rawOwned ?? {})) if (typeof value === 'number') owned[key] = value
+    const owned = await readPersistedJson<Record<string, number>>(
+      recordFile,
+      (value) => {
+        if (!isObj(value)) throw new Error(pick(`${recordFile} 不是 JSON 对象，已拒绝覆盖`, `${recordFile} is not a JSON object. Refusing to overwrite`))
+        return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
+      },
+      () => ({})
+    )
     const written = await modifyPiSettings<{ owned?: Record<string, number> }>(file, (settings) => {
       if (!settings) return { result: {} }
       const result = applyLines(settings, owned, models, cap)
       if (!result) return { result: {} }
       return { next: result.settings, result: { owned: result.owned } }
     })
-    if (written.owned) await writeAtomic(recordFile, written.owned)
+    if (written.owned) await atomicWriteFile(recordFile, `${JSON.stringify(written.owned, null, 2)}\n`)
   }
   return withPiSettingsLock(run)
 }

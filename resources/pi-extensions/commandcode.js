@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,12 +61,16 @@ export async function fetchModels(catalog, fetchImpl = fetch) {
   return describeDiscoveredModels(found, { api: 'openai-completions', baseUrl: BASE_URL }, catalog)
 }
 
-function writeCache(path, models) {
+export function writeCache(path, models) {
+  const tmp = `${path}.tmp-${process.pid}`
   try {
-    const tmp = `${path}.tmp-${process.pid}`
     writeFileSync(tmp, JSON.stringify({ savedAt: Date.now(), models }))
     renameSync(tmp, path)
   } catch {
+    try {
+      rmSync(tmp, { force: true })
+    } catch {
+    }
   }
 }
 

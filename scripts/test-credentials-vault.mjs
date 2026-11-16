@@ -605,7 +605,7 @@ async function retentionTests(ok, compile, root) {
     trashed.push(path)
     await rm(path)
   })
-  ok(result.removed.length === 2 && result.failed.length === 0 && trashed.join() === listed.join(), '手动删除逐个交给删除函数（应用里是移到回收站）')
+  ok(result.removed.length === 2 && result.failed.length === 0 && trashed.join() === listed.join(), '手动删除逐个交给删除函数（应用里是直接删除，不进回收站）')
   ok((await vault.backups([file, other])).length === 0 && (await vault.read(file)) === '{"key":"sk-manual"}', '手动删除只删备份，加密文件照常可读')
   ok(lines.filter((line) => line.includes('removed by the user')).length === 2, '手动删除写进日志')
   await writeFile(file, '{"key":"sk-manual"}')
@@ -616,6 +616,58 @@ async function retentionTests(ok, compile, root) {
   ok(kept.skipped.length === 1 && kept.removed.length === 0 && (await vault.backups([file])).length === 1 && lines.some((line) => line.startsWith('backup-kept')), '手动删除跳过此刻解不开的文件对应的备份，并返回跳过份数')
   const failed = await vault.removeBackups([file], async () => { throw new Error('in use') })
   ok(failed.failed.length === 1 && (await vault.backups([file])).length === 1 && lines.some((line) => line.startsWith('backup-delete-failed')), '删除失败的备份保留并记日志')
+
+  const pdir = join(root, 'progress')
+  await mkdir(pdir, { recursive: true })
+  const pfile = join(pdir, 'api-keys.json')
+  const pstate = async () => JSON.parse(await readFile(join(pdir, 'credential-vault-state.json'), 'utf8')).files['api-keys.json'].okStarts
+  const pbackups = async () => (await readdir(pdir)).filter((name) => name.startsWith('api-keys.json.plaintext-'))
+  await writeFile(pfile, '{"key":"sk-progress"}')
+  await vault.sweep([pfile])
+  clock = Date.now()
+  let progress = await vault.backupProgress([pfile])
+  ok(progress.count === 1 && progress.startsLeft === 5 && progress.daysLeft === 7, '进度：刚迁移时还差 5 次成功启动、7 天', JSON.stringify(progress))
+  ok(JSON.stringify(await vault.backupProgress([join(pdir, 'search-config.json')])) === JSON.stringify({ count: 0, startsLeft: 0, daysLeft: 0 }), '进度：没有明文备份的文件不计入')
+  clock = Date.now() + 3 * DAY
+  await vault.sweep([pfile])
+  await vault.sweep([pfile])
+  progress = await vault.backupProgress([pfile])
+  ok(progress.startsLeft === 3 && progress.daysLeft === 4, '进度：2 次成功启动、过去 3 天后还差 3 次、4 天', JSON.stringify(progress))
+  for (let i = 0; i < 3; i++) await vault.sweep([pfile], { countStart: false })
+  ok((await pstate()) === 2 && (await pbackups()).length === 1, '每日检查（countStart: false）不增加启动次数')
+  clock = Date.now() + 8 * DAY
+  await vault.sweep([pfile], { countStart: false })
+  progress = await vault.backupProgress([pfile])
+  ok((await pbackups()).length === 1 && progress.startsLeft === 3 && progress.daysLeft === 0, '每日检查不会因为时间到了就提前删除：启动次数不够仍保留', JSON.stringify(progress))
+  for (let i = 0; i < 3; i++) await vault.sweep([pfile])
+  ok((await pstate()) === 5 && (await pbackups()).length === 0, '启动次数补够且满 7 天后照旧在启动时自动删除')
+  ok(JSON.stringify(await vault.backupProgress([pfile])) === JSON.stringify({ count: 0, startsLeft: 0, daysLeft: 0 }), '全部删除后进度归零')
+
+  const qdir = join(root, 'progress-daily')
+  await mkdir(qdir, { recursive: true })
+  const qfile = join(qdir, 'api-keys.json')
+  await writeFile(qfile, '{"key":"sk-daily"}')
+  clock = Date.now()
+  await vault.sweep([qfile])
+  clock = Date.now() + DAY
+  for (let i = 0; i < 5; i++) await vault.sweep([qfile])
+  progress = await vault.backupProgress([qfile])
+  ok(progress.count === 1 && progress.startsLeft === 0 && progress.daysLeft === 6, '启动次数够了、还差 6 天时只显示天数', JSON.stringify(progress))
+  clock = Date.now() + 8 * DAY
+  await vault.sweep([qfile], { countStart: false })
+  ok((await vault.backups([qfile])).length === 0 && JSON.parse(await readFile(join(qdir, 'credential-vault-state.json'), 'utf8')).files['api-keys.json'].okStarts === 5, '常驻不重启：启动次数够了、满 7 天后，每日检查就会删掉备份，且不改计数')
+
+  let ticks = 0
+  const seen = []
+  const stop = v.startDailyCredentialSweep((error) => seen.push(error.message), async () => {
+    ticks++
+    if (ticks === 2) throw new Error('boom')
+  }, 15)
+  await new Promise((done) => setTimeout(done, 120))
+  stop()
+  const after = ticks
+  await new Promise((done) => setTimeout(done, 60))
+  ok(after >= 3 && ticks === after && seen.join() === 'boom', '定时器按间隔重复执行；出错交给回调且不中断；停止后不再执行', `${after}/${ticks}/${seen.join()}`)
 }
 
 await runSuite(import.meta.url, async (ok, compile) => {

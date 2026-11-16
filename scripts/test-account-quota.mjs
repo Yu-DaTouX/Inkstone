@@ -27,7 +27,7 @@ async function runCodexAuthIpcTests(ok, build) {
     'captureActiveCodexAccount', 'clearCodexAccounts', 'listCodexAccounts', 'removeCodexAccount', 'switchCodexAccount',
     'captureActiveApiKey', 'captureActiveOAuthAccount', 'clearOAuthAccounts', 'listOAuthAccounts', 'removeOAuthAccount',
     'renameOAuthAccount', 'switchOAuthAccount', 'consumeResetCredit', 'detectLocalLauncher', 'listLocalLaunchers',
-    'renameLocalModel', 'saveLocalLauncher', 'listCredentialBackups', 'removeCredentialBackups'
+    'renameLocalModel', 'saveLocalLauncher', 'credentialBackupProgress', 'removeCredentialBackups'
   ]
   await build({
     entryPoints: ['src/main/ipc/auth-ipc.ts'], outfile: 'out/test/codex-auth-ipc.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
@@ -82,6 +82,20 @@ async function runCodexAuthIpcTests(ok, build) {
     reset({ removeCodexAccount: { ok: true, wasActive: true } })
     await handlers.get('yan:codexAccountRemove')('current')
     ok(called('restartAgent').length === 1, 'IPC：删除当前账号后刷新凭证')
+
+    const backupDir = await mkdtemp(join(tmpdir(), 'yan-ipc-backups-'))
+    try {
+      const plain = join(backupDir, 'api-keys.json.plaintext-20260101T000000Z-aaaaaa.bak')
+      await writeFile(plain, '{"k":"sk-plain"}', 'utf8')
+      reset({ removeCredentialBackups: async (remove) => { await remove(plain); return { removed: [plain], failed: [], skipped: [] } } })
+      r = await handlers.get('yan:removeCredentialBackups')()
+      ok(r.ok && r.removed === 1 && !(await readdir(backupDir)).length, 'IPC：删除明文备份是真删除（文件消失），不是移到回收站')
+      reset({ credentialBackupProgress: { count: 2, startsLeft: 3, daysLeft: 4 } })
+      const progress = await handlers.get('yan:credentialBackups')()
+      ok(progress.count === 2 && progress.startsLeft === 3 && progress.daysLeft === 4, 'IPC：备份数量与自动删除进度原样交给设置页')
+    } finally {
+      await rm(backupDir, { recursive: true, force: true })
+    }
 
     reset({ captureActiveCodexAccount: () => { throw new Error('store broken') } })
     r = await handlers.get('yan:codexLogin')()

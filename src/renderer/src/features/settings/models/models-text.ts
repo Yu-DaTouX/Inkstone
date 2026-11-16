@@ -120,11 +120,11 @@ const ZH: Record<ModelsTextKey, string> = {
   visGroupHidden: '已隐藏',
   statusReady: '可用',
   vaultError: '已保存的账号或 Key 读取失败（凭据文件已加密但解不开）。当前登录不受影响；按下面的说明处理：',
-  backupsFound: '加密前留下的明文凭据备份：{n} 份。加密稳定后（连续 5 次启动都能解开、备份满 7 天）会自动删除。',
+  backupsFound: '加密前留下的明文凭据备份：{n} 份。',
   backupsDelete: '删除明文备份',
   backupsTitle: '删除明文备份？',
-  backupsBody: '把 {n} 份明文备份移到回收站。加密后的凭据文件不受影响；之后如果它们解不开，就只能重新登录或重新填写。回收站里的副本仍是明文，清空回收站后才彻底删除。',
-  backupsDone: '已把 {n} 份明文备份移到回收站。',
+  backupsBody: '彻底删除 {n} 份明文备份，不进回收站，无法恢复。加密后的凭据文件不受影响；之后如果它们解不开，就只能重新登录或重新填写。',
+  backupsDone: '已彻底删除 {n} 份明文备份（没有进回收站）。',
   backupsFailed: '有 {n} 份明文备份没能删除，详情见同目录的 credential-vault.log。',
   backupsSkipped: '另有 {n} 份没删：对应的加密文件此刻解不开，备份是恢复它们的唯一途径。'
 }
@@ -186,11 +186,11 @@ const EN: Record<ModelsTextKey, string> = {
   visGroupHidden: 'Hidden from picker',
   statusReady: 'ready',
   vaultError: 'Saved accounts or keys could not be read (the encrypted credentials file cannot be decrypted). Your current sign-in still works; see below:',
-  backupsFound: 'Plaintext credential backups left from before encryption: {n}. They are deleted automatically once encryption is stable (5 starts in a row that decrypt fine, and the backup is at least 7 days old).',
+  backupsFound: 'Plaintext credential backups left from before encryption: {n}.',
   backupsDelete: 'Delete plaintext backups',
   backupsTitle: 'Delete plaintext backups?',
-  backupsBody: 'Move {n} plaintext backups to the Recycle Bin. The encrypted credential files are not touched; if they ever cannot be decrypted, you will have to sign in or enter the keys again. The copies in the Recycle Bin are still plaintext until you empty it.',
-  backupsDone: 'Moved {n} plaintext backups to the Recycle Bin.',
+  backupsBody: 'Permanently delete {n} plaintext backups. They do not go to the Recycle Bin and cannot be recovered. The encrypted credential files are not touched; if they ever cannot be decrypted, you will have to sign in or enter the keys again.',
+  backupsDone: 'Permanently deleted {n} plaintext backups (not moved to the Recycle Bin).',
   backupsFailed: '{n} plaintext backups could not be deleted; see credential-vault.log in the same folder.',
   backupsSkipped: '{n} more were kept: their encrypted files cannot be read right now, and the backups are the only way to recover them.'
 }

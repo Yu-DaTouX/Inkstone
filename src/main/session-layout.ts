@@ -149,7 +149,7 @@ async function readFromDisk(): Promise<SessionLayoutDocument> {
 }
 
 async function persist(document: SessionLayoutDocument): Promise<void> {
-  await atomicWriteFile(SESSION_LAYOUT_FILE, JSON.stringify(document, null, 2))
+  await atomicWriteFile(SESSION_LAYOUT_FILE, JSON.stringify(document, null, 2), { durable: true })
 }
 
 async function update(mutator: (document: SessionLayoutDocument) => SessionLayoutDocument): Promise<SessionLayoutDocument> {

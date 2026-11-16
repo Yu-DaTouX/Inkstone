@@ -40,6 +40,7 @@ export default defineConfig({
           'node-html-markdown',
           'tar',
           'electron-updater',
+          'proper-lockfile',
           'ws'
         ]
       })

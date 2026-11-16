@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startupInstallDue, type AppUpdateStatus, type AppUpdateWhatsNew } from '../shared/app-update'
 import type { BackupSummary } from '../shared/data-backup'
@@ -8,6 +8,7 @@ import type { IpcRegistrar } from './ipc/registrar'
 import { createUpdateAutoBackup } from './data-backup'
 import { SESSIONS_DIR } from './sessions'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './atomic-write'
 import { pick } from '../shared/ui-lang'
 
 const RELEASES = 'https://github.com/Yu-DaTouX/Inkstone/releases'
@@ -59,11 +60,7 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
   }
   let prefsWrite: Promise<void> = Promise.resolve()
   const writePrefs = (): Promise<void> => {
-    const next = prefsWrite.catch(() => undefined).then(async () => {
-      const temp = `${preferences}.tmp`
-      await writeFile(temp, JSON.stringify(prefs))
-      await rename(temp, preferences)
-    })
+    const next = prefsWrite.catch(() => undefined).then(() => atomicWriteFile(preferences, JSON.stringify(prefs)))
     prefsWrite = next
     return next
   }

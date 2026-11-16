@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 const root = await mkdtemp(join(tmpdir(), 'inkstone-pi-settings-eperm-'))
 try {
   const outfile = join(root, 'helper.mjs')
-  await build({ entryPoints: ['src/main/native-compaction-line.ts'], outfile, bundle: true, platform: 'node', format: 'esm' })
+  await build({ entryPoints: ['src/main/native-compaction-line.ts'], outfile, bundle: true, platform: 'node', format: 'esm', banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } })
   const { writeAtomic, modifyPiSettings } = await import(pathToFileURL(outfile).href)
 
   const normalFile = join(root, 'normal.json')

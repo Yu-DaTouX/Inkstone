@@ -1,3 +1,4 @@
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { lstat, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -94,4 +95,19 @@ export async function atomicWriteFile(file: string, content: string, options: At
     await rm(backup, { force: true }).catch(() => undefined)
   }
   if (options.syncDir) await syncDirectory(file)
+}
+
+export function atomicWriteFileSync(file: string, content: string): void {
+  mkdirSync(dirname(file), { recursive: true })
+  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temp, content, { encoding: 'utf8', flag: 'wx' })
+    renameSync(temp, file)
+  } catch (error) {
+    try {
+      rmSync(temp, { force: true })
+    } catch {
+    }
+    throw error
+  }
 }
