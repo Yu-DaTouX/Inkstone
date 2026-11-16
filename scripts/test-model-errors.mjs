@@ -127,6 +127,29 @@ export async function runModelErrorTests(ok, modules) {
   ok(shared.classifyModelError('You have hit your ChatGPT usage limit').kind === 'quota', 'ChatGPT 套餐上限识别为额度错误')
   ok(shared.classifyModelError('400 unsupported parameter').kind === 'request', '参数错误不当成网络错误反复重试')
   ok(shared.classifyModelError('403 insufficient permissions').kind === 'auth', '权限不足不误判成额度不足')
+  for (const text of ['403 {"type":"error","error":{"type":"permission_error","message":"MODEL_NOT_IN_PLAN: Claude Sonnet 5 available in Pro and above plans or extra usage"}}', '403 MODEL_NOT_IN_PLAN', '403 this model is not in your plan', 'Forbidden: model not included in your plan', '该模型不在当前套餐内']) {
+    const info = shared.classifyModelError(text)
+    ok(info.kind === 'request', `模型不在套餐归为请求类：${text.slice(0, 40)}`, info.kind)
+    ok(shared.modelErrorCause(text) === 'notInPlan', `模型不在套餐有单独原因：${text.slice(0, 40)}`)
+    const notice = shared.modelErrorNotice(text)
+    ok(/不在当前套餐/.test(notice) && !/重新登录、检查凭证/.test(notice), `提示套餐问题而不是认证失败：${text.slice(0, 40)}`)
+    ok(!shared.isAuthRejected(text) && !shared.apiKeyLooksUnusable(text) && !shared.isOAuthRefreshFailure(text) && !shared.isTransientModelError(text), `不触发 401 补救、换 Key、换号或临时错误续跑：${text.slice(0, 40)}`)
+  }
+  ok(shared.classifyModelError('403 Forbidden').kind === 'auth' && shared.modelErrorCause('403 Forbidden') === 'auth', '普通 403 仍按认证或权限处理')
+  ok(shared.classifyModelError('403 insufficient permissions for this resource').kind === 'auth', '权限不足仍是认证类，不被套餐规则吞掉')
+  ok(shared.classifyModelError('You have hit your plan limits').kind === 'quota', '套餐用量上限仍是额度类')
+  ok(shared.classifyModelError('400 unsupported parameter').kind === 'request' && shared.modelErrorCause('400 unsupported parameter') === 'request', '普通请求类错误不变')
+  for (const text of ['503 credential validation failed', '503 {"error":{"message":"Credential validation failed"}}', 'invalid credentials', 'failed to validate credentials', 'credentials expired']) {
+    const info = shared.classifyModelError(text)
+    ok(info.kind === 'auth', `credential 校验失败归入认证类：${text.slice(0, 40)}`, info.kind)
+    ok(shared.modelErrorCause(text) === 'auth' && /重新登录、检查凭证/.test(shared.modelErrorNotice(text)) && !/过载/.test(shared.modelErrorNotice(text)), `提示认证问题而不是服务过载：${text.slice(0, 40)}`)
+    ok(!shared.isTransientModelError(text), `认证类不当作临时错误续跑：${text.slice(0, 40)}`)
+    ok(!shared.isAuthRejected(text) && !shared.apiKeyLooksUnusable(text), `只改提示归类，不触发 401 补救或换 Key：${text.slice(0, 40)}`)
+  }
+  for (const text of ['503 Service Unavailable', '503 (no body)', '529 Overloaded', 'credit balance is too low']) {
+    ok(shared.modelErrorCause(text) !== 'auth', `其他 503 与额度文案不受影响：${text}`)
+  }
+  ok(shared.modelErrorCause('503 Service Unavailable') === 'overload' && shared.isTransientModelError('503 Service Unavailable'), '普通 503 仍提示过载并可续跑')
   ok(shared.isTransientModelError('ECONNRESET'), 'ECONNRESET 是可重试的临时错误')
   ok(!shared.isTransientModelError('upstream request cancelled'), '上游取消不当作临时错误自动重试')
   ok(shared.isAuthRejected('401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"},"request_id":"req_x"}'), 'Anthropic 401 认证拒绝识别为可续跑一次的认证闪断')

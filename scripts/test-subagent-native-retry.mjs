@@ -318,7 +318,7 @@ async function waitFor(predicate, timeoutMs = 8000) {
   for (const text of ['Request timed out', 'connect ETIMEDOUT 1.2.3.4:443', '等待响应超时', 'socket hang up', 'WebSocket closed 1012', '502 Bad Gateway', 'fetch failed']) {
     ok(isTransientModelError(text) === true, `暂态错误：${text}`)
   }
-  for (const text of ['429 Too Many Requests', 'insufficient balance', '401 Unauthorized', 'prompt is too long', 'Request aborted', 'unable to verify the first certificate', 'model not found', '', undefined]) {
+  for (const text of ['429 Too Many Requests', 'insufficient balance', '401 Unauthorized', 'prompt is too long', 'Request aborted', 'unable to verify the first certificate', 'model not found', '503 credential validation failed', 'Invalid credentials', '403 MODEL_NOT_IN_PLAN', '502 Bad Gateway: this model is not in your plan', '', undefined]) {
     ok(isTransientModelError(text) === false, `非暂态错误：${String(text)}`)
   }
 }

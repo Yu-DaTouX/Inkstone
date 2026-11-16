@@ -74,6 +74,7 @@ export type SessionTextKey =
   | 'errHintContext'
   | 'errHintAborted'
   | 'errHintRequest'
+  | 'errHintNotInPlan'
   | 'errHintTruncated'
   | 'errHintRestart'
   | 'errHintStream'
@@ -374,6 +375,7 @@ const ZH: Record<SessionTextKey, string> = {
   errHintContext: '压缩会话或换长上下文模型',
   errHintAborted: '已执行的工具操作可能保留',
   errHintRequest: '核对模型 ID、接口地址与参数',
+  errHintNotInPlan: '该模型不在当前套餐，请换用套餐内的模型或升级套餐',
   errHintTruncated: '达到单次输出上限，可让它接着写',
   errHintRestart: '服务重启（1012），可稍后重试',
   errHintStream: '连接或响应流中断，可重试',
@@ -675,6 +677,7 @@ const EN: Record<SessionTextKey, string> = {
   errHintContext: 'Compact the session or use a longer-context model',
   errHintAborted: 'Tool actions already run may remain',
   errHintRequest: 'Check the model ID, endpoint and parameters',
+  errHintNotInPlan: 'This model is not in your current plan; switch to a model in the plan or upgrade',
   errHintTruncated: 'Hit the output limit; ask it to continue',
   errHintRestart: 'Service restarted (1012); retry later',
   errHintStream: 'Connection or stream dropped; retry',

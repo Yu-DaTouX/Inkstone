@@ -522,6 +522,49 @@ export function isCapacityError(message) {
   return !RATE_LIMIT_PATTERN.test(text) && CAPACITY_PATTERN.test(text)
 }
 
+const TRANSIENT_RETRIES = 2
+const TRANSIENT_BASE_DELAY_MS = 2000
+const TRANSIENT_PATTERN = /overloaded|server_busy|servers are currently busy|high demand|at capacity|rate[ _-]?limit|too many requests|(?<![a-z0-9])(?:429|500|502|503|504|520|524|529)(?![a-z0-9])|service[ _-]?(?:is )?(?:temporarily )?unavailable|server[ _-]?error|internal[ _-]?error|upstream|timeout|timed out|etimedout|fetch failed|socket hang up|\bterminated\b|websocket|econnreset|econnrefused|enotfound|network|connection[ _-]?(?:error|refused|closed|reset)|stream.{0,20}(?:closed|ended)/i
+const NO_RETRY_PATTERN = /quota|usage[ _-]?limit|insufficient|balance|credit|billing|extra usage|plan limits?|out of budget|resource_exhausted|unauthori[sz]ed|unauthenticated|forbidden|(?<![a-z0-9])40[13](?![a-z0-9])|api[ _-]?key|authentication|oauth|credential|invalid_grant|not[ _-]in[ _-](?:your[ _-])?plan|content[ _-]?(?:policy|filter|management)|usage polic|safety|flagged|prohibited|content exists risk|data_inspection_failed/i
+
+export function isTransientSummaryError(message) {
+  const text = String(message ?? '')
+  return !!text && !NO_RETRY_PATTERN.test(text) && !isCapacityError(text) && TRANSIENT_PATTERN.test(text)
+}
+
+function retryBaseDelayMs() {
+  const value = Number(process.env.YAN_COMPACT_RETRY_BASE_MS)
+  return process.env.YAN_COMPACT_RETRY_BASE_MS !== undefined && Number.isFinite(value) && value >= 0 ? value : TRANSIENT_BASE_DELAY_MS
+}
+
+function sleepUnlessAborted(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve(false)
+    const done = (value) => {
+      clearTimeout(timer)
+      signal?.removeEventListener?.('abort', onAbort)
+      resolve(value)
+    }
+    const onAbort = () => done(false)
+    const timer = setTimeout(() => done(true), ms)
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+  })
+}
+
+export async function completeWithRetry(ctx, model, context, options, signal) {
+  let spent
+  for (let attempt = 0; ; attempt++) {
+    const response = await ctx.modelRegistry.complete(model, context, options)
+    const failed = response.stopReason === 'error'
+    if (failed && attempt < TRANSIENT_RETRIES && !signal?.aborted && isTransientSummaryError(response.errorMessage)) {
+      spent = addUsage(spent, response.usage)
+      if (await sleepUnlessAborted(retryBaseDelayMs() * 2 ** attempt, signal)) continue
+      return { ...response, stopReason: 'aborted', usage: spent }
+    }
+    return spent ? { ...response, usage: addUsage(spent, response.usage) } : response
+  }
+}
+
 async function summarize(ctx, model, text, previousSummary, customInstructions, maxTokens, signal, shorter = false, language = null) {
   let prompt = `<conversation>\n${text}\n</conversation>\n\n`
   if (previousSummary) prompt += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`
@@ -532,10 +575,10 @@ async function summarize(ctx, model, text, previousSummary, customInstructions, 
   const options = { maxTokens, signal, cacheRetention: 'none' }
   const level = ctx.thinkingLevel
   if (model.reasoning && level && level !== 'off') options.reasoning = level
-  const response = await ctx.modelRegistry.complete(model, {
+  const response = await completeWithRetry(ctx, model, {
     systemPrompt: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() }]
-  }, options)
+  }, options, signal)
   if (response.stopReason === 'error' || response.stopReason === 'aborted') {
     const message = response.errorMessage || 'summarization failed'
     const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : isCapacityError(message) ? 'capacity' : RATE_LIMIT_PATTERN.test(message) ? 'rate' : 'error'
@@ -556,10 +599,10 @@ async function summarizeFast(ctx, model, request, tail, customInstructions, maxT
   const payload = appendInstruction(model.api, request.payload, text, maxTokens)
   if (!payload) throw new SummaryError('unsupported', `no fast path for api ${model.api}`)
   const sessionId = ctx.sessionManager?.getSessionId?.()
-  const response = await ctx.modelRegistry.complete(model, {
+  const response = await completeWithRetry(ctx, model, {
     systemPrompt: '',
     messages: [{ role: 'user', content: [{ type: 'text', text: '.' }], timestamp: Date.now() }]
-  }, { maxTokens, signal, ...(sessionId ? { sessionId } : {}), onPayload: () => payload })
+  }, { maxTokens, signal, ...(sessionId ? { sessionId } : {}), onPayload: () => payload }, signal)
   if (response.stopReason === 'error' || response.stopReason === 'aborted') {
     const message = response.errorMessage || 'summarization failed'
     const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : isCapacityError(message) ? 'capacity' : RATE_LIMIT_PATTERN.test(message) ? 'rate' : 'error'

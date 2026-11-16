@@ -28,6 +28,7 @@ const CAUSE_HINT: Record<ModelErrorCause, SessionTextKey> = {
   context: 'errHintContext',
   aborted: 'errHintAborted',
   request: 'errHintRequest',
+  notInPlan: 'errHintNotInPlan',
   truncated: 'errHintTruncated',
   restart: 'errHintRestart',
   stream: 'errHintStream',

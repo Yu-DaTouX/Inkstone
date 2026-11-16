@@ -33,6 +33,9 @@ ok(blip.isAuthBlip(UNAUTHORIZED, { retried: false, continued: false }), '401 是
 ok(!blip.isAuthBlip(UNAUTHORIZED, { retried: true, continued: false }), 'pi 已重试过不算闪断')
 ok(!blip.isAuthBlip(UNAUTHORIZED, { retried: false, continued: true }), '已续跑过一次不再续')
 ok(!blip.isAuthBlip('403 Forbidden: insufficient permissions', { retried: false, continued: false }), '403 不算闪断')
+for (const text of ['503 credential validation failed', '403 MODEL_NOT_IN_PLAN: model available in Pro and above plans or extra usage', '403 this model is not in your plan']) {
+  ok(!blip.isAuthBlip(text, { retried: false, continued: false }), `不是 401 认证闪断，不等待续跑：${text}`)
+}
 ok(blip.isAuthBlipRecoverable(UNAUTHORIZED) && !blip.isAuthBlipRecoverable(REFRESH_FAILED), '刷新失败不再等待续跑')
 ok(blip.providerOfModelLabel('anthropic/claude-x') === 'anthropic' && blip.providerOfModelLabel('openrouter/a/b') === 'openrouter' && blip.providerOfModelLabel('claude-x') === undefined, '从模型标签取服务商')
 ok(await blip.providerUsesOAuth('anthropic') && !(await blip.providerUsesOAuth('deepseek')) && !(await blip.providerUsesOAuth('missing')), '只认 OAuth 登录的服务商')

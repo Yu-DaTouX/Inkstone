@@ -17,11 +17,18 @@ export interface ModelErrorInfo {
   quotaScope?: ModelErrorQuotaScope
 }
 
+const NOT_IN_PLAN_RE = /not[ _-]in[ _-](?:(?:your|the|this|current|a)[ _-])*(?:plan|subscription)|not (?:included|available|supported) (?:in|on|with) (?:your|the|this) (?:current )?(?:plan|subscription)|不在.{0,8}(?:套餐|订阅)/i
+
 const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'refused',
     label: '服务商安全审核拦截',
     re: /\bflagged\b|content[ _-]?(policy|filter|management)|usage polic(y|ies)|(blocked|filtered).{0,40}\bsafety\b|\bsafety (filter|system|polic)|prohibited[ _]content|content exists risk|considered (a )?high risk|inappropriate content|data_inspection_failed|内容安全|(不安全|敏感)(或敏感)?内容|违反.{0,8}(政策|规定|策略|规范)/i
+  },
+  {
+    kind: 'request',
+    label: '模型不在当前套餐',
+    re: NOT_IN_PLAN_RE
   },
   {
     kind: 'quota',
@@ -31,7 +38,7 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'auth',
     label: '认证或权限',
-    re: /\b401\b|\b403\b|oauth (?:token )?refresh failed|token refresh (?:failed|unauthorized)|invalid_grant|refresh[ _-]?token.{0,40}(?:expired|invalid|revoked|not found|reused)|unauthorized|unauthenticated|forbidden|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|authentication|insufficient permissions|token.{0,12}expired|not logged in|登录|凭证|密钥/i
+    re: /\b401\b|\b403\b|oauth (?:token )?refresh failed|token refresh (?:failed|unauthorized)|invalid_grant|refresh[ _-]?token.{0,40}(?:expired|invalid|revoked|not found|reused)|unauthorized|unauthenticated|forbidden|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|authentication|credentials?[ _-]?(?:validation|verification)|(?:validate|verify|validating) (?:the )?credentials?|credentials?.{0,20}(?:failed|invalid|rejected|expired|revoked)|invalid[ _-]credentials?|insufficient permissions|token.{0,12}expired|not logged in|登录|凭证|密钥/i
   },
   {
     kind: 'context',
@@ -164,6 +171,7 @@ export type ModelErrorCause =
   | 'context'
   | 'aborted'
   | 'request'
+  | 'notInPlan'
   | 'truncated'
   | 'restart'
   | 'stream'
@@ -187,6 +195,8 @@ export function modelErrorCause(errorText: unknown): ModelErrorCause {
       return 'unknown'
     case 'auth':
       return OAUTH_REFRESH_RE.test(info.text) ? 'authExpired' : 'auth'
+    case 'request':
+      return NOT_IN_PLAN_RE.test(info.text) ? 'notInPlan' : 'request'
     default:
       return info.kind
   }
@@ -227,7 +237,9 @@ export function modelErrorNotice(errorText: unknown): string {
     }
     case 'context': explanation = '请求超过模型的上下文或输入长度限制。请压缩会话、减少附件，或选择支持更长上下文的模型。'; break
     case 'aborted': explanation = '本轮请求已取消。已执行的工具操作可能保留，继续前请先核对进度。'; break
-    case 'request': explanation = '服务商拒绝了模型或请求配置。请核对模型 ID、接口地址、工具格式及不受支持的参数。'; break
+    case 'request': explanation = NOT_IN_PLAN_RE.test(info.text)
+      ? '该模型不在当前套餐内，无法使用（这不是登录问题，重新登录没有用）。请升级套餐，或选择套餐内的其他模型。'
+      : '服务商拒绝了模型或请求配置。请核对模型 ID、接口地址、工具格式及不受支持的参数。'; break
     default:
       if (STREAM_BROKEN_RE.test(info.text)) {
         explanation = /\b1012\b/.test(info.text)

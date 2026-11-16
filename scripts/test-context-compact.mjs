@@ -5,6 +5,7 @@ import { fakePiEvents } from './lib/fake-pi-events.mjs'
 import { mkdirSync as mkdirAppendix, mkdtempSync as mkdtempAppendix, writeFileSync as writeAppendix } from 'node:fs'
 import { tmpdir as tmpdirAppendix } from 'node:os'
 import { join as joinAppendix } from 'node:path'
+process.env.YAN_COMPACT_RETRY_BASE_MS = '1'
 const mod = await import('../resources/pi-extensions/context-compact.js')
 
 const long = '甲'.repeat(10_000) + '钥匙编号 XQ-1234' + '乙'.repeat(10_000)
@@ -50,13 +51,13 @@ assert.deepEqual(
   '费用按嵌套结构逐项累加'
 )
 
-function harness(complete, { window = 400_000, previousSummary, msgs = messages } = {}) {
+function harness(complete, { window = 400_000, previousSummary, msgs = messages, signal = new AbortController().signal } = {}) {
   const handlers = {}
   const entries = []
   mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: (type, data) => entries.push({ type, data }) })
   const calls = []
   const ctx = { model: { contextWindow: window, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async (model, context, options) => { calls.push({ context, options }); return complete(calls.length, context) } } }
-  const event = { preparation: { messagesToSummarize: msgs, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, previousSummary, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']), written: new Set(), edited: new Set() } }, signal: new AbortController().signal }
+  const event = { preparation: { messagesToSummarize: msgs, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, previousSummary, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']), written: new Set(), edited: new Set() } }, signal }
   return {
     run: () => handlers.session_before_compact(event, ctx),
     compacted: (fromExtension) => handlers.session_compact({ fromExtension }),
@@ -112,8 +113,63 @@ for (const text of ['429 rate limit exceeded', 'Rate limit exceeded for requests
 }
 {
   const h = harness(() => ({ stopReason: 'error', errorMessage: '429 rate limit exceeded', content: [], usage: { input: 3 } }))
-  assert.equal(await h.run(), undefined, '限流时不减半重发，交给 pi 默认压缩（带 pi 的重试）')
-  assert.equal(h.calls.length, 1, '限流只请求一次')
+  assert.equal(await h.run(), undefined, '限流持续时不减半重发，重试用完后交给 pi 默认压缩')
+  assert.equal(h.calls.length, 3, '限流原样重试 2 次，共 3 次')
+  assert.ok(h.calls.every((c) => c.context.messages[0].content[0].text === h.calls[0].context.messages[0].content[0].text), '重试不改分块，不减半')
+  h.compacted(false)
+  assert.equal(h.entries[0].data.usage.input, 9, '重试失败的用量也计入')
+}
+for (const text of ['529 Overloaded', '503 Service Unavailable', 'fetch failed', 'Request timed out', 'WebSocket closed 1006', 'ECONNRESET', '502 Bad Gateway: upstream request failed', 'rate limit reached, retry later']) {
+  assert.ok(mod.isTransientSummaryError(text), `瞬时错误会重试：${text}`)
+}
+for (const text of ['You exceeded your current quota, please check your plan and billing details', 'usage limit exceeded', '402 insufficient balance', '401 Unauthorized', '403 Forbidden', '503 credential validation failed', 'OAuth refresh failed for anthropic: invalid_grant', 'content policy violation', 'flagged by safety system', '403 MODEL_NOT_IN_PLAN', 'This model maximum context length is exceeded', 'boom', '']) {
+  assert.ok(!mod.isTransientSummaryError(text), `额度、认证、内容策略、容量和未知错误不重试：${text}`)
+}
+{
+  const h = harness((n) => n < 3 ? { stopReason: 'error', errorMessage: '529 Overloaded', content: [], usage: { input: 2, cost: { total: 0.2 } } } : ok('## Goal\n读书', { input: 10, cost: { total: 1 } }))
+  const result = await h.run()
+  assert.ok(result?.compaction, '过载两次后成功，仍用砚的摘要，不回退 pi 默认')
+  assert.equal(h.calls.length, 3)
+  assert.equal(result.compaction.details.calls, 1, '重试不算分块调用')
+  assert.ok(Math.abs(result.compaction.usage.cost.total - 1.4) < 1e-9, '重试失败的费用也计入')
+  assert.ok(result.compaction.summary.includes('<read-files>\nbook/ch01.md'), '附录与文件清单保留')
+}
+{
+  const h = harness(() => ({ stopReason: 'error', errorMessage: 'You exceeded your current quota, please check your plan and billing details', content: [] }))
+  assert.equal(await h.run(), undefined)
+  assert.equal(h.calls.length, 1, '额度用尽不重试')
+}
+{
+  const h = harness(() => ({ stopReason: 'error', errorMessage: '503 credential validation failed', content: [] }))
+  assert.equal(await h.run(), undefined)
+  assert.equal(h.calls.length, 1, '认证类错误即使带 503 也不重试')
+}
+{
+  const h = harness((n) => n === 1 ? { stopReason: 'error', errorMessage: '529 Overloaded', content: [] } : ok('## Goal\n读书'))
+  const result = await h.run()
+  assert.ok(result?.compaction && h.calls.length === 2, '只重试到成功为止')
+}
+{
+  const previous = process.env.YAN_COMPACT_RETRY_BASE_MS
+  process.env.YAN_COMPACT_RETRY_BASE_MS = '60000'
+  try {
+    const controller = new AbortController()
+    const h = harness(() => ({ stopReason: 'error', errorMessage: '529 Overloaded', content: [] }), { signal: controller.signal })
+    const startedAt = Date.now()
+    const pending = h.run()
+    setTimeout(() => controller.abort(), 30)
+    const result = await pending
+    assert.deepEqual(result, { cancel: true }, '退避等待期间用户中止，立即取消压缩')
+    assert.ok(Date.now() - startedAt < 5_000, '中止后不再等完退避')
+    assert.equal(h.calls.length, 1, '中止后不再发请求')
+    const done = new AbortController()
+    done.abort()
+    const h2 = harness(() => ({ stopReason: 'error', errorMessage: '529 Overloaded', content: [] }), { signal: done.signal })
+    assert.deepEqual(await h2.run(), { cancel: true })
+    assert.equal(h2.calls.length, 1, '信号已中止时不重试')
+  } finally {
+    process.env.YAN_COMPACT_RETRY_BASE_MS = previous
+  }
 }
 {
   const h = harness(() => ({ stopReason: 'error', errorMessage: 'boom', content: [], usage: { input: 7 } }))
@@ -402,7 +458,7 @@ function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, sent
   const h = fastHarness(() => ({ stopReason: 'error', errorMessage: 'Rate limit exceeded, please retry later', content: [], usage: { input: 2 } }))
   h.request()
   assert.equal(await h.run(), undefined, '快速路径遇到限流直接交给 pi 默认压缩')
-  assert.equal(h.calls.length, 1, '限流后不再立刻走分块路径重发')
+  assert.equal(h.calls.length, 3, '限流先原样退避重试 2 次，仍失败也不改走分块路径重发')
 }
 for (const [label, opts, expected] of [
   ['溢出触发的压缩不走快速路径（原请求本身就放不下）', { reason: 'overflow' }, 'overflow'],
