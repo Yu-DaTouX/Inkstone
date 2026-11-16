@@ -42,5 +42,6 @@ export type McpSettingsMutation = {
 export interface McpSettingsResult {
   ok: boolean
   error?: string
-  takesEffect?: 'new-session' | 'next-call'
+  takesEffect?: 'new-session' | 'next-call' | 'next-call-list-later'
+  warning?: string
 }

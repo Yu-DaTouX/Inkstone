@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -61,7 +63,61 @@ export async function probeStdioInstructions(config: StdioProbeConfig, timeoutMs
   }
 }
 
-export async function fillNativeMcpDescriptions(path: string, probe: InstructionsProbe = probeStdioInstructions): Promise<string[]> {
+const PROBE_FAILURE_RETRY_MS = 24 * 60 * 60_000
+
+interface ProbeCacheEntry {
+  fingerprint: string
+  at: number
+  summary?: string
+  failed?: boolean
+}
+
+export interface NativeDescribeOptions {
+  cachePath?: string
+  now?: () => number
+}
+
+export function probeFingerprint(config: StdioProbeConfig): string {
+  return createHash('sha256')
+    .update(JSON.stringify([config.command, config.args, Object.entries(config.env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)), config.cwd]))
+    .digest('hex')
+}
+
+async function loadProbeCache(path: string | undefined): Promise<Record<string, ProbeCacheEntry>> {
+  if (!path) return {}
+  try {
+    const parsed = asRecord(JSON.parse(await readFile(path, 'utf8')))
+    const entries = asRecord(parsed?.entries) ?? {}
+    const cache: Record<string, ProbeCacheEntry> = {}
+    for (const [name, value] of Object.entries(entries)) {
+      const entry = asRecord(value)
+      if (!entry || typeof entry.fingerprint !== 'string' || typeof entry.at !== 'number') continue
+      cache[name] = {
+        fingerprint: entry.fingerprint,
+        at: entry.at,
+        ...(typeof entry.summary === 'string' ? { summary: entry.summary } : {}),
+        ...(entry.failed === true ? { failed: true } : {})
+      }
+    }
+    return cache
+  } catch {
+    return {}
+  }
+}
+
+async function saveProbeCache(path: string | undefined, cache: Record<string, ProbeCacheEntry>): Promise<void> {
+  if (!path) return
+  const temp = `${path}.${process.pid}.tmp`
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(temp, `${JSON.stringify({ version: 1, entries: cache })}\n`, 'utf8')
+  await rename(temp, path)
+}
+
+export async function fillNativeMcpDescriptions(
+  path: string,
+  probe: InstructionsProbe = probeStdioInstructions,
+  options: NativeDescribeOptions = {}
+): Promise<string[]> {
   let text: string
   try {
     text = await readFile(path, 'utf8')
@@ -72,13 +128,31 @@ export async function fillNativeMcpDescriptions(path: string, probe: Instruction
   const root = asRecord(JSON.parse(text))
   const servers = asRecord(root?.mcpServers)
   if (!root || !servers) return []
+  const now = options.now ?? Date.now
+  const previous = await loadProbeCache(options.cachePath)
+  const cache: Record<string, ProbeCacheEntry> = {}
   const found = new Map<string, string>()
   for (const [name, entry] of Object.entries(servers)) {
     const config = describableStdioEntry(entry)
     if (!config) continue
-    const summary = instructionSummary(await probe(config).catch(() => undefined))
+    const fingerprint = probeFingerprint(config)
+    const cached = previous[name]
+    if (cached && cached.fingerprint === fingerprint && (!cached.failed || now() - cached.at < PROBE_FAILURE_RETRY_MS)) {
+      cache[name] = cached
+      if (cached.summary) found.set(name, cached.summary)
+      continue
+    }
+    let summary = ''
+    let failed = false
+    try {
+      summary = instructionSummary(await probe(config))
+    } catch {
+      failed = true
+    }
+    cache[name] = { fingerprint, at: now(), ...(summary ? { summary } : {}), ...(failed ? { failed: true } : {}) }
     if (summary) found.set(name, summary)
   }
+  await saveProbeCache(options.cachePath, cache).catch(() => undefined)
   if (found.size === 0) return []
   for (const [name, summary] of found) (servers[name] as Record<string, unknown>).description = summary
   const indent = /^([ \t]+)\S/m.exec(text)?.[1] || '  '

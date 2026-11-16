@@ -53,8 +53,8 @@ function safeAnnotations(annotations) {
 }
 
 function buildToolDefinitions(tools, projectId) {
-  const definitions = []
-  const names = new Map()
+  const candidates = []
+  const groups = new Map()
   for (const entry of tools) {
     if (!entry || typeof entry !== 'object') return { error: '快照里混入了非对象工具项' }
     const serverId = typeof entry.serverId === 'string' ? entry.serverId.trim() : ''
@@ -63,14 +63,19 @@ function buildToolDefinitions(tools, projectId) {
     const scope = typeof entry.projectScope === 'string' ? entry.projectScope.trim() : ''
     if (scope && scope !== projectId) continue
     const name = toolNameFor(serverId, toolName)
-    if (names.has(name)) {
-      return { error: `名字规范化后碰撞：${name}（${names.get(name)} 与 ${serverId}/${toolName}），整份快照拒绝` }
-    }
-    names.set(name, `${serverId}/${toolName}`)
+    const label = `${serverId}/${toolName}`
+    candidates.push({ entry, serverId, toolName, name, label })
+    groups.set(name, [...(groups.get(name) ?? []), label])
+  }
+  const collisions = [...groups.entries()].filter(([, labels]) => labels.length > 1).map(([name, labels]) => ({ name, labels }))
+  const collided = new Set(collisions.map((collision) => collision.name))
+  const definitions = []
+  for (const { entry, serverId, toolName, name, label } of candidates) {
+    if (collided.has(name)) continue
     const annotations = safeAnnotations(entry.annotations)
     definitions.push({
       name,
-      label: `${serverId}/${toolName}`,
+      label,
       description:
         typeof entry.description === 'string' && entry.description.trim()
           ? entry.description
@@ -82,7 +87,7 @@ function buildToolDefinitions(tools, projectId) {
       execute: (toolCallId, params, signal) => callHost({ toolCallId, serverId, toolName, params, signal })
     })
   }
-  return { definitions }
+  return { definitions, collisions }
 }
 
 export function hostedServersNote(definitions) {
@@ -156,6 +161,9 @@ export default function mcpAppProxy(pi) {
   if (built.error) {
     report(`工具快照被拒绝，未注册任何托管 MCP 工具：${built.error}`)
     return
+  }
+  for (const collision of built.collisions) {
+    report(`名字规范化后碰撞：${collision.name}（${collision.labels.join('、')}），这些工具未注册，其余托管工具不受影响`)
   }
   const registered = []
   for (const definition of built.definitions) {

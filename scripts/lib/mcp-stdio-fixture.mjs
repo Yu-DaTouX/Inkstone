@@ -73,7 +73,15 @@ const server = new Server(
   { capabilities: { tools: {} } }
 )
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
+const SLOW_TOOL = {
+  name: 'slow',
+  description: '等待 ms 毫秒后返回 slow-done。用于验证长耗时调用不被固定超时截断。',
+  inputSchema: { type: 'object', properties: { ms: { type: 'number' } }, required: [] }
+}
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: process.env.YAN_MCP_FIXTURE_SLOW ? [...TOOLS, SLOW_TOOL] : TOOLS
+}))
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const name = request.params?.name
@@ -81,6 +89,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === 'echo') {
     return { content: [{ type: 'text', text: String(args.text ?? '') }] }
+  }
+  if (name === 'slow') {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(Number(args.ms ?? 500), 10_000)))
+    return { content: [{ type: 'text', text: 'slow-done' }] }
   }
   if (name === 'add') {
     const sum = Number(args.a) + Number(args.b)

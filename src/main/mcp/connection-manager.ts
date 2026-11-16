@@ -56,7 +56,11 @@ export class McpConnectionCancelledError extends Error {
 export interface McpRequestOptions {
   signal?: AbortSignal
   timeoutMs?: number
+  longRunning?: boolean
 }
+
+export const MCP_LONG_CALL_IDLE_TIMEOUT_MS = 10 * 60_000
+export const MCP_LONG_CALL_TOTAL_TIMEOUT_MS = 60 * 60_000
 
 export class McpRequestCancelledError extends Error {
   readonly code = 'request-cancelled'
@@ -558,8 +562,21 @@ export class McpConnectionManager {
     await this.connect(conn)
     const client = conn.client
     if (!client) throw new McpConnectionCancelledError()
-    return this.runRequest(conn, client, options, pick(`调用 ${serverId}/${toolName}`, `Calling ${serverId}/${toolName}`), (signal) =>
-      client.callTool({ name: toolName, arguments: args }, undefined, { signal })
+    const what = pick(`调用 ${serverId}/${toolName}`, `Calling ${serverId}/${toolName}`)
+    if (!options.longRunning) {
+      return this.runRequest(conn, client, options, what, (signal) =>
+        client.callTool({ name: toolName, arguments: args }, undefined, { signal })
+      )
+    }
+    const idleMs = options.timeoutMs ?? MCP_LONG_CALL_IDLE_TIMEOUT_MS
+    return this.runRequest(conn, client, { ...options, timeoutMs: options.timeoutMs ?? Infinity }, what, (signal) =>
+      client.callTool({ name: toolName, arguments: args }, undefined, {
+        signal,
+        timeout: idleMs,
+        resetTimeoutOnProgress: true,
+        maxTotalTimeout: Math.max(idleMs, MCP_LONG_CALL_TOTAL_TIMEOUT_MS),
+        onprogress: () => undefined
+      })
     )
   }
 

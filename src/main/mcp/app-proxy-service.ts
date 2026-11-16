@@ -20,7 +20,6 @@ const MCP_APP_PROXY_DIRNAME = 'mcp-app'
 const MCP_APP_PROXY_SNAPSHOT_FILE = 'tools.json'
 const MCP_APP_PROXY_TEXT_MAX_BYTES = 32 * 1024
 const MCP_APP_PROXY_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000
-export const MCP_APP_PROXY_COLLISION = 'tool_name_collision'
 export const MCP_APP_PROXY_NO_TARGETS = 'no_targets'
 const SNAPSHOT_VERSION = 1
 const SNAPSHOT_SOURCE = 'inkstone-mcp-app-proxy'
@@ -55,7 +54,7 @@ interface McpAppProxySnapshotServer {
 interface McpAppProxySnapshotExcluded {
   serverId: string
   toolName: string
-  reason: 'not-model-visible'
+  reason: 'not-model-visible' | 'name-collision'
 }
 
 interface McpAppProxySnapshot {
@@ -209,6 +208,8 @@ export class McpAppProxyService {
   private readonly snapshotMaxAgeMs: number
   private readonly maxRecords: number
   private readonly records = new Map<string, McpAppProxyCallRecord>()
+  private readonly ensuring = new Map<string, Promise<{ refreshed: boolean; error?: string }>>()
+  private readonly ensureFailedAt = new Map<string, number>()
 
   constructor(options: McpAppProxyServiceOptions = {}) {
     this.host = options.host ?? mcpAppHost()
@@ -363,19 +364,14 @@ export class McpAppProxyService {
       .filter(([, count]) => count > 1)
       .map(([name, count]) => ({ name, count }))
     if (collisions.length) {
-      return {
-        ok: false,
-        path: this.snapshotPath(),
-        written: false,
-        generatedAt,
-        toolCount: 0,
-        tools: [],
-        servers,
-        excluded,
-        collisions,
-        errors,
-        error: MCP_APP_PROXY_COLLISION
+      const collided = new Set(collisions.map((entry) => entry.name))
+      for (let index = tools.length - 1; index >= 0; index--) {
+        const tool = tools[index]
+        if (!collided.has(tool.name)) continue
+        excluded.push({ serverId: tool.serverId, toolName: tool.toolName, reason: 'name-collision' })
+        tools.splice(index, 1)
       }
+      for (const server of servers) server.toolCount = tools.filter((tool) => tool.serverId === server.id).length
     }
 
     const targetIds = new Set(targets.map((server) => server.id))
@@ -408,6 +404,60 @@ export class McpAppProxyService {
       excluded,
       collisions,
       errors
+    }
+  }
+
+  needsRefreshFor(callerProjectId?: string): boolean {
+    const managed = this.host.listManagedServers(callerProjectId)
+    const snapshot = this.readSnapshot()
+    if (!snapshot) return managed.length > 0
+    const managedIds = new Set(managed.map((server) => server.id))
+    const knownIds = new Set(snapshot.servers.map((server) => server.id))
+    if (managed.some((server) => !knownIds.has(server.id))) return true
+    const orphaned = snapshot.tools.some((tool) => {
+      const scope = typeof tool.projectScope === 'string' ? tool.projectScope : ''
+      return !managedIds.has(tool.serverId) && !(scope && scope !== callerProjectId)
+    })
+    if (orphaned) return true
+    return this.snapshotStatus().stale && (managed.length > 0 || snapshot.tools.length > 0)
+  }
+
+  async ensureFresh(options: { callerProjectId?: string; waitMs?: number; retryAfterFailureMs?: number } = {}): Promise<{ refreshed: boolean; error?: string }> {
+    const projectId = typeof options.callerProjectId === 'string' && options.callerProjectId.trim() ? options.callerProjectId.trim() : undefined
+    const key = projectId ?? ''
+    try {
+      if (!this.needsRefreshFor(projectId)) return { refreshed: false }
+    } catch (error) {
+      return { refreshed: false, error: errorMessage(error) }
+    }
+    const failedAt = this.ensureFailedAt.get(key)
+    if (failedAt !== undefined && Date.now() - failedAt < (options.retryAfterFailureMs ?? 60_000)) return { refreshed: false, error: 'recent-failure' }
+    let task = this.ensuring.get(key)
+    if (!task) {
+      const started = this.refresh({ ...(projectId ? { callerProjectId: projectId } : {}), allowEmpty: true }).then(
+        (result) => {
+          if (result.ok) this.ensureFailedAt.delete(key)
+          else this.ensureFailedAt.set(key, Date.now())
+          return { refreshed: result.written, ...(result.ok ? {} : { error: result.errors.map((entry) => `${entry.serverId}: ${entry.error}`).join('\n') || result.error || 'refresh-failed' }) }
+        },
+        (error) => {
+          this.ensureFailedAt.set(key, Date.now())
+          return { refreshed: false, error: errorMessage(error) }
+        }
+      )
+      task = started.finally(() => {
+        if (this.ensuring.get(key) === task) this.ensuring.delete(key)
+      })
+      this.ensuring.set(key, task)
+    }
+    let timer: NodeJS.Timeout | undefined
+    const wait = new Promise<{ refreshed: boolean; error?: string }>((resolve) => {
+      timer = setTimeout(() => resolve({ refreshed: false, error: 'timeout' }), options.waitMs ?? 8000)
+    })
+    try {
+      return await Promise.race([task, wait])
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }
 
@@ -619,7 +669,7 @@ export function assertLegacyMcpAccessBlocked(input: {
   const route = input.action === 'describe' ? 'yan mcp describe' : 'yan mcp call'
   if (input.toolName) {
     const snapshot = service.readSnapshot()
-    if (snapshot?.excluded.some((item) => item.serverId === input.serverId && item.toolName === input.toolName)) {
+    if (snapshot?.excluded.some((item) => item.reason === 'not-model-visible' && item.serverId === input.serverId && item.toolName === input.toolName)) {
       throw new CapabilityCommandError(
         'mcp_app_only_tool',
         `工具 ${input.serverId}/${input.toolName} 仅对 App 视图可见；模型不能调用。`

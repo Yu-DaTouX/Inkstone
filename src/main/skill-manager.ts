@@ -6,6 +6,7 @@ import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { allUserSkillPaths, disabledUserSkillNames, setUserSkillDisabled } from './user-skills'
 import { modifyPiSettings, readJson, withPiSettingsLock } from './native-compaction-line'
 import { pick } from '../shared/ui-lang'
+import { isWindowsDeviceName } from './win-file-names'
 
 export type SkillManageScope = 'yan' | 'pi'
 
@@ -23,7 +24,14 @@ export interface SkillManagerPaths {
   home: string
 }
 
-const SKILL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const SKILL_NAME_FORBIDDEN = /[\\/:*?"<>|[\]{}!\u0000-\u001f\u007f-\u009f\u2028\u2029]/
+
+export function isManagedSkillDirName(name: string): boolean {
+  if (typeof name !== 'string' || name.length === 0 || name.length > 255) return false
+  if (name.startsWith('.') || /[. ]$/.test(name) || name !== name.trim()) return false
+  if (SKILL_NAME_FORBIDDEN.test(name)) return false
+  return !isWindowsDeviceName(name)
+}
 
 const defaultPaths = (): SkillManagerPaths => ({ yanRoot: YAN_DIR, agentDir: PI_AGENT_DIR, home: homedir() })
 
@@ -100,7 +108,7 @@ export async function listManagedSkills(paths: SkillManagerPaths = defaultPaths(
 }
 
 export function managedSkillDir(scope: SkillManageScope, dirName: string, paths: SkillManagerPaths = defaultPaths()): string | null {
-  if (!SKILL_NAME.test(dirName)) return null
+  if (!isManagedSkillDirName(dirName)) return null
   const roots = scope === 'yan' ? [join(paths.yanRoot, 'skills')] : piSkillRoots(paths)
   for (const root of roots) {
     const dir = join(root, dirName)

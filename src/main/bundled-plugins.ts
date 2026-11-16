@@ -34,10 +34,23 @@ interface Connection {
   ready: Promise<void>
   pending: Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }>
   completions: Map<number, AbortController>
+  stderr: string
 }
+const STDERR_TAIL_CHARS = 4000
 const MARKER = '.installed-by-inkstone'
 const SAFE_ENV = ['PATH', 'PATHEXT', 'SystemRoot', 'windir', 'ComSpec', 'TEMP', 'TMP', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'LANG', 'LC_ALL']
 const SAFE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+
+function withStderrTail(message: string, tail: string): string {
+  const text = tail.trim()
+  return text ? `${message}\n${pick('插件输出（stderr）：', 'Plugin output (stderr):')}\n${text}` : message
+}
+
+function killProcessTree(child: ChildProcess, done: () => void): void {
+  if (child.exitCode !== null || child.signalCode !== null) { done(); return }
+  if (child.pid && process.platform === 'win32') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => { child.kill(); done() })
+  else { child.kill(); done() }
+}
 
 export function pluginEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(SAFE_ENV.flatMap(key => source[key] ? [[key, source[key]]] : []))
@@ -150,26 +163,60 @@ export class BundledPlugins {
         }
         if (action !== 'install') throw new Error(pick('未知插件操作', 'Unknown plugin action'))
         if (existsSync(target) && !installed) throw new Error(pick('目标已有非砚安装的文件，未改动', 'Target has files not installed by Inkstone; left unchanged'))
+        const wasConnected = installed && (this.connections.has(id) || this.connecting.has(id))
         if (installed) await this.disconnect(id)
         const staging = `${target}.${randomUUID()}.new`
         const previous = `${target}.${randomUUID()}.old`
-        try {
-          await cp(source, staging, { recursive: true, filter: async path => {
-            if ((await lstat(path)).isSymbolicLink()) throw new Error(pick('插件包不能包含符号链接', 'Plugin package cannot contain symbolic links'))
-            return !path.split(/[\\/]/).some(part => ['node_modules', '.git', '.tmp'].includes(part))
-          } })
-          await writeFile(join(staging, MARKER), manifest.id, 'utf8')
-          await mkdir(join(target, '..'), { recursive: true })
-          if (installed) await rename(target, previous)
-          try { await rename(staging, target) }
-          catch (error) { if (installed) await rename(previous, target); throw error }
-          if (installed) await rm(previous, { recursive: true, force: true })
-        } finally { await rm(staging, { recursive: true, force: true }).catch(() => undefined) }
-        if (manifest.setup && manifest.process) {
-          const value = await this.invoke(id, manifest.setup) as { ok?: boolean; error?: string; status?: unknown }
-          if (value?.ok === false) return { ok: false, installed: true, error: value.error, status: value.status }
+        let swapped = false
+        const revive = async (): Promise<void> => {
+          if (!wasConnected) return
+          let revived = manifest
+          try { revived = { ...manifest, ...JSON.parse(await readFile(join(target, 'inkstone-plugin.json'), 'utf8')) as PluginManifest } } catch {}
+          if (revived.process) await this.connect(revived).catch(() => undefined)
         }
-        return { ok: true, installed: true, ...(manifest.process ? { status: await this.invoke(id, 'status') } : {}) }
+        const rollback = async (): Promise<void> => {
+          if (!swapped) { await revive(); return }
+          await this.disconnect(id)
+          await rm(target, { recursive: true, force: true })
+          await rename(previous, target)
+          swapped = false
+          await revive()
+        }
+        let status: unknown
+        let failure: { error?: string; status?: unknown } | undefined
+        try {
+          try {
+            await cp(source, staging, { recursive: true, filter: async path => {
+              if ((await lstat(path)).isSymbolicLink()) throw new Error(pick('插件包不能包含符号链接', 'Plugin package cannot contain symbolic links'))
+              return !path.split(/[\\/]/).some(part => ['node_modules', '.git', '.tmp'].includes(part))
+            } })
+            await writeFile(join(staging, MARKER), manifest.id, 'utf8')
+            await mkdir(join(target, '..'), { recursive: true })
+            if (installed) { await rename(target, previous); swapped = true }
+            try { await rename(staging, target) }
+            catch (error) { if (swapped) { await rename(previous, target); swapped = false }; throw error }
+          } finally { await rm(staging, { recursive: true, force: true }).catch(() => undefined) }
+          if (manifest.setup && manifest.process) {
+            const value = await this.invoke(id, manifest.setup) as { ok?: boolean; error?: string; status?: unknown }
+            if (value?.ok === false) failure = { error: value.error, status: value.status }
+          }
+          if (!failure && manifest.process) status = await this.invoke(id, 'status')
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          try { await rollback() } catch (restoreError) {
+            throw new Error(`${message}\n${pick('恢复旧版本失败：', 'Restoring the previous version failed: ')}${restoreError instanceof Error ? restoreError.message : String(restoreError)}`)
+          }
+          throw installed ? new Error(`${pick('升级失败，已保留旧版本：', 'Upgrade failed; the previous version is kept: ')}${message}`) : error
+        }
+        if (failure) {
+          if (!swapped) return { ok: false, installed: true, error: failure.error, status: failure.status }
+          try { await rollback() } catch (restoreError) {
+            return { ok: false, installed: true, error: `${failure.error ?? ''}\n${pick('恢复旧版本失败：', 'Restoring the previous version failed: ')}${restoreError instanceof Error ? restoreError.message : String(restoreError)}`.trim(), status: failure.status }
+          }
+          return { ok: false, installed: true, error: `${pick('升级失败，已保留旧版本：', 'Upgrade failed; the previous version is kept: ')}${failure.error ?? ''}`.trim(), status: failure.status }
+        }
+        if (swapped) await rm(previous, { recursive: true, force: true })
+        return { ok: true, installed: true, ...(manifest.process ? { status } : {}) }
       } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
     }
     const next = (this.queues.get(id) ?? Promise.resolve()).then(task, task)
@@ -264,10 +311,10 @@ export class BundledPlugins {
     let readyResolve!: () => void
     let readyReject!: (error: Error) => void
     const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject })
-    const connection: Connection = { child, capabilities: new Set(manifest.capabilities), ready, pending: new Map(), completions: new Map() }
-    const timer = setTimeout(() => { readyReject(new Error(pick('插件启动超时', 'Plugin start timed out'))); void this.disconnect(manifest.id) }, 60_000)
+    const connection: Connection = { child, capabilities: new Set(manifest.capabilities), ready, pending: new Map(), completions: new Map(), stderr: '' }
+    const timer = setTimeout(() => { readyReject(new Error(withStderrTail(pick('插件启动超时', 'Plugin start timed out'), connection.stderr))); void this.disconnect(manifest.id) }, 60_000)
     this.connections.set(manifest.id, connection)
-    child.stderr?.on('data', () => undefined)
+    child.stderr?.on('data', (chunk: Buffer) => { connection.stderr = (connection.stderr + chunk.toString('utf8')).slice(-STDERR_TAIL_CHARS) })
     child.on('message', raw => {
       const message = raw as { type?: string; id: number; error?: string; code?: string; value?: unknown; capability?: string; params?: unknown }
       if (message.type === 'ready') { clearTimeout(timer); readyResolve() }
@@ -279,8 +326,10 @@ export class BundledPlugins {
       if (message.type === 'capability') void this.capability(manifest, connection, message)
     })
     const finish = (): void => {
-      clearTimeout(timer); readyReject(new Error(pick('插件进程已退出', 'Plugin process exited')))
-      for (const item of connection.pending.values()) { clearTimeout(item.timer); item.reject(new Error(pick('插件进程已退出', 'Plugin process exited'))) }
+      clearTimeout(timer)
+      const exited = (): Error => new Error(withStderrTail(pick('插件进程已退出', 'Plugin process exited'), connection.stderr))
+      readyReject(exited())
+      for (const item of connection.pending.values()) { clearTimeout(item.timer); item.reject(exited()) }
       connection.pending.clear()
       for (const controller of connection.completions.values()) controller.abort()
       if (this.connections.get(manifest.id) === connection) this.connections.delete(manifest.id)
@@ -331,19 +380,16 @@ export class BundledPlugins {
     for (const controller of connection.completions.values()) controller.abort()
     const child = connection.child
     await new Promise<void>(resolve => {
-      const timer = setTimeout(() => {
-        if (child.pid && process.platform === 'win32') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => { child.kill(); resolve() })
-        else { child.kill(); resolve() }
-      }, 6000)
+      const timer = setTimeout(() => killProcessTree(child, resolve), 6000)
       child.once('exit', () => { clearTimeout(timer); resolve() })
       if (child.connected) child.disconnect()
-      else { clearTimeout(timer); child.kill(); resolve() }
+      else { clearTimeout(timer); killProcessTree(child, resolve) }
     })
     this.connections.delete(id)
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.closed = true
-    for (const id of this.connections.keys()) void this.disconnect(id)
+    await Promise.all([...this.connections.keys()].map(id => this.disconnect(id).catch(() => undefined)))
   }
 }

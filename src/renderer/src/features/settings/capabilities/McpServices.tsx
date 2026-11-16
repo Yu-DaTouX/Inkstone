@@ -82,7 +82,8 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       if (view !== viewKey()) return
       if (!result.ok) setError(result.error || text.failed)
       else {
-        setNotice(result.takesEffect === 'next-call' ? text.nextCall : text.nextSession)
+        const effect = result.takesEffect === 'next-call' ? text.nextCall : result.takesEffect === 'next-call-list-later' ? text.nextCallListLater : text.nextSession
+        setNotice(result.warning ? `${effect} ${result.warning}` : effect)
         notifyMcpSettingsChanged()
         if (input.action === 'add') setAdding(false)
         await refresh()

@@ -45,4 +45,43 @@ await runSuite(import.meta.url, async (ok, compile) => {
     return 'Slow server'
   }).catch(() => { threw = true })
   ok(threw && JSON.parse(readFileSync(file, 'utf8')).mcpServers.added && !JSON.parse(readFileSync(file, 'utf8')).mcpServers.slow.description, '探测期间文件被外部改动时拒绝写入，不覆盖别人的修改')
+
+  const cachePath = join(dir, 'cache', 'describe-cache.json')
+  const cacheFile = join(dir, 'cached-mcp.json')
+  const writeCfg = (servers) => writeFileSync(cacheFile, `${JSON.stringify({ mcpServers: servers })}\n`)
+  writeCfg({ quiet: { command: 'quiet', args: ['a'], env: { K: 'v' } }, broken: { command: 'broken' }, talk: { command: 'talk' } })
+  const cachedProbed = []
+  const cachedProbe = async (config) => {
+    cachedProbed.push(config.command)
+    if (config.command === 'broken') throw new Error('spawn failed')
+    return config.command === 'talk' ? 'Talk server' : undefined
+  }
+  let clock = 1_000
+  const cacheOptions = { cachePath, now: () => clock }
+  const first = await fillNativeMcpDescriptions(cacheFile, cachedProbe, cacheOptions)
+  ok(first.join() === 'talk' && cachedProbed.sort().join() === 'broken,quiet,talk', '带缓存：首次启动探测所有缺描述的服务')
+  const cacheText = readFileSync(cachePath, 'utf8')
+  ok(!cacheText.includes('"v"'), '缓存只存指纹，不存环境变量明文')
+
+  writeCfg({ quiet: { command: 'quiet', args: ['a'], env: { K: 'v' } }, broken: { command: 'broken' }, talk: { command: 'talk' } })
+  cachedProbed.length = 0
+  clock += 60_000
+  const second = await fillNativeMcpDescriptions(cacheFile, cachedProbe, cacheOptions)
+  ok(cachedProbed.length === 0, '带缓存：指纹不变时不再探测（含无 instructions 和刚失败的服务）', cachedProbed.join())
+  ok(second.join() === 'talk' && JSON.parse(readFileSync(cacheFile, 'utf8')).mcpServers.talk.description === 'Talk server', '带缓存：有说明的服务直接用缓存回填 description')
+
+  writeCfg({ quiet: { command: 'quiet', args: ['b'], env: { K: 'v' } }, broken: { command: 'broken' }, talk: { command: 'talk', description: 'kept' } })
+  cachedProbed.length = 0
+  await fillNativeMcpDescriptions(cacheFile, cachedProbe, cacheOptions)
+  ok(cachedProbed.join() === 'quiet', '带缓存：配置指纹变化的服务重新探测，其余仍跳过', cachedProbed.join())
+
+  cachedProbed.length = 0
+  clock += 25 * 60 * 60_000
+  await fillNativeMcpDescriptions(cacheFile, cachedProbe, cacheOptions)
+  ok(cachedProbed.join() === 'broken', '带缓存：失败记录超过一天后重试，无说明的结果不重试', cachedProbed.join())
+
+  writeFileSync(cachePath, '{broken json')
+  cachedProbed.length = 0
+  await fillNativeMcpDescriptions(cacheFile, cachedProbe, cacheOptions)
+  ok(cachedProbed.length > 0 && JSON.parse(readFileSync(cachePath, 'utf8')).version === 1, '带缓存：缓存文件损坏时按无缓存处理并重写')
 })

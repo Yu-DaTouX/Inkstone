@@ -456,6 +456,7 @@ export class AgentController extends EventEmitter {
   private phoneToolsExtension?: string
   private computerToolsExtension?: string
   private mcpAppToolsSnapshot?: string
+  private ensureMcpAppTools?: (projectId?: string) => Promise<void>
   private nativeConfigReader?: McpNativeConfigReader
   private autoCompactExtension?: string
   private contextCompactExtension?: string
@@ -750,6 +751,7 @@ export class AgentController extends EventEmitter {
     phoneToolsExtension?: string
     computerToolsExtension?: string
     mcpAppToolsSnapshot?: string
+    ensureMcpAppTools?: (projectId?: string) => Promise<void>
     nativeConfigReader?: McpNativeConfigReader
     autoCompactExtension?: string
     contextCompactExtension?: string
@@ -835,6 +837,7 @@ export class AgentController extends EventEmitter {
     this.phoneToolsExtension = opts.phoneToolsExtension
     this.computerToolsExtension = opts.computerToolsExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
+    this.ensureMcpAppTools = opts.ensureMcpAppTools
     this.nativeConfigReader = opts.nativeConfigReader
     this.autoCompactExtension = opts.autoCompactExtension
     this.contextCompactExtension = opts.contextCompactExtension
@@ -992,7 +995,8 @@ export class AgentController extends EventEmitter {
       this.ensureCapability(),
       this.userSkills ? this.userSkills().catch(() => [] as string[]) : Promise.resolve([] as string[]),
       probe.home ? readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : Promise.resolve(undefined),
-      hasBash()
+      hasBash(),
+      this.ensureMcpAppTools ? this.ensureMcpAppTools(this.capabilityOpts?.projectId).catch(() => undefined) : Promise.resolve(undefined)
     ])
     const nativeTools = nativePiToolsSupported(version)
     const projectPackageArgs = nativeTools ? [] : await projectPiPackageArgs(this.cwd)

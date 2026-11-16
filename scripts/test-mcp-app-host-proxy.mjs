@@ -515,12 +515,31 @@ try {
     }
     const collisionService = new proxy.McpAppProxyService({ env, dir: collisionDir, host: collisionHost })
     const result = await collisionService.refresh()
-    ok(result.ok === false && result.written === false && result.error === proxy.MCP_APP_PROXY_COLLISION, '碰撞：刷新被整体拒绝，不写出')
+    ok(result.ok === true && result.written === true && result.toolCount === 0, '碰撞：不整份拒绝，冲突的工具被剔除后照常写出')
     ok(result.collisions.length === 1 && result.collisions[0].name === 'mcp__s_1__x', '碰撞：指出规范化后的名字', JSON.stringify(result.collisions))
-    await assert.rejects(
-      readFile(collisionService.snapshotPath(), 'utf8'),
-      '碰撞：没有留下半份快照'
-    )
+    ok(result.excluded.filter((entry) => entry.reason === 'name-collision').length === 2, '碰撞：冲突的两个工具都记入 excluded 并标明原因')
+    const collisionSnapshot = JSON.parse(await readFile(collisionService.snapshotPath(), 'utf8'))
+    ok(collisionSnapshot.tools.length === 0 && collisionSnapshot.servers.every((server) => server.toolCount === 0), '碰撞：快照里没有冲突的工具，服务计数同步')
+  }
+
+  {
+    const mixedHost = {
+      listManagedServers: () => [
+        { id: 's-1', transport: 'stdio', command: 'x', enabled: true, ownedBy: 'inkstone', appHost: appHostMark('s-1') },
+        { id: 's_1', transport: 'stdio', command: 'x', enabled: true, ownedBy: 'inkstone', appHost: appHostMark('s_1') },
+        { id: 'other', transport: 'stdio', command: 'x', enabled: true, ownedBy: 'inkstone', appHost: appHostMark('other') }
+      ],
+      listToolsWithMeta: async (serverId) => serverId === 'other'
+        ? [{ name: 'keep', modelVisible: true, appVisible: false, visibility: ['model'], resourceUri: null }]
+        : [{ name: 'x', modelVisible: true, appVisible: false, visibility: ['model'], resourceUri: null }, { name: serverId === 's-1' ? 'y' : 'z', modelVisible: true, appVisible: false, visibility: ['model'], resourceUri: null }],
+      callToolWithMeta: async () => { throw new Error('unused') },
+      statusOf: () => ({ status: 'ready' })
+    }
+    const mixedService = new proxy.McpAppProxyService({ env, dir: join(root, 'collision-mixed'), host: mixedHost })
+    const mixed = await mixedService.refresh()
+    const names = JSON.parse(await readFile(mixedService.snapshotPath(), 'utf8')).tools.map((tool) => `${tool.serverId}/${tool.toolName}`).sort()
+    ok(mixed.ok && mixed.collisions.length === 1 && mixed.tools.length === 3, '碰撞：只剔除冲突的工具，刷新整体仍成功')
+    ok(names.join() === ['other/keep', 's-1/y', 's_1/z'].join(), '碰撞：同批其余托管工具照常保留', names.join())
   }
 
   {

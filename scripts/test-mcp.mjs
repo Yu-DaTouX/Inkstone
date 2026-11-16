@@ -412,5 +412,45 @@ export async function runMcpTests(ok, modules) {
     }
   }
 
+  {
+    const slowConfig = {
+      id: 'slow',
+      transport: 'stdio',
+      command: process.execPath,
+      args: [fixture],
+      env: { YAN_MCP_FIXTURE_SLOW: '1' }
+    }
+    const short = new managerMod.McpConnectionManager([slowConfig], 20_000)
+    try {
+      await short.listTools('slow')
+      short.timeoutMs = 300
+      let shortError = null
+      try {
+        await short.callTool('slow', 'slow', { ms: 900 })
+      } catch (error) {
+        shortError = error
+      }
+      ok(shortError && /超时|timed out/.test(shortError.message), '超时：默认请求仍受管理器超时约束（app host 等调用方不变）')
+      const long = await short.callTool('slow', 'slow', { ms: 900 }, { longRunning: true })
+      ok(JSON.stringify(long).includes('slow-done'), '超时：longRunning 调用不受管理器固定超时截断')
+      const viaService = await toolService.callMcpTool(short, 'slow', 'slow', { ms: 900 }, { resultsDir: join(root, 'slow-results') })
+      ok(viaService.text === 'slow-done', '超时：yan mcp call 的 callMcpTool 超过管理器超时仍成功')
+      const controller = new AbortController()
+      const pending = short.callTool('slow', 'slow', { ms: 5000 }, { longRunning: true, signal: controller.signal }).catch((error) => error)
+      setTimeout(() => controller.abort(new Error('user-cancel')), 200)
+      const cancelled = await pending
+      ok(cancelled instanceof Error && cancelled.code === 'request-cancelled', '超时：longRunning 调用仍可由 signal 取消', String(cancelled?.message))
+      let explicit = null
+      try {
+        await short.callTool('slow', 'slow', { ms: 2000 }, { longRunning: true, timeoutMs: 300 })
+      } catch (error) {
+        explicit = error
+      }
+      ok(explicit && /超时|timed out/.test(explicit.message), '超时：显式 timeoutMs 对 longRunning 仍生效', String(explicit?.message))
+    } finally {
+      await short.close()
+    }
+  }
+
   await rm(root, { recursive: true, force: true })
 }

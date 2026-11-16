@@ -21,6 +21,34 @@ export interface McpSettingsHost {
   isBusy?(): boolean
   nativeConfigChanged: boolean | null
   assertContext?(): void
+  refreshManagedTools?(): Promise<{ ok: boolean; warning?: string }>
+}
+
+const MANAGED_REFRESH_TIMEOUT_MS = 15_000
+
+async function refreshManagedSnapshot(host: McpSettingsHost): Promise<string | undefined> {
+  if (!host.refreshManagedTools) return undefined
+  let timer: NodeJS.Timeout | undefined
+  try {
+    const timeout = new Promise<{ ok: boolean; warning?: string }>((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, warning: pick('刷新超时，仍在后台继续', 'Timed out; still refreshing in the background') }), MANAGED_REFRESH_TIMEOUT_MS)
+    })
+    const result = await Promise.race([host.refreshManagedTools(), timeout])
+    return result.ok && !result.warning ? undefined : (result.warning ?? pick('未知原因', 'unknown reason'))
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function managedResult(host: McpSettingsHost, takesEffect: NonNullable<McpSettingsResult['takesEffect']>): Promise<McpSettingsResult> {
+  const warning = await refreshManagedSnapshot(host)
+  return { ok: true, takesEffect, ...(warning ? { warning: pick(`托管工具列表没有更新：${warning}`, `The managed tool list was not updated: ${warning}`) } : {}) }
+}
+
+function isManagedEntry(entry: ObjectValue): boolean {
+  return entry.ownedBy === 'inkstone' && entry.appHost !== undefined
 }
 
 function object(value: unknown): ObjectValue | null {
@@ -199,7 +227,7 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
           })
           host.assertContext?.()
           await atomicWrite(data.hostPath, `${JSON.stringify(document, null, 2)}\n`, nativeMcpTextFingerprint(data.hostText))
-          return { ok: true, takesEffect: 'new-session' }
+          return await managedResult(host, 'new-session')
         }
         target.servers[name] = config
         await writeDocuments(host, [target])
@@ -216,6 +244,7 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
         if (!Array.isArray(list)) throw new Error(pick('旧服务配置格式有误', 'Invalid legacy service config format'))
         const entry = list.find((item) => object(item)?.id === service.name) as ObjectValue | undefined
         if (!entry) throw new Error(pick('服务已不存在，请重新读取列表', 'Service no longer exists. Reload the list'))
+        const managed = isManagedEntry(entry)
         if (input.action === 'move') {
           if (input.scope === 'project') entry.projectScope = host.project!.id
           else delete entry.projectScope
@@ -231,7 +260,8 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
         host.assertContext?.()
         if (host.isBusy?.() ?? host.busy) throw new Error(pick('有任务正在运行，任务结束后可调整此服务', 'A task is running. Adjust this service after it finishes'))
         await atomicWrite(data.hostPath, `${JSON.stringify(document, null, 2)}\n`, nativeMcpTextFingerprint(data.hostText))
-        return { ok: true, takesEffect: 'next-call' }
+        if (!managed) return { ok: true, takesEffect: 'next-call' }
+        return await managedResult(host, input.action === 'remove' || input.action === 'disable' ? 'next-call-list-later' : 'new-session')
       }
       const origin = service.scope === 'global' ? data.global : data.project!
       if (input.action === 'move') {

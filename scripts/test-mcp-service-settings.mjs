@@ -61,6 +61,27 @@ ok(legacy.custom === 1 && hosted?.ownedBy === 'inkstone' && hosted.transport ===
 ok(!JSON.parse(await readFile(globalPath, 'utf8')).mcpServers['app-ui'] && !JSON.parse(await readFile(projectPath, 'utf8')).mcpServers['app-ui'], 'hosted entry never written to pi native config')
 ok(isInkstoneManaged(parseMcpServersDocument(JSON.stringify(legacy), hostFile).servers.find((s) => s.id === 'app-ui')), 'hosted entry parses as Inkstone-managed')
 ok((await list(host)).projectServices.some((s) => s.name === 'app-ui' && s.owner === 'inkstone' && s.backend === 'host'), 'list shows Inkstone ownership')
+let refreshCalls = 0
+let refreshOutcome = { ok: true }
+const refreshHost = { ...host, refreshManagedTools: async () => { refreshCalls++; if (refreshOutcome === 'throw') throw new Error('refresh exploded'); return refreshOutcome } }
+const addedHosted = await invoke({ action: 'add', name: 'app-two', owner: 'inkstone', config: { command: 'node', args: ['two.js'] } }, refreshHost)
+ok(addedHosted.ok && addedHosted.takesEffect === 'new-session' && refreshCalls === 1 && !addedHosted.warning, 'adding a hosted service refreshes the tool snapshot and takes effect in new sessions')
+const hostedOff = await invoke({ key: 'host:app-ui', action: 'disable' }, refreshHost)
+ok(hostedOff.ok && hostedOff.takesEffect === 'next-call-list-later' && refreshCalls === 2, 'disabling a hosted service refreshes the snapshot; calls stop now, the tool list updates later')
+const hostedOn = await invoke({ key: 'host:app-ui', action: 'enable' }, refreshHost)
+ok(hostedOn.ok && hostedOn.takesEffect === 'new-session' && refreshCalls === 3, 'enabling a hosted service refreshes the snapshot and needs a new session')
+refreshOutcome = { ok: false, warning: 'server down' }
+const warned = await invoke({ key: 'host:app-ui', action: 'disable' }, refreshHost)
+ok(warned.ok && /server down/.test(warned.warning ?? ''), 'failed snapshot refresh does not fail the saved change but reports a warning')
+refreshOutcome = 'throw'
+const thrown = await invoke({ key: 'host:app-ui', action: 'enable' }, refreshHost)
+ok(thrown.ok && /refresh exploded/.test(thrown.warning ?? ''), 'a throwing refresh never blocks the change')
+const callsBefore = refreshCalls
+const nonHosted = await invoke({ key: 'host:minecraft', action: 'disable' }, refreshHost)
+ok(nonHosted.ok && nonHosted.takesEffect === 'next-call' && refreshCalls === callsBefore, 'legacy host services keep next-call semantics and never touch the managed snapshot')
+await invoke({ key: 'host:minecraft', action: 'inherit' }, refreshHost)
+const hostedRemoved = await invoke({ key: 'host:app-two', action: 'remove', scope: 'project' }, refreshHost)
+ok(hostedRemoved.ok && hostedRemoved.takesEffect === 'next-call-list-later' && refreshCalls === callsBefore + 1, 'removing a hosted service refreshes the snapshot')
 ok(!(await invoke({ action: 'add', name: 'app-ui', config: { command: 'node' } })).ok, 'same name cannot be added on the pi side')
 ok(!(await invoke({ action: 'add', name: '__proto__', config: { command: 'node' } })).ok, 'reserved object keys rejected')
 ok(!(await invoke({ action: 'add', name: 'bad', config: { url: 'file:///private' } })).ok, 'invalid protocol rejected')

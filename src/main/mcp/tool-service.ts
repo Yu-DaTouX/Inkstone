@@ -198,7 +198,7 @@ export async function callMcpTool(
   }
 
   options.signal?.throwIfAborted()
-  const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal })
+  const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal, longRunning: true })
   const snapshotAdvice = await offersSnapshotTool(manager, serverId, options.signal)
   const saved = await saveResultImages(raw, serverId, toolName, options.resultsDir, snapshotAdvice)
   const { toolError, text } = classifyMcpResult(raw, saved.options)

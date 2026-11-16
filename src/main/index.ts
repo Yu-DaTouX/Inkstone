@@ -1217,7 +1217,7 @@ async function runShutdown(): Promise<void> {
   disposeKeepAwake()
   modelsWatcher?.close()
   modelsWatcher = null
-  bundledPlugins.close()
+  const pluginsClosing = bundledPlugins.close()
   attention?.dispose()
   auxWindows?.dispose()
   const outcomes = await runShutdownSteps(
@@ -1232,6 +1232,7 @@ async function runShutdown(): Promise<void> {
         }
       },
       { name: 'mcp-app-host', run: () => closeMcpAppHost() },
+      { name: 'plugins', run: () => pluginsClosing },
       { name: 'subagents', run: () => subagentService.current()?.stopAll() },
       { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null } } },
       { name: 'browser', run: () => browser?.dispose() },
@@ -1819,6 +1820,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context) },
         switchSpareAccount: switchToSpareAccount,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
+        ensureMcpAppTools: (projectId) => mcpAppProxyService().ensureFresh({ callerProjectId: projectId }).then(() => undefined),
         providerExtensions: launchResources().providers,
         bundledSkills: launchResources().skills,
         userSkills: () => userSkillPaths(),
@@ -2885,7 +2887,7 @@ app.whenReady().then(async () => {
   void primeCachedTitles().catch(() => undefined)
   void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
-  void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json')).catch((error) => reportMainError('mcp-describe', error))
+  void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json'), undefined, { cachePath: join(YAN_DIR, 'native-mcp-describe-cache.json') }).catch((error) => reportMainError('mcp-describe', error))
   trayLanguage = (await getSettings()).lang
   trayResources.ensureAssets()
   attention?.ensureTray()

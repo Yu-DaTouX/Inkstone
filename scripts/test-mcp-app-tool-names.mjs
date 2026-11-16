@@ -35,6 +35,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(extNames[0] === 'mcp__app_stdio__read_only_note', '扩展：合法短名不变', extNames[0])
     ok(extNames[1] === 'mcp__docs__files_read', '扩展：非法字符换成 _', extNames[1])
 
+    const clashSnapshot = join(root, 'clash.json')
+    await writeFile(clashSnapshot, JSON.stringify({ version: 1, generatedAt: new Date().toISOString(), source: 'x', tools: [
+      { serverId: 's-1', toolName: 'x' }, { serverId: 's_1', toolName: 'x' }, { serverId: 'other', toolName: 'keep' }, { serverId: 's-1', toolName: 'only' }
+    ], servers: [], excluded: [] }), 'utf8')
+    process.env.YAN_MCP_APP_TOOLS = clashSnapshot
+    const clashRegistered = []
+    const reports = []
+    const realWrite = process.stderr.write.bind(process.stderr)
+    process.stderr.write = (chunk, ...rest) => { reports.push(String(chunk)); return true }
+    try {
+      extension.default({ registerTool: (definition) => clashRegistered.push(definition.label), on: () => {} })
+    } finally {
+      process.stderr.write = realWrite
+    }
+    ok(clashRegistered.sort().join() === ['other/keep', 's-1/only'].join(), '扩展：撞名时只跳过冲突的工具，其余照常注册', clashRegistered.join())
+    ok(reports.some((line) => line.includes('mcp__s_1__x') && line.includes('s-1/x') && line.includes('s_1/x')), '扩展：撞名被报告并列出双方', reports.join(''))
+    process.env.YAN_MCP_APP_TOOLS = snapshot
+
     const proxy = await compile(undefined, {
       stdin: { contents: "export * from './src/main/mcp/app-proxy-service';", resolveDir: process.cwd(), loader: 'ts' },
       external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*', 'electron']

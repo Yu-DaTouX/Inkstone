@@ -27,6 +27,7 @@ async function run() {
       piSkillRoots,
       managedSkillOf,
       managedSkillDir,
+      isManagedSkillDirName,
       listManagedSkills,
       setManagedSkillEnabled,
       trashManagedSkill
@@ -159,6 +160,29 @@ async function run() {
     disabled = JSON.parse(await readFile(join(yanRoot, 'skills', '.disabled.json'), 'utf8'))
     assert.equal(disabled.includes('yan-trash'), false)
     assert.equal(disabled.includes('yan-b'), true)
+
+    for (const bad of ['', '.', '..', '.hidden', 'a[b]', 'a{b}', '!neg', 'a/b', 'a\\b', 'a:b', 'a*b', 'a\u0000b', 'a\nb', 'con', 'NUL.txt', 'com1', 'trail.', 'trail ', ' lead', 'x'.repeat(256)]) {
+      assert.equal(isManagedSkillDirName(bad), false, JSON.stringify(bad))
+    }
+    for (const fine of ['\u6280\u80fd-\u4e2d\u6587', 'caf\u00e9', 'has space', 'Ab.c_d-1', 'a..b', '\u30b9\u30ad\u30eb', 'console']) {
+      assert.equal(isManagedSkillDirName(fine), true, fine)
+    }
+    const unicodeName = '\u6280\u80fd-\u4e2d\u6587'
+    await writeSkill(join(yanRoot, 'skills', unicodeName), '---\nname: unicode\n---\n')
+    await writeSkill(join(agentDir, 'skills', 'caf\u00e9'), '# cafe\n')
+    assert.equal(managedSkillDir('yan', unicodeName, paths), join(yanRoot, 'skills', unicodeName))
+    assert.equal(managedSkillDir('yan', '..\\' + unicodeName, paths), null)
+    result = await setManagedSkillEnabled('yan', unicodeName, false, paths)
+    assert.equal(result.ok, true)
+    assert.ok(JSON.parse(await readFile(join(yanRoot, 'skills', '.disabled.json'), 'utf8')).includes(unicodeName))
+    result = await setManagedSkillEnabled('pi', 'caf\u00e9', false, paths)
+    assert.equal(result.ok, true)
+    settings = JSON.parse(await readFile(join(agentDir, 'settings.json'), 'utf8'))
+    assert.ok(settings.skills.includes('-skills/caf\u00e9'))
+    result = await trashManagedSkill('yan', unicodeName, trash, paths)
+    assert.equal(result.ok, true)
+    assert.equal(trashed.at(-1), join(yanRoot, 'skills', unicodeName))
+    assert.deepEqual(managedSkillOf(join(agentDir, 'skills', 'caf\u00e9', 'SKILL.md'), paths), { scope: 'pi', dirName: 'caf\u00e9' })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

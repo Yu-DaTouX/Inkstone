@@ -137,6 +137,14 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
       project: project && runner ? { id: project.id, name: project.name, cwd: runner.cwd } : null,
       projectTrusted, projects: st.projects, nativeConfigChanged,
       busy: busy(), isBusy: busy,
+      refreshManagedTools: async () => {
+        const result = await mcpAppProxyService().refresh({ callerProjectId: agent?.capabilityProjectId ?? undefined, allowEmpty: true })
+        const problems = [
+          ...result.errors.map((entry) => `${entry.serverId}: ${entry.error}`),
+          ...result.collisions.map((entry) => pick(`工具名 ${entry.name} 重名，已跳过相关工具`, `Tool name ${entry.name} is duplicated; the affected tools were skipped`))
+        ]
+        return problems.length ? { ok: false, warning: problems.join('；') } : { ok: true }
+      },
       assertContext: () => { if (context !== mcpContext()) throw new Error(pick('当前会话或项目已切换，请重新读取', 'Session or project changed; reload')) }
     }
   }

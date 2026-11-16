@@ -124,7 +124,81 @@ process.send({ type: 'ready' })
   const [first, second] = await Promise.all([fresh.invoke('proxied', 'probe'), fresh.invoke('proxied', 'probe')])
   ok(first.pid === second.pid, 'concurrent first calls share one plugin process')
   ok(first.proxy === 'http://127.0.0.1:9', 'plugins declaring system.proxy receive the system proxy')
-  fresh.close()
+  await fresh.close()
+  const alive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }
+  ok(!alive(first.pid), 'close() 返回 Promise，resolve 时插件进程已结束')
+
+  const upgradeSource = join(sources, 'upgrade')
+  await mkdir(upgradeSource)
+  const writeUpgrade = async (version, setup) => {
+    await writeFile(join(upgradeSource, 'inkstone-plugin.json'), JSON.stringify({ id: 'upgrade', version, process: 'plugin.mjs', setup: 'setup', publicActions: [] }))
+    await writeFile(join(upgradeSource, 'version.txt'), version)
+    await writeFile(join(upgradeSource, 'plugin.mjs'), `
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+const version = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'version.txt'), 'utf8')
+process.on('message', message => {
+  if (message.type !== 'request') return
+  if (message.action === 'setup') {
+    ${setup}
+  }
+  process.send({ type: 'response', id: message.id, value: message.action === 'status' ? { version, pid: process.pid } : { ok: true } })
+})
+process.on('disconnect', () => process.exit(0))
+process.send({ type: 'ready' })
+`)
+  }
+  const upgradeHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined })
+  const installedVersion = async () => (await readFile(join(dataDir, 'plugins', 'upgrade', 'plugin', 'version.txt'), 'utf8'))
+  const leftovers = async () => (await import('node:fs/promises')).readdir(join(dataDir, 'plugins', 'upgrade')).then(names => names.filter(name => /\.(old|new)$/.test(name)))
+  await writeUpgrade('v1', '')
+  const installV1 = await upgradeHost.action('upgrade', 'install')
+  ok(installV1.ok && installV1.status.version === 'v1', '升级基线：v1 安装成功')
+  const pidV1 = installV1.status.pid
+
+  await writeUpgrade('v2', "process.send({ type: 'response', id: message.id, value: { ok: false, error: 'setup refused' } }); return")
+  const refused = await upgradeHost.action('upgrade', 'install')
+  ok(!refused.ok && refused.installed === true && /setup refused/.test(refused.error), '升级 setup 返回失败：报告失败并带原因', refused.error)
+  ok(await installedVersion() === 'v1' && (await leftovers()).length === 0, '升级 setup 失败：旧版本目录恢复，没有残留 .old/.new')
+  const afterRefused = await upgradeHost.invoke('upgrade', 'status')
+  ok(afterRefused.version === 'v1' && afterRefused.pid !== pidV1, '升级 setup 失败：旧版本进程已重启并可调用')
+
+  await writeUpgrade('v3', "console.error('setup exploded: missing dependency'); process.exit(3)")
+  const crashed = await upgradeHost.action('upgrade', 'install')
+  ok(!crashed.ok && /setup exploded: missing dependency/.test(crashed.error) && /已退出|exited/.test(crashed.error), '升级时插件进程崩溃：错误里附带 stderr 尾部', crashed.error)
+  ok(await installedVersion() === 'v1' && (await leftovers()).length === 0, '升级时插件进程崩溃：恢复旧版本')
+  ok((await upgradeHost.invoke('upgrade', 'status')).version === 'v1', '升级时插件进程崩溃：旧进程重启')
+
+  await writeUpgrade('v4', '')
+  const upgraded = await upgradeHost.action('upgrade', 'install')
+  ok(upgraded.ok && upgraded.status.version === 'v4' && await installedVersion() === 'v4' && (await leftovers()).length === 0, '升级成功：新版本生效，旧版本目录删除')
+
+  if (process.platform === 'win32') {
+    const orphan = join(sources, 'orphan')
+    await mkdir(orphan)
+    await writeFile(join(orphan, 'inkstone-plugin.json'), JSON.stringify({ id: 'orphan', version: '1', process: 'plugin.mjs' }))
+    await writeFile(join(orphan, 'plugin.mjs'), `
+import { spawn } from 'node:child_process'
+process.on('message', message => {
+  if (message.type !== 'request') return
+  if (message.action !== 'orphan') { process.send({ type: 'response', id: message.id, value: {} }); return }
+  const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+  process.send({ type: 'response', id: message.id, value: { grandchild: grandchild.pid, pid: process.pid } })
+  setTimeout(() => process.disconnect(), 100)
+})
+process.send({ type: 'ready' })
+`)
+    const orphanHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined })
+    ok((await orphanHost.action('orphan', 'install')).ok, '进程树基线：安装成功')
+    const spawned = await orphanHost.invoke('orphan', 'orphan')
+    await new Promise(resolve => setTimeout(resolve, 600))
+    ok(alive(spawned.pid) && alive(spawned.grandchild), '进程树基线：插件已断开 IPC 但进程与子进程都还在')
+    await orphanHost.close()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    ok(!alive(spawned.pid) && !alive(spawned.grandchild), 'IPC 已断开的插件被关闭时在 win32 上结束整棵进程树')
+  }
+  await upgradeHost.close()
   console.log(`bundled-plugins: ${checks} checks passed (isolated subprocess, no network/model)`)
 } finally {
   server?.stop()
