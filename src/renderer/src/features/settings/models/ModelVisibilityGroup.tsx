@@ -94,7 +94,7 @@ export function ModelVisibilityGroup(): ReactElement {
         </div>
         {models.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('visNoModels')} /> : null}
         {models.length > 0 && shown.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('visEmpty')} /> : null}
-        <div className={settingCardClass('tight', 'ms-vis-list')}>
+        <div className={settingCardClass('nested', 'ms-vis-list')}>
         {groups.map(([provider, list]) => {
           const allHidden = list.every((m) => isFavorite(favorites, m) || isHidden(hidden, m))
           const open = !!q || expanded.has(provider)

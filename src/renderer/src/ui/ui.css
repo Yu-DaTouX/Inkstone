@@ -2042,7 +2042,7 @@
   }
 }
 
-@layer primitives {
+@layer patterns {
   .ui-setting-card {
     border-radius: var(--r-lg);
     background: var(--surface);
@@ -2054,10 +2054,13 @@
   .ui-setting-card.ui-setting-card--list {
     padding: var(--s-4) var(--s-16);
   }
-  .ui-setting-card.ui-setting-card--tight {
+  .ui-setting-card.ui-setting-card--nested {
     padding: var(--s-8);
   }
-  .ui-setting-card.ui-setting-card--compact {
+  .ui-setting-card.ui-setting-card--fold {
     padding: var(--s-6) var(--s-12);
+  }
+  .ui-setting-card.ui-setting-card--form {
+    padding: var(--s-12) var(--s-16);
   }
 }

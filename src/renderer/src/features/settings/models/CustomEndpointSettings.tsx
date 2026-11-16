@@ -22,6 +22,7 @@ import {
   ModalOverlay,
   Notice,
   Select,
+  settingCardClass,
   TextField
 } from '../../../ui'
 import './models-settings.css'
@@ -334,7 +335,7 @@ export function CustomEndpointSettings(): ReactElement {
       ) : null}
 
       {draft ? (
-        <div className="ms-custom-form" data-testid="ms-custom-form">
+        <div className={settingCardClass('form', 'ms-custom-form')} data-testid="ms-custom-form">
           <TextField
             label={t('customApi.id')}
             value={draft.id}

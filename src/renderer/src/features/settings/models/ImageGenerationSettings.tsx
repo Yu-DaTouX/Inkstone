@@ -121,7 +121,7 @@ export function ImageGenerationSettings(): ReactElement {
         const savedModel = hasModelField(service) ? view.models[service] ?? '' : ''
         const keySource = hasKeyField(service) ? view.keys[service] : undefined
         return (
-          <div className={settingCardClass('compact', 'ms-image-card')} key={service} data-testid={`ms-image-${service}`}>
+          <div className={settingCardClass('fold', 'ms-image-card')} key={service} data-testid={`ms-image-${service}`}>
             <Button variant="ghost" className="ms-image-head" aria-expanded={cardOpen} icon={<CollapsibleChevron expanded={cardOpen} />} onPress={() => toggleCard(service)} data-testid={`ms-image-toggle-${service}`}>
               <span className="ms-image-name">{text.service[service]}</span>
               <Badge tone={state.tone}>{state.label}</Badge>

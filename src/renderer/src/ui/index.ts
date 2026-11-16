@@ -163,11 +163,13 @@ export { Separator, type SeparatorProps } from './Separator'
 export { AsciiRule, AsciiSpark, TermSpinner, type AsciiGlyph, type AsciiRuleProps, type AsciiSparkProps, type AsciiTone, type TermSpinnerProps } from './Terminal'
 export { Slider, type SliderProps } from './Slider'
 export {
+  SettingDescription,
   SettingRow,
   SettingRows,
   SettingSection,
   settingCardClass,
   type SettingCardPad,
+  type SettingDescriptionProps,
   type SettingRowProps,
   type SettingRowsProps,
   type SettingSectionProps

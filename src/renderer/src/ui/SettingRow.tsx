@@ -38,10 +38,22 @@ export function SettingRows({ label, className, children, ...rest }: SettingRows
   )
 }
 
-export type SettingCardPad = 'rows' | 'list' | 'tight' | 'compact'
+export type SettingCardPad = 'rows' | 'list' | 'nested' | 'fold' | 'form'
 
 export function settingCardClass(pad: SettingCardPad = 'rows', className?: string): string {
   return cx('ui-setting-card', `ui-setting-card--${pad}`, className)
+}
+
+export interface SettingDescriptionProps extends HTMLAttributes<HTMLParagraphElement> {
+  children?: ReactNode
+}
+
+export function SettingDescription({ className, children, ...rest }: SettingDescriptionProps): ReactElement {
+  return (
+    <p {...rest} className={cx('ui-setting-section__desc', className)}>
+      {children}
+    </p>
+  )
 }
 
 export interface SettingSectionProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
@@ -71,7 +83,7 @@ export function SettingSection({
         <header className="ui-setting-section__head">
           <div className="ui-setting-section__titles">
             {title != null ? <h3 className="ui-setting-section__title">{title}</h3> : null}
-            {description != null ? <p className="ui-setting-section__desc">{description}</p> : null}
+            {description != null ? <SettingDescription>{description}</SettingDescription> : null}
           </div>
           {actions != null ? <div className="ui-setting-section__actions">{actions}</div> : null}
         </header>

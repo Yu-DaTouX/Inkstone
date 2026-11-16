@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
-import { Button, CollapsibleChevron, cx, IconButton, SegmentedControl, SettingRow, SettingSection, Slider } from '../../../ui'
+import { Button, CollapsibleChevron, cx, IconButton, SegmentedControl, SettingDescription, SettingRow, SettingRows, SettingSection, Slider } from '../../../ui'
 import { RotateCcw } from '../../../ui/icons'
 import { getSettingReveal, settingSelector, subscribeSettingReveal } from '../search/search-model'
 
@@ -87,8 +87,8 @@ export function SettingsGroup({
         <div className="settings-reveal" data-open={open ? '1' : '0'} inert={!open} aria-hidden={!open}>
           <div className="settings-reveal__inner">
             <div className="settings-fold__body" id={bodyId} ref={body}>
-              {description != null ? <p className="ui-setting-section__desc">{description}</p> : null}
-              {plain ? children : <div className="ui-setting-rows">{children}</div>}
+              {description != null ? <SettingDescription>{description}</SettingDescription> : null}
+              {plain ? children : <SettingRows>{children}</SettingRows>}
             </div>
           </div>
         </div>
