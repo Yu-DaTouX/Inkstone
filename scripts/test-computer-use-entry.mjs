@@ -29,7 +29,7 @@ try {
   process.env.YAN_DATA_DIR = join(root, 'data')
   process.env.YAN_PI_DIR = join(root, 'pi')
   const mod = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
-  const { refreshComputerUseEntry, disableComputerUse, computerUseStatus, windowsMcpConfigPath, COMPUTER_USE_SERVER_ID, COMPUTER_USE_TOOLS } = mod
+  const { computerUseModeTightens, computerUseStopSync, refreshComputerUseEntry, disableComputerUse, computerUseStatus, windowsMcpConfigPath, COMPUTER_USE_SERVER_ID, COMPUTER_USE_TOOLS } = mod
   const configArg = (args) => args[args.indexOf('--config') + 1]
   const read = async () => JSON.parse(await readFile(file, 'utf8'))
   const foreign = { id: 'my-own-server', command: 'node', args: ['own.js'], enabled: false }
@@ -58,6 +58,14 @@ try {
     ok((await refreshComputerUseEntry('danger')) === true, '切回需确认档再次改写')
     await writeFile(join(root, 'windows-mcp-approval.toml'), 'tampered', 'utf8')
     ok((await refreshComputerUseEntry('danger')) === false && (await readFile(join(root, 'windows-mcp-approval.toml'), 'utf8')).startsWith('[control]'), '配置文件被改动时刷新会恢复内容')
+  }
+
+  {
+    ok(computerUseModeTightens('all', 'danger') === true && computerUseModeTightens('all', 'ask') === true, '从全部自动批准调回需确认档算调低权限')
+    ok(computerUseModeTightens('danger', 'all') === false && computerUseModeTightens('danger', 'danger') === false && computerUseModeTightens('all', 'all') === false, '放宽或没变都不算调低')
+    const stop = computerUseStopSync('disabled')
+    ok(stop.immediate === true && /关闭|turned off/.test(stop.cancelInFlight), '关闭电脑操作：立即同步并带清楚的提示')
+    ok(computerUseStopSync('tightened').immediate === true && computerUseStopSync('tightened').cancelInFlight !== stop.cancelInFlight, '调低权限：立即同步并带另一条提示')
   }
 
   {

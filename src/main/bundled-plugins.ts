@@ -1,7 +1,7 @@
 import { pick } from '../shared/ui-lang'
 import { fork, execFile, type ChildProcess } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { cp, mkdir, readFile, rename, rm, writeFile, lstat } from 'node:fs/promises'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { BundledPluginResult } from '../shared/bundled-plugins'
@@ -27,7 +27,12 @@ interface Options {
   showWindow(): void
   confirm?(plugin: string, title: string, detail: string, signal: AbortSignal): Promise<boolean>
   proxyEnvironment?(): Promise<NodeJS.ProcessEnv>
+  platform?: NodeJS.Platform
+  listProcesses?(): Promise<ProcessRow[]>
+  killTree?(pid: number): Promise<void>
+  remove?(path: string, options: typeof REMOVE_RETRY): Promise<void>
 }
+export interface ProcessRow { pid: number; ppid: number; created: string }
 interface Connection {
   child: ChildProcess
   capabilities: Set<string>
@@ -44,6 +49,58 @@ const SAFE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 function withStderrTail(message: string, tail: string): string {
   const text = tail.trim()
   return text ? `${message}\n${pick('插件输出（stderr）：', 'Plugin output (stderr):')}\n${text}` : message
+}
+
+const REMOVE_RETRY = { recursive: true, force: true, maxRetries: 8, retryDelay: 250 } as const
+const LEFTOVER = /^plugin\.[0-9a-f-]{36}\.(old|new)$/
+const PROCESS_SCAN_TIMEOUT_MS = 8000
+
+function listWindowsProcesses(): Promise<ProcessRow[]> {
+  const script = "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, $(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }) }"
+  return new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: PROCESS_SCAN_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+      if (error) { resolve([]); return }
+      resolve(String(stdout).split(/\r?\n/).flatMap(line => {
+        const match = /^(\d+) (\d+) (\d+)$/.exec(line.trim())
+        return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), created: match[3] }] : []
+      }))
+    })
+  })
+}
+
+function createdAt(row: ProcessRow | undefined): bigint | undefined {
+  if (!row || !/^\d+$/.test(row.created) || row.created === '0') return undefined
+  return BigInt(row.created)
+}
+
+function descendantsOf(rows: ProcessRow[], root: number): ProcessRow[] {
+  const found: ProcessRow[] = []
+  const seen = new Set<number>([root])
+  const born = new Map<number, bigint | undefined>([[root, createdAt(rows.find(row => row.pid === root))]])
+  let frontier = [root]
+  while (frontier.length) {
+    const next: number[] = []
+    for (const row of rows) {
+      if (seen.has(row.pid) || !frontier.includes(row.ppid)) continue
+      const parentBorn = born.get(row.ppid)
+      const childBorn = createdAt(row)
+      if (parentBorn === undefined || childBorn === undefined || childBorn < parentBorn) continue
+      born.set(row.pid, childBorn)
+      seen.add(row.pid)
+      found.push(row)
+      next.push(row.pid)
+    }
+    frontier = next
+  }
+  return found
+}
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
+}
+
+function taskkillTree(pid: number): Promise<void> {
+  return new Promise(resolve => execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => resolve()))
 }
 
 function killProcessTree(child: ChildProcess, done: () => void): void {
@@ -135,6 +192,7 @@ export class BundledPlugins {
   }
 
   async startInstalled(): Promise<void> {
+    await this.sweepLeftovers()
     for (const parent of this.options.sources) {
       const entries = await import('node:fs/promises').then(fs => fs.readdir(parent, { withFileTypes: true })).catch(() => [])
       for (const entry of entries) {
@@ -145,6 +203,43 @@ export class BundledPlugins {
         } catch (error) { console.warn('[plugins]', entry.name, error) }
       }
     }
+  }
+
+  private removeDir(path: string): Promise<void> { return (this.options.remove ?? rm)(path, REMOVE_RETRY) }
+
+  private enqueue<T>(id: string, task: () => Promise<T>): Promise<T> {
+    const next = (this.queues.get(id) ?? Promise.resolve()).then(task, task)
+    this.queues.set(id, next)
+    void next.finally(() => { if (this.queues.get(id) === next) this.queues.delete(id) }).catch(() => undefined)
+    return next
+  }
+
+  private async sweepLeftovers(): Promise<void> {
+    const pluginsDir = join(this.options.dataDir, 'plugins')
+    const ids = await readdir(pluginsDir, { withFileTypes: true }).then(items => items.filter(item => item.isDirectory()).map(item => item.name), () => [] as string[])
+    for (const id of ids) {
+      await this.enqueue(id, async () => {
+        const dir = join(pluginsDir, id)
+        const names = await this.leftovers(id)
+        const target = this.root(id)
+        const restorable = names.filter(name => name.endsWith('.old'))
+          .map(name => ({ name, mtime: statSync(join(dir, name), { throwIfNoEntry: false })?.mtimeMs ?? 0 }))
+          .sort((a, b) => b.mtime - a.mtime)[0]?.name
+        if (restorable && !existsSync(target) && names.some(name => name.endsWith('.new'))) {
+          await rename(join(dir, restorable), target)
+          names.splice(names.indexOf(restorable), 1)
+        }
+        await this.removeLeftovers(id, names)
+      }).catch(error => console.warn('[plugins]', id, error))
+    }
+  }
+
+  private leftovers(id: string): Promise<string[]> {
+    return readdir(join(this.options.dataDir, 'plugins', id)).then(items => items.filter(name => LEFTOVER.test(name)), () => [] as string[])
+  }
+
+  private async removeLeftovers(id: string, names?: string[]): Promise<void> {
+    for (const name of names ?? await this.leftovers(id)) await this.removeDir(join(this.options.dataDir, 'plugins', id, name)).catch(error => console.warn('[plugins]', id, error))
   }
 
   action(id: string, action: string): Promise<BundledPluginResult> {
@@ -158,7 +253,8 @@ export class BundledPlugins {
         if (action === 'remove') {
           if (installed && manifest.beforeRemove && manifest.process) await this.invoke(id, manifest.beforeRemove)
           await this.disconnect(id)
-          if (installed) await rm(target, { recursive: true, force: true })
+          if (installed) await this.removeDir(target)
+          await this.removeLeftovers(id)
           return { ok: true, installed: false }
         }
         if (action !== 'install') throw new Error(pick('未知插件操作', 'Unknown plugin action'))
@@ -177,7 +273,7 @@ export class BundledPlugins {
         const rollback = async (): Promise<void> => {
           if (!swapped) { await revive(); return }
           await this.disconnect(id)
-          await rm(target, { recursive: true, force: true })
+          await this.removeDir(target)
           await rename(previous, target)
           swapped = false
           await revive()
@@ -195,7 +291,7 @@ export class BundledPlugins {
             if (installed) { await rename(target, previous); swapped = true }
             try { await rename(staging, target) }
             catch (error) { if (swapped) { await rename(previous, target); swapped = false }; throw error }
-          } finally { await rm(staging, { recursive: true, force: true }).catch(() => undefined) }
+          } finally { await this.removeDir(staging).catch(() => undefined) }
           if (manifest.setup && manifest.process) {
             const value = await this.invoke(id, manifest.setup) as { ok?: boolean; error?: string; status?: unknown }
             if (value?.ok === false) failure = { error: value.error, status: value.status }
@@ -215,14 +311,11 @@ export class BundledPlugins {
           }
           return { ok: false, installed: true, error: `${pick('升级失败，已保留旧版本：', 'Upgrade failed; the previous version is kept: ')}${failure.error ?? ''}`.trim(), status: failure.status }
         }
-        if (swapped) await rm(previous, { recursive: true, force: true })
+        if (swapped) await this.removeDir(previous).catch(error => console.warn('[plugins]', id, pick('旧版本目录清理失败，下次启动时重试', 'Cleaning the previous version directory failed; will retry at next start'), error))
         return { ok: true, installed: true, ...(manifest.process ? { status } : {}) }
       } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
     }
-    const next = (this.queues.get(id) ?? Promise.resolve()).then(task, task)
-    this.queues.set(id, next)
-    void next.finally(() => { if (this.queues.get(id) === next) this.queues.delete(id) })
-    return next
+    return this.enqueue(id, task)
   }
 
   async command(command: string, params: Record<string, unknown>, context: { cwd: string }, signal?: AbortSignal): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
@@ -303,6 +396,7 @@ export class BundledPlugins {
   private async spawn(manifest: PluginManifest): Promise<Connection> {
     if (!manifest.process) throw new Error(pick('此插件不提供进程接口', 'This plugin has no process interface'))
     const proxy = manifest.capabilities?.includes('system.proxy') ? await this.options.proxyEnvironment?.().catch(() => ({})) : undefined
+    if (this.closed) throw new Error(pick('插件宿主已关闭', 'Plugin host is closed'))
     const child = fork(join(this.root(manifest.id), manifest.process), [], {
       execPath: this.options.runtime, execArgv: [], cwd: this.options.dataDir,
       env: { ...pluginEnvironment(process.env), ...pluginConfiguredEnvironment(manifest.environment, process.env), ...proxy, ELECTRON_RUN_AS_NODE: '1', INKSTONE_DATA_ROOT: this.options.dataDir, INKSTONE_PLUGIN_DATA: join(this.options.dataDir, 'plugins', manifest.id) },
@@ -379,17 +473,39 @@ export class BundledPlugins {
     if (!connection) return
     for (const controller of connection.completions.values()) controller.abort()
     const child = connection.child
+    const tracked = await this.trackDescendants(child)
     await new Promise<void>(resolve => {
       const timer = setTimeout(() => killProcessTree(child, resolve), 6000)
       child.once('exit', () => { clearTimeout(timer); resolve() })
       if (child.connected) child.disconnect()
       else { clearTimeout(timer); killProcessTree(child, resolve) }
     })
-    this.connections.delete(id)
+    await this.killSurvivors(tracked)
+    if (this.connections.get(id) === connection) this.connections.delete(id)
+  }
+
+  private async trackDescendants(child: ChildProcess): Promise<ProcessRow[]> {
+    if ((this.options.platform ?? process.platform) !== 'win32' || !child.pid || child.exitCode !== null || child.signalCode !== null) return []
+    const rows = await (this.options.listProcesses ?? listWindowsProcesses)().catch(() => [] as ProcessRow[])
+    return descendantsOf(rows, child.pid)
+  }
+
+  private async killSurvivors(tracked: ProcessRow[]): Promise<void> {
+    if (tracked.length === 0) return
+    const alive = tracked.filter(row => pidAlive(row.pid))
+    if (alive.length === 0) return
+    const rows = await (this.options.listProcesses ?? listWindowsProcesses)().catch(() => [] as ProcessRow[])
+    const same = alive.filter(row => rows.some(item => item.pid === row.pid && item.created === row.created))
+    const pids = new Set(same.map(row => row.pid))
+    const tops = same.filter(row => !pids.has(row.ppid))
+    await Promise.all(tops.map(row => (this.options.killTree ?? taskkillTree)(row.pid).catch(() => undefined)))
   }
 
   async close(): Promise<void> {
     this.closed = true
+    const starting = [...this.connecting.values()]
+    await Promise.all([...this.connections.keys()].map(id => this.disconnect(id).catch(() => undefined)))
+    await Promise.allSettled(starting)
     await Promise.all([...this.connections.keys()].map(id => this.disconnect(id).catch(() => undefined)))
   }
 }

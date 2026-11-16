@@ -360,7 +360,7 @@ console.log('\n--- 9. MCP 关闭永不返回，stop 仍在总截止时间内关�
   const { ctl } = controller()
   const { rpc, calls } = fakeRpc()
   ctl.rpc = rpc
-  ctl.mcp.manager = { close: () => new Promise(() => {}) }
+  ctl.mcp.manager = { close: () => new Promise(() => {}), clearIdleWaiters: () => {} }
   const startedAt = Date.now()
   await ctl.stop()
   const elapsed = Date.now() - startedAt
@@ -375,7 +375,7 @@ console.log('\n--- 10. MCP 关闭正常时不额外等待 ---')
   const { rpc, calls } = fakeRpc()
   ctl.rpc = rpc
   let closed = 0
-  ctl.mcp.manager = { close: async () => { closed += 1 } }
+  ctl.mcp.manager = { close: async () => { closed += 1 }, clearIdleWaiters: () => {} }
   const startedAt = Date.now()
   await ctl.stop()
   check(closed === 1 && calls.at(-1) === 'close', 'MCP 先关闭再关闭 rpc', JSON.stringify(calls))

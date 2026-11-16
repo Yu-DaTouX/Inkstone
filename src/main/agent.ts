@@ -105,7 +105,8 @@ import { UiRequests, questionToolCallId, type HostUiResponse, type UiAnswerResul
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
 import { McpConnectionManager } from './mcp/connection-manager'
-import { RunnerMcpConnections } from './mcp/runner-connections'
+import { RunnerMcpConnections, type RunnerMcpSyncOptions } from './mcp/runner-connections'
+import { awaitMcpAppToolsForStart } from './mcp/app-tools-startup'
 import {
   captureNativeStartupWitness,
   newBootId,
@@ -1013,7 +1014,10 @@ export class AgentController extends EventEmitter {
       this.userSkills ? this.userSkills().catch(() => [] as string[]) : Promise.resolve([] as string[]),
       probe.home ? readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : Promise.resolve(undefined),
       hasBash(),
-      this.ensureMcpAppTools ? this.ensureMcpAppTools(this.capabilityOpts?.projectId).catch(() => undefined) : Promise.resolve(undefined)
+      awaitMcpAppToolsForStart({
+        snapshotPath: this.mcpAppToolsSnapshot,
+        refresh: this.ensureMcpAppTools ? this.ensureMcpAppTools(this.capabilityOpts?.projectId).catch(() => undefined) : undefined
+      })
     ])
     const nativeTools = nativePiToolsSupported(version)
     const projectPackageArgs = nativeTools ? [] : await projectPiPackageArgs(this.cwd)
@@ -4467,10 +4471,10 @@ export class AgentController extends EventEmitter {
     return this.ui.pending.size
   }
 
-  async reloadMcpServers(): Promise<void> {
+  async reloadMcpServers(options?: RunnerMcpSyncOptions): Promise<void> {
     this.nativeWitness = null
     this.nativeWitnessPending = null
-    await this.mcp.syncChanged()
+    await this.mcp.syncChanged(options)
   }
 
   processId(): number | undefined {

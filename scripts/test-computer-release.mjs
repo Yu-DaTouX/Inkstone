@@ -154,6 +154,33 @@ try {
     assert.deepEqual(await calls(), ['Click {}', 'ControlStatus {"release":true}'], '关掉电脑操作或启动参数变化时先释放再关进程')
   })
 
+  await withManager('sync-cancels-in-flight', async (manager, calls) => {
+    await manager.callTool('windows-mcp', 'Snapshot', {})
+    const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 8000 })
+    const outcome = slow.then(() => null, (error) => error)
+    await sleep(300)
+    const started = Date.now()
+    const releases = manager.syncServers([], { cancelInFlight: '电脑操作已被关闭，进行中的操作已中止' })
+    assert.equal(releases.length, 1)
+    const error = await outcome
+    const abortedAfter = Date.now() - started
+    const closed = await releases[0].release
+    assert.ok(abortedAfter < 1500 && Date.now() - started < 7000, '关闭电脑操作后立即中止并断开，不等进行中的动作跑完：' + abortedAfter + 'ms')
+    assert.equal(closed.confirmed, true)
+    assert.equal(error?.name, 'McpRequestCancelledError', '进行中的电脑操作被中止')
+    assert.match(error.message, /电脑操作已被关闭/, '中止时给出清楚的提示')
+    assert.ok((await calls()).includes('ControlStatus {"release":true}'), '断开前先交还桌面控制')
+    assert.equal(manager.statusOf('windows-mcp').status, 'error', '已不再登记该服务')
+  })
+
+  await withManager('sync-without-cancel-keeps-in-flight', async (manager) => {
+    const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 400 })
+    await sleep(100)
+    assert.equal(manager.isBusy(), true, '没有 cancelInFlight 时进行中的调用照常算忙')
+    assert.equal((await slow).content[0].text, 'ok:Click', '调用跑完且未被中止')
+    assert.equal(manager.isBusy(), false)
+  })
+
   await withManager('approval-releases-first', async (manager, calls) => {
     const agent = Object.create(AgentController.prototype)
     agent.mcp = { current: () => manager, connectionManager: () => manager, configError: () => undefined }

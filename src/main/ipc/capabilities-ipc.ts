@@ -7,7 +7,7 @@ import { isSearchProviderId } from '../../shared/search'
 import { IMAGE_KEY_SERVICES, IMAGE_MODEL_SERVICES, type ImageConfigPatch, type ImageKeyService, type ImageModelService } from '../../shared/image-config'
 import { clearImageKey, setImageKey, updateImageConfig } from '../image-config'
 import { imageConfigView } from '../image-config-view'
-import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, refreshComputerUseEntry, resolveComputerUseInteraction } from '../computer-use'
+import { computerUseStatus, computerUseStopSync, disableComputerUse, enableComputerUse, installUv, refreshComputerUseEntry, resolveComputerUseInteraction } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -103,7 +103,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   })
   handle('yan:computerUse:set', async (value: unknown) => {
     const result = value === true ? await enableComputerUse((await getSettings()).permissionMode) : await disableComputerUse()
-    if (result.ok) await registry()?.reloadMcpServers()
+    if (result.ok) await registry()?.reloadMcpServers(value === true ? undefined : computerUseStopSync('disabled'))
     return result
   })
 

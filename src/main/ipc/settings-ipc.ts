@@ -11,7 +11,7 @@ import { getSettings, patchSettings, updateSettings, validateRendererSettingsPat
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from '../pi-runtime-prefs'
 import { pinnedGuardStatus, pinnedRoutingStatus } from '../net/pinned-network'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize, syncFolderService } from '../storage-move'
-import { refreshComputerUseEntry } from '../computer-use'
+import { computerUseModeTightens, computerUseStopSync, refreshComputerUseEntry } from '../computer-use'
 
 type Settings = Awaited<ReturnType<typeof getSettings>>
 
@@ -101,8 +101,9 @@ export function registerSettingsIpc(ipc: IpcRegistrar, deps: SettingsIpcDeps): v
     }
     refreshPackageProjectRoots(next)
     if (next.permissionMode !== before.permissionMode) {
+      const tightened = computerUseModeTightens(before.permissionMode, next.permissionMode)
       void refreshComputerUseEntry(next.permissionMode)
-        .then((changed) => (changed ? deps.runners()?.reloadMcpServers() : undefined))
+        .then((changed) => (changed ? deps.runners()?.reloadMcpServers(tightened ? computerUseStopSync('tightened') : undefined) : undefined))
         .catch((error) => reportMainError(pick('电脑操作', 'Computer use'), error))
     }
     if (typeof patch.theme === 'string' && patch.theme !== before.theme) {

@@ -196,6 +196,44 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(decaying.decide('K', 200000).kind === 'send', '窗口外的旧记录不再计数')
   }
 
+  console.log('\n## 退避记录随会话清理')
+  {
+    const guard = new ViewResyncGuard()
+    guard.sent('S1', 0)
+    guard.sent('run:r9', 0)
+    guard.sent('keep', 0)
+    guard.retain(new Set(['keep']))
+    ok(guard.size() === 1 && !guard.stopped('S1'), '保留集合之外的会话记录被删除', String(guard.size()))
+    const many = new ViewResyncGuard()
+    for (let i = 0; i < 40; i++) many.sent('s' + i, 0)
+    many.decide('fresh', 500000)
+    ok(many.size() <= 2, '窗口外的旧记录在新增时被清扫，不会无限增长', String(many.size()))
+
+    const clock = fakeClock()
+    const sent = []
+    const scheduler = createViewResyncScheduler({ send: (request) => sent.push(request), now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer })
+    const early = { sessionId: '', runId: 'r1', generation: 1 }
+    scheduler.request({ reason: 'patch-target-missing', runtime: early, missing: [{ kind: 'msg-update', messageId: 'm1' }] })
+    scheduler.request({ reason: 'patch-target-missing', runtime: { sessionId: 'T', runId: 'r2', generation: 1 }, missing: [{ kind: 'msg-update', messageId: 'm2' }] })
+    ok(clock.pending().length === 2, '两个请求在等待')
+    scheduler.retain(new Set(['T', 'view']))
+    ok(clock.pending().length === 1, 'run: 键换成 sessionId 键后，旧键等待中的请求被撤掉')
+    clock.advance(300)
+    ok(sent.length === 1 && sent[0].sessionId === 'T', '只有仍存在的会话发出请求', JSON.stringify(sent))
+  }
+
+  console.log('\n## 运行实例列表更新时撤掉已迁移键的等待请求')
+  {
+    const early = { sessionId: '', runId: 'r7', generation: 1 }
+    useStore.setState({ session: session('S7'), runners: [runnerOf('r7', '', 1, { isActive: true })], activeRunnerId: 'r7', peekedSessionId: null, peekedPath: null, messages: [user], sessionRuntimes: {} })
+    resyncCalls.length = 0
+    useStore.getState().applyPush({ ch: 'msg-update', payload: { id: 'm9', patch: { textDelta: 'x' } }, runtime: early, sessionKey: 'r7' })
+    useStore.getState().applyPush({ ch: 'stats', payload: {}, runtime: early, sessionKey: 'r7' })
+    useStore.getState().applyPush({ ch: 'runners', payload: [runnerOf('r7', 'S7', 1, { isActive: true })] })
+    await sleep(420)
+    ok(resyncCalls.length === 0, '会话 id 落定后，按 run: 键排队的重同步请求不再发出', JSON.stringify(resyncCalls))
+  }
+
   console.log('\n## 快照前先刷出未推增量：快照后紧跟的增量不重复')
   {
     const replay = (flushBeforeSnapshot) => {

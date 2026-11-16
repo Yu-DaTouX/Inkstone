@@ -4,6 +4,7 @@ import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
 import type { UiAnswerResult } from './ui-requests'
 import type { McpNativeBootWitness } from './mcp/app-native-witness'
 import type { McpServerStatus } from '../shared/mcp'
+import type { RunnerMcpSyncOptions } from './mcp/runner-connections'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
 import { RuntimeRef } from '../shared/runs'
 import { canReclaimIdle, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
@@ -379,8 +380,8 @@ export class RunnerRegistry {
     return [...this.runners.values()].map((runner) => runner.agent)
   }
 
-  async reloadMcpServers(): Promise<void> {
-    await Promise.all([...this.runners.values()].map((runner) => runner.agent.reloadMcpServers()))
+  async reloadMcpServers(options?: RunnerMcpSyncOptions): Promise<void> {
+    await Promise.all([...this.runners.values()].map((runner) => runner.agent.reloadMcpServers(options)))
   }
 
   agentForSession(sessionId: string): AgentController | null {

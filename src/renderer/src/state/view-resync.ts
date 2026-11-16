@@ -23,6 +23,8 @@ export type ViewResyncDecision =
   | { kind: 'send'; delayMs: number; attempt: number; retry?: boolean }
   | { kind: 'give-up'; attempt: number }
 
+const SWEEP_AT_KEYS = 32
+
 interface GuardEntry {
   sent: number[]
   stoppedAt?: number
@@ -65,9 +67,24 @@ export class ViewResyncGuard {
     else this.keys.delete(key)
   }
 
+  retain(live: ReadonlySet<string>): void {
+    for (const key of [...this.keys.keys()]) if (!live.has(key)) this.keys.delete(key)
+  }
+
+  size(): number {
+    return this.keys.size
+  }
+
+  private sweep(now: number): void {
+    for (const [key, entry] of this.keys) {
+      if (entry.stoppedAt === undefined && entry.sent.every((at) => now - at >= this.policy.windowMs)) this.keys.delete(key)
+    }
+  }
+
   private entry(key: string, now: number): GuardEntry {
     let entry = this.keys.get(key)
     if (!entry) {
+      if (this.keys.size >= SWEEP_AT_KEYS) this.sweep(now)
       entry = { sent: [] }
       this.keys.set(key, entry)
     }
@@ -94,6 +111,7 @@ export interface ViewResyncScheduler {
   request(need: ViewResyncNeed): void
   settle(key?: string): void
   cancel(key: string): void
+  retain(live: ReadonlySet<string>): void
   reset(): void
 }
 
@@ -164,6 +182,10 @@ export function createViewResyncScheduler(deps: ViewResyncSchedulerDeps): ViewRe
       guard.settle(key)
     },
     cancel,
+    retain(live) {
+      for (const key of [...pending.keys()]) if (!live.has(key)) cancel(key)
+      guard.retain(live)
+    },
     reset() {
       for (const key of [...pending.keys()]) cancel(key)
       guard.settle()

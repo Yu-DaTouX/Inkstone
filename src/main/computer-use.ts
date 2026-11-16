@@ -176,6 +176,19 @@ export function windowsMcpConfigPath(permissionMode: unknown): string {
   return join(dirname(mcpServersFile()), variant.file)
 }
 
+export function computerUseModeTightens(before: unknown, next: unknown): boolean {
+  return !mcpCallsAskInMode(before) && mcpCallsAskInMode(next)
+}
+
+export function computerUseStopSync(reason: 'disabled' | 'tightened'): { immediate: true; cancelInFlight: string } {
+  return {
+    immediate: true,
+    cancelInFlight: reason === 'disabled'
+      ? pick('电脑操作已被关闭，进行中的电脑操作已中止', 'Computer use was turned off; the computer action in progress was aborted')
+      : pick('权限模式已调低，进行中的电脑操作已中止；之后的电脑操作按新权限重新连接', 'The permission mode was tightened; the computer action in progress was aborted, and later actions reconnect under the new permissions')
+  }
+}
+
 async function ensureWindowsMcpConfigs(): Promise<void> {
   const dir = dirname(mcpServersFile())
   await mkdir(dir, { recursive: true })

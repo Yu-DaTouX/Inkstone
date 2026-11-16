@@ -1,6 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rename, writeFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -11,6 +11,7 @@ const root = await mkdtemp(join(tmpdir(), 'inkstone-bundled-plugins-'))
 const env = { ...process.env }
 let plugins, server
 let checks = 0
+const noScan = async () => []
 const ok = (value, message) => { assert.ok(value, message); checks++ }
 try {
   const bundle = join(root, 'host.mjs')
@@ -149,7 +150,7 @@ process.on('disconnect', () => process.exit(0))
 process.send({ type: 'ready' })
 `)
   }
-  const upgradeHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined })
+  const upgradeHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
   const installedVersion = async () => (await readFile(join(dataDir, 'plugins', 'upgrade', 'plugin', 'version.txt'), 'utf8'))
   const leftovers = async () => (await import('node:fs/promises')).readdir(join(dataDir, 'plugins', 'upgrade')).then(names => names.filter(name => /\.(old|new)$/.test(name)))
   await writeUpgrade('v1', '')
@@ -174,6 +175,140 @@ process.send({ type: 'ready' })
   const upgraded = await upgradeHost.action('upgrade', 'install')
   ok(upgraded.ok && upgraded.status.version === 'v4' && await installedVersion() === 'v4' && (await leftovers()).length === 0, '升级成功：新版本生效，旧版本目录删除')
 
+  {
+    const removed = []
+    let failOld = false
+    await upgradeHost.close()
+    const spyHost = new BundledPlugins({
+      sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan,
+      remove: async (target, options) => {
+        removed.push({ target, options })
+        if (failOld && /\.old$/.test(target)) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
+        return rm(target, options)
+      }
+    })
+    const warn = console.warn
+    const warned = []
+    console.warn = (...args) => { warned.push(args.map(String).join(' ')) }
+    try {
+      await writeUpgrade('v5', "process.send({ type: 'response', id: message.id, value: { ok: false, error: 'setup refused' } }); return")
+      const refusedAgain = await spyHost.action('upgrade', 'install')
+      ok(!refusedAgain.ok && await installedVersion() === 'v4' && (await leftovers()).length === 0, '回滚后恢复旧版本且没有残留')
+      ok(removed.length > 0 && removed.every(item => item.options.maxRetries >= 1 && item.options.retryDelay > 0), '回滚与暂存目录清理的删除都带 maxRetries/retryDelay')
+
+      removed.length = 0
+      failOld = true
+      await writeUpgrade('v6', '')
+      const cleanupFailed = await spyHost.action('upgrade', 'install')
+      ok(cleanupFailed.ok === true && cleanupFailed.status.version === 'v6' && await installedVersion() === 'v6', '成功路径上旧版本目录清理失败：只记日志，仍报升级成功')
+      ok(removed.some(item => /\.old$/.test(item.target) && item.options.maxRetries >= 1), '成功路径清理旧目录也带重试参数')
+      ok(warned.some(line => line.includes('upgrade')), '清理失败写了日志')
+      ok((await leftovers()).length === 1, '清理失败留下 .old 等下次启动处理')
+      failOld = false
+    } finally {
+      console.warn = warn
+    }
+    await spyHost.close()
+
+    const upgradeDir = join(dataDir, 'plugins', 'upgrade')
+    const uuid = (n) => `${String(n).repeat(8)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(12)}`
+    await mkdir(join(upgradeDir, `plugin.${uuid(2)}.new`))
+    await mkdir(join(upgradeDir, 'plugin.keep-me.old'))
+    const proxiedDir = join(dataDir, 'plugins', 'proxied')
+    await rename(join(proxiedDir, 'plugin'), join(proxiedDir, `plugin.${uuid(3)}.old`))
+    await mkdir(join(proxiedDir, `plugin.${uuid(5)}.new`))
+    const uninstalledDir = join(dataDir, 'plugins', 'uninstalled')
+    await mkdir(join(uninstalledDir, `plugin.${uuid(6)}.old`), { recursive: true })
+    const restarted = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
+    ok(!restarted.installed('proxied'), '模拟中断：目标目录缺失、旧版本留在 .old')
+    await restarted.startInstalled()
+    ok((await leftovers()).join() === 'plugin.keep-me.old', '启动时清掉带 uuid 的残留 .old/.new')
+    ok(existsSync(join(upgradeDir, 'plugin.keep-me.old')) && await installedVersion() === 'v6', '名字不符的目录与现行版本不动')
+    await rm(join(upgradeDir, 'plugin.keep-me.old'), { recursive: true, force: true })
+    ok(restarted.installed('proxied') && (await readdir(proxiedDir)).every(name => !/\.(old|new)$/.test(name)), '升级中断（目标缺失且 .old 与 .new 都在）时把 .old 还原，而不是删掉唯一一份')
+    ok(!existsSync(join(uninstalledDir, 'plugin')) && (await readdir(uninstalledDir)).length === 0, '只剩 .old 没有 .new（卸载后残留）时不还原，卸掉的插件不会复活')
+
+    await mkdir(join(upgradeDir, `plugin.${uuid(4)}.old`))
+    ok((await restarted.action('upgrade', 'remove')).ok && (await leftovers()).length === 0, '移除插件时一并清理残留的 .old/.new，不会被之后的还原复活')
+    await restarted.close()
+  }
+
+  {
+    const lazy = join(sources, 'lazy')
+    await mkdir(lazy)
+    const pidFile = join(root, 'lazy.pid')
+    await writeFile(join(lazy, 'inkstone-plugin.json'), JSON.stringify({ id: 'lazy', version: '1', process: 'plugin.mjs' }))
+    await writeFile(join(lazy, 'plugin.mjs'), `
+import { writeFileSync } from 'node:fs'
+writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
+process.on('message', message => { if (message.type === 'request') process.send({ type: 'response', id: message.id, value: {} }) })
+process.on('disconnect', () => process.exit(0))
+setTimeout(() => process.send({ type: 'ready' }), 20000)
+`)
+    const lazyHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
+    const lazyRoot = join(dataDir, 'plugins', 'lazy', 'plugin')
+    await mkdir(lazyRoot, { recursive: true })
+    await writeFile(join(lazyRoot, 'plugin.mjs'), await readFile(join(lazy, 'plugin.mjs'), 'utf8'))
+    await writeFile(join(lazyRoot, '.installed-by-inkstone'), 'lazy')
+    const calling = lazyHost.invoke('lazy', 'ping').then(() => 'resolved', (error) => String(error.message))
+    for (let i = 0; i < 100 && !existsSync(pidFile); i++) await new Promise(resolve => setTimeout(resolve, 50))
+    ok(existsSync(pidFile), '慢启动插件进程已拉起但还没就绪')
+    const lazyPid = Number(await readFile(pidFile, 'utf8'))
+    const started = Date.now()
+    await lazyHost.close()
+    ok(Date.now() - started < 15000 && !alive(lazyPid), 'close() 会等待并结束 connecting 中的插件，不留进程、不等 60 秒启动超时')
+    ok(/已退出|exited|关闭|closed/.test(await calling), '启动中的调用随关闭而失败')
+  }
+
+  {
+    for (const reused of [false, true]) {
+      const killed = []
+      let scans = 0
+      let helper
+      const host = new BundledPlugins({
+        sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, platform: 'win32',
+        listProcesses: async () => { scans++; return helper ? [{ pid: livePid, ppid: 1, created: '5' }, { pid: helper.pid, ppid: livePid, created: reused && scans > 1 ? '7' : '6' }, { pid: 999999, ppid: livePid, created: '3' }] : [] },
+        killTree: async (pid) => { killed.push(pid); try { process.kill(pid) } catch {} }
+      })
+      let livePid = 0
+      const info = await host.invoke('proxied', 'probe')
+      livePid = info.pid
+      const { spawn } = await import('node:child_process')
+      helper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })
+      helper.unref()
+      await host.close()
+      await new Promise(resolve => setTimeout(resolve, 200))
+      if (reused) ok(killed.length === 0 && alive(helper.pid), '创建时间对不上（PID 被复用）时不误杀')
+      else ok(killed.join() === String(helper.pid) && !alive(helper.pid), '插件正常退出后，关闭前记下的孙进程仍活着则结束')
+      try { process.kill(helper.pid) } catch {}
+    }
+  }
+
+  if (process.platform === 'win32') {
+    const detached = join(sources, 'detached')
+    await mkdir(detached)
+    await writeFile(join(detached, 'inkstone-plugin.json'), JSON.stringify({ id: 'detached', version: '1', process: 'plugin.mjs' }))
+    await writeFile(join(detached, 'plugin.mjs'), `
+import { spawn } from 'node:child_process'
+process.on('message', message => {
+  if (message.type !== 'request') return
+  const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })
+  grandchild.unref()
+  process.send({ type: 'response', id: message.id, value: { grandchild: grandchild.pid, pid: process.pid } })
+})
+process.on('disconnect', () => process.exit(0))
+process.send({ type: 'ready' })
+`)
+    const detachedHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined })
+    ok((await detachedHost.action('detached', 'install')).ok, '脱离父进程的孙进程：安装成功')
+    const spawned = await detachedHost.invoke('detached', 'spawn')
+    await new Promise(resolve => setTimeout(resolve, 300))
+    ok(alive(spawned.grandchild), '脱离父进程的孙进程基线：存活')
+    await detachedHost.close()
+    await new Promise(resolve => setTimeout(resolve, 500))
+    ok(!alive(spawned.pid) && !alive(spawned.grandchild), '插件正常退出后，win32 上也结束它留下的孙进程')
+  }
+
   if (process.platform === 'win32') {
     const orphan = join(sources, 'orphan')
     await mkdir(orphan)
@@ -189,7 +324,7 @@ process.on('message', message => {
 })
 process.send({ type: 'ready' })
 `)
-    const orphanHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined })
+    const orphanHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
     ok((await orphanHost.action('orphan', 'install')).ok, '进程树基线：安装成功')
     const spawned = await orphanHost.invoke('orphan', 'orphan')
     await new Promise(resolve => setTimeout(resolve, 600))

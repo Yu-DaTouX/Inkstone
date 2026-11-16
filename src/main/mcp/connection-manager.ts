@@ -23,6 +23,7 @@ interface Connection {
   generation: number
   transportError?: unknown
   connecting?: Promise<void>
+  inflight?: Set<(reason: unknown) => void>
 }
 
 function stderrTailOf(transport: unknown): string {
@@ -96,6 +97,10 @@ function sameConnectionConfig(a: McpServerConfig, b: McpServerConfig): boolean {
 export interface McpCloseOutcome {
   confirmed: boolean
   unknown: number
+}
+
+export interface McpSyncServersOptions {
+  cancelInFlight?: string
 }
 
 export class McpConnectionManager {
@@ -193,7 +198,16 @@ export class McpConnectionManager {
     )
   }
 
-  syncServers(configs: readonly McpServerConfig[]): Array<{ serverId: string; release: Promise<McpCloseOutcome> }> {
+  private cancelInFlight(conn: Connection, message: string): void {
+    const reason = new McpRequestCancelledError(message)
+    for (const cancel of [...(conn.inflight ?? [])]) cancel(reason)
+  }
+
+  clearIdleWaiters(): void {
+    this.idleWaiters = []
+  }
+
+  syncServers(configs: readonly McpServerConfig[], options: McpSyncServersOptions = {}): Array<{ serverId: string; release: Promise<McpCloseOutcome> }> {
     const wanted = new Map(configs.map((config) => [config.id, config]))
     const releases: Array<{ serverId: string; release: Promise<McpCloseOutcome> }> = []
     for (const id of [...this.connections.keys()]) {
@@ -205,6 +219,7 @@ export class McpConnectionManager {
       }
       this.connections.delete(id)
       this.toolCache.delete(id)
+      if (options.cancelInFlight) this.cancelInFlight(conn, options.cancelInFlight)
       releases.push({ serverId: id, release: this.releaseThenDetach(conn) })
     }
     for (const config of configs) {
@@ -437,6 +452,8 @@ export class McpConnectionManager {
     }
     const transportErrorBeforeRequest = conn.transportError
     this.activeRequests++
+    const inflight = (conn.inflight ??= new Set())
+    inflight.add(cancelThis)
     try {
       return await run(controller.signal)
     } catch (error) {
@@ -453,6 +470,7 @@ export class McpConnectionManager {
     } finally {
       if (timer) clearTimeout(timer)
       if (external) external.removeEventListener('abort', onExternalAbort)
+      inflight.delete(cancelThis)
       this.activeRequests--
       this.settleIdle()
     }
@@ -673,6 +691,7 @@ export class McpConnectionManager {
   }
 
   async closeConfirmed(): Promise<McpCloseOutcome> {
+    this.clearIdleWaiters()
     await this.releaseComputerControl()
     const closers: Promise<McpCloseOutcome>[] = []
     for (const conn of this.connections.values()) {

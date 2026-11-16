@@ -1,7 +1,7 @@
 import { pick } from '../../shared/ui-lang'
 import type { McpServerConfig, McpServerStatus } from '../../shared/mcp'
 import type { CapabilityMcpServerSettingView } from '../../shared/ipc'
-import { McpConnectionManager, type McpCloseOutcome } from './connection-manager'
+import { McpConnectionManager, type McpCloseOutcome, type McpSyncServersOptions } from './connection-manager'
 import { loadMcpServers, mcpServersForProject, type McpConfigLoadResult } from './config'
 import { mcpAppHost, type McpAppHost } from './app-host'
 import { isInkstoneManaged } from './app-spec'
@@ -32,13 +32,18 @@ function endpointOriginOf(server: { transport: string; url?: string }): string |
   }
 }
 
+export interface RunnerMcpSyncOptions {
+  immediate?: boolean
+  cancelInFlight?: string
+}
+
 export class RunnerMcpConnections {
   private manager?: McpConnectionManager
   private retired: McpConnectionManager[] = []
   private releasing = new Map<string, Promise<McpCloseOutcome>>()
   private retiredCloseTail: Promise<void> = Promise.resolve()
   private lastConfigError?: string
-  private syncDeferred = false
+  private deferredOn?: McpConnectionManager
 
   constructor(private readonly deps: RunnerMcpConnectionsDeps) {}
 
@@ -50,7 +55,7 @@ export class RunnerMcpConnections {
     return this.manager
   }
 
-  connectionManager(): McpConnectionManager {
+  connectionManager(syncOptions: McpSyncServersOptions = {}): McpConnectionManager {
     const loaded = this.load()
     this.lastConfigError = loaded.error
     const visible = mcpServersForProject(loaded.servers, this.deps.projectId())
@@ -59,7 +64,7 @@ export class RunnerMcpConnections {
       this.manager = this.deps.createManager ? this.deps.createManager(legacyConfigs) : new McpConnectionManager(legacyConfigs)
       return this.manager
     }
-    const releases = this.manager.syncServers(legacyConfigs)
+    const releases = this.manager.syncServers(legacyConfigs, syncOptions)
     for (const { serverId, release } of releases) {
       this.releasing.set(serverId, release)
       void release.then(
@@ -153,14 +158,18 @@ export class RunnerMcpConnections {
     return this.connectionManager().disconnect(serverId)
   }
 
-  async syncChanged(): Promise<'none' | 'synced' | 'deferred'> {
+  async syncChanged(options: RunnerMcpSyncOptions = {}): Promise<'none' | 'synced' | 'deferred'> {
     const manager = this.manager
     if (!manager) return 'none'
+    if (options.immediate) {
+      await this.applySync(options.cancelInFlight)
+      return 'synced'
+    }
     if (manager.isBusy()) {
-      if (!this.syncDeferred) {
-        this.syncDeferred = true
+      if (this.deferredOn !== manager) {
+        this.deferredOn = manager
         manager.onceIdle(() => {
-          this.syncDeferred = false
+          if (this.deferredOn === manager) this.deferredOn = undefined
           if (this.manager === manager) void this.applySync()
         })
       }
@@ -170,9 +179,9 @@ export class RunnerMcpConnections {
     return 'synced'
   }
 
-  private async applySync(): Promise<void> {
+  private async applySync(cancelInFlight?: string): Promise<void> {
     try {
-      this.connectionManager()
+      this.connectionManager(cancelInFlight ? { cancelInFlight } : {})
       await Promise.allSettled([...this.releasing.values()])
       await this.closeRetired()
     } catch {
@@ -182,16 +191,24 @@ export class RunnerMcpConnections {
   async closeCurrent(): Promise<void> {
     const old = this.manager
     this.manager = undefined
+    this.dropDeferred(old)
     await old?.close().catch(() => undefined)
   }
 
   close(): Promise<void> {
     const closing = this.manager
     this.manager = undefined
+    this.dropDeferred(closing)
     return (async (): Promise<void> => {
       await closing?.close().catch(() => undefined)
       await this.closeRetired()
     })()
+  }
+
+  private dropDeferred(manager: McpConnectionManager | undefined): void {
+    if (!manager) return
+    manager.clearIdleWaiters()
+    if (this.deferredOn === manager) this.deferredOn = undefined
   }
 
   closeRetired(): Promise<void> {

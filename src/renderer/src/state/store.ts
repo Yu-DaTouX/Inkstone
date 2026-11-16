@@ -837,6 +837,7 @@ export const useStore = create<Store>((rawSet, get) => {
           const keep = new Set([viewingSessionId(s) ?? '',
             ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
           for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
+          viewResync.retain(new Set(['view', ...keep, ...m.payload.map((runner) => runner.sessionId || `run:${runner.runId}`)]))
           set({ runners: keepRef(s.runners, m.payload), sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
           restoreMissingUiRequests(m.payload)
           if (active) {
