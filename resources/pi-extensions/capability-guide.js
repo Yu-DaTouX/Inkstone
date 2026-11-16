@@ -7,6 +7,7 @@ import { createWebTools } from './web-tools.js'
 import { hasPwsh } from './windows-powershell.js'
 import { reserveInkstoneSections } from './prompt-sections.js'
 import { codemodeWanted } from './codemode-policy.js'
+import { computerUseEnabled } from './computer-tools.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with `yan tasks apply` before the first change and tick them off as they finish; chain each update into a command you are running anyway, never a step of its own.'
 const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with the `todos` tool before the first change and tick them off as they finish; send each update alongside other tool calls in the same response, never in a response of its own.'
@@ -101,28 +102,22 @@ export function sessionSkillsBlock(sessionId) {
 const SESSION_SKILLS_SECTION = 'inkstone_session_skills'
 
 const COMPUTER_USE_BASE = 'Computer use (Windows UI) is enabled. Inkstone connects the windows-mcp server itself, so its tools are not in your tool list: run `yan mcp list` to see them, `yan mcp describe --server windows-mcp --tool <name>` for arguments, then `yan mcp call --request-file call.json`.'
-const COMPUTER_USE_VISION = 'Observe with Snapshot or Screenshot before clicking or typing; never repeat an input whose result is uncertain, check the screen first. Images in a call result (Screenshot, or Snapshot with use_vision=true) are saved as files and the result text gives the path: open it with the read tool to look at it, and do not write your own python screenshot code. If you cannot view the image, use Snapshot with use_vision=false and read the UI tree instead.'
-const COMPUTER_USE_TEXT_ONLY = 'The current model cannot read images, so never call Screenshot and never use use_vision=true. Observe with Snapshot and use_vision=false before clicking or typing, and read the UI tree it returns; never repeat an input whose result is uncertain, check the screen first. If the task can only be done by looking at the picture, tell the user to switch to a model that supports image input.'
+const COMPUTER_USE_TOOLS_BASE = 'Computer use (Windows UI) is enabled through the computer_* tools; load them with `tool_search` "computer" first.'
+const MCP_NAMES = { snapshot: 'Snapshot', screenshot: 'Screenshot', control: 'ControlStatus' }
+const TOOL_NAMES = { snapshot: 'computer_snapshot', screenshot: 'computer_screenshot', control: 'computer_control' }
+const computerUseVision = (n) => `Before clicking or typing, observe with ${n.snapshot} (use_vision=false) and read the UI tree; call ${n.screenshot} (with region when you know the area) only when you need to see the picture. Never repeat an input whose result is uncertain, check the screen first. Images in a result are saved as files and the result text gives the path: open it with the read tool to look at it, and do not write your own python screenshot code.`
+const computerUseTextOnly = (n) => `The current model cannot read images, so never call ${n.screenshot} and never use use_vision=true. Observe with ${n.snapshot} and use_vision=false before clicking or typing, and read the UI tree it returns; never repeat an input whose result is uncertain, check the screen first. If the task can only be done by looking at the picture, tell the user to switch to a model that supports image input.`
+const computerUseRelease = (n) => `Inkstone hands the desktop back to the user when your turn ends, before any approval or question, and after 15 s without input actions; ${n.control} with release=true does it sooner.`
 
-export function computerUseGuide(model) {
+export function computerUseGuide(model, tools = false) {
   const textOnly = !modelSeesImages(model)
-  return `${COMPUTER_USE_BASE} ${textOnly ? COMPUTER_USE_TEXT_ONLY : COMPUTER_USE_VISION}`
+  const names = tools ? TOOL_NAMES : MCP_NAMES
+  return `${tools ? COMPUTER_USE_TOOLS_BASE : COMPUTER_USE_BASE} ${textOnly ? computerUseTextOnly(names) : computerUseVision(names)} ${computerUseRelease(names)}`
 }
 
 export const COMPUTER_USE_GUIDE = computerUseGuide()
 const COMPUTER_USE_SECTION = 'inkstone_computer_use'
 
-function computerUseEnabled() {
-  try {
-    const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
-    const file = process.env.YAN_MCP_SERVERS_FILE?.trim() || join(dir, 'mcp-servers.json')
-    const raw = JSON.parse(readFileSync(file, 'utf8'))
-    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.servers) ? raw.servers : []
-    return list.some((server) => server?.id === 'windows-mcp' && server.enabled !== false)
-  } catch {
-    return false
-  }
-}
 
 const OS_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
 
@@ -207,9 +202,9 @@ export function createTodosTool(call = callHostTool) {
   }
 }
 
-function phoneToolsSearchable(pi) {
+function deferredToolSearchable(pi, name) {
   const names = (key) => (pi[key]?.() ?? []).map((tool) => (typeof tool === 'string' ? tool : tool?.name))
-  return names('getActiveTools').includes('tool_search') && names('getAllTools').includes('phone_ui')
+  return names('getActiveTools').includes('tool_search') && names('getAllTools').includes(name)
 }
 
 const MARKER = 'Capabilities beyond your tools come through the `yan` CLI'
@@ -223,26 +218,26 @@ export default function capabilityGuideExtension(pi) {
   registerWriteLineEndings(pi)
   pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')
-    const guideText = capabilityGuide(tools, { codemode: codemodeWanted(ctx?.model), phoneTools: tools && phoneToolsSearchable(pi), model: ctx?.model })
+    const guideText = capabilityGuide(tools, { codemode: codemodeWanted(ctx?.model), phoneTools: tools && deferredToolSearchable(pi, 'phone_ui'), model: ctx?.model })
     const visual = visualAnswersEnabled()
     let sessionSkills = ''
     try {
       sessionSkills = sessionSkillsBlock(ctx?.sessionManager?.getSessionId?.())
     } catch {
     }
-    const computerUse = computerUseEnabled()
+    const computerUse = computerUseEnabled() ? computerUseGuide(ctx?.model, tools && deferredToolSearchable(pi, 'computer_snapshot')) : ''
     const sections = event?.systemPromptOptions?.sections
     if (sections && typeof sections === 'object') {
       reserveInkstoneSections(sections)
       sections.inkstone_capabilities = guideText
-      sections[COMPUTER_USE_SECTION] = computerUse ? computerUseGuide(ctx?.model) : ''
+      sections[COMPUTER_USE_SECTION] = computerUse
       sections[VISUAL_SECTION] = visual ? VISUAL_ANSWER_GUIDE : ''
       sections[SESSION_SKILLS_SECTION] = sessionSkills
       sections[ENVIRONMENT_SECTION] = environmentGuide()
       return
     }
     if (base.includes(MARKER)) return
-    const guide = [guideText, computerUse ? computerUseGuide(ctx?.model) : '', visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills, environmentGuide()].filter(Boolean).join('\n\n')
+    const guide = [guideText, computerUse, visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills, environmentGuide()].filter(Boolean).join('\n\n')
     return { systemPrompt: base ? `${base}\n\n${guide}` : guide }
   })
 }

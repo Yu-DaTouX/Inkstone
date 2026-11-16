@@ -5,6 +5,10 @@ export interface McpToolAnnotations {
   openWorldHint?: boolean
 }
 
+export function mcpCallsAskInMode(mode: unknown): boolean {
+  return mode !== 'all'
+}
+
 export function mcpApprovalNeeded(annotations: unknown): boolean {
   const hints = annotations && typeof annotations === 'object' ? (annotations as McpToolAnnotations) : {}
   if (hints.destructiveHint === true) return true

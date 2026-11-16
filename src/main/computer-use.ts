@@ -6,6 +6,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { mcpServersFile } from './mcp/config'
+import { mcpCallsAskInMode } from '../shared/mcp-approval'
+import { DEFAULT_PERMISSION_MODE } from '../shared/approval'
 import { INTERACTIVE_RESOURCE, sharedResources } from './interactive-resources'
 
 export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
@@ -13,7 +15,7 @@ export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
 // windows-mcp 0.8.6 起要求 Python >= 3.14；0.8.5 是 3.13 下最后一个可用版本。
 // 传具体版本号是为了让 uv 自动下载对应解释器，不依赖用户机器上已有的 Python。
 const WINDOWS_MCP_PYTHON = '3.14'
-const WINDOWS_MCP_PACKAGE = 'windows-mcp==0.8.8'
+const WINDOWS_MCP_PACKAGE = 'windows-mcp==0.8.9'
 
 export const COMPUTER_USE_TOOLS = [
   'Snapshot',
@@ -164,21 +166,44 @@ export async function installUv(): Promise<ComputerUseResult> {
   return { ok: false, error: pick(`winget 没有装好 uv（退出码 ${r.code ?? '?'}）`, `winget failed to install uv (exit code ${r.code ?? '?'})`), log: tail(r.log) }
 }
 
-const serverArgs = (): string[] => ['--python', WINDOWS_MCP_PYTHON, WINDOWS_MCP_PACKAGE, 'serve', '--tools', COMPUTER_USE_TOOLS.join(',')]
+export const WINDOWS_MCP_CONFIGS = {
+  approval: { file: 'windows-mcp-approval.toml', text: '[control]\nconsent_countdown_seconds = 0\n' },
+  auto: { file: 'windows-mcp-auto.toml', text: '' }
+} as const
 
-function serverEntry(uvx: string): Record<string, unknown> {
+export function windowsMcpConfigPath(permissionMode: unknown): string {
+  const variant = mcpCallsAskInMode(permissionMode) ? WINDOWS_MCP_CONFIGS.approval : WINDOWS_MCP_CONFIGS.auto
+  return join(dirname(mcpServersFile()), variant.file)
+}
+
+async function ensureWindowsMcpConfigs(): Promise<void> {
+  const dir = dirname(mcpServersFile())
+  await mkdir(dir, { recursive: true })
+  for (const { file, text } of Object.values(WINDOWS_MCP_CONFIGS)) {
+    const path = join(dir, file)
+    const current = await readFile(path, 'utf8').catch(() => null)
+    if (current === text) continue
+    const tmp = `${path}.tmp`
+    await writeFile(tmp, text, 'utf8')
+    await rename(tmp, path)
+  }
+}
+
+const serverArgs = (permissionMode: unknown): string[] => ['--python', WINDOWS_MCP_PYTHON, WINDOWS_MCP_PACKAGE, 'serve', '--tools', COMPUTER_USE_TOOLS.join(','), '--config', windowsMcpConfigPath(permissionMode)]
+
+function serverEntry(uvx: string, permissionMode: unknown): Record<string, unknown> {
   return {
     id: COMPUTER_USE_SERVER_ID,
     title: '电脑操作（Windows-MCP）',
     transport: 'stdio',
     command: uvx,
-    args: serverArgs(),
+    args: serverArgs(permissionMode),
     env: { ANONYMIZED_TELEMETRY: 'false' },
     effect: 'external-action'
   }
 }
 
-export async function enableComputerUse(): Promise<ComputerUseResult> {
+export async function enableComputerUse(permissionMode: unknown = DEFAULT_PERMISSION_MODE): Promise<ComputerUseResult> {
   if (process.platform !== 'win32') return { ok: false, error: pick('电脑操作目前只支持 Windows', 'Computer use only supports Windows for now') }
   const uvx = findUvx()
   if (!uvx) return { ok: false, error: pick('还没有安装 uv', 'uv is not installed yet') }
@@ -186,8 +211,9 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
   if (warm.code !== 0) return { ok: false, error: pick(`下载或启动 windows-mcp 失败（退出码 ${warm.code ?? '?'}）`, `Failed to download or start windows-mcp (exit code ${warm.code ?? '?'})`), log: tail(warm.log) }
   try {
     await serializeServerWrite(async () => {
+      await ensureWindowsMcpConfigs()
       const { shape, list, raw } = await readRawServers()
-      await writeServers(shape, raw, [...list.filter((item) => !isOurs(item)), serverEntry(uvx)])
+      await writeServers(shape, raw, [...list.filter((item) => !isOurs(item)), serverEntry(uvx, permissionMode)])
     })
     return { ok: true }
   } catch (e) {
@@ -195,11 +221,13 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
   }
 }
 
-export async function refreshComputerUseEntry(): Promise<boolean> {
+export async function refreshComputerUseEntry(permissionMode: unknown = DEFAULT_PERMISSION_MODE): Promise<boolean> {
   if (process.platform !== 'win32') return false
-  const args = serverArgs()
+  const args = serverArgs(permissionMode)
   return serializeServerWrite(async () => {
     const { shape, list, raw } = await readRawServers()
+    if (!list.some(isOurs)) return false
+    await ensureWindowsMcpConfigs()
     const stale = list.some((item) => isOurs(item) && JSON.stringify((item as { args?: unknown }).args) !== JSON.stringify(args))
     if (!stale) return false
     await writeServers(shape, raw, list.map((item) => (isOurs(item) ? { ...(item as object), args } : item)))

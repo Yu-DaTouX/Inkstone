@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { shell } from 'electron'
+import { getSettings } from '../settings'
 import { setManagedSkillEnabled, trashManagedSkill } from '../skill-manager'
 import { builtinCapabilities } from '../extensions-inventory'
 import type { AppSettings, PromptTemplateDirectories } from '../../shared/ipc'
@@ -87,7 +88,8 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   )
   handle('yan:search:setApiHintDismissed', async (dismissed: unknown) => setSearchHintDismissed(dismissed === true))
 
-  void refreshComputerUseEntry()
+  void getSettings()
+    .then((settings) => refreshComputerUseEntry(settings.permissionMode))
     .then((changed) => (changed ? registry()?.reloadMcpServers() : undefined))
     .catch(() => undefined)
   handle('yan:computerUse:status', async () => computerUseStatus())
@@ -97,7 +99,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     return computerUseStatus()
   })
   handle('yan:computerUse:set', async (value: unknown) => {
-    const result = value === true ? await enableComputerUse() : await disableComputerUse()
+    const result = value === true ? await enableComputerUse((await getSettings()).permissionMode) : await disableComputerUse()
     if (result.ok) await registry()?.reloadMcpServers()
     return result
   })

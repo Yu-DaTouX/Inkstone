@@ -450,6 +450,7 @@ export class AgentController extends EventEmitter {
   private capabilityGuideExtension?: string
   private mcpAppProxyExtension?: string
   private phoneToolsExtension?: string
+  private computerToolsExtension?: string
   private mcpAppToolsSnapshot?: string
   private nativeConfigReader?: McpNativeConfigReader
   private autoCompactExtension?: string
@@ -503,8 +504,16 @@ export class AgentController extends EventEmitter {
       mcpConnectionManager: () => this.mcp.connectionManager(),
       mcpConfigError: () => this.mcp.configError(),
       permissionMode: async () => this.getPermissionMode?.(),
-      confirmToolConsent: async (request: ToolConsentPrompt) => (this.confirmToolConsent ? this.confirmToolConsent(request) : null),
-      confirmDanger: async (request: DangerConfirmPrompt) => (this.confirmDanger ? this.confirmDanger(request) : null),
+      confirmToolConsent: async (request: ToolConsentPrompt) => {
+        if (!this.confirmToolConsent) return null
+        await this.releaseBeforeAsking()
+        return this.confirmToolConsent(request)
+      },
+      confirmDanger: async (request: DangerConfirmPrompt) => {
+        if (!this.confirmDanger) return null
+        await this.releaseBeforeAsking()
+        return this.confirmDanger(request)
+      },
       approvalOwner: () => this.approvalOwner(),
       recordDangerReview: (review: ModelReviewReceiptInput) => this.recordDangerReview?.(this.state?.sessionId, review),
       trashItem: () => this.capabilityOpts?.trashItem,
@@ -578,7 +587,13 @@ export class AgentController extends EventEmitter {
     rawCommands: () => this.rawCommands(),
     push: (msg) => this.push(msg),
     getState: () => this.getState(),
-    confirmCapabilityAuthorization: () => this.confirmCapabilityAuthorization,
+    confirmCapabilityAuthorization: () => {
+      const confirm = this.confirmCapabilityAuthorization
+      return confirm ? async (request) => {
+        await this.releaseBeforeAsking()
+        return confirm(request)
+      } : undefined
+    },
     bundledSkills: () => this.bundledSkills,
     requestApproval: (request) => this.requestApprovalChoice(request)
   })
@@ -684,7 +699,10 @@ export class AgentController extends EventEmitter {
   }
 
   private readonly ui = new UiRequests({
-    push: (msg) => this.push(msg),
+    push: (msg) => {
+      if (msg.ch === 'ui-request') void this.releaseBeforeAsking()
+      this.push(msg)
+    },
     respondToPi: (res) => this.rpc?.respondUi(res)
   })
 
@@ -726,6 +744,7 @@ export class AgentController extends EventEmitter {
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
     phoneToolsExtension?: string
+    computerToolsExtension?: string
     mcpAppToolsSnapshot?: string
     nativeConfigReader?: McpNativeConfigReader
     autoCompactExtension?: string
@@ -810,6 +829,7 @@ export class AgentController extends EventEmitter {
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
     this.phoneToolsExtension = opts.phoneToolsExtension
+    this.computerToolsExtension = opts.computerToolsExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
     this.nativeConfigReader = opts.nativeConfigReader
     this.autoCompactExtension = opts.autoCompactExtension
@@ -996,6 +1016,7 @@ export class AgentController extends EventEmitter {
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.phoneToolsExtension ? ['--extension', this.phoneToolsExtension] : []),
+        ...(this.computerToolsExtension ? ['--extension', this.computerToolsExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
         ...(this.promptSuggestionExtension ? ['--extension', this.promptSuggestionExtension] : []),
@@ -1090,6 +1111,7 @@ export class AgentController extends EventEmitter {
       this.ui.discardPending()
       this.cancelApprovals?.(this.approvalOwner())
       this.retireApprovals?.(this.approvalOwner())
+      this.releaseComputerControl()
       if (this.state) {
         this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false, pendingMessageCount: 0 }
         this.push({ ch: 'state', payload: this.state })
@@ -2365,6 +2387,7 @@ export class AgentController extends EventEmitter {
           }
           void this.persistTurnTiming()
           this.turn.terminal = terminal
+          this.releaseComputerControl()
         }
         this.syncDeferredModelSwitch()
         void this.refreshStats()
@@ -3202,6 +3225,7 @@ export class AgentController extends EventEmitter {
     }
     this.cancelImages()
     this.cancelApprovals?.(this.approvalOwner())
+    this.releaseComputerControl()
     this.terminalTurnStop.abort()
     this.terminalTurnStop = new AbortController()
     this.turn.terminal = 'stopped'
@@ -3434,7 +3458,20 @@ export class AgentController extends EventEmitter {
     return this.bash !== null
   }
 
+  private releaseComputerControl(): void {
+    void this.releaseComputerControlNow()
+  }
+
+  private async releaseComputerControlNow(): Promise<void> {
+    await this.mcp?.current()?.releaseComputerControl().catch(() => undefined)
+  }
+
+  private async releaseBeforeAsking(): Promise<void> {
+    await this.mcp?.current()?.releaseComputerControl({ afterInput: true }).catch(() => undefined)
+  }
+
   private resetSessionScope(): void {
+    this.releaseComputerControl()
     this.clearPendingModelChange()
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0

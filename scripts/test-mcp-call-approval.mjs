@@ -47,7 +47,7 @@ const outfile = fileURLToPath(new URL('../out/test/mcp-call-approval.mjs', impor
 const entry = join(root, 'entry.ts')
 const sourceOf = (relative) => fileURLToPath(new URL(relative, import.meta.url)).replace(/\\/g, '/')
 await writeFile(entry, `export { AgentController } from '${sourceOf('../src/main/agent.ts')}'
-export { confirmMcpCall } from '${sourceOf('../src/main/agent-commands/mcp-command.ts')}'`)
+export { confirmMcpCall, runMcpCommand } from '${sourceOf('../src/main/agent-commands/mcp-command.ts')}'`)
 await build({
   entryPoints: [entry],
   outfile,
@@ -59,7 +59,7 @@ await build({
   plugins: [electronStub]
 })
 
-const { AgentController, confirmMcpCall } = await import(pathToFileURL(outfile).href)
+const { AgentController, confirmMcpCall, runMcpCommand } = await import(pathToFileURL(outfile).href)
 
 function fakeManager(tool) {
   return {
@@ -168,5 +168,68 @@ await check('参数超过审批上限时拒绝执行，不弹审批', async () =
   )
   assert.equal(asked.length, 0)
 })
+
+process.stdout.write('\n▌windows-mcp 的 save_path 不开放\n')
+function runHost(serverId = 'windows-mcp') {
+  const calls = []
+  const asked = []
+  const manager = {
+    listToolsCached: async () => ['Snapshot', 'Screenshot', 'Click'].map((name) => ({
+      name,
+      inputSchema: { type: 'object', properties: { save_path: { anyOf: [{ type: 'string' }, { type: 'null' }] }, use_vision: { type: 'boolean' } } },
+      annotations: { readOnlyHint: name !== 'Click', destructiveHint: name === 'Click' }
+    })),
+    callTool: async (server, tool, args) => {
+      calls.push({ server, tool, args })
+      return { content: [{ type: 'text', text: 'ok' }] }
+    }
+  }
+  const host = {
+    cwd: () => 'C:/proj',
+    mcpConnectionManager: () => manager,
+    mcpConfigError: () => undefined,
+    permissionMode: async () => 'danger',
+    confirmDanger: async (request) => { asked.push(request); return { decision: 'allow' } },
+    approvalOwner: () => ({ instanceId: 'fixture', generation: 1 })
+  }
+  return { host, calls, asked, serverId }
+}
+
+for (const tool of ['Snapshot', 'Screenshot']) {
+  await check(`yan mcp call windows-mcp/${tool} 带 save_path 时拒绝且不执行`, async () => {
+    const { host, calls, asked } = runHost()
+    await assert.rejects(
+      () => runMcpCommand(host, 'call', { server: 'windows-mcp', tool, arguments: { save_path: 'C:/Windows/x.png' } }),
+      (error) => error.code === 'mcp_argument_blocked' && /save_path/.test(error.message) && /自动保存|already saves/.test(error.message)
+    )
+    assert.equal(calls.length, 0, '不应调用 windows-mcp')
+    assert.equal(asked.length, 0, '不应弹审批')
+  })
+}
+
+await check('args 别名与动作类工具同样拦下 save_path', async () => {
+  const { host, calls, asked } = runHost()
+  await assert.rejects(
+    () => runMcpCommand(host, 'call', { server: 'windows-mcp', tool: 'Click', args: { save_path: 'D:/' } }),
+    (error) => error.code === 'mcp_argument_blocked'
+  )
+  assert.equal(calls.length + asked.length, 0)
+})
+
+await check('save_path 为 null 或不带时照常执行', async () => {
+  const { host, calls } = runHost()
+  await runMcpCommand(host, 'call', { server: 'windows-mcp', tool: 'Snapshot', arguments: { use_vision: false, save_path: null } })
+  await runMcpCommand(host, 'call', { server: 'windows-mcp', tool: 'Snapshot', arguments: { use_vision: false } })
+  assert.equal(calls.length, 2)
+})
+
+await check('其他 MCP 服务的同名参数不受影响', async () => {
+  const { host, calls } = runHost()
+  await runMcpCommand(host, 'call', { server: 'other-server', tool: 'Snapshot', arguments: { save_path: 'C:/proj/a.png' } })
+  assert.equal(calls.length, 1)
+})
+
+process.stdout.write(`\n${report.pass} 通过，${report.fail} 失败\n`)
+if (report.fail > 0) process.exitCode = 1
 
 

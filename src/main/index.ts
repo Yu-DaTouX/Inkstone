@@ -662,6 +662,7 @@ const YAN_THIN_EXTENSION_FILES = {
   capabilityGuideExtension: 'capability-guide.js',
   mcpAppProxyExtension: 'mcp-app-proxy.js',
   phoneToolsExtension: 'phone-tools.js',
+  computerToolsExtension: 'computer-tools.js',
   autoCompactExtension: 'auto-compact.js',
   contextCompactExtension: 'context-compact.js',
   contextUsageExtension: 'context-usage.js',

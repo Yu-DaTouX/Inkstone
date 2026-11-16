@@ -10,6 +10,9 @@ import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
 
 const WINDOWS_MCP_CONNECT_TIMEOUT_MS = 60_000
 const WINDOWS_MCP_OBSERVE_TOOLS = new Set(['Snapshot', 'Screenshot', 'DisplayInventory', 'Wait', 'WaitFor'])
+const WINDOWS_MCP_CONTROL_TOOL = 'ControlStatus'
+const WINDOWS_MCP_RELEASE_TIMEOUT_MS = 3_000
+const WINDOWS_MCP_IDLE_RELEASE_MS = 15_000
 
 interface Connection {
   config: McpServerConfig
@@ -85,6 +88,11 @@ export interface McpCloseOutcome {
 
 export class McpConnectionManager {
   private readonly connections = new Map<string, Connection>()
+  private computerControlHeld = false
+  private activeInputCalls = 0
+  private releaseAfterInput = false
+  private idleRelease?: NodeJS.Timeout
+  computerIdleReleaseMs = WINDOWS_MCP_IDLE_RELEASE_MS
 
   constructor(
     configs: readonly McpServerConfig[],
@@ -133,7 +141,7 @@ export class McpConnectionManager {
       }
       this.connections.delete(id)
       this.toolCache.delete(id)
-      releases.push({ serverId: id, release: this.detachAndRelease(conn) })
+      releases.push({ serverId: id, release: this.releaseThenDetach(conn) })
     }
     for (const config of configs) {
       if (!this.connections.has(config.id)) {
@@ -222,6 +230,7 @@ export class McpConnectionManager {
   }
 
   private async cancelConnection(conn: Connection): Promise<void> {
+    await this.releaseControlOn(conn)
     conn.generation++
     const client = conn.client
     const transport = conn.transport
@@ -446,14 +455,38 @@ export class McpConnectionManager {
   ): Promise<unknown> {
     this.assertRequestAllowed(options)
     if (serverId === WINDOWS_MCP_SERVER_ID) {
-      return sharedResources.run(INTERACTIVE_RESOURCE, `mcp:${serverId}`, async () => {
-        await this.connect(this.require(serverId))
-        try { return await this.callToolUncoordinated(serverId, toolName, args, options) }
-        catch (error) {
-          if (!WINDOWS_MCP_OBSERVE_TOOLS.has(toolName)) sharedResources.markUncertain(INTERACTIVE_RESOURCE)
-          throw error
+      const takesControl = !WINDOWS_MCP_OBSERVE_TOOLS.has(toolName) && toolName !== WINDOWS_MCP_CONTROL_TOOL
+      const releases = toolName === WINDOWS_MCP_CONTROL_TOOL && args.release === true
+      if (takesControl) {
+        this.activeInputCalls++
+        this.clearIdleRelease()
+      }
+      try {
+        return await sharedResources.run(INTERACTIVE_RESOURCE, `mcp:${serverId}`, async () => {
+          await this.connect(this.require(serverId))
+          if (takesControl) this.computerControlHeld = true
+          try {
+            const result = await this.callToolUncoordinated(serverId, toolName, args, options)
+            if (releases && !(result as { isError?: unknown } | null)?.isError) {
+              this.computerControlHeld = false
+              this.releaseAfterInput = false
+              this.clearIdleRelease()
+            }
+            return result
+          } catch (error) {
+            if (!WINDOWS_MCP_OBSERVE_TOOLS.has(toolName)) sharedResources.markUncertain(INTERACTIVE_RESOURCE)
+            throw error
+          } finally {
+            if (takesControl) this.computerControlHeld = true
+          }
+        })
+      } finally {
+        if (takesControl) {
+          this.activeInputCalls--
+          if (this.activeInputCalls === 0 && this.releaseAfterInput) void this.releaseComputerControl()
+          else this.scheduleIdleRelease()
         }
-      })
+      }
     }
     return this.callToolUncoordinated(serverId, toolName, args, options)
   }
@@ -474,7 +507,71 @@ export class McpConnectionManager {
     )
   }
 
+  private clearIdleRelease(): void {
+    if (this.idleRelease) clearTimeout(this.idleRelease)
+    this.idleRelease = undefined
+  }
+
+  private scheduleIdleRelease(): void {
+    this.clearIdleRelease()
+    if (this.activeInputCalls > 0 || !this.computerControlHeld) return
+    this.idleRelease = setTimeout(() => {
+      this.idleRelease = undefined
+      void this.releaseComputerControl()
+    }, this.computerIdleReleaseMs)
+    this.idleRelease.unref?.()
+  }
+
+  async releaseComputerControl(options: { afterInput?: boolean } = {}): Promise<'skipped' | 'deferred' | 'released' | 'failed'> {
+    if (options.afterInput && this.activeInputCalls > 0) {
+      this.releaseAfterInput = true
+      return 'deferred'
+    }
+    const conn = this.connections.get(WINDOWS_MCP_SERVER_ID)
+    if (!conn) {
+      this.computerControlHeld = false
+      this.releaseAfterInput = false
+      this.clearIdleRelease()
+      return 'skipped'
+    }
+    return this.releaseControlOn(conn)
+  }
+
+  private async releaseThenDetach(conn: Connection): Promise<McpCloseOutcome> {
+    await this.releaseControlOn(conn)
+    return this.detachAndRelease(conn)
+  }
+
+  private async releaseControlOn(conn: Connection): Promise<'skipped' | 'released' | 'failed'> {
+    if (conn.config.id !== WINDOWS_MCP_SERVER_ID) return 'skipped'
+    this.releaseAfterInput = false
+    if (!this.computerControlHeld) return 'skipped'
+    this.computerControlHeld = false
+    this.clearIdleRelease()
+    const client = conn.client
+    if (!client || conn.status !== 'ready') return 'skipped'
+    let timer: NodeJS.Timeout | undefined
+    try {
+      const request = this.runRequest(conn, client, { timeoutMs: WINDOWS_MCP_RELEASE_TIMEOUT_MS }, `${WINDOWS_MCP_SERVER_ID}/${WINDOWS_MCP_CONTROL_TOOL}`, (signal) =>
+        client.callTool({ name: WINDOWS_MCP_CONTROL_TOOL, arguments: { release: true } }, undefined, { signal })
+      )
+      request.catch(() => undefined)
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`release timed out (${WINDOWS_MCP_RELEASE_TIMEOUT_MS}ms)`)), WINDOWS_MCP_RELEASE_TIMEOUT_MS)
+      })
+      const result = await Promise.race([request, deadline])
+      if ((result as { isError?: unknown } | null)?.isError) throw new Error(JSON.stringify((result as { content?: unknown }).content ?? null).slice(0, 300))
+      return 'released'
+    } catch (error) {
+      console.warn('[computer-use] release desktop control failed:', error instanceof Error ? error.message : String(error))
+      return 'failed'
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   async closeConfirmed(): Promise<McpCloseOutcome> {
+    await this.releaseComputerControl()
     const closers: Promise<McpCloseOutcome>[] = []
     for (const conn of this.connections.values()) {
       closers.push(this.detachAndRelease(conn))

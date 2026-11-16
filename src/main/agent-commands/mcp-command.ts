@@ -1,13 +1,29 @@
 import { join } from 'node:path'
+import { pick } from '../../shared/ui-lang'
 import { CapabilityCommandError } from '../capability-server'
 import { paramString } from '../command-params'
 import { YAN_DIR } from '../paths'
 import type { McpConnectionManager } from '../mcp/connection-manager'
 import { callMcpTool, describeMcpTool, McpToolError } from '../mcp/tool-service'
 import { assertLegacyMcpAccessBlocked } from '../mcp/app-proxy-service'
-import { mcpApprovalNeeded, mcpCallDanger } from '../../shared/mcp-approval'
+import { mcpApprovalNeeded, mcpCallDanger, mcpCallsAskInMode } from '../../shared/mcp-approval'
 import { APPROVAL_DETAIL_MAX, type ApprovalDecision, type ApprovalOwner } from '../../shared/approval'
 import type { DangerConfirmPrompt } from '../agent'
+import { COMPUTER_USE_SERVER_ID } from '../computer-use'
+
+const COMPUTER_USE_BLOCKED_ARGUMENTS = ['save_path']
+
+export function assertComputerUseArguments(serverId: string, toolName: string, args: Record<string, unknown>): void {
+  if (serverId !== COMPUTER_USE_SERVER_ID) return
+  const blocked = COMPUTER_USE_BLOCKED_ARGUMENTS.filter((key) => Object.hasOwn(args, key) && args[key] !== null && args[key] !== undefined)
+  if (blocked.length === 0) return
+  throw new CapabilityCommandError(
+    'mcp_argument_blocked',
+    pick(`${serverId}/${toolName} 的 ${blocked.join('、')} 会把截图写到任意路径，绕过项目外写入守卫，砚不开放这个参数。去掉它重试：结果里的图片砚已自动保存成文件，路径写在结果文本里；需要放到别处时再用命令复制那个文件。`,
+      `${blocked.join(', ')} of ${serverId}/${toolName} writes the screenshot to any path and bypasses the outside-project write guard, so Inkstone does not allow it. Retry without it: Inkstone already saves result images to files and the result text gives their paths; copy that file with a command if you need it elsewhere.`
+    )
+  )
+}
 
 export interface McpCommandHost {
   cwd(): string
@@ -66,6 +82,31 @@ async function runMcpList(host: McpCommandHost, signal?: AbortSignal) {
   }
 }
 
+export const COMPUTER_TOOL_TARGETS: Record<string, string> = {
+  computer_snapshot: 'Snapshot',
+  computer_screenshot: 'Screenshot',
+  computer_displays: 'DisplayInventory',
+  computer_click: 'Click',
+  computer_type: 'Type',
+  computer_scroll: 'Scroll',
+  computer_move: 'Move',
+  computer_shortcut: 'Shortcut',
+  computer_wait: 'Wait',
+  computer_wait_for: 'WaitFor',
+  computer_app: 'App',
+  computer_multi_select: 'MultiSelect',
+  computer_multi_edit: 'MultiEdit',
+  computer_control: 'ControlStatus'
+}
+
+function mcpCallLabel(serverId: string, toolName: string, params: Record<string, unknown>): string {
+  const call = params.toolCall
+  const fromTool = !!call && typeof call === 'object' && typeof (call as { id?: unknown }).id === 'string'
+  const via = typeof params.via === 'string' ? params.via : ''
+  const matches = serverId === COMPUTER_USE_SERVER_ID && Object.hasOwn(COMPUTER_TOOL_TARGETS, via) && COMPUTER_TOOL_TARGETS[via] === toolName
+  return fromTool && matches ? via : 'yan mcp call'
+}
+
 export async function confirmMcpCall(
   host: McpCommandHost,
   manager: McpConnectionManager,
@@ -77,13 +118,13 @@ export async function confirmMcpCall(
   signal?.throwIfAborted()
   const mode = await host.permissionMode()
   signal?.throwIfAborted()
-  if (mode === 'all') return
+  if (!mcpCallsAskInMode(mode)) return
   const described = await describeMcpTool(manager, serverId, toolName, signal)
   if (!mcpApprovalNeeded(described.annotations)) return
   const detail = `${serverId} / ${toolName}\n${JSON.stringify(params.arguments ?? params.args ?? {})}`
   if (detail.length > APPROVAL_DETAIL_MAX) throw new CapabilityCommandError('mcp_call_too_long', `MCP 调用参数有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短参数后重试`)
   const answer = await host.confirmDanger({
-    tool: 'yan mcp call',
+    tool: mcpCallLabel(serverId, toolName, params),
     detail,
     reasons: mcpCallDanger(`mcp__${serverId}__${toolName}`, described.annotations),
     cwd: host.cwd(),
@@ -140,10 +181,11 @@ export async function runMcpCommand(host: McpCommandHost, action: string, params
       }
     }
 
-    if (action === 'call') await confirmMcpCall(host, manager, serverId, toolName, params, signal)
-
     const rawArgs = params.arguments ?? params.args
     const args = rawArgs && typeof rawArgs === 'object' ? (rawArgs as Record<string, unknown>) : {}
+    assertComputerUseArguments(serverId, toolName, args)
+    if (action === 'call') await confirmMcpCall(host, manager, serverId, toolName, params, signal)
+
     const expectedRevision = paramString(params, [
       'schemaRevision',
       'schema-revision',
