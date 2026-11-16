@@ -123,6 +123,16 @@ export function captureActiveCodexAccount(): Promise<string | undefined> {
   })
 }
 
+export function findActiveCodexAccountKey(): Promise<string | undefined> {
+  return serial(async () => {
+    const current = await activeCredential()
+    if (!current) return undefined
+    const id = identityOf(current)
+    if (!id.key) return undefined
+    return (await readStore()).accounts.find((a) => a.key === id.key || sameAccount(a, current))?.key
+  })
+}
+
 export function listCodexAccounts(labels: Record<string, string> = {}): Promise<CodexAccountView[]> {
   return serial(async () => {
     const current = await activeCredential()

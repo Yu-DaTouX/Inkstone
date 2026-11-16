@@ -127,6 +127,21 @@ export function captureActiveOAuthAccount(provider: string): Promise<{ key: stri
   })
 }
 
+export function findActiveOAuthAccountKey(provider: string): Promise<string | undefined> {
+  return serial(async () => {
+    if (!supportsOAuthAccounts(provider)) return undefined
+    const current = await readAuthEntry(provider)
+    if (!isCredential(current)) return undefined
+    const accounts = (await readStore()).providers[provider]
+    const matched = accounts?.find((a) => sameCredential(a.credential, current))
+    if (matched) return matched.key
+    const subject = string(decodeJwtClaims(current.access).sub)
+    if (!subject) return undefined
+    const identityKey = `${provider}:${string(current.enterpriseUrl) ?? 'github.com'}:${subject}`
+    return accounts?.find((a) => a.identity === identityKey)?.key
+  })
+}
+
 export function listOAuthAccounts(): Promise<OAuthAccountPools> {
   return serial(async () => {
     const store = await readStore()

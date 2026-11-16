@@ -103,6 +103,32 @@ export async function runOAuthAccountTests(ok) {
     const fallback = await pool.captureActiveOAuthAccount('github-copilot')
     ok(!!fallback.key && (await pool.listOAuthAccounts())['github-copilot'].length === 1, '服务暂不可达时仍能保存、管理已有凭证')
 
+    await pool.clearOAuthAccounts('anthropic')
+    await pool.clearOAuthAccounts('xai')
+    let profileCalls = 0
+    globalThis.__oauthAccountFetch = async (url, init) => {
+      profileCalls += 1
+      throw new Error('profile must not be requested')
+    }
+    await writeCurrent('anthropic', credential('anthropic', 'a'))
+    const savedA = await pool.captureActiveOAuthAccount('anthropic').catch(() => undefined)
+    const storeBefore = await readFile(storeFile, 'utf8')
+    const callsBefore = profileCalls
+    ok(await pool.findActiveOAuthAccountKey('anthropic') === savedA?.key && !!savedA?.key, '只读匹配：按凭证找到已保存账号')
+    await writeCurrent('anthropic', credential('anthropic', 'stranger'))
+    ok(await pool.findActiveOAuthAccountKey('anthropic') === undefined, '只读匹配：当前凭证不在账号池时返回空，不新建账号')
+    ok(profileCalls === callsBefore && await readFile(storeFile, 'utf8') === storeBefore, '只读匹配：不请求 profile，不写账号池')
+    await writeCurrent('anthropic', { ...credential('anthropic', 'a'), access: 'rotated-access', refresh: 'anthropic-a-refresh' })
+    ok(await pool.findActiveOAuthAccountKey('anthropic') === savedA?.key, '只读匹配：访问令牌已轮换时按刷新令牌仍能找到')
+    await writeCurrent('xai', credential('xai', 'a'))
+    const savedXai = await pool.captureActiveOAuthAccount('xai').catch(() => undefined)
+    await writeCurrent('xai', credential('xai', 'a', true))
+    ok(!!savedXai?.key && await pool.findActiveOAuthAccountKey('xai') === savedXai.key, '只读匹配：令牌整体轮换后按令牌里的账号标识仍能找到')
+    await writeCurrent('xai', credential('xai', 'other'))
+    ok(await pool.findActiveOAuthAccountKey('xai') === undefined, '只读匹配：令牌里的账号标识不同则不匹配')
+    ok(await pool.findActiveOAuthAccountKey('no-such-provider') === undefined, '只读匹配：不支持的服务商返回空')
+    ok(profileCalls === callsBefore, '只读匹配全程没有请求 profile')
+
     const before = await readFile(authFile, 'utf8')
     await writeFile(storeFile, '{broken')
     await assert.rejects(pool.listOAuthAccounts(), /已拒绝写入/)

@@ -132,8 +132,10 @@ export function isAuthRejected(text: unknown): boolean {
 
 const REFRESH_PREFIX_RE = /oauth (?:token )?refresh failed(?: for [\w.-]+)?\s*:?/i
 const REFRESH_BARE_RE = /token refresh (?:failed|unauthorized|request failed|error)/i
-const REFRESH_DEFINITIVE_RE = /invalid_grant|invalid_client|unauthorized_client|\b(?:400|401|403)\b|unauthorized|forbidden|revoked|reused|refresh[ _-]?token.{0,40}(?:expired|invalid|not found)|token.{0,12}expired/i
+const REFRESH_DEFINITIVE_RE = /invalid_grant|invalid_client|unauthorized_client|access_denied|login[ _-]required|(?:sign|log)[ _-]?in again|re-?(?:login|authenticat|connect)|please reconnect|\b(?:400|401|403)\b|unauthorized|forbidden|revoked|reused|refresh[ _-]?token.{0,40}(?:expired|invalid|not found)|token.{0,12}expired/i
 const REFRESH_SERVER_ERROR_RE = /(?:status(?: code)?|http)[\s:=(]*5\d\d\b|\(5\d\d\)|^\s*5\d\d\b|\b5\d\d\s+(?:internal server error|bad gateway|service unavailable|gateway time-?out)/i
+
+const REFRESH_TRANSPORT_RE = /\bfetch failed\b|\bE(?:CONN[A-Z]+|TIMEDOUT|NOTFOUND|AI_AGAIN|HOSTUNREACH|NETUNREACH|PIPE)\b|\bUND_ERR_[A-Z_]+\b|getaddrinfo|socket hang up|\bTimeoutError\b|aborted due to timeout|connect timeout error/i
 
 function oauthRefreshCause(text: string): string | null {
   const prefixed = REFRESH_PREFIX_RE.exec(text)
@@ -145,7 +147,7 @@ function oauthRefreshCause(text: string): string | null {
 function isTransientOAuthRefresh(text: string): boolean {
   const cause = oauthRefreshCause(text)
   if (!cause || !cause.trim() || REFRESH_DEFINITIVE_RE.test(cause)) return false
-  return STREAM_BROKEN_RE.test(cause) || TIMEOUT_RE.test(cause) || UNREACHABLE_RE.test(cause) || REFRESH_SERVER_ERROR_RE.test(cause)
+  return REFRESH_TRANSPORT_RE.test(cause) || REFRESH_SERVER_ERROR_RE.test(cause)
 }
 
 export function classifyModelError(text: unknown): ModelErrorInfo {
@@ -162,10 +164,10 @@ export function classifyModelError(text: unknown): ModelErrorInfo {
   return { kind: 'retryable', text: raw, label: raw ? '模型侧错误' : '模型侧错误（没有错误文本）' }
 }
 
-const STREAM_BROKEN_RE = /\bterminated\b|websocket|socket hang up|econnreset|stream.{0,20}(closed|ended)|connection.{0,20}(closed|reset)/i
+const STREAM_BROKEN_RE = /\bterminated\b|websocket|socket hang up|econnreset|epipe|stream.{0,20}(closed|ended)|connection.{0,20}(closed|reset)/i
 const TIMEOUT_RE = /timeout|timed out|etimedout|超时/i
 const OVERLOAD_RE = /\b5\d\d\b|overloaded|overload|server error|service unavailable/i
-const UNREACHABLE_RE = /fetch failed|connect|network|enotfound|econnrefused|dns|tls|certificate/i
+const UNREACHABLE_RE = /fetch failed|connect|network|enotfound|econn[a-z]+|eai_again|ehostunreach|enetunreach|und_err_[a-z_]+|dns|tls|certificate/i
 const CERTIFICATE_RE = /tls|certificate/i
 
 export function isTransientModelError(errorText: unknown): boolean {

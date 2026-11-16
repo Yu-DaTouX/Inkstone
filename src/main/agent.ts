@@ -668,6 +668,7 @@ export class AgentController extends EventEmitter {
   private loopGuardContinueTask?: Promise<boolean>
   private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
   private retrySeenThisRun = false
+  private requestAccount?: { provider: string; key: Promise<string | undefined> }
   private pendingModelError?: { text: string; retried: boolean; failedAccount?: Promise<string | undefined> }
   private pendingTruncated = false
   private quotaExhausted = false
@@ -2319,6 +2320,7 @@ export class AgentController extends EventEmitter {
 
       case 'turn_start':
         this.pendingRequestMono = performance.now()
+        this.noteRequestAccount()
         break
 
       case 'agent_start':
@@ -2362,6 +2364,7 @@ export class AgentController extends EventEmitter {
         this.pendingModelError = undefined
         this.pendingTruncated = false
         this.retrySeenThisRun = false
+        this.requestAccount = undefined
         if (this.loopGuardHit) this.logStreamLoopGuard('settled', { rule: this.loopGuardHit.rule, stream: this.loopGuardHit.stream, outcome: 'agent-settled' })
         this.streamLoopDetector = null
         this.loopGuardTripped = false
@@ -2968,8 +2971,13 @@ export class AgentController extends EventEmitter {
 
   private failedAccountOf(errorText: string): Promise<string | undefined> | undefined {
     const provider = this.state?.model?.provider
-    if (!provider || !this.activeAccountKey || !isOAuthRefreshFailure(errorText)) return undefined
-    return this.activeAccountKey(provider).catch(() => undefined)
+    if (!provider || !isOAuthRefreshFailure(errorText) || this.requestAccount?.provider !== provider) return undefined
+    return this.requestAccount.key
+  }
+
+  private noteRequestAccount(): void {
+    const provider = this.state?.model?.provider
+    this.requestAccount = provider && this.activeAccountKey ? { provider, key: this.activeAccountKey(provider).catch(() => undefined) } : undefined
   }
 
   private async continueAfterAuthBlip(scope: AutoContinueScope, provider: string, refreshFailed = false, failedAccount?: Promise<string | undefined>): Promise<boolean> {

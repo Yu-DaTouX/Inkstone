@@ -4,8 +4,8 @@ import { blockedQuotaWindows } from '../shared/quota-resume'
 import { accountQuotaReport, invalidateAccountQuotaReport } from './account-quota'
 import { getSettings } from './settings'
 import { captureActiveApiKey } from './api-key-pool'
-import { captureActiveCodexAccount, switchCodexAccount } from './codex-accounts'
-import { captureActiveOAuthAccount, switchOAuthAccount } from './oauth-accounts'
+import { findActiveCodexAccountKey, switchCodexAccount } from './codex-accounts'
+import { findActiveOAuthAccountKey, switchOAuthAccount } from './oauth-accounts'
 
 const known = (card: AccountQuotaCard): boolean => card.status === 'ok' && !card.staleError && card.windows.length > 0 && blockedQuotaWindows(card.windows).length === 0
 const refreshFailed = new Set<string>()
@@ -27,8 +27,8 @@ export function markRefreshFailed(cards: readonly AccountQuotaCard[], provider: 
 }
 
 export async function activeAccountKey(provider: string): Promise<string | undefined> {
-  if (provider === 'openai-codex') return captureActiveCodexAccount()
-  return supportsOAuthAccounts(provider) ? (await captureActiveOAuthAccount(provider))?.key : undefined
+  if (provider === 'openai-codex') return findActiveCodexAccountKey()
+  return supportsOAuthAccounts(provider) ? findActiveOAuthAccountKey(provider) : undefined
 }
 
 let chain: Promise<unknown> = Promise.resolve()

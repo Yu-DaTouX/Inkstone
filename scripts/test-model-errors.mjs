@@ -198,6 +198,31 @@ export async function runModelErrorTests(ok, modules) {
     ok(shared.isOAuthRefreshFailure(text) && shared.isAuthRejected(text) && shared.modelErrorCause(text) === 'authExpired', `明确的令牌失效仍算登录失效：${text.slice(0, 70)}`)
     ok(!shared.isTransientModelError(text), `登录失效不当作瞬时错误：${text.slice(0, 70)}`)
   }
+  for (const text of [
+    'OAuth refresh failed for anthropic: please reconnect your account',
+    'OAuth refresh failed for anthropic: session timed out, sign in again',
+    'OAuth refresh failed for openai-codex: Your session timed out',
+    'OAuth refresh failed for github-copilot: network access denied (access_denied)',
+    'OAuth refresh failed for anthropic: login required',
+    'OAuth refresh failed for anthropic: Please sign in again',
+    'OAuth refresh failed for anthropic: TLS client certificate rejected',
+    'OAuth refresh failed for anthropic: connect your account again',
+    'OAuth refresh failed for anthropic: network policy blocked the refresh token'
+  ]) {
+    ok(shared.classifyModelError(text).kind === 'auth' && shared.isOAuthRefreshFailure(text) && shared.isAuthRejected(text), `含 connect、network、timed out、tls 字样的登录失效不被当成瞬时：${text}`)
+    ok(shared.modelErrorCause(text) === 'authExpired' && !shared.isTransientModelError(text), `仍提示重新登录且不按瞬时续跑：${text}`)
+  }
+  for (const [text, cause] of [
+    ['OAuth refresh failed for anthropic: getaddrinfo EAI_AGAIN auth.example.test', 'unreachable'],
+    ['OAuth refresh failed for openai-codex: connect ECONNREFUSED 127.0.0.1:443', 'unreachable'],
+    ['OAuth refresh failed for openai-codex: ECONNABORTED', 'unreachable'],
+    ['OAuth refresh failed for qwen: write EPIPE', 'stream'],
+    ['OAuth refresh failed for anthropic: TypeError: fetch failed; cause: UND_ERR_CONNECT_TIMEOUT', 'timeout'],
+    ['OAuth refresh failed for anthropic: Error: 503 Service Unavailable', 'overload']
+  ]) {
+    ok(shared.classifyModelError(text).kind === 'retryable' && !shared.isOAuthRefreshFailure(text) && shared.modelErrorCause(text) === cause, `错误码锚定的传输层失败仍算瞬时：${text}`, shared.modelErrorCause(text))
+    ok(shared.isTransientModelError(text), `错误码锚定的传输层失败按瞬时续跑：${text}`)
+  }
   ok(shared.modelErrorNotice('upstream request cancelled').includes('upstream request cancelled'), '取消类原文仍保留在错误内容里')
   ok(/quota/.test(shared.modelErrorNotice({ error: { code: 'insufficient_quota', message: 'quota exhausted' } })), '嵌套服务商错误字段可读取')
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')
