@@ -26,6 +26,7 @@ const SETTLE_MS = 800
 const WAIT_MAX_MS = 10_000
 const SUMMARY_ELEMENTS = 150
 const DUMP_PATH = '/sdcard/window_dump_inkstone.xml'
+const DUMP_RETRY_DELAYS_MS = [400, 500]
 
 const KEYS: Record<string, string> = {
   back: 'KEYCODE_BACK',
@@ -193,6 +194,10 @@ export class PhoneAgentCommands {
     }
   }
 
+  private sleep(ms: number): Promise<void> {
+    return (this.opts.sleep ?? ((delay) => new Promise<void>((resolve) => setTimeout(resolve, delay))))(ms)
+  }
+
   private shell(serial: string, command: string, signal?: AbortSignal, binary = false): Promise<Buffer> {
     return this.adb(['-s', serial, binary ? 'exec-out' : 'shell', command], { signal, binary })
   }
@@ -228,9 +233,14 @@ export class PhoneAgentCommands {
   }
 
   private async dump(serial: string, signal?: AbortSignal): Promise<PhoneElement[]> {
-    const out = (await this.shell(serial, `uiautomator dump ${DUMP_PATH} >/dev/null 2>&1; cat ${DUMP_PATH}; rm -f ${DUMP_PATH}`, signal, true)).toString('utf8')
-    if (!out.includes('<hierarchy')) {
-      throw new CapabilityCommandError('phone_ui_failed', `读取界面结构失败${out.trim() ? `：${clip(out.trim(), 200)}` : ''}。界面在播动画或是游戏、视频等画面时常读不到，改用 yan phone screen 截图看`)
+    let out = ''
+    for (let attempt = 0; ; attempt++) {
+      out = (await this.shell(serial, `uiautomator dump ${DUMP_PATH} >/dev/null 2>&1; cat ${DUMP_PATH}; rm -f ${DUMP_PATH}`, signal, true)).toString('utf8')
+      if (out.includes('<hierarchy')) break
+      if (attempt >= DUMP_RETRY_DELAYS_MS.length || signal?.aborted) {
+        throw new CapabilityCommandError('phone_ui_failed', `读取界面结构失败（已试 ${attempt + 1} 次）${out.trim() ? `：${clip(out.trim(), 200)}` : ''}。界面在播动画或是游戏、视频等画面时常读不到：等界面静止后再运行 yan phone ui；仍不行就改用 yan phone screen 截图看，再用 tap --x/--y 按坐标点击`)
+      }
+      await this.sleep(DUMP_RETRY_DELAYS_MS[attempt])
     }
     const elements = parseUiDump(out)
     this.cache.set(serial, elements)
@@ -280,7 +290,7 @@ export class PhoneAgentCommands {
 
   private async settle(serial: string, action: string, params: Record<string, unknown>, extra: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {
     const wait = Math.max(0, Math.min(WAIT_MAX_MS, num(params, 'wait') ?? SETTLE_MS))
-    await (this.opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(wait)
+    await this.sleep(wait)
     if (params.quiet === true || str(params, 'quiet') === 'true') return { summary: { kind: 'phone', action, device: serial, ...extra } }
     try {
       return await this.observe(serial, action, extra, signal)

@@ -164,6 +164,8 @@ import { applyBundledSearchTools } from './search-tools'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { cachedTitlesSync, primeCachedTitles } from './title'
 import { sweepCredentialFiles } from './credential-vault'
+import { MODELS_FILE } from './custom-providers'
+import { watchModelsFile, type ModelsWatcher } from './models-watch'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { createViewResync } from './view-resync'
@@ -1196,6 +1198,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean; re
   pushRunners()
 }
 
+let modelsWatcher: ModelsWatcher | null = null
 let shuttingDown = false
 let releaseDesktopDataRoot: (() => Promise<void>) | undefined
 let shutdownTask: Promise<void> | null = null
@@ -1212,6 +1215,8 @@ function shutdown(): Promise<void> {
 async function runShutdown(): Promise<void> {
   shuttingDown = true
   disposeKeepAwake()
+  modelsWatcher?.close()
+  modelsWatcher = null
   bundledPlugins.close()
   attention?.dispose()
   auxWindows?.dispose()
@@ -3064,6 +3069,12 @@ app.whenReady().then(async () => {
     primaryRestoring = false
     primaryRestoreFile = null
   }
+
+  modelsWatcher ??= watchModelsFile({
+    file: MODELS_FILE,
+    onChange: () => { void restartAgent('models.json changed').catch((error) => reportMainError('models-watch-refresh', error)) },
+    onError: (error) => console.error('[models-watch]', error)
+  })
 
   const initialControl = decodeControlCommand(process.argv)
   if (initialControl) void dispatchControlCommand(initialControl)

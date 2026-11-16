@@ -18,11 +18,11 @@ export interface WorkflowAgentOptions {
 
 const KNOWN = new Set(['label', 'model', 'thinking', 'readOnly', 'isolation', 'timeoutMinutes', 'goal', 'deliverables', 'sources', 'boundary', 'schema'])
 
-function text(value: unknown, name: string, max: number): string | undefined {
+function text(value: unknown, name: string, max?: number): string | undefined {
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'string') throw new TypeError(`agent() 选项 ${name} 必须是字符串`)
   const trimmed = value.trim()
-  if ([...trimmed].length > max) throw new RangeError(`agent() 选项 ${name} 超过 ${max} 字符`)
+  if (max !== undefined && [...trimmed].length > max) throw new RangeError(`agent() 选项 ${name} 超过 ${max} 字符`)
   return trimmed || undefined
 }
 
@@ -61,7 +61,7 @@ export function normalizeAgentCall(prompt: unknown, raw: unknown): { prompt: str
     if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes < 1 || minutes > 60) throw new RangeError('agent() 选项 timeoutMinutes 必须是 1–60 的整数')
     options.timeoutMinutes = minutes
   }
-  const goal = text(box.goal, 'goal', 4000)
+  const goal = text(box.goal, 'goal')
   if (goal) options.goal = goal
   const deliverables = list(box.deliverables, 'deliverables')
   if (deliverables) options.deliverables = deliverables

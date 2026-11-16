@@ -114,7 +114,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       if (saved.view?.status === 'done' && saved.view.attempt === 2) break
       await delay(10)
     }
-    const reloaded = new WorkflowService({ root: join(dir, 'runs'), workerPath, subagentCommand: async () => { throw new Error('不应派子代理') }, getSubagent: async () => undefined, runningSubagents: () => 0, push: () => undefined })
+    const reloaded = new WorkflowService({ root: join(dir, 'runs'), workerPath, subagentCommand: async () => { throw new Error('不应派子代理') }, getSubagent: async () => undefined, runningSubagents: () => 0, push: () => undefined, findTarget: () => null })
     const fromJournal = await reloaded.modelCall(id, failedAt)
     ok(fromJournal?.status === 'done' && typeof fromJournal.endedAt === 'number', '重启后从 journal 查单次调用', JSON.stringify(fromJournal))
     const journal = (await readFile(join(again.dir, 'journal.jsonl'), 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line))
@@ -170,7 +170,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       { kind: 'model', seq: 11, hash: 'h5', status: 'done', attempt: 2, at: 140, label: 'no-index', result: 'z' }
     ]
     await writeFile(join(gapDir, 'journal.jsonl'), lines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf8')
-    const gapService = new WorkflowService({ root: gapRoot, workerPath, subagentCommand: async () => { throw new Error('不应派子代理') }, getSubagent: async () => undefined, runningSubagents: () => 0, push: () => undefined })
+    const gapService = new WorkflowService({ root: gapRoot, workerPath, subagentCommand: async () => { throw new Error('不应派子代理') }, getSubagent: async () => undefined, runningSubagents: () => 0, push: () => undefined, findTarget: () => null })
     const c0 = await gapService.modelCall(gapId, 0)
     const c1 = await gapService.modelCall(gapId, 1)
     const c2 = await gapService.modelCall(gapId, 2)

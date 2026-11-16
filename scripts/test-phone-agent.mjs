@@ -124,6 +124,42 @@ try {
   devices.current = 'List of devices attached\nAAA unauthorized\n'
   await rejects(phone.run('ui', {}), 'phone_no_device', '没有可用设备时报错')
 
+  devices.current = 'List of devices attached\nAAA device model:A\n'
+  const failure = 'cat: /sdcard/window_dump_inkstone.xml: No such file or directory\n'
+  const flaky = { fails: 0 }
+  const sleeps = []
+  const flakyAdb = async (args) => {
+    if (args[0] !== 'devices' && args[3].startsWith('uiautomator dump')) {
+      calls.push(args)
+      if (flaky.fails > 0) { flaky.fails--; return Buffer.from(failure) }
+      return Buffer.from(DUMP)
+    }
+    return adb(args)
+  }
+  const retrying = new m.PhoneAgentCommands({ opsDir: () => work, adb: flakyAdb, sleep: async (ms) => { sleeps.push(ms) } })
+  calls.length = 0
+  flaky.fails = 2
+  const recovered = await retrying.run('ui', {})
+  eq(recovered.summary.count, 4, '读界面连续失败两次后第三次成功')
+  eq(shellCalls().filter((c) => c.startsWith('uiautomator dump')).length, 3, '失败后重试，共调用三次')
+  eq(sleeps, [400, 500], '重试前各等 400/500ms')
+  calls.length = 0
+  sleeps.length = 0
+  flaky.fails = 1
+  const byText = await retrying.run('tap', { text: '隐私', quiet: true })
+  ok(byText.summary.tapped.startsWith('e1'), '按文字点击同样走读界面重试')
+  ok(shellCalls().includes('input tap 270 140'), '重试成功后照常点击')
+  flaky.fails = 9
+  sleeps.length = 0
+  try { await retrying.run('ui', {}); assert.fail('应当失败') } catch (error) {
+    eq(error.code, 'phone_ui_failed', '始终读不到时报 phone_ui_failed')
+    ok(error.message.includes('已试 3 次') && error.message.includes('yan phone screen') && error.message.includes('--x/--y'), '错误说明可改用截图与坐标点击')
+    checks++
+  }
+  eq(sleeps, [400, 500], '最多重试两次')
+  flaky.fails = 9
+  await rejects(retrying.run('tap', { text: '隐私' }), 'phone_ui_failed', '按文字点击读不到界面时报同一错误')
+
   console.log(`phone-agent: ${checks} checks passed (fake adb, no device)`)
 } finally {
   await rm(work, { recursive: true, force: true })

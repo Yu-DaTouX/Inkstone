@@ -3,6 +3,7 @@ import { copyFile, mkdir, readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { atomicWriteFile } from './atomic-write'
+import { noteModelsWritten } from './models-watch'
 import {
   describeDiscoveredModels,
   mergeCustomProviders,
@@ -67,7 +68,9 @@ async function backupModels(): Promise<void> {
 async function writeAtomic(json: Json): Promise<void> {
   await mkdir(PI_AGENT_DIR, { recursive: true })
   await backupModels()
-  await atomicWriteFile(MODELS_FILE, `${JSON.stringify(json, null, 2)}\n`)
+  const text = `${JSON.stringify(json, null, 2)}\n`
+  noteModelsWritten(text)
+  await atomicWriteFile(MODELS_FILE, text)
 }
 
 export async function contextWindowAssumed(provider: string, modelId: string): Promise<boolean> {
