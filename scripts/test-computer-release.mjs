@@ -173,6 +173,73 @@ try {
     assert.equal(manager.statusOf('windows-mcp').status, 'error', '已不再登记该服务')
   })
 
+  await withManager('queued-call-dies-after-tighten', async (manager, calls) => {
+    await manager.callTool('windows-mcp', 'Snapshot', {})
+    const slow = manager.callTool('windows-mcp', 'Snapshot', { delay_ms: 3000 })
+    const slowOutcome = slow.then(() => null, (error) => error)
+    await sleep(300)
+    const pin = manager.pinConnection('windows-mcp')
+    const queued = manager.callTool('windows-mcp', 'Type', { text: 'queued' }, { connection: pin })
+    const queuedOutcome = queued.then(() => null, (error) => error)
+    await sleep(100)
+    const config = manager.list()[0]
+    const releases = manager.syncServers([{ ...config, args: [...config.args, 'tightened'] }], { cancelInFlight: '权限模式已调低' })
+    assert.equal((await slowOutcome)?.name, 'McpRequestCancelledError', '进行中的调用被中止')
+    const error = await queuedOutcome
+    assert.equal(error?.name, 'McpRequestCancelledError', '排在锁后面的调用不在新连接上执行')
+    assert.match(error.message, /权限已调低，操作已中止|Permissions were tightened/)
+    await Promise.all(releases.map((item) => item.release))
+    const logged = await calls()
+    assert.ok(!logged.some((line) => line.startsWith('Type')), '排队调用没有发到服务端：' + logged.join('|'))
+    const late = manager.callTool('windows-mcp', 'Snapshot', {}, { connection: pin })
+    assert.equal((await late.then(() => null, (e) => e))?.name, 'McpRequestCancelledError', '旧连接的凭据过期后不能再用')
+  })
+
+  await withManager('abort-computer-calls-without-config-change', async (manager, calls) => {
+    await manager.callTool('windows-mcp', 'Snapshot', {})
+    const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 3000 })
+    const slowOutcome = slow.then(() => null, (error) => error)
+    await sleep(300)
+    const pin = manager.pinConnection('windows-mcp')
+    const queued = manager.callTool('windows-mcp', 'Type', { text: 'queued' }, { connection: pin })
+    const queuedOutcome = queued.then(() => null, (error) => error)
+    await sleep(100)
+    manager.abortComputerCalls('急停')
+    assert.match((await slowOutcome)?.message ?? '', /急停/, '配置没变也中止进行中的调用')
+    assert.ok((await queuedOutcome) instanceof Error, '输入类调用被中止后资源待核实，排队的调用不执行')
+    assert.ok(!(await calls()).some((line) => line.startsWith('Type')))
+    assert.equal(manager.heldControl, false, '急停后不再持有控制')
+    sharedResources.resolveUncertain?.(INTERACTIVE_RESOURCE)
+    assert.equal((await manager.callTool('windows-mcp', 'Snapshot', {})).content[0].text, 'ok:Snapshot', '急停之后新发起的调用可正常执行')
+  })
+
+  await withManager('abort-cancels-queued-pinned-call', async (manager, calls) => {
+    await manager.callTool('windows-mcp', 'Snapshot', {})
+    const slow = manager.callTool('windows-mcp', 'Snapshot', { delay_ms: 3000 })
+    const slowOutcome = slow.then(() => null, (error) => error)
+    await sleep(300)
+    const pin = manager.pinConnection('windows-mcp')
+    const queued = manager.callTool('windows-mcp', 'Type', { text: 'queued' }, { connection: pin })
+    const queuedOutcome = queued.then(() => null, (error) => error)
+    await sleep(100)
+    manager.abortComputerCalls('急停')
+    assert.match((await slowOutcome)?.message ?? '', /急停/)
+    const error = await queuedOutcome
+    assert.equal(error?.name, 'McpRequestCancelledError', '配置没变时排队的调用同样以权限已调低失败')
+    assert.match(error.message, /权限已调低，操作已中止|Permissions were tightened/)
+    assert.ok(!(await calls()).some((line) => line.startsWith('Type')))
+  })
+
+  await withManager('removal-without-message-still-cancels', async (manager) => {
+    await manager.callTool('windows-mcp', 'Snapshot', {})
+    const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 3000 })
+    const slowOutcome = slow.then(() => null, (error) => error)
+    await sleep(300)
+    const releases = manager.syncServers([])
+    assert.equal((await slowOutcome)?.name, 'McpRequestCancelledError', '无提示的普通同步发现 windows-mcp 被移除也中止进行中的调用')
+    await Promise.all(releases.map((item) => item.release))
+  })
+
   await withManager('sync-without-cancel-keeps-in-flight', async (manager) => {
     const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 400 })
     await sleep(100)

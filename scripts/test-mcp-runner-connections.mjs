@@ -30,6 +30,8 @@ try {
         listToolsCached: async () => [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
         disconnect: async (id) => { manager.disconnected.push(id); manager.configs = manager.configs.filter((config) => config.id !== id); return true },
         syncOptions: [],
+        aborts: [],
+        abortComputerCalls: (message) => { manager.aborts.push(message) },
         idleWaiters: [],
         clearIdleWaiters: () => { manager.idleWaiters = [] },
         syncServers: (next, options) => {
@@ -225,11 +227,19 @@ try {
       ok(manager.configs.map((config) => config.id).join() === 'legacy', '立即同步后 windows-mcp 已从管理器移除')
       ok(manager.syncOptions.length === 1 && manager.syncOptions[0].cancelInFlight === '电脑操作已被关闭', '立即同步把中止进行中调用的提示交给管理器')
       ok(manager.idleWaiters.length === 0, '立即同步不再登记等待')
+      ok(manager.aborts.length === 1 && manager.aborts[0] === '电脑操作已被关闭', '急停直接中止电脑操作调用，不依赖配置有没有变化')
 
       env.servers = [{ id: 'legacy', transport: 'stdio', command: 'node' }, { id: 'windows-mcp', transport: 'stdio', command: 'uvx', args: ['auto'] }]
       manager.syncOptions.length = 0
-      ok((await connections.syncChanged()) === 'deferred' && manager.syncOptions.length === 0, '放宽或无关变更：正忙时仍延后，不中止进行中的调用')
+      ok((await connections.syncChanged()) === 'deferred' && manager.syncOptions.length === 0 && manager.aborts.length === 1, '放宽或无关变更：正忙时仍延后，不中止进行中的调用')
       ok((await connections.syncChanged({ immediate: false })) === 'deferred' && manager.idleWaiters.length === 1, '放宽变更重复触发只登记一次等待')
+    }
+
+    {
+      const { connections } = harness({ servers: [{ id: 'legacy', transport: 'stdio', command: 'node' }, { id: 'windows-mcp', transport: 'stdio', command: 'uvx', args: ['auto'] }] })
+      const manager = connections.connectionManager()
+      makeBusy(manager)
+      ok((await connections.syncChanged({ immediate: true, cancelInFlight: '权限已调低' })) === 'synced' && manager.aborts.join() === '权限已调低' && manager.configs.some((config) => config.id === 'windows-mcp'), '配置没写成功（windows-mcp 仍在配置里）时急停照样中止进行中的调用')
     }
 
     {

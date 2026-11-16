@@ -54,8 +54,15 @@ export class McpConnectionCancelledError extends Error {
   }
 }
 
+export interface McpConnectionPin {
+  readonly serverId: string
+  readonly conn: object
+  readonly epoch: number
+}
+
 export interface McpRequestOptions {
   signal?: AbortSignal
+  connection?: McpConnectionPin
   timeoutMs?: number
   longRunning?: boolean
 }
@@ -114,6 +121,7 @@ export class McpConnectionManager {
     if (value) controlHolders.add(this)
     else controlHolders.delete(this)
   }
+  private computerEpoch = 0
   private activeInputCalls = 0
   private releaseAfterInput = false
   private idleRelease?: NodeJS.Timeout
@@ -219,7 +227,8 @@ export class McpConnectionManager {
       }
       this.connections.delete(id)
       this.toolCache.delete(id)
-      if (options.cancelInFlight) this.cancelInFlight(conn, options.cancelInFlight)
+      const stopMessage = options.cancelInFlight ?? (id === WINDOWS_MCP_SERVER_ID ? pick('电脑操作的连接已被移除或更换，进行中的电脑操作已中止', 'The computer-use connection was removed or replaced; the computer action in progress was aborted') : undefined)
+      if (stopMessage) this.cancelInFlight(conn, stopMessage)
       releases.push({ serverId: id, release: this.releaseThenDetach(conn) })
     }
     for (const config of configs) {
@@ -228,6 +237,25 @@ export class McpConnectionManager {
       }
     }
     return releases
+  }
+
+  pinConnection(serverId: string): McpConnectionPin | undefined {
+    const conn = this.connections.get(serverId)
+    return conn ? { serverId, conn, epoch: this.computerEpoch } : undefined
+  }
+
+  private assertPinCurrent(pin: McpConnectionPin | undefined): void {
+    if (!pin) return
+    if (this.connections.get(pin.serverId) === pin.conn && pin.epoch === this.computerEpoch) return
+    throw new McpRequestCancelledError(pick('权限已调低，操作已中止', 'Permissions were tightened; the operation was aborted'))
+  }
+
+  abortComputerCalls(message: string): void {
+    this.computerEpoch++
+    const conn = this.connections.get(WINDOWS_MCP_SERVER_ID)
+    if (!conn) return
+    this.cancelInFlight(conn, message)
+    void this.releaseComputerControl().catch(() => undefined)
   }
 
   listServerIds(): string[] {
@@ -556,6 +584,7 @@ export class McpConnectionManager {
   ): Promise<unknown> {
     this.assertRequestAllowed(options)
     if (serverId === WINDOWS_MCP_SERVER_ID) {
+      const pin = options.connection ?? this.pinConnection(serverId)
       const takesControl = !WINDOWS_MCP_OBSERVE_TOOLS.has(toolName) && toolName !== WINDOWS_MCP_CONTROL_TOOL
       const releases = toolName === WINDOWS_MCP_CONTROL_TOOL && args.release === true
       if (takesControl) {
@@ -564,10 +593,13 @@ export class McpConnectionManager {
       }
       try {
         return await sharedResources.run(INTERACTIVE_RESOURCE, `mcp:${serverId}`, async () => {
-          await this.connect(this.require(serverId))
+          this.assertPinCurrent(pin)
+          const conn = this.require(serverId)
+          await this.connect(conn)
+          this.assertPinCurrent(pin)
           if (takesControl) this.computerControlHeld = true
           try {
-            const result = await this.callToolUncoordinated(serverId, toolName, args, options)
+            const result = await this.callToolUncoordinated(conn, serverId, toolName, args, options)
             if (releases && !(result as { isError?: unknown } | null)?.isError) {
               this.computerControlHeld = false
               this.releaseAfterInput = false
@@ -578,7 +610,7 @@ export class McpConnectionManager {
             if (!WINDOWS_MCP_OBSERVE_TOOLS.has(toolName)) sharedResources.markUncertain(INTERACTIVE_RESOURCE)
             throw error
           } finally {
-            if (takesControl) this.computerControlHeld = true
+            if (takesControl && this.connections.get(serverId) === conn && pin?.epoch === this.computerEpoch) this.computerControlHeld = true
           }
         })
       } finally {
@@ -590,17 +622,17 @@ export class McpConnectionManager {
         }
       }
     }
-    return this.callToolUncoordinated(serverId, toolName, args, options)
+    return this.callToolUncoordinated(this.require(serverId), serverId, toolName, args, options)
   }
 
   private async callToolUncoordinated(
+    conn: Connection,
     serverId: string,
     toolName: string,
     args: Record<string, unknown>,
     options: McpRequestOptions = {}
   ): Promise<unknown> {
     this.assertRequestAllowed(options)
-    const conn = this.require(serverId)
     await this.connect(conn)
     const client = conn.client
     if (!client) throw new McpConnectionCancelledError()

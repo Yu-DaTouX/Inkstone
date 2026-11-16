@@ -102,8 +102,16 @@ export function registerSettingsIpc(ipc: IpcRegistrar, deps: SettingsIpcDeps): v
     refreshPackageProjectRoots(next)
     if (next.permissionMode !== before.permissionMode) {
       const tightened = computerUseModeTightens(before.permissionMode, next.permissionMode)
+      const stopComputer = (): Promise<void> | undefined => deps.runners()?.reloadMcpServers(computerUseStopSync('tightened'))
+      if (tightened) void Promise.resolve(stopComputer()).catch((error) => reportMainError(pick('电脑操作', 'Computer use'), error))
       void refreshComputerUseEntry(next.permissionMode)
-        .then((changed) => (changed ? deps.runners()?.reloadMcpServers(tightened ? computerUseStopSync('tightened') : undefined) : undefined))
+        .then(
+          (changed) => (tightened ? stopComputer() : changed ? deps.runners()?.reloadMcpServers() : undefined),
+          (error) => {
+            reportMainError(pick('电脑操作', 'Computer use'), error)
+            return tightened ? stopComputer() : undefined
+          }
+        )
         .catch((error) => reportMainError(pick('电脑操作', 'Computer use'), error))
     }
     if (typeof patch.theme === 'string' && patch.theme !== before.theme) {

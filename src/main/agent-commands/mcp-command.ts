@@ -181,6 +181,7 @@ export async function runMcpCommand(host: McpCommandHost, action: string, params
       }
     }
 
+    const connection = manager.pinConnection(serverId)
     const rawArgs = params.arguments ?? params.args
     const args = rawArgs && typeof rawArgs === 'object' ? (rawArgs as Record<string, unknown>) : {}
     assertComputerUseArguments(serverId, toolName, args)
@@ -195,6 +196,7 @@ export async function runMcpCommand(host: McpCommandHost, action: string, params
     const outcome = await callMcpTool(manager, serverId, toolName, args, {
       resultsDir: join(YAN_DIR, 'mcp-results'),
       signal,
+      ...(connection ? { connection } : {}),
       ...(expectedRevision ? { expectedRevision } : {})
     })
     const configError = host.mcpConfigError()

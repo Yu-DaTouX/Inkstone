@@ -9,7 +9,7 @@ import {
   type McpResultTextOptions,
   type McpToolDescriptor
 } from '../../shared/mcp'
-import type { McpConnectionManager } from './connection-manager'
+import type { McpConnectionManager, McpConnectionPin } from './connection-manager'
 import { COMPUTER_USE_SERVER_ID } from '../computer-use'
 
 export class McpToolError extends Error {
@@ -83,6 +83,7 @@ export interface McpCallOptions {
   maxInlineBytes?: number
   expectedRevision?: string
   signal?: AbortSignal
+  connection?: McpConnectionPin
 }
 
 async function pruneResultFiles(dir: string): Promise<void> {
@@ -198,7 +199,7 @@ export async function callMcpTool(
   }
 
   options.signal?.throwIfAborted()
-  const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal, longRunning: true })
+  const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal, longRunning: true, ...(options.connection ? { connection: options.connection } : {}) })
   const snapshotAdvice = await offersSnapshotTool(manager, serverId, options.signal)
   const saved = await saveResultImages(raw, serverId, toolName, options.resultsDir, snapshotAdvice)
   const { toolError, text } = classifyMcpResult(raw, saved.options)

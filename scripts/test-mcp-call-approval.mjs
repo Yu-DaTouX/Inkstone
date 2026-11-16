@@ -174,14 +174,16 @@ process.stdout.write('\n▌windows-mcp 的 save_path 不开放\n')
 function runHost(serverId = 'windows-mcp') {
   const calls = []
   const asked = []
+  const pin = { serverId: 'pin', conn: {}, epoch: 0 }
   const manager = {
+    pinConnection: () => pin,
     listToolsCached: async () => ['Snapshot', 'Screenshot', 'Click'].map((name) => ({
       name,
       inputSchema: { type: 'object', properties: { save_path: { anyOf: [{ type: 'string' }, { type: 'null' }] }, use_vision: { type: 'boolean' } } },
       annotations: { readOnlyHint: name !== 'Click', destructiveHint: name === 'Click' }
     })),
-    callTool: async (server, tool, args) => {
-      calls.push({ server, tool, args })
+    callTool: async (server, tool, args, options) => {
+      calls.push({ server, tool, args, connection: options?.connection })
       return { content: [{ type: 'text', text: 'ok' }] }
     }
   }
@@ -193,7 +195,7 @@ function runHost(serverId = 'windows-mcp') {
     confirmDanger: async (request) => { asked.push(request); return { decision: 'allow' } },
     approvalOwner: () => ({ instanceId: 'fixture', generation: 1 })
   }
-  return { host, calls, asked, serverId }
+  return { host, calls, asked, serverId, pin }
 }
 
 for (const tool of ['Snapshot', 'Screenshot']) {
@@ -222,6 +224,12 @@ await check('save_path 为 null 或不带时照常执行', async () => {
   await runMcpCommand(host, 'call', { server: 'windows-mcp', tool: 'Snapshot', arguments: { use_vision: false, save_path: null } })
   await runMcpCommand(host, 'call', { server: 'windows-mcp', tool: 'Snapshot', arguments: { use_vision: false } })
   assert.equal(calls.length, 2)
+})
+
+await check('调用开始时定下的连接一路传给管理器，执行前由它核对', async () => {
+  const { host, calls, pin } = runHost()
+  await runMcpCommand(host, 'call', { server: 'windows-mcp', tool: 'Snapshot', arguments: { use_vision: false } })
+  assert.equal(calls[0].connection, pin)
 })
 
 await check('其他 MCP 服务的同名参数不受影响', async () => {

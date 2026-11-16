@@ -105,9 +105,16 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     return computerUseStatus()
   })
   handle('yan:computerUse:set', async (value: unknown) => {
-    const result = value === true ? await enableComputerUse((await getSettings()).permissionMode) : await disableComputerUse()
-    if (result.ok) await registry()?.reloadMcpServers(value === true ? undefined : computerUseStopSync('disabled'))
-    return result
+    if (value === true) {
+      const result = await enableComputerUse((await getSettings()).permissionMode)
+      if (result.ok) await registry()?.reloadMcpServers()
+      return result
+    }
+    try {
+      return await disableComputerUse()
+    } finally {
+      await registry()?.reloadMcpServers(computerUseStopSync('disabled')).catch(() => undefined)
+    }
   })
 
   const currentNativeMcpList = async (): Promise<NativeMcpServerListView> => {

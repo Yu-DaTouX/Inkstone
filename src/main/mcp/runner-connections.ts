@@ -161,6 +161,7 @@ export class RunnerMcpConnections {
   async syncChanged(options: RunnerMcpSyncOptions = {}): Promise<'none' | 'synced' | 'deferred'> {
     const manager = this.manager
     if (!manager) return 'none'
+    if (options.cancelInFlight) manager.abortComputerCalls(options.cancelInFlight)
     if (options.immediate) {
       await this.applySync(options.cancelInFlight)
       return 'synced'
