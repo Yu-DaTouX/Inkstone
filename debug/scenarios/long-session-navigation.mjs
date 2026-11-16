@@ -87,7 +87,9 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   check('顶部导航到达目标回合', report.navTop.active === '3', report.navTop)
   const viewport = await cdp.evaluate(`document.querySelector('.v3-stream').clientHeight`)
   const flightSegments = motion => {
-    const from = Math.abs(motion.offsets[1] - motion.offsets[0]) > viewport ? motion.offsets[1] : motion.offsets[0], to = motion.scrollTop
+    const from = Math.abs(motion.offsets[1] - motion.offsets[0]) > viewport ? motion.offsets[1] : motion.offsets[0]
+    const jumps = motion.offsets.flatMap((offset, index) => index > 0 && Math.abs(offset - motion.offsets[index - 1]) > viewport ? [index] : [])
+    const to = jumps.length > 1 ? motion.offsets[jumps.at(-1) - 1] : motion.scrollTop
     const lead = motion.offsets.filter(offset => Math.abs(offset-from) > .5 && Math.abs(offset-from) <= viewport*.35 + 2).length
     const land = motion.offsets.filter(offset => Math.abs(to-offset) > .5 && Math.abs(to-offset) <= viewport*.6 + 2).length
     return { lead, land }
