@@ -152,21 +152,76 @@ export function parseVerdict(text) {
   return null
 }
 
-export async function runReview(ctx, prompt, { timeoutMs = REVIEW_TIMEOUT_MS } = {}) {
-  const model = ctx?.model
-  const registry = ctx?.modelRegistry
-  if (!model || typeof registry?.streamSimple !== 'function') return { decision: 'error', reason: 'no model is available for the review' }
+const PERMANENT_ERROR_RE = /\b(?:400|401|402|403|404|422)\b|unauthori[sz]ed|unauthenticated|forbidden|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|authentication|oauth|invalid_grant|token.{0,12}expired|not logged in|usage limit|extra usage|plan limits?|used all|free requests?|requests for today|insufficient[ _](?:balance|funds|credit|quota)|exceeded your current quota|billing|(?:credit|account) balance|(?:out of|no|insufficient) credits?|context[ _-](?:length|window|limit)|too many tokens|prompt is too long|content[ _-]?(?:policy|filter)|flagged|invalid[ _]?(?:request|parameter)|unsupported|model.{0,50}(?:not found|does not exist)|tls|certificate/i
+const TRANSIENT_ERROR_RE = /\b429\b|\b5\d\d\b|rate[ _-]?limit|too many requests|resource_exhausted|overload|server error|service unavailable|bad gateway|gateway time|terminated|websocket|socket hang up|econnreset|econnrefused|etimedout|enotfound|eai_again|epipe|stream.{0,20}(?:closed|ended)|connection.{0,20}(?:closed|reset)|fetch failed|network/i
+
+export function isTransientReviewError(text) {
+  const raw = String(text ?? '')
+  return !PERMANENT_ERROR_RE.test(raw) && TRANSIENT_ERROR_RE.test(raw)
+}
+
+export const REVIEW_RETRY_DELAY_MS = 2000
+export const REVIEW_RETRY_MIN_MS = 10_000
+
+function stopSignalOf(ctx) {
+  try {
+    return ctx?.signal instanceof AbortSignal ? ctx.signal : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function pause(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve()
+    const timer = setTimeout(done, ms)
+    function done() {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    signal?.addEventListener('abort', done, { once: true })
+  })
+}
+
+async function reviewOnce(model, registry, prompt, timeoutMs, stop) {
+  if (stop?.aborted) return { decision: 'error', reason: 'the review was stopped' }
   try {
     const response = await registry.streamSimple(model, {
       systemPrompt: prompt.system,
       messages: [{ role: 'user', content: [{ type: 'text', text: prompt.user }], timestamp: Date.now() }]
-    }, { maxTokens: REVIEW_MAX_TOKENS, ...(model.reasoning === false ? {} : { reasoning: 'low' }), signal: AbortSignal.timeout(timeoutMs) }).result()
-    if (response?.stopReason === 'aborted') return { decision: 'error', reason: 'the review timed out' }
-    if (response?.stopReason === 'error') return { decision: 'error', reason: clip(String(response?.errorMessage ?? 'the review request failed'), 160) }
+    }, { maxTokens: REVIEW_MAX_TOKENS, ...(model.reasoning === false ? {} : { reasoning: 'low' }), signal: stop ? AbortSignal.any([AbortSignal.timeout(timeoutMs), stop]) : AbortSignal.timeout(timeoutMs) }).result()
+    if (response?.stopReason === 'aborted') return { decision: 'error', reason: stop?.aborted ? 'the review was stopped' : 'the review timed out' }
+    if (response?.stopReason === 'error') {
+      const text = String(response?.errorMessage ?? 'the review request failed')
+      return { decision: 'error', reason: clip(text, 160), transient: isTransientReviewError(text) }
+    }
     return parseVerdict(textOf(response?.content)) ?? { decision: 'error', reason: 'the reviewer reply could not be read' }
   } catch (error) {
-    return { decision: 'error', reason: clip(String(error?.message ?? error), 160) }
+    const text = String(error?.message ?? error)
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+    return { decision: 'error', reason: clip(text, 160), transient: !timedOut && isTransientReviewError(`${error?.code ?? ''} ${text}`) }
   }
+}
+
+export async function runReview(ctx, prompt, { timeoutMs = REVIEW_TIMEOUT_MS, retryDelayMs = REVIEW_RETRY_DELAY_MS, retryMinMs = REVIEW_RETRY_MIN_MS } = {}) {
+  const model = ctx?.model
+  const registry = ctx?.modelRegistry
+  if (!model || typeof registry?.streamSimple !== 'function') return { decision: 'error', reason: 'no model is available for the review' }
+  const stop = stopSignalOf(ctx)
+  const deadline = Date.now() + timeoutMs
+  const first = await reviewOnce(model, registry, prompt, timeoutMs, stop)
+  if (first.decision !== 'error' || !first.transient || stop?.aborted) return stripTransient(first)
+  const left = deadline - Date.now() - retryDelayMs
+  if (left < retryMinMs) return stripTransient(first)
+  await pause(retryDelayMs, stop)
+  if (stop?.aborted) return stripTransient(first)
+  return stripTransient(await reviewOnce(model, registry, prompt, Math.max(1, deadline - Date.now()), stop))
+}
+
+function stripTransient(verdict) {
+  const { transient, ...rest } = verdict
+  return rest
 }
 
 export function reviewDeniedReason(reasons, reason) {

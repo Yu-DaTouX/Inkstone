@@ -1819,8 +1819,9 @@ export default function dangerGuardExtension(pi) {
       reviewStreak = 0
       return inputDigest(input) === approvedDigest ? undefined : { block: true, reason: CHANGED_AFTER_APPROVAL }
     }
+    if (verdict.decision !== 'deny') return { block: true, reason: reviewFailedReason(unique, verdict.reason) }
     reviewStreak += 1
-    const reason = verdict.decision === 'deny' ? reviewDeniedReason(unique, verdict.reason) : reviewFailedReason(unique, verdict.reason)
+    const reason = reviewDeniedReason(unique, verdict.reason)
     if (reviewStreak < REVIEW_STREAK_LIMIT) return { block: true, reason }
     reviewStreak = 0
     stopRun(ctx)

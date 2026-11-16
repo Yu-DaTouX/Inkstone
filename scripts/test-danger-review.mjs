@@ -98,6 +98,59 @@ await runSuite(import.meta.url, async (ok) => {
     ok((await review.runReview({ model, modelRegistry: fakeRegistry([() => { throw new Error('net') }]) }, prompt)).decision === 'error', '抛错按失败处理')
     ok((await review.runReview({ modelRegistry: registry }, prompt)).decision === 'error', '没有模型按失败处理')
 
+    for (const text of ['529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', '429 Too Many Requests', 'rate limit exceeded', '503 Service Unavailable', 'Internal Server Error (500)', 'ECONNRESET', 'read ETIMEDOUT', 'fetch failed', 'socket hang up', '502 Bad Gateway from load balancer']) {
+      ok(review.isTransientReviewError(text) === true, `瞬时错误：${text.slice(0, 30)}`)
+    }
+    for (const text of ['401 Unauthorized', 'invalid api key', '403 forbidden', 'OAuth token refresh failed', 'You exceeded your current quota, 429', 'insufficient balance', 'Your credit balance is too low', 'out of credits', '400 invalid_request_error', 'prompt is too long', 'certificate has expired', 'the reviewer reply could not be read', '']) {
+      ok(review.isTransientReviewError(text) === false, `非瞬时错误：${text.slice(0, 30)}`)
+    }
+
+    const fast = { retryDelayMs: 5 }
+    const overloaded = () => ({ stopReason: 'error', errorMessage: '529 overloaded', content: [] })
+    const retryOk = fakeRegistry([overloaded, reply('{"decision":"allow","reason":"ok"}')])
+    const retried = await review.runReview({ model, modelRegistry: retryOk }, prompt, fast)
+    ok(retried.decision === 'allow' && retryOk.calls.length === 2 && !('transient' in retried), '瞬时错误重试一次后通过')
+    const retryDeny = fakeRegistry([() => { throw new Error('read ECONNRESET') }, reply('{"decision":"deny","reason":"no"}')])
+    const retriedDeny = await review.runReview({ model, modelRegistry: retryDeny }, prompt, fast)
+    ok(retriedDeny.decision === 'deny' && retryDeny.calls.length === 2, '抛网络错误重试一次后得到拒绝仍是拒绝')
+    const retryFail = fakeRegistry([overloaded, () => ({ stopReason: 'error', errorMessage: '503 service unavailable', content: [] }), reply('{"decision":"allow","reason":"ok"}')])
+    const failed = await review.runReview({ model, modelRegistry: retryFail }, prompt, fast)
+    ok(failed.decision === 'error' && failed.reason.includes('503') && retryFail.calls.length === 2 && !('transient' in failed), '重试后仍失败就只重试这一次，结果仍是没审完')
+    const noBudget = fakeRegistry([overloaded, reply('{"decision":"allow","reason":"ok"}')])
+    const short = await review.runReview({ model, modelRegistry: noBudget }, prompt, { timeoutMs: 5000, retryDelayMs: 5 })
+    ok(short.decision === 'error' && noBudget.calls.length === 1, '剩余预算不足不重试')
+    const slow = fakeRegistry([async () => { await new Promise((resolve) => setTimeout(resolve, 120)); return overloaded() }, reply('{"decision":"allow","reason":"ok"}')])
+    const spent = await review.runReview({ model, modelRegistry: slow }, prompt, { timeoutMs: 200, retryDelayMs: 50, retryMinMs: 100 })
+    ok(spent.decision === 'error' && slow.calls.length === 1, '首次耗掉大半预算后不再重试')
+    const retryDeadline = fakeRegistry([overloaded, reply('{"decision":"allow","reason":"ok"}')])
+    await review.runReview({ model, modelRegistry: retryDeadline }, prompt, { timeoutMs: 20_000, retryDelayMs: 5 })
+    ok(retryDeadline.calls[1].options.signal instanceof AbortSignal, '重试同样带超时信号')
+    const stopper = new AbortController()
+    const stoppedRegistry = fakeRegistry([() => { stopper.abort(); return overloaded() }, reply('{"decision":"allow","reason":"ok"}')])
+    const stopped = await review.runReview({ model, modelRegistry: stoppedRegistry, signal: stopper.signal }, prompt, fast)
+    ok(stopped.decision === 'error' && stoppedRegistry.calls.length === 1, '用户停止后不再重试')
+    const waitStopper = new AbortController()
+    const waitRegistry = fakeRegistry([overloaded, reply('{"decision":"allow","reason":"ok"}')])
+    const waitStarted = Date.now()
+    setTimeout(() => waitStopper.abort(), 20)
+    const waitStopped = await review.runReview({ model, modelRegistry: waitRegistry, signal: waitStopper.signal }, prompt, { retryDelayMs: 5000 })
+    ok(waitStopped.decision === 'error' && waitRegistry.calls.length === 1 && Date.now() - waitStarted < 2000, '等待重试时用户停止立即结束且不再请求')
+    const linked = new AbortController()
+    const linkedRegistry = fakeRegistry([reply('{"decision":"allow","reason":"ok"}')])
+    await review.runReview({ model, modelRegistry: linkedRegistry, signal: linked.signal }, prompt, fast)
+    linked.abort()
+    ok(linkedRegistry.calls[0].options.signal.aborted === true, '代审请求跟随用户停止')
+    const denyOnce = fakeRegistry([reply('{"decision":"deny","reason":"no"}'), reply('{"decision":"allow","reason":"ok"}')])
+    ok((await review.runReview({ model, modelRegistry: denyOnce }, prompt, fast)).decision === 'deny' && denyOnce.calls.length === 1, '拒绝不重试')
+    const timedOut = fakeRegistry([{ stopReason: 'aborted', content: [] }, reply('{"decision":"allow","reason":"ok"}')])
+    ok((await review.runReview({ model, modelRegistry: timedOut }, prompt, fast)).reason === 'the review timed out' && timedOut.calls.length === 1, '超时不重试')
+    const timeoutThrown = fakeRegistry([() => { const error = new Error('The operation was aborted due to timeout'); error.name = 'TimeoutError'; throw error }, reply('{"decision":"allow","reason":"ok"}')])
+    ok((await review.runReview({ model, modelRegistry: timeoutThrown }, prompt, fast)).decision === 'error' && timeoutThrown.calls.length === 1, '超时抛错不重试')
+    const unreadable = fakeRegistry([reply('嗯'), reply('{"decision":"allow","reason":"ok"}')])
+    ok((await review.runReview({ model, modelRegistry: unreadable }, prompt, fast)).decision === 'error' && unreadable.calls.length === 1, '解析失败不重试')
+    const authFail = fakeRegistry([{ stopReason: 'error', errorMessage: '401 Unauthorized', content: [] }, reply('{"decision":"allow","reason":"ok"}')])
+    ok((await review.runReview({ model, modelRegistry: authFail }, prompt, fast)).decision === 'error' && authFail.calls.length === 1, '认证错误不重试')
+
     const host = { mode: 'danger', confirm: [], confirmCalls: [], reviews: [] }
     const server = createServer((req, res) => {
       let body = ''
@@ -139,6 +192,16 @@ await runSuite(import.meta.url, async (ok) => {
       ok(passed === undefined, '审批档超时后模型放行就执行')
       ok(host.reviews.at(-1)?.allowed === true && host.reviews.at(-1)?.toolCallId === 'tc1', '放行结果报给宿主留痕')
 
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push({ stopReason: 'error', errorMessage: '529 overloaded', content: [] }, reply('{"decision":"allow","reason":"用户要求"}'))
+      const callsBeforeRetry = reviewer.calls.length
+      const retriedPass = await call('git push --force', 'tc-retry')
+      ok(retriedPass === undefined && reviewer.calls.length === callsBeforeRetry + 2, '审阅遇到过载重试一次后放行就执行')
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push({ stopReason: 'error', errorMessage: '529 overloaded', content: [] }, { stopReason: 'error', errorMessage: '529 overloaded', content: [] })
+      const retriedBlock = await call('git push --force', 'tc-retry2')
+      ok(retriedBlock?.block === true && retriedBlock.reason.includes('could not finish') && aborts === 0, '重试后仍失败照旧拦下，不停止本轮')
+
       host.confirm.push({ allowed: false, decision: 'deny', feedback: '别推' })
       const before = reviewer.calls.length
       const denied = await call('git push --force', 'tc2')
@@ -152,9 +215,34 @@ await runSuite(import.meta.url, async (ok) => {
       }
       host.confirm.push({ allowed: false, decision: 'timeout' })
       replies.push(undefined)
-      const third = await call('git push --force', 'tc-d2')
-      ok(third?.block === true && third.reason.includes('could not finish') && third.reason.includes('stopped') && aborts === 1, '连续第 3 次不通过或失败就停止本轮')
+      const unfinished = await call('git push --force', 'tc-d2')
+      ok(unfinished?.block === true && unfinished.reason.includes('could not finish') && !unfinished.reason.includes('stopped') && aborts === 0, '没审完照旧拦下，但不算停止本轮的连续次数')
+      ok(host.reviews.at(-1)?.allowed === false, '没审完的结果也报给宿主留痕')
+      for (let i = 0; i < 3; i += 1) {
+        host.confirm.push({ allowed: false, decision: 'timeout' })
+        replies.push({ stopReason: 'error', errorMessage: 'boom', content: [] })
+        const result = await call('git push --force', `tc-u${i}`)
+        ok(result?.block === true && result.reason.includes('could not finish') && aborts === 0, `连续没审完不停止本轮（第 ${i + 1} 次）`)
+      }
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push(reply('{"decision":"deny","reason":"用户说过不要推送"}'))
+      const third = await call('git push --force', 'tc-d3')
+      ok(third?.block === true && third.reason.includes('independent reviewer') && third.reason.includes('stopped') && aborts === 1, '没审完不清零：累计第 3 次拒绝才停止本轮')
       ok(host.reviews.at(-1)?.allowed === false, '拒绝结果也报给宿主留痕')
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push(reply('{"decision":"deny","reason":"x"}'))
+      await call('git push --force', 'tc-d4')
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push(undefined)
+      await call('git push --force', 'tc-d5')
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push(reply('{"decision":"deny","reason":"x"}'))
+      await call('git push --force', 'tc-d6')
+      ok(aborts === 1, '停止后重新计数，拒绝与没审完交错时只数拒绝')
+      host.confirm.push({ allowed: false, decision: 'timeout' })
+      replies.push(reply('{"decision":"deny","reason":"x"}'))
+      await call('git push --force', 'tc-d7')
+      ok(aborts === 2, '第 3 次拒绝停止本轮')
 
       for (let i = 0; i < 2; i += 1) {
         host.confirm.push({ allowed: false, decision: 'timeout' })
@@ -165,7 +253,7 @@ await runSuite(import.meta.url, async (ok) => {
       host.confirm.push({ allowed: false, decision: 'timeout' })
       replies.push(reply('{"decision":"deny","reason":"x"}'))
       await call('git push --force', 'tc-e2')
-      ok(aborts === 2, '宿主自动消息不清零计数')
+      ok(aborts === 3, '宿主自动消息不清零计数')
       for (let i = 0; i < 2; i += 1) {
         host.confirm.push({ allowed: false, decision: 'timeout' })
         replies.push(reply('{"decision":"deny","reason":"x"}'))
@@ -175,7 +263,7 @@ await runSuite(import.meta.url, async (ok) => {
       host.confirm.push({ allowed: false, decision: 'timeout' })
       replies.push(reply('{"decision":"deny","reason":"x"}'))
       await call('git push --force', 'tc-f2')
-      ok(aborts === 2, '用户发新消息后计数清零')
+      ok(aborts === 3, '用户发新消息后计数清零')
 
       host.confirm.push({ allowed: false, decision: 'timeout' })
       replies.push(reply('{"decision":"allow","reason":"ok"}'))
