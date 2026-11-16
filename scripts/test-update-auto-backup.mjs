@@ -87,6 +87,58 @@ try {
     const after = (await readdir(autoRoot)).filter((name) => name.startsWith('Inkstone-backup-'))
     assert.deepEqual(after, before, '旧备份仍在')
   })
+
+  const backupNames = async () => (await readdir(autoRoot)).filter((name) => name.startsWith('Inkstone-backup-'))
+  for (const name of ['1', '2', '3']) {
+    await mkdir(join(yan, 'attachments'), { recursive: true })
+    await writeFile(join(yan, 'attachments', name + '.png'), 'image-' + name)
+  }
+  await writeFile(join(sessions, 'b.jsonl'), '{"type":"session"}\n')
+
+  await check('超限时自动备份只跳过非会话部分，保留上一份完整备份，并标记为不完整', async () => {
+    await wait(20)
+    const complete = await backup.createUpdateAutoBackup({ userData, sessions, yan })
+    assert.equal(complete.skipped, undefined)
+    await wait(20)
+    const partial = await backup.createUpdateAutoBackup({ userData, sessions, yan }, { limits: { maxFiles: 4 } })
+    assert.deepEqual(partial.skipped?.map((item) => item.part), ['attachments'])
+    const names = await backupNames()
+    assert.equal(names.length, 2, JSON.stringify(names))
+    assert.equal(names.includes(complete.path.split(/[\\/]/).pop()), true, '完整备份保留')
+    assert.equal(JSON.parse(await readFile(join(partial.path, 'auto-backup.json'), 'utf8')).partial, true)
+  })
+
+  await check('再有不完整备份时清理旧的不完整备份，保留完整备份', async () => {
+    await wait(20)
+    const again = await backup.createUpdateAutoBackup({ userData, sessions, yan }, { limits: { maxFiles: 4 } })
+    const names = await backupNames()
+    assert.equal(names.length, 2, JSON.stringify(names))
+    assert.equal(names.includes(again.path.split(/[\\/]/).pop()), true)
+    const partials = []
+    for (const name of names) partials.push(JSON.parse(await readFile(join(autoRoot, name, 'auto-backup.json'), 'utf8')).partial === true)
+    assert.equal(partials.filter(Boolean).length, 1, '只剩最新的一份不完整备份')
+  })
+
+  await check('会话记录本身超限时自动备份失败，不跳会话，也不动旧备份', async () => {
+    const before = await backupNames()
+    await assert.rejects(() => backup.createUpdateAutoBackup({ userData, sessions, yan }, { limits: { maxFiles: 1 } }), (error) => error.name !== 'BackupTooLargeError' && /limit exceeded/.test(error.message))
+    assert.deepEqual(await backupNames(), before)
+  })
+
+  await check('手动安装的确认流程：拒绝跳过则失败，同意后按用户选择备份', async () => {
+    const before = await backupNames()
+    let asked = null
+    await assert.rejects(() => backup.createUpdateAutoBackup({ userData, sessions, yan }, { limits: { maxFiles: 4 }, confirmSkip: async (info) => { asked = info; return null } }), (error) => error.name === 'BackupTooLargeError')
+    assert.deepEqual(await backupNames(), before, '拒绝后不创建、不清理')
+    assert.deepEqual(asked.suggested, ['attachments'])
+    assert.ok(asked.parts.some((item) => item.part === 'sessions'))
+    await wait(20)
+    const accepted = await backup.createUpdateAutoBackup({ userData, sessions, yan }, { limits: { maxFiles: 4 }, confirmSkip: async (info) => info.suggested })
+    assert.deepEqual(accepted.skipped?.map((item) => item.part), ['attachments'])
+    const noPrompt = await backup.createUpdateAutoBackup({ userData, sessions, yan }, { confirmSkip: async () => { throw new Error('不该询问') } })
+    assert.equal(noPrompt.skipped, undefined, '没超限时不弹窗')
+    assert.equal((await backupNames()).length, 1, '完整备份成功后清掉所有旧备份')
+  })
 } finally {
   await rm(work, { recursive: true, force: true }).catch(() => undefined)
 }
@@ -153,7 +205,8 @@ let prepareAutomaticInstallOnQuit = null
 
 const handlers = new Map()
 const factory = { mode: 'ok', delayMs: 0, onRun: null }
-const backupFactory = async () => {
+const backupFactory = async (interactive) => {
+  factory.interactive = [...(factory.interactive ?? []), interactive === true]
   factory.runs = (factory.runs ?? 0) + 1
   factory.onRun?.()
   if (factory.delayMs) await wait(factory.delayMs)
@@ -296,8 +349,10 @@ try {
   await check('安装前先做备份，成功后才重启', async () => {
     factory.mode = 'ok'
     model.installs = 0
+    factory.interactive = []
     const result = await run('install')
     assert.equal(result.ok, true, JSON.stringify(result))
+    assert.deepEqual(factory.interactive, [true], '手动重启安装走带确认弹窗的备份')
     assert.ok(result.backup, '返回备份摘要')
     await wait(400)
     assert.equal(model.installs, 1)

@@ -540,7 +540,15 @@ export interface StorageInfoView {
   bytes: number
   pendingTarget?: string
   strandedBackup?: string
+  oldCopy?: { path: string; bytes: number }
   lastResult?: { ok: boolean; at: number; from: string; to: string; error?: string; leftover?: string }
+}
+
+export interface IncompleteRestoreView {
+  path: string
+  at: number
+  bytes: number
+  error?: string
 }
 
 export interface ComputerUseStatusView {
@@ -1727,6 +1735,11 @@ export interface YanBridge {
     pick(): Promise<string | null>
     schedule(target: string, relaunch?: boolean): Promise<{ ok: boolean; error?: string }>
     cancel(): Promise<void>
+    trashOldCopy(path: string): Promise<{ ok: boolean; error?: string }>
+  }
+  incompleteRestores: {
+    list(): Promise<IncompleteRestoreView[]>
+    trash(path: string): Promise<{ ok: boolean; error?: string }>
   }
 
   readonly isProbe: boolean

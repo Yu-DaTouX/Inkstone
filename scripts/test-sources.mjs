@@ -19,7 +19,7 @@ export async function runSourcesTests(ok, sourcesModule) {
     listLinks,
     linkSources,
     removeImage,
-    dropSession
+    trashSessionSources
   } = sourcesModule
 
   const root = mkdtempSync(join(tmpdir(), 'yan-sources-'))
@@ -141,8 +141,11 @@ export async function runSourcesTests(ok, sourcesModule) {
     const dir = sourcesDir('sess-tmp')
     saveImage({ sessionId: 'sess-tmp', name: 't.png', mimeType: 'image/png', base64: pngB64 })
     ok(existsSync(dir), '会话目录建好了', dir)
-    dropSession('sess-tmp')
-    ok(!existsSync(dir), '会话被清理时它的图片副本也一起走了')
+    const trashed = []
+    ok(await trashSessionSources('sess-tmp', async (path) => { trashed.push(path); rmSync(path, { recursive: true, force: true }) }), '会话被清理时把图片副本交给回收站函数')
+    ok(trashed.length === 1 && trashed[0] === dir && !existsSync(dir), '会话被清理时它的图片副本也一起走了', trashed.join())
+    ok(!(await trashSessionSources('sess-tmp', async () => { throw new Error('不该再调用') })), '没有副本目录时不调用回收站')
+    ok(!(await trashSessionSources('../escape', async () => { throw new Error('不该再调用') })), '不合法的会话 id 不动任何目录')
   }
 
   rmSync(root, { recursive: true, force: true })

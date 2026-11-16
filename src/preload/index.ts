@@ -412,7 +412,12 @@ const api: YanBridge = {
     info: () => invoke('yan:storage:info'),
     pick: () => invoke('yan:storage:pick'),
     schedule: (target, relaunch) => invoke('yan:storage:schedule', target, relaunch),
-    cancel: () => invoke('yan:storage:cancel')
+    cancel: () => invoke('yan:storage:cancel'),
+    trashOldCopy: (path) => invoke('yan:storage:trashOldCopy', path)
+  },
+  incompleteRestores: {
+    list: () => invoke('yan:backup:incomplete'),
+    trash: (path) => invoke('yan:backup:incompleteTrash', path)
   },
   revealPath: (p) => invoke('yan:revealPath', p),
   exportHtmlImage: (p) => invoke('yan:exportHtmlImage', p),

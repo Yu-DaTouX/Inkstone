@@ -55,7 +55,7 @@ const entry = join(root, 'entry.ts')
 const sourceOf = (relative) => fileURLToPath(new URL(relative, import.meta.url)).replace(/\\/g, '/')
 await writeFile(
   entry,
-  `export { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged } from '${sourceOf('../src/main/sessions.ts')}'`
+  `export { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged, runSessionPurgeQueue } from '${sourceOf('../src/main/sessions.ts')}'`
 )
 await build({
   entryPoints: [entry],
@@ -83,7 +83,7 @@ async function writeSession(id, extra = {}) {
   return file
 }
 
-const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged } = await import(pathToFileURL(outfile).href)
+const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged, runSessionPurgeQueue } = await import(pathToFileURL(outfile).href)
 
 process.stdout.write('\n▌回收站按时间清理\n')
 await check('超过 7 天的回收站条目在删除时清掉，别的保留', async () => {
@@ -159,7 +159,11 @@ await check('过期的历史快照一并清掉且不触发 sessionPurged，未�
     assert.equal(existsSync(staleSnapshot), false, '过期历史快照应被删')
     assert.equal(existsSync(freshSession), true, '未过期会话文件保留')
     assert.equal(existsSync(freshSnapshot), true, '未过期历史快照保留')
-    assert.equal(purged.filter((id) => id === 'stale-sess').length, 1, '会话文件被清时触发一次 sessionPurged，快照不再触发')
+    assert.equal(purged.length, 0, '用户删除操作里不同步清理旁路数据，只入队')
+    await runSessionPurgeQueue()
+    assert.equal(purged.filter((id) => id === 'stale-sess').length, 1, '会话文件被清后由后台队列触发一次 sessionPurged，快照不再触发')
+    await runSessionPurgeQueue()
+    assert.equal(purged.filter((id) => id === 'stale-sess').length, 1, '队列处理过的条目不再重复触发')
     assert.ok(!purged.includes('fresh-sess'), '未过期会话不触发 sessionPurged')
   } finally {
     Date.now = originalNow
@@ -183,21 +187,21 @@ await check('sessionsToDelete 只含被删的会话本身', async () => {
   assert.ok(paths[0].endsWith('parent-1.jsonl'), '应为父会话')
 })
 
-await check('删除后会话文件进回收站、技能目录与来源副本消失，分支会话不受影响', async () => {
+await check('删除后会话文件进回收站、技能目录消失，来源副本随会话保留到真正清除，分支会话不受影响', async () => {
   const token = await deleteSession(parent)
   assert.ok(token, '应返回撤销令牌')
   assert.equal(existsSync(parent), false, '父会话文件应已移走')
   assert.equal(existsSync(child), true, '分支会话文件保留')
   assert.equal(existsSync(sessionSkillsDir('parent-1')), false, '会话技能目录应被删掉')
   assert.equal(existsSync(sessionSkillsDir('child-1')), true, '分支会话技能目录保留')
-  assert.equal(existsSync(sourcesDir('parent-1')), false, '来源副本应被删掉')
+  assert.equal(existsSync(sourcesDir('parent-1')), true, '来源副本在会话仍可撤销期间保留')
   assert.equal(existsSync(sourcesDir('child-1')), true, '分支会话来源副本保留')
   const trashed = await readdir(trashDir)
   assert.ok(trashed.some((name) => name.endsWith('-parent-1.jsonl')), '父会话文件应在回收站里')
   assert.ok(!trashed.some((name) => name.endsWith('-child-1.jsonl')), '分支会话文件不进回收站')
 })
 
-await check('撤销只恢复会话文件，不恢复技能目录与来源副本', async () => {
+await check('撤销恢复会话文件，来源副本一直在，技能目录不恢复', async () => {
   const file = await writeSession('undo-1')
   await mkdir(sessionSkillsDir('undo-1'), { recursive: true })
   await writeFile(join(sessionSkillsDir('undo-1'), 'SKILL.md'), 'x')

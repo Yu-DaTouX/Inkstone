@@ -4,12 +4,22 @@ import { randomUUID } from 'node:crypto'
 import { approvalHeadline, isApprovalChoice, normalizeApprovalFeedback, type ApprovalAnswer, type ApprovalKind, type ApprovalReceipt, type ApprovalRequest } from '../shared/approval'
 import { isSafeSessionId } from './session-id'
 import { YAN_DIR } from './paths'
+import { noticeNewerVersionFile } from './persisted-notice'
+import { pick } from '../shared/ui-lang'
 
 const PER_SESSION_LIMIT = 200
 const TEXT_LIMIT = 200
 const QUARANTINE_LIMIT = 32
 const REASONS_LIMIT = 8
 const KINDS: readonly ApprovalKind[] = ['permission', 'delete', 'danger', 'outside', 'consent', 'move']
+const ENTRY_KEYS = new Set(['id', 'toolCallId', 'subagentId', 'kind', 'tool', 'title', 'reasons', 'choice', 'feedback', 'reviewer', 'askedAt', 'at'])
+const DOCUMENT_KEYS = new Set(['version', 'sessions'])
+
+class UnsupportedVersionError extends Error {}
+
+function unknownFields(source: object, known: ReadonlySet<string>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !known.has(key)))
+}
 
 interface ApprovalLogDocument {
   version: 1
@@ -37,6 +47,7 @@ interface CacheEntry {
   mtimeMs: number
   size: number
   doc: ApprovalLogDocument
+  unsupported: boolean
 }
 
 export function approvalLogPath(): string {
@@ -70,6 +81,7 @@ function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
   const feedback = value.choice === 'deny' || reviewer ? normalizeApprovalFeedback(value.feedback) : undefined
   const reasons = reasonList(value.reasons)
   return {
+    ...unknownFields(value, ENTRY_KEYS),
     id,
     toolCallId,
     ...(subagentId ? { subagentId } : {}),
@@ -88,8 +100,9 @@ function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
 function sanitizeDocument(raw: unknown): ApprovalLogDocument {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('审批记录文档结构无效')
   const doc = raw as Record<string, unknown>
+  if (typeof doc.version === 'number' && Number.isInteger(doc.version) && doc.version > 1) throw new UnsupportedVersionError('Unsupported approval log version')
   if (doc.version !== 1 || !doc.sessions || typeof doc.sessions !== 'object' || Array.isArray(doc.sessions)) throw new Error('审批记录文档结构无效')
-  const out: ApprovalLogDocument = { version: 1, sessions: {} }
+  const out: ApprovalLogDocument = { ...unknownFields(doc, DOCUMENT_KEYS), version: 1, sessions: {} }
   for (const [sessionId, list] of Object.entries(doc.sessions as Record<string, unknown>)) {
     if (!isSafeSessionId(sessionId) || !Array.isArray(list)) throw new Error('审批记录会话数据无效')
     const entries = list.map(sanitizeEntry).filter((item): item is ApprovalReceipt => item !== null)
@@ -126,6 +139,21 @@ export class ApprovalLogStore {
     return this.read().sessions[sessionId] ?? []
   }
 
+  forget(sessionId: string | undefined | null): boolean {
+    if (!isSafeSessionId(sessionId)) return false
+    let doc: ApprovalLogDocument
+    try {
+      doc = this.read()
+    } catch {
+      return false
+    }
+    if (this.cache?.unsupported || !(sessionId in doc.sessions)) return false
+    const sessions = { ...doc.sessions }
+    delete sessions[sessionId]
+    this.write({ ...doc, sessions })
+    return true
+  }
+
   record(request: ApprovalRequest, answer: ApprovalAnswer, at = Date.now()): ApprovalLogUpdate | null {
     const entry = approvalReceiptOf(request, answer, at)
     return entry ? this.append(request.sessionId, entry) : null
@@ -152,6 +180,11 @@ export class ApprovalLogStore {
   private append(sessionId: string | undefined, entry: ApprovalReceipt): ApprovalLogUpdate | null {
     if (!isSafeSessionId(sessionId)) return null
     const doc = this.read()
+    if (this.cache?.unsupported) {
+      console.warn('[approval-log] the file was written by a newer version; this receipt was not saved to avoid overwriting it')
+      noticeNewerVersionFile('approval-log', pick('审批记录由更新版本的砚写入，当前版本不再写入新的审批记录，以免覆盖。请升级到最新版本。', 'The approval log was written by a newer version of Inkstone. This version stops adding approval records so it does not overwrite it. Please update.'))
+      return null
+    }
     const list = (doc.sessions[sessionId] ?? []).filter((item) => item.id !== entry.id)
     const entries = [...list, entry].slice(-PER_SESSION_LIMIT)
     doc.sessions[sessionId] = entries
@@ -181,13 +214,15 @@ export class ApprovalLogStore {
       throw error
     }
     let doc: ApprovalLogDocument
+    let unsupported = false
     try {
       doc = sanitizeDocument(JSON.parse(raw))
-    } catch {
-      this.quarantine(file, stamp)
+    } catch (error) {
+      unsupported = error instanceof UnsupportedVersionError
+      if (!unsupported) this.quarantine(file, stamp)
       doc = { version: 1, sessions: {} }
     }
-    this.cache = { file, ...stamp, doc }
+    this.cache = { file, ...stamp, doc, unsupported }
     return doc
   }
 
@@ -221,7 +256,7 @@ export class ApprovalLogStore {
         throw error
       }
       const info = statSync(file)
-      this.cache = { file, mtimeMs: info.mtimeMs, size: info.size, doc }
+      this.cache = { file, mtimeMs: info.mtimeMs, size: info.size, doc, unsupported: false }
     } catch (error) {
       this.cache = null
       console.warn('[approval-log] write failed; this receipt was not saved: ', error instanceof Error ? error.message : error)

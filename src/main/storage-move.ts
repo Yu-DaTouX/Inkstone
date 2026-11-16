@@ -42,6 +42,7 @@ export interface StorageInfo {
   movable: boolean
   pendingTarget?: string
   strandedBackup?: string
+  oldCopy?: string
   lastResult?: StorageMoveResult
 }
 
@@ -170,10 +171,19 @@ export function checkTarget(from: string, to: string): string | undefined {
   return undefined
 }
 
+function isPlainDirectory(path: string): boolean {
+  try {
+    const info = lstatSync(path)
+    return info.isDirectory() && !info.isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
 function findBackup(from: string): string | undefined {
   try {
     const prefix = `${basename(from)}.迁移前备份-`
-    const name = readdirSync(dirname(from)).filter((n) => n.startsWith(prefix)).sort().pop()
+    const name = readdirSync(dirname(from)).filter((n) => n.startsWith(prefix) && isPlainDirectory(join(dirname(from), n))).sort().pop()
     return name ? join(dirname(from), name) : undefined
   } catch {
     return undefined
@@ -301,14 +311,31 @@ export function storageInfo(): StorageInfo {
     realDir = realpathSync(agentDir)
   } catch {
   }
+  const relocated = isJunction(agentDir)
+  const oldCopy = relocated ? findBackup(agentDir) : undefined
   return {
     agentDir,
     realDir,
-    relocated: isJunction(agentDir),
+    relocated,
     ...(existsSync(agentDir) ? {} : { strandedBackup: findBackup(agentDir) }),
+    ...(oldCopy ? { oldCopy } : {}),
     movable: storageMovable(),
     pendingTarget: readJson<{ target?: string }>(PENDING_FILE())?.target,
     lastResult: readJson<StorageMoveResult>(RESULT_FILE())
+  }
+}
+
+export async function trashOldStorageCopy(path: string, trash: (path: string) => Promise<void>): Promise<{ ok: boolean; error?: string }> {
+  const info = storageInfo()
+  if (!info.oldCopy || !path || resolve(path).toLowerCase() !== resolve(info.oldCopy).toLowerCase() || resolve(info.oldCopy).toLowerCase() === resolve(info.realDir).toLowerCase()) {
+    return { ok: false, error: pick('这不是迁移前的旧数据目录', 'This is not the pre-move data folder') }
+  }
+  if (!isPlainDirectory(info.oldCopy)) return { ok: false, error: pick('旧数据不是普通文件夹，已拒绝处理', 'The old data is not a regular folder; refused') }
+  try {
+    await trash(info.oldCopy)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 

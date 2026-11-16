@@ -4,15 +4,26 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { QuestionLogEntry } from '../shared/ipc'
 import { isSafeSessionId } from './session-id'
 import { YAN_DIR } from './paths'
+import { noticeNewerVersionFile } from './persisted-notice'
+import { pick } from '../shared/ui-lang'
 
 const PER_SESSION_LIMIT = 50
 const QUARANTINE_LIMIT = 32
+const ENTRY_KEYS = new Set(['id', 'question', 'options', 'answer', 'cancelled', 'at'])
+const DOCUMENT_KEYS = new Set(['version', 'sessions'])
+
+class UnsupportedVersionError extends Error {}
+
+function unknownFields(source: object, known: ReadonlySet<string>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !known.has(key)))
+}
 
 interface CacheEntry {
   file: string
   mtimeMs: number
   size: number
   doc: QuestionLogDocument
+  unsupported: boolean
 }
 
 interface QuestionLogDocument {
@@ -34,6 +45,7 @@ function sanitizeEntry(raw: unknown, sessionId: string, index: number): Question
     ? value.options.filter((item): item is string => typeof item === 'string')
     : []
   return {
+    ...unknownFields(value, ENTRY_KEYS),
     id: typeof value.id === 'string' && value.id ? value.id : createHash('sha256').update(`${sessionId}\0${index}\0${question}\0${at}`).digest('hex').slice(0, 32),
     question,
     options,
@@ -46,8 +58,9 @@ function sanitizeEntry(raw: unknown, sessionId: string, index: number): Question
 function sanitizeDocument(raw: unknown): QuestionLogDocument {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('提问记录文档结构无效')
   const doc = raw as Record<string, unknown>
+  if (typeof doc.version === 'number' && Number.isInteger(doc.version) && doc.version > 1) throw new UnsupportedVersionError('Unsupported question log version')
   if (doc.version !== 1 || !doc.sessions || typeof doc.sessions !== 'object' || Array.isArray(doc.sessions)) throw new Error('提问记录文档结构无效')
-  const out: QuestionLogDocument = { version: 1, sessions: {} }
+  const out: QuestionLogDocument = { ...unknownFields(doc, DOCUMENT_KEYS), version: 1, sessions: {} }
   for (const [sessionId, list] of Object.entries(doc.sessions as Record<string, unknown>)) {
     if (!isSafeSessionId(sessionId) || !Array.isArray(list)) throw new Error('提问记录会话数据无效')
     const entries = list.map((item, index) => sanitizeEntry(item, sessionId, index)).filter((item): item is QuestionLogEntry => item !== null)
@@ -72,6 +85,21 @@ export class QuestionLogStore {
     }
   }
 
+  forget(sessionId: string | undefined | null): boolean {
+    if (!isSafeSessionId(sessionId)) return false
+    let doc: QuestionLogDocument
+    try {
+      doc = this.read()
+    } catch {
+      return false
+    }
+    if (this.cache?.unsupported || !(sessionId in doc.sessions)) return false
+    const sessions = { ...doc.sessions }
+    delete sessions[sessionId]
+    this.write({ ...doc, sessions })
+    return true
+  }
+
   append(
     sessionId: string | undefined | null,
     entry: Omit<QuestionLogEntry, 'id'> & { id?: string }
@@ -84,9 +112,14 @@ export class QuestionLogStore {
       console.warn('[question-log] 读取失败，本条记录未保存：', error instanceof Error ? error.message : error)
       return null
     }
+    if (this.cache?.unsupported) {
+      console.warn('[question-log] the file was written by a newer version; this record was not saved to avoid overwriting it')
+      noticeNewerVersionFile('question-log', pick('提问记录由更新版本的砚写入，当前版本不再写入新的提问记录，以免覆盖。请升级到最新版本。', 'The question log was written by a newer version of Inkstone. This version stops adding question records so it does not overwrite it. Please update.'))
+      return null
+    }
     const list = doc.sessions[sessionId] ?? []
     const next = [...list, { ...entry, id: entry.id ?? randomUUID() }].slice(-PER_SESSION_LIMIT)
-    this.write({ version: 1, sessions: { ...doc.sessions, [sessionId]: next } })
+    this.write({ ...doc, sessions: { ...doc.sessions, [sessionId]: next } })
     return next
   }
 
@@ -112,13 +145,15 @@ export class QuestionLogStore {
       throw error
     }
     let doc: QuestionLogDocument
+    let unsupported = false
     try {
       doc = sanitizeDocument(JSON.parse(text))
-    } catch {
-      this.quarantine(file, stamp)
+    } catch (error) {
+      unsupported = error instanceof UnsupportedVersionError
+      if (!unsupported) this.quarantine(file, stamp)
       doc = { version: 1, sessions: {} }
     }
-    this.cache = { file, ...stamp, doc }
+    this.cache = { file, ...stamp, doc, unsupported }
     return doc
   }
 
@@ -152,7 +187,7 @@ export class QuestionLogStore {
         throw error
       }
       const info = statSync(path)
-      this.cache = { file: path, mtimeMs: info.mtimeMs, size: info.size, doc }
+      this.cache = { file: path, mtimeMs: info.mtimeMs, size: info.size, doc, unsupported: false }
     } catch (error) {
       this.cache = null
       console.warn('[question-log] 写入失败：', error instanceof Error ? error.message : error)

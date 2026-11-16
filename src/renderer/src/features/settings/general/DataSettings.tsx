@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import type { AttachmentUsage, StorageInfoView, SubagentStorageUsage } from '../../../../../shared/ipc'
-import type { BackupAction, BackupSummary } from '../../../../../shared/data-backup'
+import type { AttachmentUsage, IncompleteRestoreView, StorageInfoView, SubagentStorageUsage } from '../../../../../shared/ipc'
+import { BACKUP_PART_LABELS, type BackupAction, type BackupSummary } from '../../../../../shared/data-backup'
 import { useStore } from '../../../state/store'
 import { Button, ConfirmDialog, Notice, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
@@ -168,6 +168,105 @@ function AttachmentsRow(): ReactElement {
   )
 }
 
+function IncompleteRestoresRows({ reload }: { reload: number }): ReactElement | null {
+  const { lang } = useI18n()
+  const local = devicesDataText(lang)
+  const [items, setItems] = useState<IncompleteRestoreView[]>([])
+  const [note, setNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    void window.yan.incompleteRestores.list().then(
+      (value) => alive && setItems(value),
+      () => undefined
+    )
+    return () => {
+      alive = false
+    }
+  }, [reload])
+
+  const trash = async (path: string): Promise<void> => {
+    setBusy(true)
+    setNote(null)
+    try {
+      const result = await window.yan.incompleteRestores.trash(path)
+      if (!result.ok) setNote(local.restoreIncompleteFailed.replace('{error}', result.error ?? ''))
+      setItems(await window.yan.incompleteRestores.list())
+    } catch (cause) {
+      setNote(local.restoreIncompleteFailed.replace('{error}', ipcReason(cause)))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!items.length) return null
+  return (
+    <>
+      {items.map((item) => (
+        <SettingsRow
+          key={item.path}
+          settingId="data-restore-incomplete"
+          label={local.restoreIncompleteTitle}
+          description={
+            <span data-testid="v3-data-restore-incomplete">
+              {local.restoreIncompleteDesc.replace('{path}', item.path).replace('{size}', bytesText(item.bytes))}
+              {item.error ? <span className="settings-row__line settings-row__desc--error">{item.error}</span> : null}
+            </span>
+          }
+        >
+          <Button variant="secondary" onPress={() => void window.yan.revealPath(item.path)}>
+            {generalText(lang).dataOpen}
+          </Button>
+          <Button variant="secondary" isDisabled={busy} data-testid="v3-data-restore-incomplete-trash" onPress={() => void trash(item.path)}>
+            {local.restoreIncompleteTrash}
+          </Button>
+        </SettingsRow>
+      ))}
+      {note ? <Notice tone="fail" compact className="dd-message">{note}</Notice> : null}
+    </>
+  )
+}
+
+function OldCopyRow({ info, onChanged }: { info: StorageInfoView | null; onChanged: () => Promise<void> }): ReactElement | null {
+  const { lang } = useI18n()
+  const local = devicesDataText(lang)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  if (!info?.oldCopy) return null
+  const oldCopy = info.oldCopy
+  const trash = async (): Promise<void> => {
+    setBusy(true)
+    setNote(null)
+    try {
+      const result = await window.yan.storage.trashOldCopy(oldCopy.path)
+      if (!result.ok) setNote(local.oldCopyFailed.replace('{error}', result.error ?? ''))
+      await onChanged()
+    } catch (cause) {
+      setNote(local.oldCopyFailed.replace('{error}', ipcReason(cause)))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <SettingsRow
+        settingId="data-old-copy"
+        label={local.oldCopyTitle}
+        description={<span data-testid="v3-data-old-copy">{local.oldCopyDesc.replace('{path}', oldCopy.path).replace('{size}', bytesText(oldCopy.bytes))}</span>}
+      >
+        <Button variant="secondary" data-testid="v3-data-old-copy-open" onPress={() => void window.yan.revealPath(oldCopy.path)}>
+          {generalText(lang).dataOpen}
+        </Button>
+        <Button variant="secondary" isDisabled={busy} data-testid="v3-data-old-copy-trash" onPress={() => void trash()}>
+          {local.oldCopyTrash}
+        </Button>
+      </SettingsRow>
+      {note ? <Notice tone="fail" compact className="dd-message">{note}</Notice> : null}
+    </>
+  )
+}
+
 export function DataSettings(): ReactElement {
   const { lang, t } = useI18n()
   const pruneHistory = useStore((s) => s.settings?.subagentHistoryPrune !== false)
@@ -181,6 +280,7 @@ export function DataSettings(): ReactElement {
   const [busy, setBusy] = useState<DataScope | 'import' | null>(null)
   const [summary, setSummary] = useState<{ action: 'create' | 'verify' | 'restore'; value: BackupSummary } | null>(null)
   const [message, setMessage] = useState<DataMessage | null>(null)
+  const [incompleteTick, setIncompleteTick] = useState(0)
 
   useEffect(() => {
     void window.yan.storage
@@ -241,6 +341,7 @@ export function DataSettings(): ReactElement {
       setMessage({ scope, tone: 'fail', text: describe(cause) })
     } finally {
       setBusy(null)
+      if (action === 'restore') setIncompleteTick((value) => value + 1)
     }
   }
 
@@ -287,6 +388,29 @@ export function DataSettings(): ReactElement {
       </>
     ) : null
 
+  const summaryNotes = (action: 'create' | 'verify' | 'restore'): ReactElement | null => {
+    if (summary?.action !== action) return null
+    const { skipped, changed, changedTotal } = summary.value
+    if (!skipped?.length && !changed?.length) return null
+    const changeLabel = (kind: 'modified' | 'removed' | 'added'): string => (kind === 'removed' ? ` (${local.backupRemoved})` : kind === 'added' ? ` (${local.backupAdded})` : '')
+    return (
+      <>
+        {skipped?.length ? (
+          <Notice tone="stall" compact className="dd-message" data-testid="v3-data-backup-skipped">
+            {local.backupSkipped.replace('{parts}', skipped.map((item) => `${BACKUP_PART_LABELS[item.part][lang === 'en-US' ? 'en' : 'zh']} (${item.files}, ${bytesText(item.bytes)})`).join(' / '))}
+          </Notice>
+        ) : null}
+        {changed?.length ? (
+          <Notice tone="stall" compact className="dd-message" data-testid="v3-data-backup-changed">
+            {local.backupChanged
+              .replace('{count}', String(changedTotal ?? changed.length))
+              .replace('{files}', changed.slice(0, 5).map((item) => `${item.path}${changeLabel(item.kind)}`).join(' / ') + ((changedTotal ?? changed.length) > 5 ? ' …' : ''))}
+          </Notice>
+        ) : null}
+      </>
+    )
+  }
+
   const openSummary = (action: 'create' | 'verify' | 'restore'): ReactElement | null =>
     summary?.action === action ? (
       <Button variant="secondary" onPress={() => void window.yan.revealPath(summary.value.path)}>
@@ -315,6 +439,7 @@ export function DataSettings(): ReactElement {
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="backup" />
+        {summaryNotes('create')}
         <SettingsRow
           settingId="data-backup-verify"
           label={text.dataBackupVerify}
@@ -331,6 +456,7 @@ export function DataSettings(): ReactElement {
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="verify" />
+        {summaryNotes('verify')}
         <SettingsRow
           settingId="data-backup-restore"
           label={local.dataBackupRestore}
@@ -347,6 +473,7 @@ export function DataSettings(): ReactElement {
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="restore" />
+        <IncompleteRestoresRows reload={incompleteTick} />
       </SettingsGroup>
 
       <SettingsAdvanced label={labels.advanced} testId="v3-data-advanced">
@@ -394,6 +521,7 @@ export function DataSettings(): ReactElement {
             ) : null}
           </SettingsRow>
           <DataMessageLine message={message} scope="storage" />
+          <OldCopyRow info={info} onChanged={loadInfo} />
           <SettingsRow
             settingId="data-subagent-prune"
             label={t('set.dataSubagentPrune')}

@@ -1,16 +1,44 @@
-import { app, dialog, type BrowserWindow } from 'electron'
+import { app, dialog, shell, type BrowserWindow } from 'electron'
+import { join } from 'node:path'
 import type { IpcRegistrar } from './registrar'
-import { createDataBackup, verifyDataBackup } from '../data-backup'
+import { BackupTooLargeError, createDataBackup, verifyDataBackup } from '../data-backup'
 import { restoreDataBackup } from '../data-restore'
+import { forgetIncompleteRestore, listIncompleteRestores, registerIncompleteRestore, trashIncompleteRestore } from '../restore-incomplete'
+import { storageSize } from '../storage-move'
 import { launchRestoredData } from '../data-restore-launch'
 import { getSettings } from '../settings'
+import { askSkipLargeParts } from '../backup-skip-prompt'
+import { logMainEvent } from '../main-log'
 import { SESSIONS_DIR } from '../sessions'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import type { BackupAction, BackupResult, BackupSummary } from '../../shared/data-backup'
 
+async function createWithSkipPrompt(win: BrowserWindow, parent: string): Promise<BackupSummary | null> {
+  try {
+    return await createDataBackup(parent, SESSIONS_DIR, YAN_DIR)
+  } catch (error) {
+    if (!(error instanceof BackupTooLargeError)) throw error
+    const skip = await askSkipLargeParts(win, error.info, 'backup')
+    return skip ? await createDataBackup(parent, SESSIONS_DIR, YAN_DIR, { skipParts: skip }) : null
+  }
+}
+
 export function registerWorkspaceDataIpc(ipc: IpcRegistrar, window: () => BrowserWindow | null): void {
   let busy = false
   let restored: BackupSummary | null = null
+  const incompleteRegistry = join(YAN_DIR, 'incomplete-restores.json')
+  ipc.handle('yan:backup:incomplete', async () => {
+    const entries = await listIncompleteRestores(incompleteRegistry)
+    return Promise.all(entries.map(async (item) => ({ ...item, bytes: await storageSize(item.path) })))
+  })
+  ipc.handle('yan:backup:incompleteTrash', async (path: string) => {
+    try {
+      const done = await trashIncompleteRestore(incompleteRegistry, String(path ?? ''), (target) => shell.trashItem(target))
+      return done ? { ok: true } : { ok: false, error: 'Not a recorded incomplete restore' }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
   ipc.handle('yan:backup', async (action: BackupAction): Promise<BackupResult> => {
     if (busy) return { ok: false, error: 'Backup operation already running' }
     const win = window()
@@ -48,7 +76,11 @@ export function registerWorkspaceDataIpc(ipc: IpcRegistrar, window: () => Browse
           properties: ['openDirectory', 'createDirectory']
         })
         if (target.canceled || !target.filePaths[0]) return { ok: false, cancelled: true }
-        restored = await restoreDataBackup(checked.path, target.filePaths[0], [PI_AGENT_DIR, SESSIONS_DIR, YAN_DIR])
+        restored = await restoreDataBackup(checked.path, target.filePaths[0], [PI_AGENT_DIR, SESSIONS_DIR, YAN_DIR], {
+          started: (path) => registerIncompleteRestore(incompleteRegistry, path),
+          finished: (path) => forgetIncompleteRestore(incompleteRegistry, path),
+          warn: (message) => logMainEvent('restore', message)
+        })
         const damaged = restored.damagedRecords ?? []
         if (damaged.length) {
           const listed = damaged.map((item) => `${item.path}: ${item.lines.join(', ')}${item.total > item.lines.length ? ` (+${item.total - item.lines.length})` : ''}`).join('\n')
@@ -67,10 +99,11 @@ export function registerWorkspaceDataIpc(ipc: IpcRegistrar, window: () => Browse
         }
         return { ok: true, summary: restored }
       }
-      const summary = action === 'create'
-        ? await createDataBackup(selected.filePaths[0], SESSIONS_DIR, YAN_DIR)
-        : await verifyDataBackup(selected.filePaths[0])
-      return { ok: true, summary }
+      if (action === 'create') {
+        const created = await createWithSkipPrompt(win, selected.filePaths[0])
+        return created ? { ok: true, summary: created } : { ok: false, cancelled: true }
+      }
+      return { ok: true, summary: await verifyDataBackup(selected.filePaths[0]) }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     } finally { busy = false }

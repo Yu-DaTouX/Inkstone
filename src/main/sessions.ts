@@ -1,4 +1,4 @@
-import { readdir, stat, open, mkdir, rename, rm } from 'node:fs/promises'
+import { readdir, readFile, stat, open, mkdir, rename, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { sep } from 'node:path'
@@ -9,8 +9,8 @@ import { decorateSessions, getSessionLayout, normalizeLayoutPath } from './sessi
 import { countSessionMessages, forgetSessionMessageCounts } from './session-message-count'
 import { parseSubagentNotice } from '../shared/subagent-notice'
 import { ArtifactStore, readSessionId } from './artifacts'
+import { atomicWriteFile } from './atomic-write'
 import { sessionSkillsDir } from './capabilities/acquired-skills'
-import { dropSession } from './sources'
 import { plainTitleText } from '../shared/title-text'
 import { visibleTextOfBlock } from '../shared/thinking-narration'
 import { pick } from '../shared/ui-lang'
@@ -382,10 +382,95 @@ const TRASH_PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const DELETED_MAX_TOKENS = 50
 const deleted = new Map<string, Array<{ from: string; to: string }>>()
 let trashPrunedAt = 0
-let sessionPurged: ((sessionId: string) => Promise<void>) | null = null
+let sessionPurged: ((sessionId: string, fileName?: string) => Promise<void>) | null = null
 
-export function onSessionPurged(handler: (sessionId: string) => Promise<void>): void {
+export function onSessionPurged(handler: (sessionId: string, fileName?: string) => Promise<void>): void {
   sessionPurged = handler
+}
+
+const PURGE_QUEUE_FILE = join(YAN_DIR, 'trash', 'session-purge-queue.json')
+const PURGE_SWEEP_FIRST_MS = 60 * 1000
+const PURGE_SWEEP_EVERY_MS = 30 * 60 * 1000
+const PURGE_QUEUE_MAX = 5000
+
+interface PurgeItem {
+  sessionId: string
+  fileName?: string
+}
+
+let purgeTail: Promise<unknown> = Promise.resolve()
+
+function serialPurge<T>(job: () => Promise<T>): Promise<T> {
+  const run = purgeTail.then(job, job)
+  purgeTail = run.catch(() => undefined)
+  return run
+}
+
+async function readPurgeQueue(): Promise<PurgeItem[]> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(PURGE_QUEUE_FILE, 'utf8'))
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is PurgeItem => !!item && typeof (item as PurgeItem).sessionId === 'string' && ((item as PurgeItem).fileName === undefined || typeof (item as PurgeItem).fileName === 'string'))
+  } catch {
+    return []
+  }
+}
+
+async function writePurgeQueue(items: PurgeItem[]): Promise<void> {
+  await atomicWriteFile(PURGE_QUEUE_FILE, JSON.stringify(items.slice(-PURGE_QUEUE_MAX)))
+}
+
+function enqueuePurge(item: PurgeItem): Promise<void> {
+  return serialPurge(async () => {
+    const queue = await readPurgeQueue()
+    if (!queue.some((entry) => entry.sessionId === item.sessionId && entry.fileName === item.fileName)) await writePurgeQueue([...queue, item])
+  })
+}
+
+async function liveSessionIds(): Promise<Set<string>> {
+  const ids = new Set<string>()
+  for (const summary of await listSessions(Number.MAX_SAFE_INTEGER)) ids.add(summary.id)
+  let trashed: string[] = []
+  try {
+    trashed = (await readdir(TRASH_DIR)).filter((name) => name.endsWith('.jsonl'))
+  } catch {
+  }
+  for (const name of trashed) {
+    const id = await readSessionId(join(TRASH_DIR, name))
+    if (id) ids.add(id)
+  }
+  return ids
+}
+
+export function runSessionPurgeQueue(): Promise<number> {
+  return serialPurge(async () => {
+    const handler = sessionPurged
+    if (!handler) return 0
+    const queue = await readPurgeQueue()
+    if (!queue.length) return 0
+    const live = await liveSessionIds()
+    const remaining: PurgeItem[] = []
+    let purged = 0
+    for (const item of queue) {
+      if (live.has(item.sessionId)) continue
+      try {
+        await handler(item.sessionId, item.fileName)
+        purged++
+      } catch {
+        remaining.push(item)
+      }
+    }
+    await writePurgeQueue(remaining)
+    return purged
+  })
+}
+
+export function startSessionPurgeSweep(): void {
+  const run = (): void => {
+    void runSessionPurgeQueue().catch(() => undefined)
+  }
+  setTimeout(run, PURGE_SWEEP_FIRST_MS).unref()
+  setInterval(run, PURGE_SWEEP_EVERY_MS).unref()
 }
 
 function comparablePath(value: string): string {
@@ -428,7 +513,7 @@ async function pruneTrash(): Promise<void> {
       if (!Number.isSafeInteger(deletedAt) || deletedAt <= 0 || now - deletedAt <= TRASH_MAX_AGE_MS) continue
       const sessionId = entry.name.endsWith('.jsonl') ? await readSessionId(target) : null
       await rm(target, { recursive: true, force: true })
-      if (sessionId) await sessionPurged?.(sessionId).catch(() => undefined)
+      if (sessionId) await enqueuePurge({ sessionId, fileName: /^\d+-[a-z0-9]+-\d+-(.+\.jsonl)$/.exec(entry.name)?.[1] }).catch(() => undefined)
     } catch {
     }
   }
@@ -494,7 +579,6 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
       await rm(sessionSkillsDir(YAN_DIR, target.sessionId), { recursive: true, force: true })
     } catch {
     }
-    dropSession(target.sessionId)
   }
   deleted.set(token, entries)
   if (deleted.size > DELETED_MAX_TOKENS) {

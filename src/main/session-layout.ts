@@ -20,6 +20,14 @@ export { normalizeLayoutPath }
 export const SESSION_LAYOUT_FILE = join(YAN_DIR, 'session-layout.json')
 const MAX_ENTRIES = 2000
 const MAX_HISTORY = 20
+const MOVE_KEYS = new Set(['at', 'fromProjectId', 'toProjectId', 'fromScope', 'toScope'])
+const ENTRY_KEYS = new Set(['sessionId', 'sessionFile', 'cwd', 'scope', 'projectId', 'projectCandidates', 'createdAt', 'updatedAt', 'lastOpenedAt', 'archivedAt', 'pinned', 'snoozedUntil', 'markedUnread', 'moveHistory'])
+const DOCUMENT_KEYS = new Set(['version', 'entries'])
+
+function unknownFields(source: object | null | undefined, known: ReadonlySet<string>): Record<string, unknown> {
+  if (!source) return {}
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !known.has(key)))
+}
 
 export interface RememberSessionInput {
   sessionId: string
@@ -60,6 +68,7 @@ function sanitizeMove(item: unknown): SessionMoveRecord | null {
   const fromScope = o.fromScope === 'project' || o.fromScope === 'pending' ? o.fromScope : 'global'
   const toScope = o.toScope === 'project' || o.toScope === 'pending' ? o.toScope : 'global'
   return {
+    ...unknownFields(o, MOVE_KEYS),
     at: Number(o.at),
     ...(typeof o.fromProjectId === 'string' && o.fromProjectId ? { fromProjectId: o.fromProjectId.slice(0, 80) } : {}),
     ...(typeof o.toProjectId === 'string' && o.toProjectId ? { toProjectId: o.toProjectId.slice(0, 80) } : {}),
@@ -85,6 +94,7 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     .filter((x): x is SessionMoveRecord => x !== null)
     .slice(-MAX_HISTORY)
   return {
+    ...unknownFields(o, ENTRY_KEYS),
     sessionId: o.sessionId.trim().slice(0, 200),
     ...(typeof o.sessionFile === 'string' && o.sessionFile ? { sessionFile: o.sessionFile } : {}),
     cwd: o.cwd,
@@ -109,7 +119,7 @@ function sanitizeDocument(value: unknown): SessionLayoutDocument {
     .filter((x): x is SessionLayoutEntry => x !== null)
   const unique = new Map<string, SessionLayoutEntry>()
   for (const entry of entries) unique.set(entry.sessionId, entry)
-  return { version: 1, entries: keepWithinLimit([...unique.values()]) }
+  return { ...unknownFields(raw, DOCUMENT_KEYS), version: 1, entries: keepWithinLimit([...unique.values()]) }
 }
 
 function lastActivity(entry: SessionLayoutEntry): number {
@@ -156,7 +166,7 @@ async function update(mutator: (document: SessionLayoutDocument) => SessionLayou
   const task = writeTail.then(async () => {
     const current = sanitizeDocument(await readFromDisk())
     const rawNext = mutator(current)
-    const next = rawNext === current ? current : sanitizeDocument(rawNext)
+    const next = rawNext === current ? current : sanitizeDocument({ ...current, ...rawNext })
     if (next !== current) await persist(next)
     cached = next
     return next
@@ -270,6 +280,7 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       })
     }
     const next: SessionLayoutEntry = {
+      ...unknownFields(previous, ENTRY_KEYS),
       sessionId: input.sessionId,
       ...(input.sessionFile || previous?.sessionFile ? { sessionFile: input.sessionFile ?? previous?.sessionFile } : {}),
       cwd: input.cwd || previous?.cwd || '',

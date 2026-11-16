@@ -17,6 +17,7 @@ export interface SessionCodeEntry {
 export interface SessionCodeDocument {
   version: 1
   entries: SessionCodeEntry[]
+  floors?: Partial<Record<CodeKind, number>>
 }
 
 export const SESSION_CODES_FILE = 'session-codes.json'
@@ -51,7 +52,14 @@ export function sanitizeSessionCodes(raw: unknown): SessionCodeDocument {
     seen.add(entry.scopeId)
     entries.push(entry)
   }
-  return { version: 1, entries }
+  const floors: Partial<Record<CodeKind, number>> = {}
+  const rawFloors = (source as { floors?: unknown }).floors
+  if (rawFloors && typeof rawFloors === 'object' && !Array.isArray(rawFloors)) {
+    for (const [kind, value] of Object.entries(rawFloors)) {
+      if (CODE_KINDS.has(kind) && Number.isSafeInteger(value) && (value as number) > 0) floors[kind as CodeKind] = value as number
+    }
+  }
+  return { version: 1, entries, ...(Object.keys(floors).length ? { floors } : {}) }
 }
 
 export function formatRunCode(n: number): string {
@@ -114,7 +122,7 @@ export class SessionCodeStore {
       if (cached) return cached.code
       const at = createdAt ?? this.now()
       const entry: SessionCodeEntry = { scopeId, kind, code: this.nextCode(kind), createdAt: at }
-      const candidate: SessionCodeDocument = { version: 1, entries: [...this.doc.entries, entry] }
+      const candidate: SessionCodeDocument = { ...this.doc, entries: [...this.doc.entries, entry] }
       await this.flush(candidate)
       this.commit(candidate)
       return entry.code
@@ -144,10 +152,25 @@ export class SessionCodeStore {
       for (const item of missing) {
         entries.push({ scopeId: item.scopeId, kind: item.kind, code: this.nextCode(item.kind, entries), createdAt: item.createdAt })
       }
-      const candidate: SessionCodeDocument = { version: 1, entries }
+      const candidate: SessionCodeDocument = { ...this.doc, entries }
       await this.flush(candidate)
       this.commit(candidate)
       return missing.length
+    })
+  }
+
+  forget(scopeId: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      await this.load()
+      const entry = this.byScope.get(scopeId)
+      if (!entry) return false
+      const used = Number.parseInt(entry.code.replace(/^[STR]/, ''), 10)
+      const floors = { ...this.doc.floors }
+      if (Number.isFinite(used) && used > (floors[entry.kind] ?? 0)) floors[entry.kind] = used
+      const candidate: SessionCodeDocument = { ...this.doc, entries: this.doc.entries.filter((item) => item.scopeId !== scopeId), ...(Object.keys(floors).length ? { floors } : {}) }
+      await this.flush(candidate)
+      this.commit(candidate)
+      return true
     })
   }
 
@@ -156,7 +179,7 @@ export class SessionCodeStore {
   }
 
   private nextCode(kind: CodeKind, entries: SessionCodeEntry[] = this.doc.entries): string {
-    let max = 0
+    let max = this.doc.floors?.[kind] ?? 0
     for (const entry of entries) {
       if (entry.kind !== kind) continue
       const n = Number.parseInt(entry.code.replace(/^[STR]/, ''), 10)

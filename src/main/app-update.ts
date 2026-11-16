@@ -6,6 +6,9 @@ import { startupInstallDue, type AppUpdateStatus, type AppUpdateWhatsNew } from 
 import type { BackupSummary } from '../shared/data-backup'
 import type { IpcRegistrar } from './ipc/registrar'
 import { createUpdateAutoBackup } from './data-backup'
+import { askSkipLargeParts } from './backup-skip-prompt'
+import { logMainEvent } from './main-log'
+import { BACKUP_PART_LABELS } from '../shared/data-backup'
 import { SESSIONS_DIR } from './sessions'
 import { YAN_DIR } from './paths'
 import { atomicWriteFile } from './atomic-write'
@@ -43,8 +46,16 @@ function messageWindow(): BrowserWindow | null {
   return windows.find((win) => !win.isDestroyed()) ?? null
 }
 
-export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup?: () => Promise<BackupSummary>): AppUpdateControl {
-  const runBackup = backup ?? (() => createUpdateAutoBackup({ userData: app.getPath('userData'), sessions: SESSIONS_DIR, yan: YAN_DIR }))
+export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup?: (interactive?: boolean) => Promise<BackupSummary>): AppUpdateControl {
+  const runBackup = backup ?? (async (interactive?: boolean) => {
+    const input = { userData: app.getPath('userData'), sessions: SESSIONS_DIR, yan: YAN_DIR }
+    const summary = await createUpdateAutoBackup(input, interactive ? { confirmSkip: (info) => askSkipLargeParts(messageWindow(), info, 'update') } : {})
+    if (summary.skipped?.length) {
+      const parts = summary.skipped.map((item) => `${pick(BACKUP_PART_LABELS[item.part].zh, BACKUP_PART_LABELS[item.part].en)}(${item.files})`).join(', ')
+      logMainEvent(pick('更新前备份', 'Pre-update backup'), pick(`备份超出上限，已跳过：${parts}；上一份完整的自动备份已保留`, `The backup exceeded the limit and skipped: ${parts}; the previous complete automatic backup was kept`))
+    }
+    return summary
+  })
   const state: AppUpdateStatus = { phase: 'idle', current: app.getVersion(), automatic: true, packaged: app.isPackaged, releaseUrl: RELEASES }
   const preferences = join(app.getPath('userData'), 'update-preferences.json')
   autoUpdater.autoDownload = false
@@ -229,7 +240,7 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     let backup: BackupSummary | null = null
     try {
       try {
-        backup = await runBackup()
+        backup = await runBackup(true)
         state.error = undefined
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)

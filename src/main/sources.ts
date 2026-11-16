@@ -296,13 +296,21 @@ export function removeImage(sessionId: string, sourceId: string): { ok: boolean;
   return removed ? { ok: true } : { ok: false, error: pick('没有这份副本', 'No such copy') }
 }
 
-export function dropSession(sessionId: string): void {
+function sourcesDropTarget(sessionId: string): string | null {
   try {
     const root = resolve(baseDir ?? YAN_DIR, 'sources')
     const target = resolve(sourcesDir(sessionId))
     const relative = target.slice(root.length).replace(/^[\\/]+/, '')
-    if (!relative || relative === '.' || relative === '..' || relative.startsWith(`..${process.platform === 'win32' ? '\\\\' : '/'}`) || resolve(root, relative) !== target) return
-    rmSync(target, { recursive: true, force: true })
+    if (!relative || relative === '.' || relative === '..' || relative.startsWith(`..${process.platform === 'win32' ? '\\\\' : '/'}`) || resolve(root, relative) !== target) return null
+    return target
   } catch {
+    return null
   }
+}
+
+export async function trashSessionSources(sessionId: string, trash: (path: string) => Promise<void>): Promise<boolean> {
+  const target = sourcesDropTarget(sessionId)
+  if (!target || !existsSync(target)) return false
+  await trash(target)
+  return true
 }

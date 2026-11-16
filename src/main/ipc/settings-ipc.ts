@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import { dialog, session } from 'electron'
+import { dialog, session, shell } from 'electron'
 import { isAbsolute } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import type { AgentController } from '../agent'
@@ -10,7 +10,7 @@ import { pick } from '../../shared/ui-lang'
 import { getSettings, patchSettings, updateSettings, validateRendererSettingsPatch } from '../settings'
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from '../pi-runtime-prefs'
 import { pinnedGuardStatus, pinnedRoutingStatus } from '../net/pinned-network'
-import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize, syncFolderService } from '../storage-move'
+import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize, syncFolderService, trashOldStorageCopy } from '../storage-move'
 import { computerUseModeTightens, computerUseStopSync, refreshComputerUseEntry } from '../computer-use'
 
 type Settings = Awaited<ReturnType<typeof getSettings>>
@@ -125,9 +125,10 @@ export function registerSettingsIpc(ipc: IpcRegistrar, deps: SettingsIpcDeps): v
     return next
   })
   handle('yan:storage:info', async () => {
-    const info = storageInfo()
-    return { ...info, bytes: await storageSize(info.realDir) }
+    const { oldCopy, ...info } = storageInfo()
+    return { ...info, bytes: await storageSize(info.realDir), ...(oldCopy ? { oldCopy: { path: oldCopy, bytes: await storageSize(oldCopy) } } : {}) }
   })
+  handle('yan:storage:trashOldCopy', (path: string) => trashOldStorageCopy(String(path ?? ''), (target) => shell.trashItem(target)))
   handle('yan:storage:pick', async () => {
     if (!deps.win()) return null
     const r = await dialog.showOpenDialog(deps.win()!, { title: pick('选择新的数据位置（建议非系统盘上的空文件夹）', 'Choose new data location (an empty folder off the system drive)'), properties: ['openDirectory', 'createDirectory'] })

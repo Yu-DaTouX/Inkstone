@@ -137,6 +137,9 @@ export interface IpcChannelMap {
   'yan:storage:pick': Contract<B['storage']['pick']>
   'yan:storage:schedule': Contract<B['storage']['schedule']>
   'yan:storage:cancel': Contract<B['storage']['cancel']>
+  'yan:storage:trashOldCopy': Contract<B['storage']['trashOldCopy']>
+  'yan:backup:incomplete': Contract<B['incompleteRestores']['list']>
+  'yan:backup:incompleteTrash': Contract<B['incompleteRestores']['trash']>
 
   'yan:authProviders': Contract<B['authProviders']>
   'yan:codexLogin': Contract<B['codexLogin']>

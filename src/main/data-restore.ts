@@ -8,6 +8,7 @@ import { fileUrl } from '../shared/file-url'
 import { DEFAULT_PERMISSION_MODE } from '../shared/approval'
 import type { BackupSummary, DamagedSessionRecords } from '../shared/data-backup'
 import { hashBackupFile, inside, readDataBackup } from './data-backup'
+import { clearIncompleteMarker, writeIncompleteMarker } from './restore-incomplete'
 
 function pathKey(value: string): string {
   const normalized = value.replace(/\\/g, '/')
@@ -86,7 +87,13 @@ async function rewriteSession(file: string, paths: Map<string, string>): Promise
   }
 }
 
-export async function restoreDataBackup(backup: string, parent: string, protectedRoots: string[] = []): Promise<BackupSummary> {
+export interface RestoreHooks {
+  started?: (path: string) => Promise<void>
+  finished?: (path: string) => Promise<void>
+  warn?: (message: string) => void
+}
+
+export async function restoreDataBackup(backup: string, parent: string, protectedRoots: string[] = [], hooks: RestoreHooks = {}): Promise<BackupSummary> {
   const { summary, manifest } = await readDataBackup(backup)
   const sources = manifest.version === 2 ? manifest.sources : undefined
   const target = await realpath(parent)
@@ -96,6 +103,14 @@ export async function restoreDataBackup(backup: string, parent: string, protecte
   }
   const path = join(target, `Inkstone-restored-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
   await mkdir(path, { mode: 0o700 })
+  const startedAt = new Date().toISOString()
+  const runHook = async (name: 'started' | 'finished'): Promise<void> => {
+    try {
+      await hooks[name]?.(path)
+    } catch (error) {
+      hooks.warn?.(`restore ${name} hook failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
   const pi = join(path, 'pi-agent')
   const paths = new Map<string, string>()
   const legacyDirs = new Map<string, string>()
@@ -117,6 +132,8 @@ export async function restoreDataBackup(backup: string, parent: string, protecte
     }
   }
   try {
+    await writeIncompleteMarker(path, { source: summary.path, startedAt })
+    await runHook('started')
     for (const entry of manifest.files) {
       const source = join(summary.path, ...entry.path.split('/'))
       let current = summary.path
@@ -168,9 +185,13 @@ export async function restoreDataBackup(backup: string, parent: string, protecte
     }
     for (const dir of ['sessions', 'yan']) await mkdir(join(pi, dir), { recursive: true })
     for (const dir of ['electron', 'downloads', 'workspace']) await mkdir(join(path, dir))
-    await writeFile(join(path, 'restored.json'), JSON.stringify({ format: 'inkstone-restored', version: 1, source: summary.path, restoredAt: new Date().toISOString(), legacyBackup: manifest.version === 1, ...(damagedRecords.length ? { damagedRecords } : {}) }, null, 2), { flag: 'wx', mode: 0o600 })
+    await clearIncompleteMarker(path)
+    await writeFile(join(path, 'restored.json'), JSON.stringify({ format: 'inkstone-restored', version: 1, source: summary.path, restoredAt: new Date().toISOString(), legacyBackup: manifest.version === 1, ...(manifest.skipped?.length ? { skippedParts: manifest.skipped } : {}), ...(damagedRecords.length ? { damagedRecords } : {}) }, null, 2), { flag: 'wx', mode: 0o600 })
+    await runHook('finished')
     return { ...summary, path, ...(damagedRecords.length ? { damagedRecords } : {}) }
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\nIncomplete restore retained: ${path}`)
+    const message = error instanceof Error ? error.message : String(error)
+    await writeIncompleteMarker(path, { source: summary.path, startedAt, error: message }).catch(() => undefined)
+    throw new Error(`${message}\nIncomplete restore retained: ${path}`)
   }
 }

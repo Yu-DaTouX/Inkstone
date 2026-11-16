@@ -100,7 +100,7 @@ import { runModelAsk } from './model-ask'
 import { decideQuotaResume } from '../shared/quota-resume'
 import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
-import { onSessionPurged, SESSIONS_DIR } from './sessions'
+import { onSessionPurged, SESSIONS_DIR, startSessionPurgeSweep } from './sessions'
 import { encodeSessionDirName } from './native-session-io'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
@@ -165,6 +165,11 @@ import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { cachedTitlesSync, primeCachedTitles } from './title'
 import { startDailyCredentialSweep, sweepCredentialFiles } from './credential-vault'
 import { sweepStaleTemps } from './stale-temp-sweep'
+import { moveLegacyState } from './legacy-state'
+import { purgeSessionSideData } from './session-side-data'
+import { questionLog } from './question-log'
+import { setPersistedNoticeSink } from './persisted-notice'
+import { isRestoredReadonly } from './restored-readonly'
 import { MODELS_FILE } from './custom-providers'
 import { watchModelsFile, type ModelsWatcher } from './models-watch'
 import { planSessionSyncAgainst } from './session-sync-plan'
@@ -932,9 +937,17 @@ const sessionChains = new SessionChainStore()
 
 const artifactStore = new ArtifactStore(join(YAN_DIR, 'artifacts'))
 
-onSessionPurged(async (sessionId) => {
+onSessionPurged(async (sessionId, fileName) => {
   const dir = sessionArtifactDir(join(YAN_DIR, 'artifacts'), sessionId)
   if (dir && existsSync(dir)) await shell.trashItem(dir)
+  const side = await purgeSessionSideData({
+    yanDir: YAN_DIR,
+    trash: (path) => shell.trashItem(path),
+    approvalLog,
+    questionLog,
+    forgetSessionCode: (id) => runsHost?.forgetSessionCode(id) ?? Promise.resolve(false)
+  }, { sessionId, fileName })
+  if (side.errors.length) logMainEvent(pick('会话清理', 'Session cleanup'), pick(`会话 ${sessionId} 的旁路数据没能全部清理：${side.errors.join('；')}`, `Side data of session ${sessionId} was not fully cleaned: ${side.errors.join('; ')}`))
 })
 
 const localizeHistoryImage = (mimeType: string, data: string): string =>
@@ -2894,11 +2907,18 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
+  startSessionPurgeSweep()
+  setPersistedNoticeSink((message) => push({ ch: 'notify', payload: { id: `persisted-newer-${Date.now()}`, method: 'notify', notifyType: 'warning', message } }))
   installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
   void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
   startDailyCredentialSweep((error) => reportMainError('credential-vault', error))
   void sweepStaleTemps({ dirs: [YAN_DIR, PI_AGENT_DIR] }).catch((error) => reportMainError('stale-temp-sweep', error))
+  if (!isRestoredReadonly()) {
+    void moveLegacyState(YAN_DIR).then((result) => {
+      if (result.moved.length || result.failed.length) logMainEvent(pick('遗留状态', 'Legacy state'), pick(`已移到 ${result.target}（只移不删）：${result.moved.join('、') || '无'}${result.failed.length ? `；未能移动：${result.failed.join('、')}` : ''}`, `Moved to ${result.target} (moved, never deleted): ${result.moved.join(', ') || 'none'}${result.failed.length ? `; could not move: ${result.failed.join(', ')}` : ''}`))
+    }).catch((error) => reportMainError('legacy-state', error))
+  }
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
   void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json'), undefined, { cachePath: join(YAN_DIR, 'native-mcp-describe-cache.json') }).catch((error) => reportMainError('mcp-describe', error))
   trayLanguage = (await getSettings()).lang

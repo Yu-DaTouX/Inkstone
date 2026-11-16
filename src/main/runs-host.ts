@@ -22,6 +22,7 @@ export interface RunsHost {
   markSeen(runId: string): { ok: boolean }
   observeApproval(request: ApprovalRequest): void
   resolveApproval(id: string): void
+  forgetSessionCode(sessionId: string): Promise<boolean>
   dispose(): Promise<void>
 }
 
@@ -230,6 +231,11 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
       if (!ctx) return
       pendingApprovals.delete(id)
       feed(ctx, runSignalFromUiResolved(id))
+    },
+    async forgetSessionCode(sessionId) {
+      if (disposed || !isUsableSessionId(sessionId)) return false
+      codeState.delete(sessionId)
+      return pipeline.codes.forget(sessionId)
     },
     async dispose() {
       if (disposed) return
