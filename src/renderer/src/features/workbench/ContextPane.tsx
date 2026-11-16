@@ -275,11 +275,10 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const unsettledRow = (run: NonNullable<typeof last>): ReactElement => (
     <li key="unsettled" className="wb-ctx-record-row" title={lastTip} data-status={run.status} data-testid="v3-wb-ctx-compaction">
       <span className="wb-ctx-history-time">{compactionTime(run.endedAt ?? run.startedAt, lang)}</span>
-      <span className="wb-ctx-history-flow">
+      <span className="wb-ctx-history-flow wb-ctx-record-flow">
         {[compactionReasonText(t, run), run.status === 'failed' ? compactionErrorText(t, run.error) : ''].filter(Boolean).join(' · ')}
       </span>
       <span className="wb-ctx-history-num wb-ctx-record-status">{compactionStatusText(t, run.status)}</span>
-      <span className="wb-ctx-history-num" />
     </li>
   )
   const reserve = usage.known ? contextReserve(usage) : null
@@ -383,7 +382,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         )}
 
         <div className="wb-ctxw-tray">
-          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitTip || lineNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
+          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitTip || lineNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind} data-compacting={compacting ? '' : undefined}>
             {compacting
               ? text.compacting
               : usage.afterCompactUnknown

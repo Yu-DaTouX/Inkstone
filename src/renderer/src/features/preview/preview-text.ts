@@ -38,6 +38,10 @@ export interface PreviewText {
   dirty: string
   conflict: string
   saveFailed: string
+  saveFailedDetail: (detail: string) => string
+  saveDenied: string
+  savePermission: string
+  saveFirst: string
   reload: string
   discard: string
   closeEditor: string
@@ -228,6 +232,10 @@ const ZH: PreviewText = {
   dirty: '已修改，未保存',
   conflict: '文件已被外部改动，未覆盖',
   saveFailed: '保存失败',
+  saveFailedDetail: (detail) => `保存失败：${detail}`,
+  saveDenied: '保存失败：这个位置不允许从这里写入',
+  savePermission: '保存失败：没有写入权限，文件可能是只读的',
+  saveFirst: '先保存或放弃改动，再回到预览',
   reload: '重新加载',
   discard: '放弃改动',
   closeEditor: '关闭编辑',
@@ -418,6 +426,10 @@ const EN: PreviewText = {
   dirty: 'Unsaved changes',
   conflict: 'File changed on disk; not overwritten',
   saveFailed: 'Could not save',
+  saveFailedDetail: (detail) => `Could not save: ${detail}`,
+  saveDenied: 'Could not save: writing here is not allowed',
+  savePermission: 'Could not save: no write permission; the file may be read-only',
+  saveFirst: 'Save or discard changes before going back to the preview',
   reload: 'Reload',
   discard: 'Discard changes',
   closeEditor: 'Close editor',

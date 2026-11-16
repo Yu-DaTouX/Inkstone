@@ -159,7 +159,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
             isDisabled={loading}
             data-testid="v3-wb-quota-refresh"
           >
-            <RefreshCw size={14} />
+            {loading && report ? <Spinner size={14} /> : <RefreshCw size={14} />}
           </IconButton>
           <IconButton
             size="sm"

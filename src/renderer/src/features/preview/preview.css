@@ -363,9 +363,15 @@
     min-width: 0;
     color: var(--fg3);
     font-size: var(--t-footnote);
-    white-space: nowrap;
+  }
+
+  .v3-preview-editstate-text {
+    display: -webkit-box;
+    min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .v3-preview-csv {

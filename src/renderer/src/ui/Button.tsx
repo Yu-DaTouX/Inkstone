@@ -46,13 +46,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref
 ) {
+  const nativeTitle = title ?? (props.isDisabled && typeof tooltip === 'string' ? tooltip : '')
   const attachRef = useCallback(
     (node: HTMLButtonElement | null) => {
       if (typeof ref === 'function') ref(node)
       else if (ref) (ref as { current: HTMLButtonElement | null }).current = node
-      if (node) node.title = title ?? ''
+      if (node) node.title = nativeTitle
     },
-    [ref, title]
+    [ref, nativeTitle]
   )
 
   const button = (

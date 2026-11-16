@@ -47,6 +47,7 @@ import { reportUnsavedEditor } from '../editor/unsaved-registry'
 import {
   EMPTY_PREVIEW_DRAFTS,
   draftIsDirty,
+  draftSaveFailure,
   dropCleanDrafts,
   dropDraft,
   failedDraft,
@@ -54,6 +55,7 @@ import {
   patchDraft,
   putDraft,
   unsavedDraftPaths,
+  type DraftSaveFailure,
   type PreviewDrafts
 } from './preview-drafts'
 import { serializeLineComment } from './code-line-comment'
@@ -69,6 +71,12 @@ import {
   type PreviewSelectionEntry
 } from './preview-selection'
 import './preview.css'
+
+function saveFailureText(failure: DraftSaveFailure | undefined, text: PreviewText): string {
+  if (failure?.kind === 'denied') return text.saveDenied
+  if (failure?.kind === 'permission') return text.savePermission
+  return failure?.detail ? text.saveFailedDetail(failure.detail) : text.saveFailed
+}
 
 function parentDir(abs: string): string {
   const at = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'))
@@ -377,12 +385,14 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
           if (result.status === 'saved') {
             return { ...value, original: current.text, hash: result.hash ?? value.hash, saving: false, conflict: false, failed: false }
           }
-          return { ...value, saving: false, conflict: result.status === 'conflict', failed: result.status !== 'conflict' }
+          return result.status === 'conflict'
+            ? { ...value, saving: false, conflict: true, failed: false, failure: undefined }
+            : { ...value, saving: false, conflict: false, failed: true, failure: draftSaveFailure(result.status, result.error) }
         })
       )
       if (result.status === 'saved') setReload((value) => value + 1)
-    } catch {
-      setDrafts((prev) => patchDraft(prev, abs, (value) => ({ ...value, saving: false, failed: true })))
+    } catch (error) {
+      setDrafts((prev) => patchDraft(prev, abs, (value) => ({ ...value, saving: false, failed: true, failure: draftSaveFailure('failed', error instanceof Error ? error.message : String(error)) })))
     }
   }, [draft, owner.cwd])
 
@@ -499,7 +509,7 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
         <IconButton
           size="sm"
           aria-label={editing ? text.viewMode : text.edit}
-          tooltip={editing ? text.viewMode : text.edit}
+          tooltip={editing ? (dirty ? text.saveFirst : text.viewMode) : text.edit}
           aria-pressed={editing}
           isDisabled={editing && dirty}
           data-testid="v3-preview-edit-toggle"
@@ -677,17 +687,19 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
       )}
       {editing && draft ? (
         <div className="v3-preview-editbar" data-testid="v3-preview-editbar">
-          <span className="v3-preview-editstate">
+          <span className="v3-preview-editstate" data-testid="v3-preview-editstate" title={!draft.saving && !draft.conflict && draft.failed ? draft.failure?.detail : undefined}>
             {draft.conflict || draft.failed ? <StatusDot kind="fail" /> : dirty && !draft.saving ? <StatusDot kind="awaiting" /> : null}
-            {draft.saving
-              ? text.saving
-              : draft.conflict
-                ? text.conflict
-                : draft.failed
-                  ? text.saveFailed
-                  : dirty
-                    ? text.dirty
-                    : text.saved}
+            <span className="v3-preview-editstate-text">
+              {draft.saving
+                ? text.saving
+                : draft.conflict
+                  ? text.conflict
+                  : draft.failed
+                    ? saveFailureText(draft.failure, text)
+                    : dirty
+                      ? text.dirty
+                      : text.saved}
+            </span>
           </span>
           {draft.conflict ? (
             <Button size="sm" variant="ghost" onPress={() => void reloadDraft()}>
@@ -710,7 +722,7 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
           name={name}
           settings={viewSettings}
           onChange={(value) =>
-            setDrafts((prev) => patchDraft(prev, draft.abs, (current) => ({ ...current, text: value, failed: false })))
+            setDrafts((prev) => patchDraft(prev, draft.abs, (current) => ({ ...current, text: value, failed: false, failure: undefined })))
           }
           onSave={() => void saveDraft()}
         />

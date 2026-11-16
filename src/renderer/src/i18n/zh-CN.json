@@ -1662,6 +1662,7 @@
   "gitflow.messagePlaceholder": "提交说明（Ctrl+Enter 提交）",
   "gitflow.summary": "将提交 {count} 个文件",
   "gitflow.summaryNone": "没有暂存的文件",
+  "gitflow.summaryConflict": "{count} 个文件有冲突",
   "gitflow.action.commit": "提交",
   "gitflow.action.push": "推送",
   "gitflow.action.publish": "发布分支",

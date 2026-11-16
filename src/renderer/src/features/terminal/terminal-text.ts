@@ -12,6 +12,7 @@ export interface TerminalText {
   tabNumber: (n: number) => string
   tabs: string
   newTab: string
+  moreTabs: (n: number) => string
   closeTab: string
   closeOthers: string
   tabMenu: string
@@ -65,6 +66,7 @@ const ZH: TerminalText = {
   tabNumber: (n) => `终端 ${n}`,
   tabs: '终端标签',
   newTab: '新建终端',
+  moreTabs: (n) => `另外 ${n} 个终端`,
   closeTab: '关闭终端',
   closeOthers: '关闭其他终端',
   tabMenu: '终端标签菜单',
@@ -118,6 +120,7 @@ const EN: TerminalText = {
   tabNumber: (n) => `Terminal ${n}`,
   tabs: 'Terminal tabs',
   newTab: 'New terminal',
+  moreTabs: (n) => `${n} more ${n === 1 ? 'terminal' : 'terminals'}`,
   closeTab: 'Close terminal',
   closeOthers: 'Close other terminals',
   tabMenu: 'Terminal tab menu',

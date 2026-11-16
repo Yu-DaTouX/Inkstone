@@ -96,5 +96,14 @@ await check('放弃只丢当前文件的草稿', () => {
   assert.equal(drafts.get(B).text, 'b1')
 })
 
+await check('保存失败按原因归类：守卫拒绝、权限、其他带原文', () => {
+  assert.deepEqual(d.draftSaveFailure('denied'), { kind: 'denied' })
+  assert.deepEqual(d.draftSaveFailure('failed', "EPERM: operation not permitted, open 'C:/p/a.json'"), { kind: 'permission', detail: "EPERM: operation not permitted, open 'C:/p/a.json'" })
+  assert.equal(d.draftSaveFailure('failed', 'EACCES: permission denied').kind, 'permission')
+  assert.deepEqual(d.draftSaveFailure('failed', '保存时目标目录已不可用'), { kind: 'other', detail: '保存时目标目录已不可用' })
+  assert.deepEqual(d.draftSaveFailure('failed', '  '), { kind: 'other', detail: undefined })
+  assert.deepEqual(d.draftSaveFailure('failed'), { kind: 'other', detail: undefined })
+})
+
 process.stdout.write(`\n${report.pass} 通过，${report.fail} 失败\n`)
 if (report.fail || report.pass === 0) process.exitCode = 1

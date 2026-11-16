@@ -66,8 +66,13 @@
     min-width: 0;
   }
 
-  .term-tab-new {
+  .term-tab-new,
+  .term-tab-more {
     flex: none;
+  }
+
+  .term-tabs > .ui-ptab[data-overflowed] {
+    visibility: hidden;
   }
 
   .term-pane-body {

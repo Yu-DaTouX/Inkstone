@@ -63,6 +63,7 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
   const totals = useMemo(() => stagedTotals(groups.staged), [groups.staged])
   const partial = groups.staged.some((item) => stageState(item).unstaged)
   const stagedCount = Math.max(groups.staged.length, repo.stagedCount)
+  const conflicted = items.filter(isUnmerged).length
   const primary = primaryAction({
     stagedCount,
     changedCount: Math.max(items.length, repo.changedCount),
@@ -74,7 +75,7 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
     behind: repo.behind,
     hasRemote,
     hasMessage: message.trim().length > 0,
-    conflicted: items.filter(isUnmerged).length
+    conflicted
   })
   const locked = !active || !ready || busy !== null
   const reasonText = !active
@@ -214,8 +215,8 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
       />
       <div className="gitflow-commit__bar">
         <span className="gitflow-commit__summary" data-testid="git-commit-summary">
-          <span>{stagedCount > 0 ? t('gitflow.summary', { count: stagedCount }) : t('gitflow.summaryNone')}</span>
-          {stagedCount > 0 && totals.known && !partial ? <DiffStat added={totals.added} removed={totals.removed} hideZero /> : null}
+          <span>{conflicted > 0 ? t('gitflow.summaryConflict', { count: conflicted }) : stagedCount > 0 ? t('gitflow.summary', { count: stagedCount }) : t('gitflow.summaryNone')}</span>
+          {conflicted === 0 && stagedCount > 0 && totals.known && !partial ? <DiffStat added={totals.added} removed={totals.removed} hideZero /> : null}
         </span>
         <span className="gitflow-commit__actions">
           <Button

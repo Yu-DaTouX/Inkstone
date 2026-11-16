@@ -377,6 +377,10 @@
     color: var(--fail-t);
   }
 
+  .wb-ctxw .wb-ctxw-tray-text[data-compacting] {
+    color: var(--fg2);
+  }
+
   .wb-ctxw > .wb-ctx-note {
     margin-top: calc(-1 * var(--s-4));
   }
@@ -413,6 +417,18 @@
 
   .wb-ctx-source-head > .wb-ctx-table-num {
     margin-left: auto;
+  }
+
+  .wb-ctx-source + .wb-ctx-source {
+    margin-top: var(--s-8);
+  }
+
+  .wb-ctx-source > .wb-ctx-table {
+    padding-left: var(--s-12);
+  }
+
+  .wb-ctx-source > .wb-ctx-more {
+    margin-left: calc(var(--s-12) - var(--s-6));
   }
 
   .wb-ctx-table {
@@ -492,6 +508,16 @@
   .wb-ctx-history-num {
     color: var(--fg2);
     text-align: right;
+  }
+
+  .wb-ctx-record-row > .wb-ctx-record-flow {
+    grid-column: 2 / 4;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .wb-ctx-record-row > .wb-ctx-record-status {
+    grid-column: 4;
   }
 
   .wb-ctx-record-row[data-status='failed'] .wb-ctx-record-status {

@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { deflateSync as zlibDeflate } from 'node:zlib'
 import { shotKit } from '../lib/ui-shots.mjs'
@@ -1322,8 +1322,17 @@ function makeChangesFixtures(base, repo) {
   commit(headless, 'init')
   writeFileSync(join(headless, '.git', 'HEAD'), 'garbage\n')
 
-  return { plain, clean, mixed, many, long, conflict, binary, broken, headless }
+  const remote = init('remote-repo')
+  writeFileSync(join(remote, 'app.ts'), lines(12, 'remote'))
+  commit(remote, 'init')
+  run(remote, ['remote', 'add', 'origin', join(base, 'missing-remote.git')])
+  writeFileSync(join(remote, 'app.ts'), lines(12, 'remote').replace("'remote-2'", "'remote-two'"))
+  run(remote, ['add', 'app.ts'])
+
+  return { plain, clean, mixed, many, long, conflict, binary, broken, headless, remote }
 }
+
+const buttonTitles = (ev, scope = 'body') => ev(`(() => { const root = [...document.querySelectorAll(${JSON.stringify(scope)})].find((n) => n.getBoundingClientRect().width > 0); if (!root) return null; const pick = (b) => ({ id: b.getAttribute('data-testid') ?? b.getAttribute('aria-label') ?? b.textContent.trim().slice(0, 30), title: b.title }); const all = [...root.querySelectorAll('button.ui-btn')].filter((b) => b.getBoundingClientRect().width > 0); const off = all.filter((b) => b.disabled || b.hasAttribute('data-disabled')); const on = all.filter((b) => !(b.disabled || b.hasAttribute('data-disabled'))); return { total: all.length, disabledWithTitle: off.filter((b) => b.title).map(pick), disabledNoTitle: off.filter((b) => !b.title).map(pick), enabledWithTitle: on.filter((b) => b.title).map(pick) } })()`)
 
 async function changesTarget({ kit: S, ev, sleep, until, check, log, report, newSession, runDir }) {
   report.changes = {}
@@ -1373,6 +1382,8 @@ async function changesTarget({ kit: S, ev, sleep, until, check, log, report, new
   R.mixed = await testids()
   R.mixedText = await visibleText()
   await variants('changes-03-mixed')
+  R.headStat = await ev(`[...document.querySelectorAll('.changes-file__head')].map((h) => { const name = h.querySelector('.changes-path__name'); const stat = h.querySelector('.ui-diffstat'); if (!name || !stat) return { stat: !!stat }; const n = name.getBoundingClientRect(); const s = stat.getBoundingClientRect(); const add = stat.querySelector('.ui-diffstat__add')?.getBoundingClientRect(); const del = stat.querySelector('.ui-diffstat__del')?.getBoundingClientRect(); return { text: stat.innerText.replace(/\\s+/g, ' '), gapFromName: Math.round(s.left - n.right), innerGap: add && del ? Math.round(del.left - add.right) : null, width: Math.round(s.width) } })`)
+  R.buttonTitlesMixed = await buttonTitles(ev, panel)
   report.audit.changes = await S.audit('.changes-pane')
   R.cjk = await ev(`(() => { const hosts = [...document.querySelectorAll('.changes-pane *')].filter((n) => n.shadowRoot); let node = null; for (const h of hosts) { const w = document.createTreeWalker(h.shadowRoot, NodeFilter.SHOW_TEXT); let t; while ((t = w.nextNode())) { if (/新页面/.test(t.data)) { node = t; break } } if (node) break } if (!node) return { found: false, hosts: hosts.length }; const el = node.parentElement; const cs = getComputedStyle(el); const i = node.data.indexOf('新'); const adv = []; for (let k = 0; k < 3; k++) { const r = document.createRange(); r.setStart(node, i + k); r.setEnd(node, i + k + 1); adv.push(Math.round(r.getBoundingClientRect().width * 100) / 100) } const fs = parseFloat(cs.fontSize); const probe = (family) => { const s = document.createElement('span'); s.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:' + cs.fontSize + ';font-family:' + family; s.textContent = '新页面'; document.body.appendChild(s); const w = s.getBoundingClientRect().width; s.textContent = 'abc'; const a = s.getBoundingClientRect().width; s.remove(); return { cjk3: Math.round(w * 100) / 100, latin3: Math.round(a * 100) / 100 } }; return { found: true, tag: el.tagName, fontFamily: cs.fontFamily, fontSize: fs, letterSpacing: cs.letterSpacing, wordSpacing: cs.wordSpacing, features: cs.fontFeatureSettings, eastAsian: cs.fontVariantEastAsian, kerning: cs.fontKerning, advances: adv, ratio: Math.round(adv[0] / fs * 1000) / 1000, inDoc: probe(cs.fontFamily), yahei: probe('"Microsoft YaHei UI"'), mapleLoaded: document.fonts.check(cs.fontSize + ' "Maple Mono CN"', '新'), fontMono: getComputedStyle(document.documentElement).getPropertyValue('--font-mono') } })()`)
   report.hover.push(['changes-03-hover-row', await S.hover('.changes-file__head button', 700, 2)])
@@ -1400,24 +1411,83 @@ async function changesTarget({ kit: S, ev, sleep, until, check, log, report, new
     await S.key('Escape')
     await sleep(500)
   }
-  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  R.commitPanel = await ev(`(() => { const p = document.querySelector('[data-testid="git-commit-panel"]'); if (!p) return null; const r = p.getBoundingClientRect(); return { h: Math.round(r.height), text: p.innerText.replace(/\\s+/g, ' ').slice(0, 200) } })()`)
+  await ev(`(() => { const el = document.querySelector('[data-testid="git-commit-message"] textarea, textarea[data-testid="git-commit-message"]'); if (!el) return false; el.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, '修复登录页校验，并补充新页面文档；这一句故意写长一点看看换行'); el.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+  await sleep(500)
+  R.commitPrimary = await ev(`({ text: document.querySelector('[data-testid="git-primary"]')?.innerText ?? null, reason: document.querySelector('[data-testid="git-primary-reason"]')?.textContent ?? null })`)
+  await S.clip('changes-10-commit-typed-panel', panel, 0)
+  await S.theme('light'); await S.clip('changes-10-commit-typed-light', panel, 0); await S.theme('dark')
+  report.hover.push(['changes-10-commit-primary-hover', await S.hover('[data-testid="git-primary"]', 900, 0)])
+  await S.clip('changes-10-commit-primary-hover', panel, 0)
+  await S.unhover()
+  if (await ev(`!!document.querySelector('[data-testid="git-primary-more"]')`)) {
+    await S.click('[data-testid="git-primary-more"]', 800)
+    await S.shot('changes-10-commit-more-dark')
+    await S.key('Escape')
+    await sleep(400)
+  }
+  await ev(`(() => { const el = document.querySelector('[data-testid="git-commit-message"] textarea, textarea[data-testid="git-commit-message"]'); if (!el) return false; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); return true })()`)
+  for (const key of ['staged', 'unstaged']) {
+    await ev(`(() => { const t = document.querySelector('[data-testid="git-group-${key}"] .ui-collapsible__trigger'); if (t && t.getAttribute('aria-expanded') !== 'true') t.click(); return !!t })()`)
+    await sleep(500)
+  }
+  await S.unhover()
+  R.groupsOpen = await ev(`(() => { const p = document.querySelector('[data-testid="git-commit-panel"]'); if (!p) return null; const r = p.getBoundingClientRect(); const rows = [...p.querySelectorAll('.gitflow-commit__row')].map((n) => { const b = n.getBoundingClientRect(); return { text: n.innerText.replace(/\\s+/g, ' ').slice(0, 60), w: Math.round(b.width), clipped: n.scrollWidth > n.clientWidth + 1 } }); return { h: Math.round(r.height), top: Math.round(r.top), rows } })()`)
+  await S.clip('changes-12-groups-open-panel', panel, 0)
+  await S.theme('light'); await S.clip('changes-12-groups-open-light', panel, 0); await S.theme('dark')
+  report.hover.push(['changes-12-hover-stage-row', await S.hover('.gitflow-commit__row', 800, 1)])
+  await S.clip('changes-12-hover-stage-row', panel, 0)
+  await S.unhover()
+  await ev(`document.querySelector('[data-testid="git-unstage-all"]')?.focus()`)
+  await S.key('Tab')
+  await S.key('Tab', { shift: true })
+  report.focus.push(['changes-12-focus-group-action', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+  await S.clip('changes-12-focus-group-action', panel, 0)
+  await ev('document.activeElement?.blur?.()')
+  for (const key of ['staged', 'unstaged']) {
+    await ev(`(() => { const t = document.querySelector('[data-testid="git-group-${key}"] .ui-collapsible__trigger'); if (t && t.getAttribute('aria-expanded') === 'true') t.click(); return !!t })()`)
+    await sleep(300)
+  }
+  await ev(`document.querySelector('.changes-pane__scope')?.focus()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['changes-11-focus-scope', await ev(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+  await S.clip('changes-11-focus-scope', panel, 0)
+  await S.key('Enter', { waitMs: 800 })
+  R.scopeMenu = await ev(`(() => { const m = [...document.querySelectorAll('[role="menu"]')].find((n) => n.getBoundingClientRect().width > 0); if (!m) return null; const r = m.getBoundingClientRect(); return { items: [...m.querySelectorAll('[role^="menuitem"]')].map((i) => i.innerText.replace(/\\s+/g, ' ').trim()), left: Math.round(r.left), right: Math.round(r.right), vw: innerWidth } })()`)
+  await S.shot('changes-11-scope-menu-dark')
+  await S.key('Escape')
+  await sleep(400)
+  await ev('document.activeElement?.blur?.()')
+  R.fetchDisabled = await ev(`(() => { const b = document.querySelector('[data-testid="changes-fetch"]'); return b ? { disabled: b.disabled || b.hasAttribute('data-disabled'), label: b.getAttribute('aria-label'), title: b.title } : null })()`)
+  R.buttonTitlesFetch = await buttonTitles(ev, panel)
+  report.hover.push(['changes-11-hover-disabled-fetch', await S.hover('[data-testid="changes-fetch"]', 1600, 0)])
+  R.disabledTip = await ev(`(() => { const tip = [...document.querySelectorAll('[role="tooltip"]')].find((n) => n.getBoundingClientRect().width > 0); return tip ? tip.innerText.slice(0, 120) : null })()`)
+  await S.clip('changes-11-hover-disabled-fetch', panel, 0)
+  await S.unhover()
+  report.hover.push(['changes-11-hover-file-head', await S.hover('.changes-file__head .ui-collapsible__trigger', 700, 1)])
+  await S.clip('changes-11-hover-file-head', panel, 0)
+  await S.unhover()
+  const altWidth = width < 600 ? 869 : 360
+  R.altWidth = altWidth
+  await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
   await sleep(1200)
   await S.unhover()
-  await S.clip('changes-03-mixed-w360', panel, 0)
+  await S.clip(`changes-03-mixed-w${altWidth}`, panel, 0)
+  await S.theme('light'); await S.clip(`changes-03-mixed-w${altWidth}-light`, panel, 0); await S.theme('dark')
   R.scopeNarrow = await ev(`(() => { const b = document.querySelector('.changes-pane__scope'); if (!b) return null; const icon = b.querySelector(':scope > .ui-btn__icon'); return { icon: !!icon && getComputedStyle(icon).display !== 'none', label: b.getAttribute('aria-label') } })()`)
-  report.hover.push(['changes-03-w360-scope-tip', await S.hover('.changes-pane__scope', 1400, 0)])
-  await S.clip('changes-03-w360-scope-tip', panel, 0)
-  R.scopeTip = await ev(`(() => { const tip = [...document.querySelectorAll('[role="tooltip"]')].find((n) => n.getBoundingClientRect().width > 0); if (!tip) return null; const r = tip.getBoundingClientRect(); return { text: tip.innerText.slice(0, 200), left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), vw: innerWidth } })()`)
-  await S.shot('changes-03-w360-scope-tip-full')
-  await S.unhover()
   await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
   await sleep(1000)
+  report.hover.push(['changes-03-scope-tip', await S.hover('.changes-pane__scope', 1400, 0)])
+  await S.clip('changes-03-scope-tip', panel, 0)
+  R.scopeTip = await ev(`(() => { const tip = [...document.querySelectorAll('[role="tooltip"]')].find((n) => n.getBoundingClientRect().width > 0); if (!tip) return null; const r = tip.getBoundingClientRect(); return { text: tip.innerText.slice(0, 200), left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), vw: innerWidth } })()`)
+  await S.unhover()
 
   await go(fx.many)
   await settle(3000)
   R.many = await visibleText()
   R.manyBanner = await ev(`document.querySelector('.changes-pane__banner')?.textContent ?? null`)
-  await variants('changes-05-many', { light: false })
+  await variants('changes-05-many')
   R.manyScroll = await scrollPane(4000)
   await sleep(800)
   await S.clip('changes-05-many-scrolled', panel, 0)
@@ -1426,7 +1496,7 @@ async function changesTarget({ kit: S, ev, sleep, until, check, log, report, new
   await settle(3000)
   R.long = await visibleText()
   R.longBanner = await ev(`document.querySelector('.changes-pane__banner')?.textContent ?? null`)
-  await variants('changes-06-long-diff', { light: false })
+  await variants('changes-06-long-diff')
   R.longScroll = await scrollPane(6000)
   await sleep(900)
   await S.clip('changes-06-long-diff-scrolled', panel, 0)
@@ -1449,6 +1519,12 @@ async function changesTarget({ kit: S, ev, sleep, until, check, log, report, new
     await S.unhover()
   }
   await variants('changes-08-binary')
+  if (await ev(`(() => { const sec = [...document.querySelectorAll('.changes-file')].find((n) => n.getAttribute('data-path') === 'icon.png'); const t = sec?.querySelector('.ui-collapsible__trigger'); if (!t) return false; t.click(); return true })()`)) {
+    await sleep(1800)
+    await S.unhover()
+    R.imageCompare = await ev(`(() => { const g = document.querySelector('.changes-pane__images'); if (!g) return null; const r = g.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), sides: g.querySelectorAll('.changes-pane__image-side').length, imgs: [...g.querySelectorAll('img')].map((i) => [i.naturalWidth, Math.round(i.getBoundingClientRect().width)]) } })()`)
+    await variants('changes-08-image-compare', { full: false })
+  }
 
   await go(fx.broken)
   await settle(2000)
@@ -1460,6 +1536,38 @@ async function changesTarget({ kit: S, ev, sleep, until, check, log, report, new
   R.headless = await visibleText()
   R.headlessRetry = await ev(`!!document.querySelector('[data-testid="changes-git-error"] button')`)
   await variants('changes-09-git-failure-head', { full: false })
+
+  await go(fx.remote)
+  await settle(2000)
+  await ev(`(() => { const el = document.querySelector('[data-testid="git-commit-message"] textarea, textarea[data-testid="git-commit-message"]'); if (!el) return false; el.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, '改一行'); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); return true })()`)
+  await sleep(500)
+  await S.click('[data-testid="git-primary"]', 300)
+  R.commitFailure = await until(`!!document.querySelector('[data-testid="git-failure"], [data-testid="git-done"]')`, 20000, 150)
+  await sleep(800)
+  await S.unhover()
+  R.commitFailureInfo = await ev(`(() => { const n = document.querySelector('[data-testid="git-failure"]'); const d = document.querySelector('[data-testid="git-done"]'); return { failure: n ? { code: n.getAttribute('data-code'), text: n.innerText.replace(/\\s+/g, ' ').slice(0, 300) } : null, done: d?.innerText ?? null } })()`)
+  await variants('changes-13-commit-result')
+  if (await ev(`!!document.querySelector('[data-testid="git-failure-raw-toggle"]')`)) {
+    await S.click('[data-testid="git-failure-raw-toggle"]', 600)
+    await S.unhover()
+    await S.clip('changes-13-commit-failure-raw', panel, 0)
+    await ev(`document.querySelector('[data-testid="git-failure-raw-toggle"]')?.focus()`)
+    await S.key('Tab', { shift: true })
+    await S.key('Tab')
+    report.focus.push(['changes-13-focus-raw-toggle', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+    await S.clip('changes-13-focus-raw-toggle', panel, 0)
+    await ev('document.activeElement?.blur?.()')
+  }
+  if (await ev(`(() => { const b = document.querySelector('[data-testid="changes-fetch"]'); return !!b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !b.hasAttribute('data-disabled') })()`)) {
+    R.buttonTitlesRemote = await buttonTitles(ev, panel)
+    R.buttonTitlesBody = await buttonTitles(ev, 'body')
+    await S.click('[data-testid="changes-fetch"]', 300)
+    R.fetchFailure = await until(`document.querySelector('[data-testid="git-failure"]')?.innerText.length > 0 && !document.querySelector('[data-testid="changes-fetch"][data-pending]')`, 20000, 150)
+    await sleep(1200)
+    await S.unhover()
+    R.fetchFailureInfo = await ev(`(() => { const n = document.querySelector('[data-testid="git-failure"]'); return n ? { code: n.getAttribute('data-code'), text: n.innerText.replace(/\\s+/g, ' ').slice(0, 300) } : null })()`)
+    await variants('changes-14-fetch-failure')
+  } else R.fetchFailure = 'fetch-disabled'
 }
 
 async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn, cdp }) {
@@ -1535,6 +1643,49 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
   await S.clip('terminal-02-scrolled-up-blur', panel, 0)
   await wheel(4000)
 
+  const ctrlKey = async (code, keyName) => {
+    const base = { key: keyName, code, windowsVirtualKeyCode: keyName.toUpperCase().charCodeAt(0), modifiers: 2 }
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', ...base })
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', ...base })
+    await sleep(600)
+  }
+  const findInfo = () => ev(`(() => { const f = document.querySelector('[data-testid="terminal-find"]'); if (!f) return null; const r = f.getBoundingClientRect(); const p = document.querySelector('[data-testid="terminal-pane"]').getBoundingClientRect(); return { text: f.innerText.replace(/\\s+/g, ' ').trim(), left: Math.round(r.left - p.left), right: Math.round(p.right - r.right), top: Math.round(r.top - p.top), w: Math.round(r.width), h: Math.round(r.height), focus: document.activeElement?.tagName, overflow: f.scrollWidth - f.clientWidth } })()`)
+  await focusTerm()
+  await ctrlKey('KeyF', 'f')
+  R.findOpened = await until(`!!document.querySelector('[data-testid="terminal-find"]')`, 4000, 100)
+  check('终端：查找栏打开', R.findOpened)
+  if (R.findOpened) {
+    R.findEmpty = await findInfo()
+    await S.clip('terminal-08-find-empty', panel, 0)
+    await S.typeText('line 39', 900)
+    R.findHit = await findInfo()
+    await variants('terminal-08-find-hit', { full: false })
+    await S.key('Tab', { waitMs: 400 })
+    report.focus.push(['terminal-08-find-focus', await ev(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? null`)])
+    await S.clip('terminal-08-find-focus', panel, 0)
+    await ev(`(() => { const i = document.querySelector('[data-testid="terminal-find"] input'); if (!i) return false; i.focus(); i.select(); return true })()`)
+    await S.typeText('没有这个词zzz', 900)
+    R.findNone = await findInfo()
+    await variants('terminal-08-find-none', { full: false })
+    R.findTitles = await buttonTitles(ev, '[data-testid="terminal-find"]')
+    await S.key('Escape', { waitMs: 600 })
+    R.findClosed = !(await ev(`!!document.querySelector('[data-testid="terminal-find"]')`))
+  }
+  await S.unhover()
+  if (await S.click('[data-testid="terminal-view-menu"]', 900)) {
+    R.viewMenu = await ev(`(() => { const m = [...document.querySelectorAll('[role="menu"]')].find((n) => n.getBoundingClientRect().width > 0); if (!m) return null; const r = m.getBoundingClientRect(); return { items: [...m.querySelectorAll('[role^="menuitem"]')].map((i) => i.innerText.replace(/\\s+/g, ' ').trim()), left: Math.round(r.left), right: Math.round(r.right), vw: innerWidth } })()`)
+    await S.shot('terminal-09-view-menu-dark')
+    await S.key('ArrowDown', { waitMs: 200 })
+    await S.key('ArrowDown', { waitMs: 200 })
+    await S.key('ArrowRight', { waitMs: 800 })
+    R.viewSubmenu = await ev(`[...document.querySelectorAll('[role="menu"]')].filter((n) => n.getBoundingClientRect().width > 0).map((m) => { const r = m.getBoundingClientRect(); return { label: m.getAttribute('aria-label'), left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom) } })`)
+    await S.shot('terminal-09-view-submenu-dark')
+    await S.theme('light'); await S.shot('terminal-09-view-submenu-light'); await S.theme('dark')
+    await S.key('Escape', { waitMs: 300 })
+    await S.key('Escape', { waitMs: 500 })
+  }
+  await S.unhover()
+
   await S.click('[data-testid="terminal-new"]', 800)
   await ready(1500)
   await S.click('[data-testid="terminal-new"]', 800)
@@ -1547,6 +1698,16 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
   report.hover.push(['terminal-03-tab-hover', await S.hover('[data-testid^="terminal-tab-"]', 1200, 0)])
   await S.clip('terminal-03-tab-hover', panel, 0)
   await S.unhover()
+  await ev(`document.querySelector('[data-testid="terminal-tabs"] .ui-ptab[data-active="1"] [role="tab"]')?.focus()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['terminal-03-focus-tab', await ev(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+  await S.clip('terminal-03-focus-tab', panel, 0)
+  await S.key('Tab')
+  report.focus.push(['terminal-03-focus-new', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? null`)])
+  await S.clip('terminal-03-focus-new', panel, 0)
+  await ev('document.activeElement?.blur?.()')
+  R.buttonTitlesMulti = await buttonTitles(ev, panel)
 
   const res = await turn('TERMJOBS 后台任务', { timeout: 120000 })
   R.fakeRequests = res?.requests ?? null
@@ -1569,12 +1730,15 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
   R.sessionBar = await ev(`!!document.querySelector(${JSON.stringify(bar)})`)
   check('终端：后台任务列表打开', R.bgOpened === 'open', R.bgOpened)
   R.bgRunning = await ev(`document.querySelector('[data-testid="wb-bg-tasks"]')?.innerText ?? null`)
+  await ev(`(document.querySelector('[data-testid="wb-bg-tasks"]')?.scrollIntoView({ block: 'end' }), true)`)
+  await sleep(400)
   await variants('terminal-05-bg-running', { target: bar })
   report.hover.push(['terminal-05-bg-row-hover', await S.hover('[data-testid="wb-bg-running"] [data-testid="wb-bg-open"]', 900, 1)])
   await S.clip('terminal-05-bg-row-hover', bar, 0)
   report.hover.push(['terminal-05-bg-stop-hover', await S.hover('[data-testid="wb-bg-stop"]', 1200, 0)])
   await S.clip('terminal-05-bg-stop-hover', bar, 0)
   await S.unhover()
+  R.buttonTitlesBg = await buttonTitles(ev, bar)
   await sleep(22000)
   await openTerm()
   await sleep(1500)
@@ -1585,11 +1749,24 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
   report.hover.push(['terminal-04-agent-tab-hover', await S.hover('[data-testid^="terminal-tab-"][data-agent="1"]', 1200, 0)])
   await S.clip('terminal-04-agent-tab-hover', panel, 0)
   await S.unhover()
-  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  R.overflow = await ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); if (!list) return null; const l = list.getBoundingClientRect(); const tabs = [...list.querySelectorAll('.ui-ptab')].map((n) => { const r = n.getBoundingClientRect(); return { label: n.innerText.trim().slice(0, 40), hidden: n.hasAttribute('data-overflowed'), partial: r.left < l.left - 1 || r.right > l.right + 1, visible: getComputedStyle(n).visibility } }); return { button: !!document.querySelector('[data-testid="terminal-tab-overflow"]'), tabs } })()`)
+  if (await S.click('[data-testid="terminal-tab-overflow"]', 900)) {
+    R.overflowMenu = await ev(`(() => { const m = document.querySelector('[data-testid="terminal-tab-overflow-menu"]'); if (!m) return null; const r = m.getBoundingClientRect(); return { items: [...m.querySelectorAll('[role^="menuitem"]')].map((i) => i.innerText.replace(/\\s+/g, ' ').trim()), left: Math.round(r.left), right: Math.round(r.right), vw: innerWidth } })()`)
+    await S.shot('terminal-04-overflow-menu-dark')
+    await S.theme('light'); await S.shot('terminal-04-overflow-menu-light'); await S.theme('dark')
+    await S.key('Escape', { waitMs: 500 })
+    report.focus.push(['terminal-04-overflow-focus', await ev(`document.activeElement?.getAttribute('data-testid') ?? null`)])
+    await S.clip('terminal-04-overflow-focus', panel, 0)
+    await ev('document.activeElement?.blur?.()')
+  }
+  const altWidth = width < 600 ? 869 : 360
+  R.altWidth = altWidth
+  await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
   await sleep(1200)
   R.narrow = await paneInfo()
   R.activeVisibleNarrow = await ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); const a = list?.querySelector('.ui-ptab[data-active="1"]'); if (!list || !a) return null; const l = list.getBoundingClientRect(); const r = a.getBoundingClientRect(); return { listLeft: Math.round(l.left), listRight: Math.round(l.right), tabLeft: Math.round(r.left), tabRight: Math.round(r.right) } })()`)
-  await S.clip('terminal-04-w360', panel, 0)
+  await S.clip(`terminal-04-w${altWidth}`, panel, 0)
+  await S.theme('light'); await S.clip(`terminal-04-w${altWidth}-light`, panel, 0); await S.theme('dark')
   const tabsState = () => ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); const a = list?.querySelector('.ui-ptab[data-active="1"]'); if (!list || !a) return null; const l = list.getBoundingClientRect(); const r = a.getBoundingClientRect(); return { scrollLeft: Math.round(list.scrollLeft), max: list.scrollWidth - list.clientWidth, activeInView: r.left >= l.left - 1 && r.right <= l.right + 1, listWidth: Math.round(l.width), tabWidth: Math.round(r.width), label: a.innerText.trim().slice(0, 80) } })()`)
   const userTabs = await ev(`[...document.querySelectorAll('[data-testid="terminal-tabs"] [data-testid^="terminal-tab-"]:not([data-agent="1"])')].map((n) => n.getAttribute('data-testid'))`)
   for (const id of userTabs ?? []) {
@@ -1608,7 +1785,7 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
     await sleep(900)
     R.wheelMenuShown = await ev(`!![...document.querySelectorAll('[role="menu"]')].find((n) => n.getBoundingClientRect().width > 0)`)
     R.wheelRerender = await tabsState()
-    await S.clip('terminal-04-w360-wheel-kept', panel, 0)
+    await S.clip(`terminal-04-w${altWidth}-wheel-kept`, panel, 0)
     await S.key('Escape', { waitMs: 500 })
     check('终端：滚轮翻开标签后重渲染不拉回', !!R.wheelAfter && R.wheelAfter.scrollLeft !== R.wheelBefore.scrollLeft && R.wheelMenuShown && R.wheelRerender?.scrollLeft === R.wheelAfter.scrollLeft, { before: R.wheelBefore, after: R.wheelAfter, menu: R.wheelMenuShown, rerender: R.wheelRerender })
   }
@@ -1649,6 +1826,22 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
   else await S.shot('terminal-06-bg-none-dark')
   await ev(`(window.__yanRightPanel.getState().setOpen(true), true)`)
   await sleep(800)
+
+  const gone = join(tmpdir(), `inkstone-ui-term-missing-${Date.now().toString(36)}`)
+  try {
+    await newSession(gone)
+  } catch (error) {
+    R.goneSession = String(error?.message ?? error).slice(0, 200)
+    return
+  }
+  await sleep(800)
+  await openTerm()
+  R.goneState = await until(`!!document.querySelector('[data-testid="terminal-failed"], [data-testid="terminal-unavailable"], [data-testid="terminal-notice"], [data-testid="terminal-pane"] .xterm')`, 20000, 150)
+  await sleep(2500)
+  await S.unhover()
+  R.gone = await paneInfo()
+  R.goneText = await ev(`document.querySelector('[data-testid="terminal-pane"]')?.innerText?.replace(/\\s+/g, ' ').slice(0, 300) ?? null`)
+  await variants('terminal-11-cwd-gone', { full: false })
 }
 
 async function tabgapTarget({ kit: S, ev, sleep, until, check, log, report, newSession, cdp }) {
@@ -2071,7 +2264,15 @@ async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSe
   const barInfo = () => ev(`(() => { const q = document.querySelector('[data-testid="wb-ov-quota"]'); return q ? q.innerText.replace(/\\s+/g, ' ').trim().slice(0, 400) : null })()`)
   const load = async (name) => {
     writeFileSync(file, JSON.stringify(states()[name]))
-    await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`)
+    if (name === 'multi') {
+      const pause = await S.pauseAt('publishAccountQuotaReport(next)', async () => { await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`) })
+      R.refreshPaused = pause?.paused ?? false
+      if (pause?.paused) await S.shotPaused('quota-03-refreshing-paused')
+      await pause?.resume()
+      if (!pause) await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`)
+    } else {
+      await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`)
+    }
     await sleep(400)
     await until(`!document.querySelector('[data-testid="v3-wb-quota"] .ui-spinner') && !document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.hasAttribute('disabled')`, 15000, 150)
     await sleep(700)
@@ -2109,7 +2310,7 @@ async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSe
     await load(name)
     R[name] = await paneInfo()
     await variants(shot, { full: name !== 'error' })
-    if (name === 'stale') R.liveStalePatched = await ev(`(() => { const st = window.__yanLiveQuota.getState(); const key = Object.keys(st.entries).find((k) => st.entries[k]?.snapshot?.windows?.length); if (!key) return null; const e = st.entries[key]; window.__yanLiveQuota.setState({ entries: { ...st.entries, [key]: { ...e, snapshot: { ...e.snapshot, staleError: '网络超时' } } } }); return key })()`)
+    if (name === 'stale') R.liveStalePatched = await ev(`(() => { const st = window.__yanLiveQuota.getState(); const keys = Object.keys(st.entries).filter((k) => st.entries[k]?.snapshot?.windows?.length); const key = keys.find((k) => /fake/.test(k)) ?? keys[0]; if (!key) return null; const e = st.entries[key]; window.__yanLiveQuota.setState({ entries: { ...st.entries, [key]: { ...e, snapshot: { ...e.snapshot, staleError: '网络超时' } } } }); return key })()`)
     if (name === 'stale') {
       await turn('额度过期刷新', { timeout: 60000 })
       await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
@@ -2124,11 +2325,25 @@ async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSe
       await S.clip('quota-03-win-hover', panel, 0)
       await S.unhover()
     }
+    if (name === 'multi') {
+      await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.focus()`)
+      await S.key('Tab', { shift: true })
+      await S.key('Tab')
+      report.focus.push(['quota-03-focus-refresh', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? null`)])
+      await S.clip('quota-03-focus-refresh', panel, 0)
+      await S.key('Tab')
+      report.focus.push(['quota-03-focus-next', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+      await S.clip('quota-03-focus-next', panel, 0)
+      await ev('document.activeElement?.blur?.()')
+      R.buttonTitles = await buttonTitles(ev, panel)
+    }
     if (name === 'multi' || name === 'exhausted' || name === 'error') {
-      await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+      const altWidth = width < 600 ? 869 : 360
+      R.altWidth = altWidth
+      await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
       await sleep(1200)
       await S.unhover()
-      await S.clip(`${shot}-w360`, panel, 0)
+      await S.clip(`${shot}-w${altWidth}`, panel, 0)
       await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
       await sleep(900)
     }
@@ -2192,6 +2407,9 @@ async function contextTarget({ kit: S, ev, sleep, until, check, log, report, new
   const panel = '[data-testid="rp-column-0"]'
   const bar = '[data-testid="v3-sessionbar"]'
   const width = await ev('window.__yanRightPanel.getState().width')
+  const altWidth = width < 600 ? 869 : 360
+  R.panelWidth = width
+  R.altWidth = altWidth
   const originalLimit = await ev('window.__yanStore.getState().settings?.autoCompactTokens ?? null')
   R.originalLimit = originalLimit
   const openCtx = async () => {
@@ -2248,9 +2466,11 @@ async function contextTarget({ kit: S, ev, sleep, until, check, log, report, new
     R[name] = await paneText()
     await variants(name, { light: name !== 'context-02-mid' })
   }
-  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
   await sleep(1200)
-  await S.clip('context-04-w360', panel, 0)
+  await S.unhover()
+  await S.clip(`context-04-w${altWidth}`, panel, 0)
+  await S.theme('light'); await sleep(400); await S.clip(`context-04-w${altWidth}-light`, panel, 0); await S.theme('dark'); await sleep(300)
   await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
   await sleep(900)
   await barClip('context-04-sessionbar')
@@ -2300,6 +2520,34 @@ async function contextTarget({ kit: S, ev, sleep, until, check, log, report, new
   await S.clip('context-07-failed-tip', panel, 0)
   await S.unhover()
 
+  await turn(`USAGEIN=30000 再补一段。${'再补一段说明。'.repeat(9000)}`, { timeout: 120000 })
+  await sleep(1000)
+  await S.click('[data-testid="v3-wb-ctx-compact"]', 500)
+  R.thirdSeen = await until(`s.session?.lastCompaction?.status !== 'failed' && !!s.session?.lastCompaction && !s.session?.isCompacting`, 90000, 200)
+  await sleep(1500)
+  R.many = await paneText()
+  if (await ev(`(() => { const el = document.querySelector('[data-testid="v3-wb-ctx-compaction"]'); if (!el) return false; el.scrollIntoView({ block: 'center' }); return true })()`)) {
+    await sleep(500)
+    await S.unhover()
+    await S.clip('context-09-history-many', panel, 0)
+    await S.theme('light'); await sleep(400); await S.clip('context-09-history-many-light', panel, 0); await S.theme('dark'); await sleep(300)
+  }
+  R.historyToggle = await ev(`(() => { const t = document.querySelector('[data-testid="v3-wb-ctx-history-more"]'); if (!t) return null; t.click(); return t.getAttribute('aria-expanded') })()`)
+  await sleep(800)
+  await S.unhover()
+  R.historyOpen = await ev(`document.querySelector('[data-testid="v3-wb-ctx-history"]')?.innerText?.replace(/\\s+/g, ' ').slice(0, 400) ?? null`)
+  await S.clip('context-09-history-open', panel, 0)
+  await ev(`document.querySelector('[data-testid="v3-wb-ctx-compact"]')?.focus()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['context-10-focus-compact', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+  await S.clip('context-10-focus-compact', panel, 0)
+  await S.key('Tab')
+  report.focus.push(['context-10-focus-next', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.textContent?.slice(0, 40) ?? null`)])
+  await S.clip('context-10-focus-next', panel, 0)
+  await ev('document.activeElement?.blur?.()')
+  R.buttonTitles = await buttonTitles(ev, panel)
+
   await scrollPane('[data-testid="v3-wb-ctx-sources"]')
   await sleep(600)
   R.sources = await paneText()
@@ -2309,9 +2557,10 @@ async function contextTarget({ kit: S, ev, sleep, until, check, log, report, new
   await scrollPane('[data-testid="v3-wb-ctx-source-skills"]')
   await sleep(500)
   await S.clip('context-08-sources-expanded', panel, 0)
-  await ev(`(window.__yanRightPanel.getState().setWidth(360), true)`)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
   await sleep(1200)
-  await S.clip('context-08-w360-sources', panel, 0)
+  await S.unhover()
+  await S.clip(`context-08-w${altWidth}-sources`, panel, 0)
   await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
   await sleep(900)
   report.audit.context = await S.audit('[data-testid="v3-wb-context"]')
@@ -4451,7 +4700,159 @@ async function settingsTarget({ kit: S, ev, cdp, sleep, until, check, report, ne
   await sleep(500)
 }
 
-const TARGETS = { tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget, browserfinal: browserFinalTarget, browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget, settings: settingsTarget }
+function makeEditorFixtures(base) {
+  mkdirSync(base, { recursive: true })
+  const code = join(base, 'server-config.ts')
+  const body = Array.from({ length: 160 }, (_, i) => i % 23 === 7
+    ? `  // 第 ${i + 1} 行：这是一行很长的注释，用来看编辑器在窄栏里的横向滚动与换行 ${'long-segment-'.repeat(14)}end`
+    : i % 11 === 0 ? `export const value${i} = { name: 'item-${i}', enabled: ${i % 2 === 0}, retries: ${i % 5}, timeoutMs: ${1000 + i * 10} }` : `  values.push(compute(${i}, 'segment-${i}'))`).join('\n')
+  writeFileSync(code, `import { compute } from './compute'\n\nconst values: unknown[] = []\n${body}\n`)
+  const notes = join(base, 'notes.md')
+  writeFileSync(notes, '# 编辑器夹具\n\n一段正文。\n\n- 条目一\n- 条目二\n')
+  const locked = join(base, 'locked.json')
+  writeFileSync(locked, '{\n  "name": "locked",\n  "version": 1\n}\n')
+  const conflict = join(base, 'conflict.yaml')
+  writeFileSync(conflict, 'name: conflict\nsteps:\n  - build\n  - test\n')
+  return { base, code, notes, locked, conflict }
+}
+
+async function editorTarget({ kit: S, ev, sleep, until, check, log, report, newSession }) {
+  report.editor = {}
+  const R = report.editor
+  const fx = makeEditorFixtures(mkdtempSync(join(tmpdir(), 'inkstone-ui-editor-')))
+  check('编辑器：夹具不在当前仓库里', !fx.base.toLowerCase().startsWith(process.cwd().toLowerCase()), fx.base)
+  const panel = '[data-testid="rp-column-0"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const slash = (path) => path.replaceAll('\\', '/')
+  const open = async (path, wait = 1200) => {
+    const target = slash(path)
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: ${JSON.stringify('file:' + target)}, kind: 'file', path: ${JSON.stringify(target)} }); rp.setOpen(true); return true })()`)
+    const ok = await until(`!!document.querySelector('[data-testid="v3-preview"]') && !document.querySelector('[data-testid="v3-preview-loading"]')`, 15000, 100)
+    await S.unhover()
+    await sleep(wait)
+    return ok
+  }
+  const variants = async (name, { light = true, full = false } = {}) => {
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await S.clip(`${name}-light`, panel, 0); await S.theme('dark') }
+  }
+  const bar = () => ev(`(() => { const b = __vis('[data-testid="v3-preview-editbar"]'); if (!b) return null; const s = b.querySelector('.v3-preview-editstate'); const r = b.getBoundingClientRect(); return { text: b.innerText.replace(/\\s+/g, ' ').trim(), state: s ? { text: s.textContent, clipped: s.scrollWidth > s.clientWidth + 1, w: Math.round(s.clientWidth) } : null, h: Math.round(r.height), buttons: [...b.querySelectorAll('button')].map((n) => ({ text: n.innerText.trim(), disabled: n.disabled, title: n.title, w: Math.round(n.getBoundingClientRect().width) })) } })()`)
+  const editorInfo = () => ev(`(() => { const e = __vis('[data-testid="v3-editor"]'); if (!e) return null; const sc = e.querySelector('.cm-scroller'); const g = e.querySelector('.cm-gutters'); const content = e.querySelector('.cm-content'); return { h: Math.round(e.getBoundingClientRect().height), scrollW: sc?.scrollWidth ?? null, clientW: sc?.clientWidth ?? null, gutterW: g ? Math.round(g.getBoundingClientRect().width) : null, font: content ? getComputedStyle(content).fontFamily.slice(0, 60) : null, fontSize: content ? getComputedStyle(content).fontSize : null, focused: !!e.querySelector('.cm-focused'), editable: content?.getAttribute('contenteditable') ?? null } })()`)
+  const toggle = '[data-testid="v3-preview-edit-toggle"]'
+  const typeInEditor = async (text) => {
+    await ev(`(() => { const c = __vis('[data-testid="v3-editor"] .cm-content'); if (!c) return false; c.focus(); return true })()`)
+    await S.typeText(text, 500)
+  }
+
+  await ev(`(window.__vis = (s) => [...document.querySelectorAll(s)].find((n) => n.getBoundingClientRect().width > 0) ?? null, true)`)
+  await S.theme('dark')
+  await newSession(fx.base)
+  check('编辑器：打开代码文件', await open(fx.code))
+  R.toggle = await ev(`(() => { const b = __vis(${JSON.stringify(toggle)}); return b ? { label: b.getAttribute('aria-label'), disabled: b.disabled, pressed: b.getAttribute('aria-pressed') } : null })()`)
+  await variants('editor-00-readonly', { full: true })
+  report.hover.push(['editor-00-toggle-hover', await S.hover(toggle, 1200, 0)])
+  R.toggleTip = await ev(`(() => { const tip = [...document.querySelectorAll('[role="tooltip"]')].find((n) => n.getBoundingClientRect().width > 0); return tip ? tip.innerText.slice(0, 80) : null })()`)
+  await S.clip('editor-00-toggle-hover', panel, 0)
+  await S.unhover()
+  await ev(`__vis(${JSON.stringify(toggle)})?.focus()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['editor-00-focus-toggle', await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? null`)])
+  await S.clip('editor-00-focus-toggle', panel, 0)
+  await S.key('Enter', { waitMs: 1500 })
+  R.editing = await until(`!!__vis('[data-testid="v3-editor"] .cm-editor')`, 8000, 100)
+  check('编辑器：进入编辑', R.editing)
+  await S.unhover()
+  R.clean = await bar()
+  R.cleanEditor = await editorInfo()
+  R.cleanFocus = await ev(`document.activeElement?.className?.toString().slice(0, 60) ?? null`)
+  await variants('editor-01-clean', { full: true })
+
+  await ev(`(() => { const s = __vis('[data-testid="v3-editor"] .cm-scroller'); if (!s) return false; const lines = [...s.querySelectorAll('.cm-line')]; const long = lines.find((n) => /long-segment/.test(n.textContent)); if (long) long.scrollIntoView({ block: 'center' }); return !!long })()`)
+  await sleep(600)
+  await S.clip('editor-02-long-line', panel, 0)
+  await ev(`(() => { const s = __vis('[data-testid="v3-editor"] .cm-scroller'); if (s) s.scrollLeft = 400; return true })()`)
+  await sleep(500)
+  R.longScroll = await editorInfo()
+  await S.clip('editor-02-long-line-scrolled', panel, 0)
+  await ev(`(() => { const s = __vis('[data-testid="v3-editor"] .cm-scroller'); if (s) { s.scrollLeft = 0; s.scrollTop = 0 } return true })()`)
+  await sleep(400)
+
+  await typeInEditor('// 修改一行\n')
+  R.dirty = await bar()
+  await variants('editor-03-dirty', { full: true })
+  R.dirtyTitles = await buttonTitles(ev, '[data-testid="v3-preview-editbar"]')
+  R.toggleDirty = await ev(`(() => { const b = __vis(${JSON.stringify(toggle)}); return b ? { disabled: b.disabled || b.hasAttribute('data-disabled'), title: b.title, label: b.getAttribute('aria-label') } : null })()`)
+  report.hover.push(['editor-03-hover-toggle-disabled', await S.hover(toggle, 1400, 0)])
+  R.toggleDirtyTip = await ev(`(() => { const tip = [...document.querySelectorAll('[role="tooltip"]')].find((n) => n.getBoundingClientRect().width > 0); return tip ? tip.innerText.slice(0, 80) : null })()`)
+  await S.clip('editor-03-hover-toggle-disabled', panel, 0)
+  await S.unhover()
+  await ev(`(() => { const b = [...(__vis('[data-testid="v3-preview-editbar"]')?.querySelectorAll('button') ?? [])][0]; b?.focus(); return !!b })()`)
+  await S.key('Tab', { shift: true })
+  await S.key('Tab')
+  report.focus.push(['editor-03-focus-save', await ev(`document.activeElement?.innerText?.trim() ?? null`)])
+  await S.clip('editor-03-focus-save', panel, 0)
+  await ev('document.activeElement?.blur?.()')
+  const altWidth = width < 600 ? 869 : 360
+  R.altWidth = altWidth
+  await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
+  await sleep(1200)
+  await S.unhover()
+  R.dirtyAlt = await bar()
+  await S.clip(`editor-03-dirty-w${altWidth}`, panel, 0)
+  await S.theme('light'); await S.clip(`editor-03-dirty-w${altWidth}-light`, panel, 0); await S.theme('dark')
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1000)
+  await typeInEditor('')
+  const saveIndex = await ev(`[...(__vis('[data-testid="v3-preview-editbar"]')?.querySelectorAll('button') ?? [])].findIndex((n) => /保存|Save/.test(n.innerText))`)
+  const clickSave = async () => {
+    await ev(`[...(__vis('[data-testid="v3-preview-editbar"]')?.querySelectorAll('button') ?? [])].find((n) => /^(保存|Save)$/.test(n.innerText.trim()))?.click()`)
+    await sleep(1500)
+    await S.unhover()
+  }
+  R.saveIndex = saveIndex
+  await clickSave()
+  R.saved = await bar()
+  R.savedDisk = readFileSync(fx.code, 'utf8').includes('修改一行')
+  await variants('editor-04-saved')
+
+  check('编辑器：打开冲突夹具', await open(fx.conflict))
+  await S.click(toggle, 1500)
+  await typeInEditor('  - deploy\n')
+  writeFileSync(fx.conflict, 'name: conflict\nsteps:\n  - build\n  - lint\n  - test\n')
+  await sleep(600)
+  await clickSave()
+  R.conflict = await bar()
+  await variants('editor-05-conflict', { full: true })
+  await ev(`(window.__yanRightPanel.getState().setWidth(${altWidth}), true)`)
+  await sleep(1200)
+  await S.unhover()
+  await S.clip(`editor-05-conflict-w${altWidth}`, panel, 0)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1000)
+
+  check('编辑器：打开只读夹具', await open(fx.locked))
+  await S.click(toggle, 1500)
+  await typeInEditor('\n')
+  chmodSync(fx.locked, 0o444)
+  await clickSave()
+  R.failed = await bar()
+  await variants('editor-06-save-failed', { full: true })
+  chmodSync(fx.locked, 0o644)
+
+  check('编辑器：打开 markdown', await open(fx.notes))
+  R.mdToggle = await ev(`(() => { const b = __vis(${JSON.stringify(toggle)}); return b ? { label: b.getAttribute('aria-label'), disabled: b.disabled } : null })()`)
+  await S.click(toggle, 1500)
+  R.md = await bar()
+  R.mdEditor = await editorInfo()
+  await variants('editor-07-markdown')
+  R.buttonTitles = await buttonTitles(ev, panel)
+  report.audit.editor = await S.audit(panel)
+}
+
+const TARGETS = { editor: editorTarget, tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget, browserfinal: browserFinalTarget, browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget, settings: settingsTarget }
 
 export default async function run(ctx) {
   const { cdp, until, sleep, log, check, report } = ctx
@@ -4485,6 +4886,6 @@ export default async function run(ctx) {
     }
   }
   await kit.theme('dark')
-  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, tabgap: report.tabgap, logs: report.logs, device: report.device, prs: report.prs, subagents: report.subagents, shell: report.shell, overview: report.overview, library: report.library, usage: report.usage, tree: report.tree, settings: report.settings, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
+  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, tabgap: report.tabgap, logs: report.logs, device: report.device, prs: report.prs, subagents: report.subagents, shell: report.shell, overview: report.overview, library: report.library, usage: report.usage, tree: report.tree, settings: report.settings, editor: report.editor, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
   check('截图数量', kit.files.length > 0, kit.files.length)
 }

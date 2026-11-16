@@ -1662,6 +1662,7 @@
   "gitflow.messagePlaceholder": "Commit message (Ctrl+Enter to commit)",
   "gitflow.summary": "Files to commit: {count}",
   "gitflow.summaryNone": "Nothing staged",
+  "gitflow.summaryConflict": "Files with conflicts: {count}",
   "gitflow.action.commit": "Commit",
   "gitflow.action.push": "Push",
   "gitflow.action.publish": "Publish branch",

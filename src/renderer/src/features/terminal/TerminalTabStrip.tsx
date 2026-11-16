@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { Bot, Plus, SquareTerminal } from '../../ui/icons'
+import { Bot, ChevronDown, Plus, SquareTerminal } from '../../ui/icons'
 import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover } from '../../ui'
+import { hiddenTabsAt, tabStripLayout, type TabSpan } from '../preview/preview-tab-strip'
 import { nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'
 
@@ -27,6 +28,23 @@ export interface TerminalTabStripProps {
   onNew: () => void
 }
 
+function measureTabSpans(strip: HTMLElement): TabSpan[] {
+  const box = strip.getBoundingClientRect()
+  const spans: TabSpan[] = []
+  for (const node of strip.querySelectorAll<HTMLElement>('[data-panel-tab]')) {
+    const id = node.dataset.panelTab
+    if (!id) continue
+    const rect = node.getBoundingClientRect()
+    const start = rect.left - box.left + strip.scrollLeft
+    spans.push({ id, start, end: start + rect.width })
+  }
+  return spans
+}
+
+function sameIds(previous: readonly string[], next: readonly string[]): boolean {
+  return previous.length === next.length && previous.every((value, index) => value === next[index])
+}
+
 export function TerminalTabStrip({
   tabs,
   active,
@@ -42,13 +60,47 @@ export function TerminalTabStrip({
   const stripRef = useRef<HTMLDivElement | null>(null)
   const menuAnchor = useRef<HTMLElement | null>(null)
   const [menuKey, setMenuKey] = useState<string | null>(null)
+  const overflowRef = useRef<HTMLButtonElement | null>(null)
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const [hidden, setHidden] = useState<readonly string[]>([])
+  const [overflowOpen, setOverflowOpen] = useState(false)
   const keyboardMove = useRef(false)
+  const labelKey = tabs.map((tab) => `${tab.key}:${tab.label}`).join('\n')
 
   useEffect(() => {
-    if (!active) return
-    const node = stripRef.current?.querySelector<HTMLElement>(`[data-panel-tab="${CSS.escape(active)}"]`)
-    node?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [active, tabs.length])
+    const strip = stripRef.current
+    if (!strip) return undefined
+    const measure = (): void => {
+      if (strip.clientWidth < 1) return
+      const layout = tabStripLayout({
+        tabs: measureTabSpans(strip),
+        width: strip.clientWidth,
+        scrollLeft: strip.scrollLeft,
+        maxScroll: Math.max(0, strip.scrollWidth - strip.clientWidth),
+        activeId: activeRef.current
+      })
+      if (Math.abs(strip.scrollLeft - layout.scrollLeft) > 0.5) strip.scrollLeft = layout.scrollLeft
+      setHidden((previous) => (sameIds(previous, layout.hiddenIds) ? previous : layout.hiddenIds))
+    }
+    const onScroll = (): void => {
+      const next = hiddenTabsAt(measureTabSpans(strip), strip.clientWidth, strip.scrollLeft, activeRef.current)
+      setHidden((previous) => (sameIds(previous, next) ? previous : next))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(strip)
+    for (const node of strip.querySelectorAll<HTMLElement>('[data-panel-tab]')) observer.observe(node)
+    strip.addEventListener('scroll', onScroll)
+    return () => {
+      observer.disconnect()
+      strip.removeEventListener('scroll', onScroll)
+    }
+  }, [active, labelKey])
+
+  useEffect(() => {
+    if (!hidden.length) setOverflowOpen(false)
+  }, [hidden.length])
 
   const selectTab = (key: string): void => {
     const fromKeyboard = keyboardMove.current
@@ -95,6 +147,7 @@ export function TerminalTabStrip({
               icon={tab.agentOwned ? <Bot aria-hidden /> : <SquareTerminal aria-hidden />}
               description={tab.agentOwned ? text.agentTab : undefined}
               data-agent={tab.agentOwned ? '1' : undefined}
+              data-overflowed={hidden.includes(tab.key) ? '' : undefined}
               active={tab.key === active}
               pending={tab.busy || !!tab.agent}
               muted={tab.exited}
@@ -110,6 +163,55 @@ export function TerminalTabStrip({
             />
           ))}
       </PanelTabList>
+      {hidden.length ? (
+        <IconButton
+          ref={overflowRef}
+          size="sm"
+          className="term-tab-more"
+          aria-label={text.moreTabs(hidden.length)}
+          tooltip={text.moreTabs(hidden.length)}
+          aria-haspopup="menu"
+          onPress={() => setOverflowOpen(true)}
+          data-testid="terminal-tab-overflow"
+        >
+          <ChevronDown size={14} aria-hidden />
+        </IconButton>
+      ) : null}
+      {hidden.length && overflowOpen ? (
+        <Popover
+          triggerRef={overflowRef}
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setOverflowOpen(false)
+          }}
+          placement="bottom end"
+          offset={4}
+        >
+          <Menu
+            aria-label={text.moreTabs(hidden.length)}
+            autoFocus="first"
+            onAction={(key) => {
+              setOverflowOpen(false)
+              onSelect(String(key))
+            }}
+            data-testid="terminal-tab-overflow-menu"
+          >
+            {tabs
+              .filter((tab) => hidden.includes(tab.key))
+              .map((tab) => (
+                <MenuItem
+                  key={tab.key}
+                  id={tab.key}
+                  textValue={tab.label}
+                  aria-label={tab.agentOwned ? `${tab.label} · ${text.agentTab}` : undefined}
+                  icon={tab.agentOwned ? <Bot size={14} aria-hidden /> : <SquareTerminal size={14} aria-hidden />}
+                >
+                  {tab.label}
+                </MenuItem>
+              ))}
+          </Menu>
+        </Popover>
+      ) : null}
       <IconButton
         size="sm"
         className="term-tab-new"

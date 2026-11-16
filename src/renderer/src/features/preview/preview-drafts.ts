@@ -6,6 +6,19 @@ export interface PreviewDraft {
   saving: boolean
   conflict: boolean
   failed: boolean
+  failure?: DraftSaveFailure
+}
+
+export interface DraftSaveFailure {
+  kind: 'denied' | 'permission' | 'other'
+  detail?: string
+}
+
+export function draftSaveFailure(status: string, error?: string): DraftSaveFailure {
+  if (status === 'denied') return { kind: 'denied' }
+  const detail = error?.trim() || undefined
+  if (detail && /\b(EPERM|EACCES|EROFS)\b/.test(detail)) return { kind: 'permission', detail }
+  return { kind: 'other', detail }
 }
 
 export type PreviewDrafts = ReadonlyMap<string, PreviewDraft>
