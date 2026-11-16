@@ -306,7 +306,7 @@ export class RunnerRegistry {
         }
         if (!canReclaimIdle(facts, now)) continue
         const idleMs = now - runner.lastActiveAt
-        if (await this.stopOne(runner.id)) {
+        if (await this.stopOne(runner.id, false, true)) {
           this.opts.onReclaimed?.({ id: runner.id, sessionId: state?.sessionId, idleMs, remaining: this.size })
           return runner.id
         }
@@ -452,9 +452,9 @@ export class RunnerRegistry {
     return entry
   }
 
-  private async runStop(runner: Runner, entry: StoppingRunner): Promise<void> {
+  private async runStop(runner: Runner, entry: StoppingRunner, automatic = false): Promise<void> {
     try {
-      await runner.agent.stop()
+      await runner.agent.stop({ keepDescendants: automatic })
     } catch {
     } finally {
       this.stopping.delete(entry)
@@ -588,7 +588,7 @@ export class RunnerRegistry {
     }
     if (failure !== undefined) {
       try {
-        await replacement?.stop()
+        await replacement?.stop({ keepDescendants: true })
       } catch {
       }
       return { ok: false, error: failure }
@@ -601,7 +601,7 @@ export class RunnerRegistry {
     idle.lastActiveAt = this.now()
     if (target.activate !== false) this.activateRunner(idle.id)
     try {
-      await previous.stop()
+      await previous.stop({ keepDescendants: true })
     } catch {
     }
     this.opts.onChanged?.()
@@ -764,7 +764,7 @@ export class RunnerRegistry {
     if (failure === undefined && (this.disposed || this.runners.get(id) !== runner)) {
       failure = pick('运行实例在启动过程中被停止', 'Runtime was stopped during startup')
       if (this.runners.get(id) !== runner) {
-        await agent.stop().catch(() => undefined)
+        await agent.stop({ keepDescendants: true }).catch(() => undefined)
         return { ok: false, error: failure }
       }
     }
@@ -780,7 +780,7 @@ export class RunnerRegistry {
     this.runners.delete(id)
     if (this.activeId === id) this.activeId = previousActive
     try {
-      await runner.agent.stop()
+      await runner.agent.stop({ keepDescendants: true })
     } catch {
     }
     this.opts.onChanged?.()
@@ -920,8 +920,8 @@ export class RunnerRegistry {
 
     const removed = this.disposed || this.runners.get(id) !== runner
     if (removed) {
-      await replacement.stop().catch(() => undefined)
-      await previous.stop().catch(() => undefined)
+      await replacement.stop({ keepDescendants: true }).catch(() => undefined)
+      await previous.stop({ keepDescendants: true }).catch(() => undefined)
       this.opts.onChanged?.()
       return { ok: false, error: failure ?? pick('运行实例在重载过程中被停止', 'Runtime was stopped during reload') }
     }
@@ -929,7 +929,7 @@ export class RunnerRegistry {
       runner.agent = previous
       runner.generation = previousGeneration
       try {
-        await replacement.stop()
+        await replacement.stop({ keepDescendants: true })
       } catch {
       }
       this.opts.onChanged?.()
@@ -937,7 +937,7 @@ export class RunnerRegistry {
     }
 
     try {
-      await previous.stop()
+      await previous.stop({ keepDescendants: true })
     } catch {
     }
     runner.lastActiveAt = this.now()
@@ -950,7 +950,7 @@ export class RunnerRegistry {
     return null
   }
 
-  async stopOne(id: string, preserveSelection = false): Promise<boolean> {
+  async stopOne(id: string, preserveSelection = false, automatic = false): Promise<boolean> {
     const r = this.runners.get(id)
     if (!r) {
       for (const entry of [...this.stopping]) {
@@ -962,7 +962,7 @@ export class RunnerRegistry {
     this.runners.delete(id)
     this.pruneAdmissions()
     if (this.activeId === id && !preserveSelection) this.activeId = null
-    await this.runStop(r, entry)
+    await this.runStop(r, entry, automatic)
     this.opts.onChanged?.()
     return true
   }

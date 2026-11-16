@@ -504,7 +504,7 @@ export class PiRpc extends EventEmitter {
     this.pending.clear()
   }
 
-  close(): Promise<void> {
+  close(options: { killTree?: boolean } = {}): Promise<void> {
     const child = this.child
     if (!child) return this.settleTree()
 
@@ -537,12 +537,18 @@ export class PiRpc extends EventEmitter {
         }
 
         timer = setTimeout(() => {
-          void killPidTree(child.pid, () => {
+          const killChild = (): void => {
             try {
               child.kill()
             } catch {
             }
-          }).finally(finish)
+          }
+          if (options.killTree === false) {
+            killChild()
+            setTimeout(finish, 1000).unref?.()
+            return
+          }
+          void killPidTree(child.pid, killChild).finally(finish)
         }, 1500)
         timer.unref?.()
       })

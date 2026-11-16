@@ -94,6 +94,28 @@ try {
   if (!gone) process.kill(grandchildPid)
   assert.ok(gone, 'pi 不响应关闭时连同它启动的子进程一起结束')
 
+  await rm(grandchildPidFile, { force: true })
+  const automatic = new PiRpc({ cwd: dir, piBin: stubbornPath })
+  automatic.spawn()
+  const automaticPiPid = automatic.child?.pid
+  let keptPid = 0
+  for (let i = 0; i < 100 && !keptPid; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    keptPid = Number(await readFile(grandchildPidFile, 'utf8').catch(() => '0'))
+  }
+  if (!keptPid) await automatic.close()
+  assert.ok(keptPid > 0 && automaticPiPid > 0, '自动关闭的用例：模拟 pi 已启动自己的子进程')
+  await automatic.close({ killTree: false })
+  let piGone = false
+  for (let i = 0; i < 30 && !piGone; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    piGone = !alive(automaticPiPid)
+  }
+  const keptAlive = alive(keptPid)
+  try { process.kill(keptPid) } catch {}
+  assert.ok(piGone && automatic.running === false, '自动关闭超时时只结束 pi 本身')
+  assert.ok(keptAlive, '自动关闭超时时不连带结束 pi 启动的其他进程（dev server、GUI 等）')
+
   if (process.platform === 'win32') {
     const readPid = async (file) => {
       let pid = 0

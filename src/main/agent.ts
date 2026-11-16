@@ -4498,7 +4498,7 @@ export class AgentController extends EventEmitter {
     return this.rpc?.pid
   }
 
-  async stop(): Promise<void> {
+  async stop(options: { keepDescendants?: boolean } = {}): Promise<void> {
     const stopDeadline = Date.now() + STOP_TOTAL_BUDGET_MS
     const stopRemaining = (): number => Math.max(0, stopDeadline - Date.now())
     this.stopping = true
@@ -4529,7 +4529,7 @@ export class AgentController extends EventEmitter {
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.ui.discardPending()
     await settleWithin(mcpClosing, stopRemaining())
-    await this.rpc?.close()
+    await this.rpc?.close({ killTree: !options.keepDescendants })
     const runSink = this.runObserver
     const runCtx = this.runObserverContext()
     if (runSink && runCtx) runSink(runCtx, { type: 'stopped', by: 'host' })
