@@ -1,10 +1,25 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
-import { mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import fsPromises, { mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+
+let afterFirstEperm = null
+const realRename = fsPromises.rename
+fsPromises.rename = async (...args) => {
+  try {
+    return await realRename(...args)
+  } catch (error) {
+    const notify = error?.code === 'EPERM' ? afterFirstEperm : null
+    afterFirstEperm = null
+    notify?.()
+    throw error
+  }
+}
+syncBuiltinESMExports()
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-pi-settings-eperm-'))
 try {
@@ -47,7 +62,7 @@ try {
     await writeFile(conflictFile, JSON.stringify({ foreign: 'old' }), 'utf8')
     const conflictHandle = await open(conflictFile, 'r+')
     const foreignWrite = (async () => {
-      await new Promise((resolve) => setTimeout(resolve, 15))
+      await new Promise((resolve) => { afterFirstEperm = resolve })
       await conflictHandle.writeFile(JSON.stringify({ foreign: 'new' }), 'utf8')
       await conflictHandle.close()
     })()

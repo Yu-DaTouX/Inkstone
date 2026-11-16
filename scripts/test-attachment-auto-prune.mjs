@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'

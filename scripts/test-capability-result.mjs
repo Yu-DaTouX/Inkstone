@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'

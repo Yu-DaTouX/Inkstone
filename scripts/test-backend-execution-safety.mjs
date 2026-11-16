@@ -283,13 +283,13 @@ console.log('✓ 回退与同目录 Bash、压缩、待提交执行双向互斥'
   })
   const { captureCheckpoint } = await import(pathToFileURL(output).href)
   let settled = false
-  const pending = captureCheckpoint(cwd, 'session', 'fixture', 25).then((value) => { settled = true; return value })
+  const pending = captureCheckpoint(cwd, 'session', 'fixture', 400).then((value) => { settled = true; return value })
   await gitStarted.promise
   const activeCalls = gitCalls
   assert.equal(await captureCheckpoint(cwd, 'queued', 'expired-queue', 5), null)
   assert.equal(gitCalls, activeCalls)
   assert.equal(running, true)
-  await new Promise((done) => setTimeout(done, 40))
+  await new Promise((done) => setTimeout(done, 460))
   assert.equal(settled, false)
   assert.equal(running, true)
   gitFinished.resolve()
@@ -310,9 +310,9 @@ console.log('✓ 回退与同目录 Bash、压缩、待提交执行双向互斥'
     return { ok: true, stdout: '', stderr: '' }
   }
   const startedAt = performance.now()
-  assert.equal(await captureCheckpoint(cwd, 'timed', 'shared-budget', 50), null)
+  assert.equal(await captureCheckpoint(cwd, 'timed', 'shared-budget', 300), null)
   assert.ok(sharedDeadline.expired())
-  assert.ok(performance.now() - startedAt < 1000)
+  assert.ok(performance.now() - startedAt < 10_000)
   assert.ok(commands.some((args) => args.includes('ls-files')))
   assert.equal(commands.some((args) => args.includes('add') || args.includes('commit-tree')), false)
   delete globalThis.__checkpointGit

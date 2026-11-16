@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -75,7 +76,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(calls.length === 2 && JSON.stringify(first) === JSON.stringify(second), '同一时刻的两次轻量读取共用一次', calls.join(','))
 
     calls.length = 0
-    const [sharedFull, sharedLight] = await Promise.all([state(repo), state(repo, { light: true })])
+    const fullRead = state(repo)
+    const spawnDeadline = Date.now() + 30_000
+    while (!calls.includes('rev-parse') && Date.now() < spawnDeadline) await new Promise((done) => setTimeout(done, 1))
+    const [sharedFull, sharedLight] = await Promise.all([fullRead, state(repo, { light: true })])
     ok(calls.length === 4 && JSON.stringify(sharedLight.repo) === JSON.stringify(sharedFull.repo) && sharedLight.expected === undefined, '完整读取进行中时轻量读取复用它，不另起进程', calls.join(','))
 
     calls.length = 0

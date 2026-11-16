@@ -1,6 +1,9 @@
 import { runSuite } from './lib/test-suite.mjs'
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const until = async (condition, limitMs = 15_000) => {
+  for (const end = Date.now() + limitMs; Date.now() < end && !condition();) await delay(2)
+}
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const { buildWorkflowNotice, createWorkflowNotifier, WORKFLOW_NOTICE_RESULT_MAX } = await compile('src/main/workflows/notice.ts')
@@ -64,6 +67,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await delay(35)
     ok(sent.length === 0 && notifier.pending() === 1, '主会话忙时排队等待，不打断')
     busy = false
+    await until(() => sent.length >= 1 && notifier.pending() === 0)
     await delay(30)
     ok(sent.length === 1 && sent[0].text === '通知:wf-1' && sent[0].mode === 'followUp' && delivered.join() === 'wf-1' && notifier.pending() === 0, '空闲后作为 followUp 投递一次并标记已送达')
   }
@@ -77,7 +81,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(sent.length === 0 && notifier.pending() === 1, '找不到所属会话时先挂起')
     target = { getState: () => ({}), holdsNotices: () => false, send: async (text) => (sent.push(text), { ok: true }) }
     notifier.retry()
-    await delay(10)
+    await until(() => sent.length >= 1 && notifier.pending() === 0)
     ok(sent.length === 1 && notifier.pending() === 0, '会话回来后 retry 能补投')
   }
 
@@ -89,7 +93,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
     console.warn = () => undefined
     try {
       notifier.notify({ id: 'wf-3' })
-      await delay(80)
+      await until(() => calls >= 5 && notifier.pending() === 0)
+      await delay(40)
     } finally {
       console.warn = warn
     }

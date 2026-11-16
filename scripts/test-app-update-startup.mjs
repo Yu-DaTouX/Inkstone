@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,6 +18,7 @@ const host = {
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const settledPhases = new Set(['downloaded', 'current', 'error', 'manual', 'available'])
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const shared = await compile('src/shared/app-update.ts')
@@ -45,13 +47,25 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const launch = async (busy = false) => {
       const handlers = new Map()
       mod.registerAppUpdate({ handle: (channel, fn) => handlers.set(channel, fn) }, () => busy, backup)
-      await wait(40)
-      return (name, ...args) => handlers.get(`yan:update:${name}`)(...args)
+      const call = (name, ...args) => handlers.get(`yan:update:${name}`)(...args)
+      const deadline = Date.now() + 20_000
+      for (let status = await call('status'); Date.now() < deadline && status.automatic && !settledPhases.has(status.phase); status = await call('status')) await wait(10)
+      await wait(20)
+      await call('automatic', (await call('status')).automatic)
+      return call
+    }
+    const prefsWhen = async (accept) => {
+      const deadline = Date.now() + 20_000
+      for (;;) {
+        const prefs = await readFile(prefsFile, 'utf8').then((text) => JSON.parse(text), () => null)
+        if ((prefs && accept(prefs)) || Date.now() > deadline) return prefs ?? {}
+        await wait(10)
+      }
     }
 
     await launch()
     ok(model.installs.length === 0, '第一次发现并下载完更新时不安装')
-    ok(JSON.parse(await readFile(prefsFile, 'utf8')).pending === '0.3.3', '记下已下载待装的版本')
+    ok((await prefsWhen((prefs) => prefs.pending === '0.3.3')).pending === '0.3.3', '记下已下载待装的版本')
 
     model.installs = []
     await launch(true)
@@ -71,7 +85,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
     model.installs = []
     model.current = '0.3.3'
     await launch()
-    ok(model.installs.length === 0 && JSON.parse(await readFile(prefsFile, 'utf8')).pending === undefined, '装好后启动清掉待装记录，不重复安装')
+    const cleared = await prefsWhen((prefs) => prefs.pending === undefined)
+    ok(model.installs.length === 0 && cleared.pending === undefined, '装好后启动清掉待装记录，不重复安装', `installs=${model.installs.length} prefs=${JSON.stringify(cleared)}`)
 
     await writeFile(prefsFile, JSON.stringify({ automatic: false, pending: '0.3.4' }))
     model.release = { ...model.release, tag_name: 'v0.3.4' }
@@ -81,6 +96,6 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(model.installs.length === 0, '关了自动更新时启动不安装')
   } finally {
     delete globalThis.__startupUpdate
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })

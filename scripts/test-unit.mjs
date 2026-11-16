@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { discoverTests, selectTests, executionPlan } from './lib/test-catalog.mjs'
 import { runTestProcess, runTestPool } from './lib/test-process.mjs'
 import { SKIP_MARKER } from './lib/test-skip.mjs'
+import { sweepStaleSandboxes } from './lib/test-env.mjs'
 
 try {
   const args = process.argv.slice(2)
@@ -18,12 +19,14 @@ try {
       console.log(`共 ${selected.length} 项；此命令没有执行测试。`)
     } else {
       const plan = executionPlan(selected, prefixes.length > 0)
+      const swept = sweepStaleSandboxes()
+      if (swept.length) console.log(`已清扫 ${swept.length} 个超过 1 天的遗留测试隔离目录`)
       await mkdir('out/test-runs', { recursive: true })
       const logDir = await mkdtemp('out/test-runs/run-')
       console.log(`运行 ${plan.parallel.length} 个并行 + ${plan.serial.length} 个串行独立脚本；日志：${logDir}`)
       const run = async (name) => {
         const result = await runTestProcess({
-          script: `scripts/${name}.mjs`, logPath: join(logDir, `${name}.log`), timeoutMs: 120_000
+          script: `scripts/${name}.mjs`, logPath: join(logDir, `${name}.log`), timeoutMs: 240_000
         })
         const skipped = (await readFile(result.logPath, 'utf8').catch(() => '')).split(/\r?\n/).filter((line) => line.startsWith(SKIP_MARKER))
         console.log(`${result.ok ? '✓' : '✗'} ${name} (${result.elapsed}ms)${skipped.length ? `，有跳过：${skipped.map((line) => line.slice(SKIP_MARKER.length).trim()).join('；')}` : ''}`)

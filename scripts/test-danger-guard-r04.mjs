@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'

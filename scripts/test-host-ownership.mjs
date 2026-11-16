@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'

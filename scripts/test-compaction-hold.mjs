@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/test-isolate.mjs'
 import { readFileSync } from 'node:fs'
 import { runSuite } from './lib/test-suite.mjs'
 

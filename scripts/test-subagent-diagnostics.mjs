@@ -1,5 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -304,7 +305,7 @@ const ok = (condition, label) => {
     [
       "import { spawn } from 'node:child_process'",
       "import { writeFileSync } from 'node:fs'",
-      "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 4000)'], { stdio: ['ignore', 'ignore', 'inherit'], detached: true })",
+      "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'ignore', 'inherit'], detached: true })",
       'writeFileSync(process.env.PID_FILE, String(gc.pid))',
       "process.stderr.write('tail-without-newline-from-parent')",
       'process.exit(0)'
@@ -316,14 +317,22 @@ const ok = (condition, label) => {
     const rpc = new PiRpc({ cwd: dir, env: { PID_FILE: pidFile }, runtime: { kind: 'node', executable: process.execPath, cli: childPath } })
     const events = []
     rpc.on('stderr', (line) => events.push(`stderr:${line}`))
-    rpc.on('exit', (code) => events.push(`exit:${code}`))
+    let descendantAliveAtExit = null
+    rpc.on('exit', (code) => {
+      events.push(`exit:${code}`)
+      try {
+        process.kill(Number(readFileSync(pidFile, 'utf8')), 0)
+        descendantAliveAtExit = true
+      } catch {
+        descendantAliveAtExit = false
+      }
+    })
     const started = Date.now()
     rpc.spawn()
-    while (!events.some((e) => e.startsWith('exit:')) && Date.now() - started < 5_000) await sleep(20)
-    const elapsed = Date.now() - started
+    while (!events.some((e) => e.startsWith('exit:')) && Date.now() - started < 20_000) await sleep(20)
     ok(events.includes('stderr:tail-without-newline-from-parent'), '后代持 pipe 时尾行仍交出', JSON.stringify(events))
     ok(events.some((e) => e.startsWith('exit:')), '后代持 pipe 时仍收口', JSON.stringify(events))
-    ok(elapsed < 1_000, `收口不等待后代完整生命周期（${elapsed}ms）`)
+    ok(descendantAliveAtExit === true, '收口发生在后代退出之前，不等待后代的生命周期')
     ok(rpc.running === false, '真实 exit 后 running 立即为 false')
     gcPid = Number(await readFile(pidFile, 'utf8').catch(() => ''))
     ok(Number.isFinite(gcPid) && gcPid > 0, '拿到后代 PID 以便只清理自己', String(gcPid))
@@ -342,7 +351,7 @@ const ok = (condition, label) => {
       }
     }
     await sleep(200)
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 }).catch(() => undefined)
   }
 }
 

@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 import { runSuite } from './lib/test-suite.mjs'

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/test-isolate.mjs'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'

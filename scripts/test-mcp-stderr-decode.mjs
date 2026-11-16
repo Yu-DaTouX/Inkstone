@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { spawnSync } from 'node:child_process'
 import { runSuite } from './lib/test-suite.mjs'
 

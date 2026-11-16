@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { runSuite } from './lib/test-suite.mjs'

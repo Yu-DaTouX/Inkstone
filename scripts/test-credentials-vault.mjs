@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'

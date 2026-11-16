@@ -1,9 +1,9 @@
+import './test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import './test-isolate.mjs'
 
 export const CJS_REQUIRE_BANNER = "import { createRequire as __inkstoneCreateRequire } from 'node:module'; const require = __inkstoneCreateRequire(import.meta.url);"
 

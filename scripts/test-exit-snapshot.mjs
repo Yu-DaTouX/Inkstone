@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { readFile, rm } from 'node:fs/promises'
 import { runSuite } from './lib/test-suite.mjs'
 

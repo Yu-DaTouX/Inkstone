@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/test-isolate.mjs'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

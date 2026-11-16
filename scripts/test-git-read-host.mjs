@@ -240,6 +240,7 @@ try {
   ok(english.value.error === 'This folder is not in a Git repository', '英文界面下宿主返回英文错误', JSON.stringify(english))
   host.setUiLang('zh-CN')
 
+  await both({ op: 'state', cwd: repo, light: true, fresh: true })
   const savedPath = process.env.PATH
   const savedWinPath = process.env.Path
   process.env.PATH = join(root, 'no-git-here')

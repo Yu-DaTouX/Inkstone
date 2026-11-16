@@ -296,7 +296,23 @@ export async function runMcpTests(ok, modules) {
       new Promise((resolve) => setTimeout(() => resolve(new Error('取消未能及时结束握手')), 2_000))
     ])
     ok(outcome instanceof Error, '取消：待处理的连接以错误结束')
-    ok(manager.statusOf('slow').status === 'disconnected', '取消：迟到的握手结果不会覆盖 disconnected')
+    ok(manager.statusOf('slow').status === 'disconnected', '取消：迟到的握手结果不会覆盖 disconnected', `${JSON.stringify(manager.statusOf('slow'))} outcome=${outcome?.message}`)
+    await manager.close()
+  }
+
+  {
+    const manager = new managerMod.McpConnectionManager(
+      [{ id: 'late-timeout', transport: 'stdio', command: process.execPath, args: [fixture], env: { YAN_MCP_FIXTURE_START_DELAY_MS: '5000' } }],
+      50
+    )
+    const inFlight = manager.listTools('late-timeout').then(
+      () => null,
+      (error) => error
+    )
+    ok(await manager.disconnect('late-timeout'), '取消后手动断开正在清理连接')
+    ok((await inFlight) instanceof Error, '取消：清理期间握手超时到点，待处理的连接仍以错误结束')
+    await new Promise((resolve) => setTimeout(resolve, 2_500))
+    ok(manager.statusOf('late-timeout').status === 'disconnected', '取消：取消之后才触发的握手超时不会把状态改成 error', JSON.stringify(manager.statusOf('late-timeout')))
     await manager.close()
   }
 
@@ -376,7 +392,7 @@ export async function runMcpTests(ok, modules) {
     ].join('\n'))
     const hangManager = new managerMod.McpConnectionManager([
       { id: 'hangs', transport: 'stdio', command: process.execPath, args: [hang] }
-    ], 700)
+    ], 3000)
     ok(hangManager.isBusy() === false, '空闲的管理器不忙')
     let idleCalls = 0
     const pending = hangManager.listTools('hangs').then(() => '', (error) => (error instanceof Error ? error.message : String(error)))

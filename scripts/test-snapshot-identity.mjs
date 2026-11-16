@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import vm from 'node:vm'

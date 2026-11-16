@@ -3078,6 +3078,7 @@ export class AgentController extends EventEmitter {
     expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
+    if (!autoContinue) this.loopGuardContinuationVersion += 1
     const local = await this.startLocalModel()
     if (!local.ok) return { ok: false, error: local.error }
     return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue)))

@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runSuite } from './lib/test-suite.mjs'

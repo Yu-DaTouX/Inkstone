@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { runSuite } from './lib/test-suite.mjs'

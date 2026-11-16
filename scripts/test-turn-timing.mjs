@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'

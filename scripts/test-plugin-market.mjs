@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { build } from 'esbuild'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'

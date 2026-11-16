@@ -1,10 +1,12 @@
 import fs, { realpathSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { homedir } from 'node:os'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const GUARD_FLAG = Symbol.for('inkstone.testRealDataGuard')
+
+const APP_DATA_NAMES = ['yan-desktop', '砚', 'Inkstone']
 
 const WRITE_PATH_ARGS = {
   writeFile: [0], appendFile: [0], mkdir: [0], rmdir: [0], rm: [0], unlink: [0], truncate: [0],
@@ -14,17 +16,37 @@ const WRITE_PATH_ARGS = {
 
 const WRITE_FLAG_BITS = fs.constants.O_WRONLY | fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_TRUNC
 
+function stripWindowsPrefix(path) {
+  return path.replace(/^\\\\[?.]\\UNC\\/i, '\\\\').replace(/^\\\\[?.]\\/, '')
+}
+
 function normalize(path) {
-  const stripped = path.replace(/^\\\\\?\\/, '')
-  const absolute = resolve(stripped)
-  return process.platform === 'win32' ? absolute.toLowerCase() : absolute
+  const absolute = resolve(stripWindowsPrefix(path))
+  let head = absolute
+  const tail = []
+  for (;;) {
+    try {
+      head = realpathSync.native(head)
+      break
+    } catch {
+      const parent = dirname(head)
+      if (parent === head) break
+      tail.unshift(basename(head))
+      head = parent
+    }
+  }
+  const real = tail.length ? join(head, ...tail) : head
+  return process.platform === 'win32' ? real.toLowerCase() : real
 }
 
 function protectedRoots() {
-  const root = join(homedir(), '.pi', 'agent')
-  const roots = new Set([normalize(root)])
-  try { roots.add(normalize(realpathSync.native(root))) } catch {}
-  return [...roots]
+  const candidates = [join(homedir(), '.pi', 'agent')]
+  if (process.platform === 'win32') {
+    const bases = new Set([join(homedir(), 'AppData', 'Roaming')])
+    if (process.env.APPDATA?.trim()) bases.add(process.env.APPDATA.trim())
+    for (const base of bases) for (const name of APP_DATA_NAMES) candidates.push(join(base, name))
+  }
+  return [...new Set(candidates.map(normalize))]
 }
 
 function pathOf(value) {

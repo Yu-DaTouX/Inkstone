@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { createServer } from 'node:http'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

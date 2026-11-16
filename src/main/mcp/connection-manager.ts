@@ -354,9 +354,10 @@ export class McpConnectionManager {
     else if (transport) await transport.close().catch(() => undefined)
   }
 
-  private async timeoutConnection(conn: Connection, timeoutError: Error): Promise<void> {
+  private async timeoutConnection(conn: Connection, timeoutError: Error, generation: number): Promise<void> {
+    if (generation !== conn.generation) return
     await this.cancelConnection(conn)
-    if (!conn.client && !conn.connecting && conn.status === 'disconnected') {
+    if (conn.generation === generation + 1 && !conn.client && !conn.connecting && conn.status === 'disconnected') {
       conn.status = 'error'
       conn.error = timeoutError.message
     }
@@ -393,7 +394,7 @@ export class McpConnectionManager {
         await this.withTimeout(
           client.connect(transport),
           pick(`连接 ${conn.config.id}`, `Connecting ${conn.config.id}`),
-          (timeoutError) => this.timeoutConnection(conn, timeoutError),
+          (timeoutError) => this.timeoutConnection(conn, timeoutError, generation),
           conn.config.id === WINDOWS_MCP_SERVER_ID ? Math.max(this.timeoutMs, WINDOWS_MCP_CONNECT_TIMEOUT_MS) : this.timeoutMs,
           () => stderrTailOf(transport)
         )

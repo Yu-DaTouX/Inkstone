@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { EventEmitter } from 'node:events'
 import { runSuite } from './lib/test-suite.mjs'
 

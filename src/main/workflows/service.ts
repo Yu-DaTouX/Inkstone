@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { SubagentRun } from '../../shared/ipc'
 import {
@@ -18,6 +18,7 @@ import {
   type WorkflowStatus
 } from '../../shared/workflows'
 import { pick } from '../../shared/ui-lang'
+import { atomicWriteFile } from '../atomic-write'
 import { CapabilityCommandError, type CapabilityCommandResult } from '../capability-server'
 import type { NoticeTarget } from '../subagent-notify'
 import { readJournal, readModelJournal, type JournalEntry } from './journal'
@@ -506,11 +507,8 @@ export class WorkflowService {
     const previous = this.persistQueue.get(id) ?? Promise.resolve()
     const next = previous.then(async () => {
       const file = join(record.view.dir, RECORD_FILE)
-      const temp = `${file}.tmp`
       const body = JSON.stringify({ view: record.view, context: record.context, ...(record.argsJson !== undefined ? { argsJson: record.argsJson } : {}), ...(record.notified !== undefined ? { notified: record.notified } : {}) }, null, 2)
-      await mkdir(record.view.dir, { recursive: true })
-      await writeFile(temp, body, 'utf8')
-      await rename(temp, file)
+      await atomicWriteFile(file, body)
     }).catch((error: unknown) => console.warn('[workflow] 保存运行状态失败', error))
     this.persistQueue.set(id, next)
     void next.finally(() => {

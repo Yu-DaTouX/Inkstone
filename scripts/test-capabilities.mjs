@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { readYanCliGroups } from './helpers/yan-cli-groups.mjs'
 import { runSuite } from './lib/test-suite.mjs'
 

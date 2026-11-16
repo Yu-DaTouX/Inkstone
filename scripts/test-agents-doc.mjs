@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { runSuite } from './lib/test-suite.mjs'
 

@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, truncate, utimes, writeFile } from 'node:fs/promises'

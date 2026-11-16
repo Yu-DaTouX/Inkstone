@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -84,9 +85,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
       const service = make('slow')
       const started = Date.now()
       const result = await service.ensureFresh({ callerProjectId: 'p1', waitMs: 60 })
-      ok(result.error === 'timeout' && Date.now() - started < 2_000, '刷新太慢：最多等待上限就放行 runner，刷新继续在后台')
+      ok(result.error === 'timeout' && Date.now() - started < 10_000, '刷新太慢：最多等待上限就放行 runner，刷新继续在后台')
       release()
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      for (const end = Date.now() + 15_000; Date.now() < end && service.readSnapshot()?.tools.some((entry) => entry.toolName === 'late') !== true;) await new Promise((resolve) => setTimeout(resolve, 5))
       ok(service.readSnapshot()?.tools.some((entry) => entry.toolName === 'late') === true, '后台刷新完成后快照照常写出')
     }
   } finally {

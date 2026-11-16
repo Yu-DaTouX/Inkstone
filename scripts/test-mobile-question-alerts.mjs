@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { runSuite } from './lib/test-suite.mjs'

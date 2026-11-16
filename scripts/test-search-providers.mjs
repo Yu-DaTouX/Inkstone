@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -319,7 +320,11 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
           reject(new Error('请求没有 signal'))
           return
         }
-        record.signal.addEventListener('abort', () => reject(new Error('aborted')))
+        if (record.signal.aborted) {
+          reject(new Error('aborted'))
+          return
+        }
+        record.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
       })
     const abortedRun = async (start) => {
       const controller = new AbortController()

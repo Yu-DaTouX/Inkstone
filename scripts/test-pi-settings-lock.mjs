@@ -275,5 +275,5 @@ export const statSync = (path, options) => {
 
   console.log(`${checks}/${checks} 通过`)
 } finally {
-  await rm(root, { recursive: true, force: true })
+  await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 }).catch(() => undefined)
 }

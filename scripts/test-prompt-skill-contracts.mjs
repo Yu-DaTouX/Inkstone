@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createQuestionTool, TOOL_GUIDANCE } from '../resources/pi-extensions/question.js'

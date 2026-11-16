@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { strict as assert } from 'node:assert'
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

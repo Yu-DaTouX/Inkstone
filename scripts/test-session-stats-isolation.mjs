@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { build } from 'esbuild'
 import { runSuite } from './lib/test-suite.mjs'
 import { mkdtemp } from 'node:fs/promises'

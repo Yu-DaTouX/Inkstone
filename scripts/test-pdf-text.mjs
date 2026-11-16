@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { deflateSync } from 'node:zlib'
 import { runSuite } from './lib/test-suite.mjs'
 

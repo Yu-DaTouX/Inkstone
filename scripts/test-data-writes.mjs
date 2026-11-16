@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

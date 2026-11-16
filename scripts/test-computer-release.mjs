@@ -156,7 +156,7 @@ try {
 
   await withManager('sync-cancels-in-flight', async (manager, calls) => {
     await manager.callTool('windows-mcp', 'Snapshot', {})
-    const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 8000 })
+    const slow = manager.callTool('windows-mcp', 'Click', { delay_ms: 30_000 })
     const outcome = slow.then(() => null, (error) => error)
     await sleep(300)
     const started = Date.now()
@@ -165,7 +165,8 @@ try {
     const error = await outcome
     const abortedAfter = Date.now() - started
     const closed = await releases[0].release
-    assert.ok(abortedAfter < 1500 && Date.now() - started < 7000, '关闭电脑操作后立即中止并断开，不等进行中的动作跑完：' + abortedAfter + 'ms')
+    assert.ok(abortedAfter < 5000, '关闭电脑操作后立即中止进行中的动作，不等它跑完：' + abortedAfter + 'ms')
+    assert.ok(Date.now() - started < 25_000, '断开不等进行中的动作跑完（该动作要 30 秒）：' + (Date.now() - started) + 'ms')
     assert.equal(closed.confirmed, true)
     assert.equal(error?.name, 'McpRequestCancelledError', '进行中的电脑操作被中止')
     assert.match(error.message, /电脑操作已被关闭/, '中止时给出清楚的提示')

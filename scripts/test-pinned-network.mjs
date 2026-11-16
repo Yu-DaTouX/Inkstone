@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createHash } from 'node:crypto'
 import { createServer as createNetServer, connect as netConnect, isIP, Socket } from 'node:net'

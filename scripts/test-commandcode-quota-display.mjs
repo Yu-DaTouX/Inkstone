@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { resolve, join } from 'node:path'

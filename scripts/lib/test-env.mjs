@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+export const SANDBOX_PREFIX = 'inkstone-test-'
 const HOST_ENV = /^(YAN|PI)_|_API_KEY$|_TOKEN$|^ELECTRON_RUN_AS_NODE$|^ELECTRON_RENDERER_URL$/
 
 function longTempEnv() {
@@ -37,7 +38,7 @@ export function isolatedChildEnv() {
 
 function isolatedPaths() {
   const temp = longTempEnv()
-  const root = mkdtempSync(join(temp.TEMP ?? tmpdir(), 'inkstone-test-'))
+  const root = mkdtempSync(join(temp.TEMP ?? tmpdir(), SANDBOX_PREFIX))
   const paths = {
     data: join(root, 'data'),
     pi: join(root, 'pi'),
@@ -62,4 +63,22 @@ function isolatedPaths() {
 
 export function isIsolatedTestEnv() {
   return /inkstone-test-/.test(process.env.YAN_DATA_DIR ?? '')
+}
+
+const STALE_SANDBOX_MS = 24 * 60 * 60 * 1000
+
+export function sweepStaleSandboxes({ dir = longTempEnv().TEMP ?? tmpdir(), maxAgeMs = STALE_SANDBOX_MS, now = Date.now() } = {}) {
+  const removed = []
+  let entries
+  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return removed }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !entry.name.startsWith(SANDBOX_PREFIX)) continue
+    const path = join(dir, entry.name)
+    try {
+      if (now - statSync(path).mtimeMs <= maxAgeMs) continue
+      rmSync(path, { recursive: true, force: true, maxRetries: 3 })
+      removed.push(path)
+    } catch {}
+  }
+  return removed
 }

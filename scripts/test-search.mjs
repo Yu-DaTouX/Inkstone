@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { resolve } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
 
