@@ -806,11 +806,6 @@ export function criticalBlockReason(reasons, why) {
 
 const SEARCH_COMMANDS = new Set(['rg', 'grep', 'egrep', 'fgrep', 'ag', 'ack', 'findstr', 'select-string', 'sls'])
 
-function searchesText({ head, args }) {
-  if (SEARCH_COMMANDS.has(head)) return true
-  return head === 'git' && args.find((arg) => !/^-/.test(arg)) === 'grep'
-}
-
 const TEXT_PRINTERS = new Set(['echo', 'printf', 'write-output'])
 const PLAIN_COMMANDS = new Set(['cd', 'pwd', 'ls', 'mkdir'])
 const GIT_READ_ONLY = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
@@ -995,10 +990,78 @@ function relaxedSegments(segments, command, dialect) {
   return out
 }
 
+const DISPLAY_COMMANDS = new Set(['head', 'tail', 'sort', 'uniq', 'wc', 'cut', 'less', 'more', 'select-object', 'select', 'measure-object', 'measure', 'out-string'])
+const SEARCH_REDIRECT = /(^|\s)\d?>>?\s*(?:&[12]|\/dev\/null)(?=\s|$)/g
+const SEARCH_RUNS = /(?:^|\s)--(?:pa|pre|ou|hostname|exec|cmd|command|program|ackrc)/i
+const GIT_GREP_PAGER = /(?:^|\s)(?:-[a-zA-Z]*O|--op)/
+const POWERSHELL_SEARCH_UNSAFE = /[$@(){}`\u2018-\u201e]/
+
+const SEARCH_FILE_REDIRECT = /(^|\s)\d?>>?\s*([^\s|;&<>()$`"'{}@]+)(?=\s|$)/g
+const SEARCH_TARGET_UNSAFE = /[*?[\]~]|\.git|\.husky|hooks|\.vscode|\.envrc|profile|\.\w*rc\b/i
+
+function plainWords(text, dialect, files = false) {
+  let rest = text.replace(SEARCH_REDIRECT, ' ')
+  if (files) rest = rest.replace(SEARCH_FILE_REDIRECT, (all, lead, target) => (SEARCH_TARGET_UNSAFE.test(bare(target)) || RELAX_KEYWORDS.test(bare(target)) ? all : lead))
+  if (unquotedSpecial(rest, dialect)) return null
+  const words = shellWords(text)
+  return words.length && /^[A-Za-z][\w.-]*$/.test(words[0]) ? words : null
+}
+
+function searchSegment(text, dialect, files) {
+  const words = plainWords(text, dialect, files)
+  if (!words) return false
+  const head = bareName(words[0])
+  const flat = bare(text)
+  if (head === 'git') return bare(words[1]) === 'grep' && !GIT_GREP_PAGER.test(flat)
+  return SEARCH_COMMANDS.has(head) && !SEARCH_RUNS.test(flat)
+}
+
+function joinFdCopies(segments) {
+  const out = []
+  for (const part of segments) {
+    const last = out.at(-1)
+    if (last?.sep === '&' && /\d?>$/.test(last.text) && /^\d(?:\s|$)/.test(part.text)) out[out.length - 1] = { text: `${last.text}&${part.text}`, sep: part.sep }
+    else out.push({ ...part })
+  }
+  return out
+}
+
+function displaySegment(text, dialect) {
+  const words = plainWords(text, dialect)
+  if (!words) return false
+  const head = words[0].toLowerCase()
+  const args = words.slice(1).map(bare)
+  if (!DISPLAY_COMMANDS.has(head) || args.some((word) => /^(?:--|\+)/.test(word))) return false
+  if ((head === 'sort' || head === 'less') && args.some((word) => /^-[A-Za-z]*[oO]/.test(word))) return false
+  return head !== 'uniq' || args.filter((word) => !/^-./.test(word)).length < 2
+}
+
+function searchedSegments(segments, command, dialect) {
+  if (dialect === 'cmd' || (dialect === 'powershell' && POWERSHELL_SEARCH_UNSAFE.test(command))) return null
+  const out = []
+  const single = segments.filter((part) => part.text.trim()).length === 1
+  let found = false
+  for (let i = 0; i < segments.length; i++) {
+    const { text, sep } = segments[i]
+    const piped = i > 0 && segments[i - 1].sep === '|'
+    if (sep === '&' || (sep === '|' && !segments[i + 1]?.text.trim())) return null
+    if (!text.trim()) { if (piped) return null; out.push(text); continue }
+    if (searchSegment(text, dialect, single)) { out.push(''); found = true; continue }
+    if (piped) {
+      if (!displaySegment(text, dialect)) return null
+      out.push(text)
+      continue
+    }
+    if (relaxedSegment(text, dialect) === null) return null
+    out.push(text)
+  }
+  return found ? out : null
+}
+
 export function ruleText(command, dialect = 'posix') {
-  const segments = splitSegments(command, dialect)
-  const relaxed = relaxedSegments(segments, command, dialect)
-  return segments.map(({ text, sep }, i) => (searchesText(commandOf(text.replace(/^\s*[({]+/, ''))) ? '' : relaxed ? relaxed[i] : text) + sep).join('')
+  const segments = joinFdCopies(splitSegments(command, dialect))
+  const shown = searchedSegments(segments, command, dialect) ?? relaxedSegments(segments, command, dialect)
+  return segments.map(({ text, sep }, i) => (shown ? shown[i] : text) + sep).join('')
 }
 
 export function hostScansTerminalInput(command) {

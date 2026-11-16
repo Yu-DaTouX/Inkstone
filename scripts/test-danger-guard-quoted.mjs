@@ -59,7 +59,6 @@ const CONSERVATIVE = [
   ['bash', 'git tag -a v1 -m "git push --force 修复后的版本"'],
   ['bash', 'git commit -m "版本 $(date +%F)：git reset --hard 的说明"'],
   ['bash', 'git --git-dir=.git commit -m "说明：不要 git push --force"'],
-  ['bash', 'rg -n x src && git commit -m "说明：不要 git push --force"'],
   ['bash', 'git commit --amend -m "说明：不要 git push --force"'],
   ['bash', 'git commit -v -m "说明：不要 git push --force"'],
   ['powershell', 'yan subagent start --task "在 $(pwd) 运行 git push --force origin main"'],
@@ -253,6 +252,111 @@ const EXECUTES = [
   ['bash', "echo 'git push --force origin main' \"$(pwd; sh r.sh)\""]
 ]
 
+const SEARCH_TEXT_ONLY = [
+  ['bash', 'rg -n "git push --force" src'],
+  ['bash', 'rg -n "git push --force" src | head -20'],
+  ['bash', "grep -rn 'git reset --hard' scripts"],
+  ['bash', 'git grep -n "git clean -fd"'],
+  ['bash', "grep -rn 'git push --force' . 2>/dev/null"],
+  ['bash', "rg 'git push --force' src 2>&1 | sort | uniq -c"],
+  ['bash', "rg 'git push --force' src > hits.txt"],
+  ['bash', "grep -rn 'git push --force' src >> out/hits.txt 2>/dev/null"],
+  ['bash', "rg -n 'git reset --hard' . > notes/reset-hits.md 2>&1"],
+  ['powershell', "sls 'git push --force' -Path src/a.ts > hits.txt"],
+  ['bash', "grep -rn 'git push --force' src >/dev/null 2>&1 || echo none"],
+  ['bash', "rg -n 'git push --force' src | sort -u | uniq"],
+  ['bash', "rg -n 'git push --force' src | less -S"],
+  ['bash', 'grep -rn "git push --force" "$DIR"'],
+  ['bash', "cd proj && rg -n 'git push --force' src | wc -l"],
+  ['powershell', "Select-String -Pattern 'git push --force' -Path src/*.ts"],
+  ['powershell', "sls 'git push --force' -Path src/*.ts | Select-Object -First 5"]
+]
+
+const SEARCH_EXECUTES = [
+  ['powershell', 'Select-String x (git push --force origin main)'],
+  ['powershell', 'sls x (git push --force origin main)'],
+  ['powershell', 'Select-String -Pattern "x" -Path "$(git push --force origin main)"'],
+  ['bash', "git grep -O'git push --force origin main;' x"],
+  ['bash', "git grep -nO'git push --force origin main;' x"],
+  ['bash', "git grep -\"O\"'git push --force origin main;' x"],
+  ['bash', "git grep --open-files-in-pager='git push --force origin main;' x"],
+  ['bash', "git -c core.pager='git push --force origin main;' grep x"],
+  ['bash', "GIT_PAGER='git push --force origin main;' git grep x"],
+  ['bash', 'grep(){ eval "$*"; }; grep \'git push --force origin main\''],
+  ['bash', "alias grep=eval\ngrep 'git push --force origin main'"],
+  ['bash', "./grep 'git push --force origin main'"],
+  ['bash', "rg -o --no-filename -m1 'git push --force origin main' scripts/test-danger-guard-quoted.mjs | sh"],
+  ['bash', "rg -o 'git push --force origin main' f | s\"h\""],
+  ['bash', "grep -o 'git push --force origin main' f 2>&1 | sh"],
+  ['powershell', "sls 'git push --force origin main' -Path scripts/test-danger-guard-quoted.mjs -List | % Matches | % Value | iex"],
+  ['bash', "rg -o 'git push --force origin main' f | xargs -I{} sh -c '{}'"],
+  ['bash', "rg -o 'git push --force origin main' f | sort --compress-program=sh"],
+  ['bash', "rg -o 'git push --force origin main' f | less '+!sh'"],
+  ['bash', "rg -o 'git push --force origin main' f | tee r.sh"],
+  ['bash', "rg -o 'git push --force origin main' f > r.sh; sh r.sh"],
+  ['bash', "rg 'git push --force origin main' f > >(sh)"],
+  ['bash', "rg 'git push --force origin main' f &\nsh r.sh"],
+  ['bash', "ag --pager 'git push --force origin main;' x"],
+  ['bash', "ack --pager='git push --force origin main;' x"],
+  ['bash', "rg --pre sh 'git push --force origin main' ."],
+  ['bash', "rg --pre-glob '*' --pre sh 'git push --force origin main' ."],
+  ['bash', "rg --hostname-bin=sh 'git push --force origin main' ."],
+  ['bash', "rg --p\"re\" sh 'git push --force origin main' ."],
+  ['bash', "ack --output='git push --force origin main' x"],
+  ['bash', "ack --out 'git push --force origin main' x"],
+  ['bash', "ack --o\"utput\"='git push --force origin main' x"],
+  ['bash', "rg -o -N --no-filename '#!/bin/sh|sh \\S+EDITMSG' a b > .git/hooks/commit-msg && git commit --allow-empty -m 'git push --force origin main'"],
+  ['bash', "rg -o -N --no-filename '#!/bin/sh|sh \\S+EDITMSG' a b | sort -o .git/hooks/commit-msg && git commit --allow-empty -m 'git push --force origin main'"],
+  ['bash', "rg -o 'git push --force origin main' f > .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f >> .gi?/hoo??/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f > .husky/pre-commit; git commit -m x"],
+  ['bash', "rg -o 'fsmonitor = git push --force origin main' f > .git/config && git status"],
+  ['bash', "rg -o 'git push --force origin main' f 1> .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f &> .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | sort -uo .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | sort -o.git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | uniq - .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | uniq -c in .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | less -o .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | less -O .git/hooks/pre-commit && git commit -m x"],
+  ['bash', "rg -o 'git push --force origin main' f | less -\"O\" .git/hooks/pre-commit && git commit -m x"],
+  ['powershell', "sls -Raw 'git push --force origin main' f > .git/hooks/pre-commit; git commit -m x"],
+  ['powershell', "sls 'git push --force origin main' f >> .git/config; git status"],
+  ['bash', "rg -o 'git push --force origin main' f > .git/hooks/pre-commit"],
+  ['bash', "rg -o 'git push --force origin main' f >> .git/config"],
+  ['bash', "rg -o 'git push --force origin main' f > .g\"it\"/config"],
+  ['bash', "rg -o 'git push --force origin main' f > .gi\\t/config"],
+  ['bash', "rg -o 'git push --force origin main' f > .gi?/config"],
+  ['bash', "rg -o 'git push --force origin main' f > [.]git/config"],
+  ['bash', "rg -o 'git push --force origin main' f > .gi*/config"],
+  ['bash', "rg -o 'git push --force origin main' f > GIT~1/config"],
+  ['bash', "rg -o 'git push --force origin main' f > HUSKY~1/pre-commit"],
+  ['bash', "rg -o 'git push --force origin main' f > ~/.bashrc"],
+  ['bash', "rg -o 'git push --force origin main' f > .husky/pre-commit"],
+  ['bash', "rg -o 'git push --force origin main' f > githooks/pre-push"],
+  ['bash', "rg -o 'git push --force origin main' f > .vscode/tasks.json"],
+  ['bash', "rg -o 'git push --force origin main' f > .envrc"],
+  ['bash', "rg -o 'git push --force origin main' f > profile.ps1"],
+  ['bash', "rg -o 'git push --force origin main' f > .github/workflows/ci.yml"],
+  ['bash', "rg -o 'git push --force origin main' f > \"r.sh\""],
+  ['bash', "rg -o 'git push --force origin main' f >&3"],
+  ['bash', "rg -o 'git push --force origin main' f > r.sh && sh r.sh"],
+  ['bash', "rg -o 'git push --force origin main' f > r.sh\nbash r.sh"],
+  ['powershell', "sls 'git push --force origin main' f > .git/hooks/pre-commit"],
+  ['powershell', "sls 'git push --force origin main' f > GIT~1/config"]
+]
+
+const SEARCH_CONSERVATIVE = [
+  ['bash', "npm test && rg 'git push --force origin main' src"],
+  ['bash', "rg 'git push --force origin main' src | xargs cat"],
+  ['bash', "rg 'git push --force' src > hits.txt && echo done"],
+  ['bash', "rg 'git push --force' src > hits.txt; ls"],
+  ['bash', 'rg -n x src && git commit -m "说明：不要 git push --force"'],
+  ['bash', "rg -n x src; echo 'git push --force origin main'"],
+  ['bash', "git grep -n x; yan subagent start --task 'git push --force origin main'"],
+  ['powershell', "sls x -Path src/*.ts; Write-Output 'git push --force origin main'"]
+]
+
 const POWERSHELL_INNER = [
   "Write-Output 'x' (Invoke-Expression 'git push --force origin main' )",
   'Write-Output "a\\" (git push --force origin main) \\"b"',
@@ -282,6 +386,20 @@ await runSuite(import.meta.url, async (ok) => {
     const reasons = guard.detectDanger(tool, { command }, PROJECT)
     ok(reasons.length > 0, `会执行，仍要拦：${command}`, JSON.stringify(reasons))
   }
+  for (const [tool, command] of SEARCH_TEXT_ONLY) {
+    const reasons = guard.detectDanger(tool, { command }, PROJECT)
+    ok(reasons.length === 0, `搜索的文字不拦：${command}`, JSON.stringify(reasons))
+  }
+  for (const [tool, command] of SEARCH_EXECUTES) {
+    const reasons = guard.detectDanger(tool, { command }, PROJECT)
+    ok(reasons.length > 0, `搜索段里会执行的仍要拦：${command}`, JSON.stringify(reasons))
+  }
+  for (const [tool, command] of SEARCH_CONSERVATIVE) {
+    const reasons = guard.detectDanger(tool, { command }, PROJECT)
+    ok(reasons.length > 0, `搜索段写文件、旁边有白名单外的命令，或旁边的文字不清空，按原文检查：${command}`, JSON.stringify(reasons))
+  }
+  const searchWipe = guard.criticalDanger('powershell', { command: 'sls x (Format-Volume -DriveLetter D -Force)' }, PROJECT)
+  ok(searchWipe.length > 0, '「不受限制」档：搜索段括号里的擦盘仍拦', JSON.stringify(searchWipe))
   for (const body of POWERSHELL_INNER) {
     ok(/git push --force/.test(guard.ruleText(body, 'powershell')), `PowerShell 方言照原文检查：${body}`, guard.ruleText(body, 'powershell'))
   }
