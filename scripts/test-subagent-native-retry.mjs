@@ -509,9 +509,9 @@ await withQuotaController([async () => ({ windows: [{ id: 'five', label: '5 小�
 
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
-  const stub = { name: 'stub-switch', setup(b) { b.onResolve({ filter: /^\.\/(account-quota|api-key-pool|codex-accounts|oauth-accounts|settings)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const accountQuotaReport = async () => ({ cards: [] }); export const invalidateAccountQuotaReport = () => {}; export const captureActiveApiKey = async () => ({ ok: true }); export const switchCodexAccount = async () => ({ ok: true }); export const switchOAuthAccount = async () => ({ ok: true }); export const getSettings = async () => ({})', loader: 'js' })) } }
+  const stub = { name: 'stub-switch', setup(b) { b.onResolve({ filter: /^\.\/(account-quota|api-key-pool|codex-accounts|oauth-accounts|settings)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const accountQuotaReport = async () => ({ cards: globalThis.__stubCards ?? [] }); export const invalidateAccountQuotaReport = () => {}; export const captureActiveApiKey = async () => ({ ok: true }); export const switchCodexAccount = async (key) => { (globalThis.__stubSwitched ??= []).push(key); return { ok: true } }; export const switchOAuthAccount = async () => ({ ok: true }); export const captureActiveCodexAccount = async () => globalThis.__stubActive; export const captureActiveOAuthAccount = async () => undefined; export const getSettings = async () => ({ accountFailover: true })', loader: 'js' })) } }
   await build({ entryPoints: ['src/main/account-autoswitch.ts'], outfile: `${BUILD_DIR}/account-autoswitch.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [stub] })
-  const { pickSpareAccount, markRefreshFailed } = await import(`../${BUILD_DIR}/account-autoswitch.mjs`)
+  const { pickSpareAccount, markRefreshFailed, switchToSpareAccount, activeAccountKey } = await import(`../${BUILD_DIR}/account-autoswitch.mjs`)
   const card = (key, used, extra = {}) => ({ key, source: 'yan', provider: 'openai-codex', name: 'ChatGPT', switchable: true, status: used >= 100 ? 'limited' : 'ok', windows: [{ id: 'five', label: '5 小时', used, total: 100 }], checkedAt: 0, ...extra })
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 70), card('c', 20), card('d', 100)], 'openai-codex')?.key === 'c', '挑剩余额度最多的可用账号')
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 100), card('c', 5, { staleError: '读取失败' })], 'openai-codex') === null, '都用完或额度读不准时不换')
@@ -524,10 +524,32 @@ await withQuotaController([async () => ({ windows: [{ id: 'five', label: '5 小�
   ok(pickSpareAccount([card('a', 100, { active: true }), expired('b')], 'openai-codex', new Set(['b'])) === null, '刷新失败过的账号标记为不可用')
   const failed = new Set()
   const cards = [expired('a', { active: true }), expired('b')]
-  ok(pickSpareAccount(cards, 'openai-codex', failed)?.key === 'a', '当前账号令牌过期但未刷新失败时继续用它')
-  ok(markRefreshFailed(cards, 'openai-codex', failed) === 'a' && failed.has('a'), '刷新失败时记下当前账号')
-  ok(pickSpareAccount(cards, 'openai-codex', failed)?.key === 'b', '当前账号刷新失败后换到另一个可刷新的账号')
-  ok(markRefreshFailed([card('a', 10, { active: true })], 'openai-codex', new Set()) === null, '当前账号令牌有效时不标记')
+  ok(pickSpareAccount(cards, 'openai-codex', failed)?.key === 'b', '活动账号只是令牌过期（状态不是 ok）时不继续用它，换到可刷新的备用账号')
+  ok(pickSpareAccount([expired('a', { active: true }), card('b', 100)], 'openai-codex', new Set()) === null, '活动账号过期、备用账号额度用完时不选回活动账号')
+  ok(pickSpareAccount([expired('a', { active: true }), expired('b', { refreshable: false })], 'openai-codex', new Set()) === null, '活动账号过期且没有可用备用账号时不换')
+  ok(markRefreshFailed(cards, 'openai-codex', 'a', failed) === 'a' && failed.has('a'), '刷新失败时记下出错的账号')
+  ok(pickSpareAccount(cards, 'openai-codex', failed)?.key === 'b', '出错账号刷新失败后换到另一个可刷新的账号')
+  const afterSwitch = [expired('a'), expired('b', { active: true }), expired('c')]
+  const marks = new Set()
+  ok(markRefreshFailed(afterSwitch, 'openai-codex', 'a', marks) === 'a' && marks.has('a') && !marks.has('b'), '只标记出错的账号，不误标刚换上的活动账号')
+  ok(markRefreshFailed(afterSwitch, 'openai-codex', 'missing', marks) === null && marks.size === 1, '找不到出错账号时不标记任何账号')
+  ok(markRefreshFailed([card('a', 10, { active: true })], 'openai-codex', 'a', new Set()) === null, '出错账号令牌已有效时不标记')
+  ok(markRefreshFailed([card('a', 10), expired('b', { active: true })], 'openai-codex', 'a', new Set()) === null, '出错账号状态已是 ok 时不标记')
+  globalThis.__stubActive = 'k-active'
+  ok(await activeAccountKey('openai-codex') === 'k-active' && await activeAccountKey('no-such-provider') === undefined, '出错时取到当前活动账号的 key；不支持的服务商没有 key')
+  globalThis.__stubCards = [expired('x'), expired('y', { active: true, label: 'Y' }), expired('z')]
+  const moved = await switchToSpareAccount('openai-codex', { refreshFailed: true, failedKey: 'x' })
+  ok(moved?.key === 'y' && moved.switched === false && !globalThis.__stubSwitched, '活动账号已不是出错账号时不换号，直接继续用当前活动账号', JSON.stringify(moved))
+  ok(await switchToSpareAccount('openai-codex', { refreshFailed: true }) === null && !globalThis.__stubSwitched, '没有出错账号 key 时不标记也不换号')
+  globalThis.__stubCards = [expired('x', { active: true }), card('y', 20), expired('z')]
+  const swapped = await switchToSpareAccount('openai-codex', { refreshFailed: true, failedKey: 'x' })
+  ok(swapped?.key === 'y' && swapped.switched === true && globalThis.__stubSwitched?.[0] === 'y', '出错账号仍是活动账号时换到额度已知的备用账号', JSON.stringify(swapped))
+  globalThis.__stubCards = [expired('x'), expired('y', { active: true }), expired('z')]
+  await switchToSpareAccount('openai-codex', { refreshFailed: true, failedKey: 'y' })
+  ok(globalThis.__stubSwitched.length === 2 && globalThis.__stubSwitched[1] === 'z', '活动账号确是出错账号时标记它并换到其他账号（已标记过的 x 仍被排除）')
+  globalThis.__stubCards = [expired('x'), card('y', 10, { active: true })]
+  const again = await switchToSpareAccount('openai-codex', { refreshFailed: true, failedKey: 'y' })
+  ok(again?.key === 'y' && again.switched === false, '出错账号已恢复为 ok 时继续用它')
 }
 
 await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) => {

@@ -153,7 +153,7 @@ export function parseVerdict(text) {
 }
 
 const PERMANENT_ERROR_RE = /\b(?:400|401|402|403|404|422)\b|unauthori[sz]ed|unauthenticated|forbidden|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|authentication|oauth|invalid_grant|token.{0,12}expired|not logged in|usage limit|extra usage|plan limits?|used all|free requests?|requests for today|insufficient[ _](?:balance|funds|credit|quota)|exceeded your current quota|billing|(?:credit|account) balance|(?:out of|no|insufficient) credits?|context[ _-](?:length|window|limit)|too many tokens|prompt is too long|content[ _-]?(?:policy|filter)|flagged|invalid[ _]?(?:request|parameter)|unsupported|model.{0,50}(?:not found|does not exist)|tls|certificate/i
-const TRANSIENT_ERROR_RE = /\b429\b|\b5\d\d\b|rate[ _-]?limit|too many requests|resource_exhausted|overload|server error|service unavailable|bad gateway|gateway time|terminated|websocket|socket hang up|econnreset|econnrefused|etimedout|enotfound|eai_again|epipe|stream.{0,20}(?:closed|ended)|connection.{0,20}(?:closed|reset)|fetch failed|network/i
+const TRANSIENT_ERROR_RE = /\b429\b|(?:status(?:[ _]code)?|http)["']?[\s:=(]*5\d\d\b|^\s*5\d\d\b|\b5\d\d\s+(?:internal server error|server error|bad gateway|service unavailable|gateway time-?out|overloaded|temporarily unavailable)|rate[ _-]?limit|too many requests|resource_exhausted|overload|server error|service unavailable|bad gateway|gateway time|terminated|websocket|socket hang up|econnreset|econnrefused|etimedout|enotfound|eai_again|epipe|stream.{0,20}(?:closed|ended)|connection.{0,20}(?:closed|reset)|fetch failed|network/i
 
 export function isTransientReviewError(text) {
   const raw = String(text ?? '')

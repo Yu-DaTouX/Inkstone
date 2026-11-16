@@ -98,10 +98,10 @@ await runSuite(import.meta.url, async (ok) => {
     ok((await review.runReview({ model, modelRegistry: fakeRegistry([() => { throw new Error('net') }]) }, prompt)).decision === 'error', '抛错按失败处理')
     ok((await review.runReview({ modelRegistry: registry }, prompt)).decision === 'error', '没有模型按失败处理')
 
-    for (const text of ['529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', '429 Too Many Requests', 'rate limit exceeded', '503 Service Unavailable', 'Internal Server Error (500)', 'ECONNRESET', 'read ETIMEDOUT', 'fetch failed', 'socket hang up', '502 Bad Gateway from load balancer']) {
+    for (const text of ['529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', '429 Too Many Requests', 'rate limit exceeded', '503 Service Unavailable', 'Internal Server Error (500)', 'ECONNRESET', 'read ETIMEDOUT', 'fetch failed', 'socket hang up', '502 Bad Gateway from load balancer', 'status 503', 'HTTP 504 upstream', 'http: 500', '{"status":502}', '500 Internal Server Error', '529 overloaded', 'status code: 503']) {
       ok(review.isTransientReviewError(text) === true, `瞬时错误：${text.slice(0, 30)}`)
     }
-    for (const text of ['401 Unauthorized', 'invalid api key', '403 forbidden', 'OAuth token refresh failed', 'You exceeded your current quota, 429', 'insufficient balance', 'Your credit balance is too low', 'out of credits', '400 invalid_request_error', 'prompt is too long', 'certificate has expired', 'the reviewer reply could not be read', '']) {
+    for (const text of ['401 Unauthorized', 'invalid api key', '403 forbidden', 'OAuth token refresh failed', 'You exceeded your current quota, 429', 'insufficient balance', 'Your credit balance is too low', 'out of credits', '400 invalid_request_error', 'prompt is too long', 'certificate has expired', 'the reviewer reply could not be read', '', 'context used 512 tokens', 'reviewed 550 files', 'port 5000 busy', 'line 599 of the diff', 'request id 523-ab', 'finished in 502 ms']) {
       ok(review.isTransientReviewError(text) === false, `非瞬时错误：${text.slice(0, 30)}`)
     }
 

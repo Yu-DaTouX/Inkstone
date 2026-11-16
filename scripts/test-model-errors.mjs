@@ -165,6 +165,39 @@ export async function runModelErrorTests(ok, modules) {
   ok(!/abc123/.test(shared.modelErrorNotice('OAuth refresh failed for anthropic: refresh_token=abc123')), '刷新失败原文里的刷新令牌被遮掉')
   ok(!shared.isOAuthRefreshFailure('401 Unauthorized') && shared.modelErrorCause('401 Unauthorized') === 'auth', '普通 401 仍是通用认证提示')
   ok(shared.classifyModelError('OAuth refresh failed for anthropic: 429 rate limit').kind === 'quota', '刷新接口被限流仍按限流处理')
+  for (const [text, cause] of [
+    ['OAuth refresh failed for anthropic: fetch failed', 'unreachable'],
+    ['OAuth refresh failed for openai-codex: Error: read ECONNRESET', 'stream'],
+    ['OAuth refresh failed for openai-codex: connect ETIMEDOUT 104.18.0.1:443', 'timeout'],
+    ['OAuth refresh failed for anthropic: TimeoutError: The operation was aborted due to timeout', 'timeout'],
+    ['OAuth refresh failed for github-copilot: User OAuth refresh failed (HTTP 503): upstream unavailable', 'overload'],
+    ['OAuth refresh failed for kimi-coding: Kimi Code token refresh failed with status 502', 'overload'],
+    ['OAuth refresh failed for anthropic: User OAuth refresh failed to reach token endpoint: TypeError: fetch failed', 'unreachable'],
+    ['OAuth refresh failed for qwen: token refresh request failed. url=https://example.test/token; details=getaddrinfo ENOTFOUND example.test', 'unreachable']
+  ]) {
+    const info = shared.classifyModelError(text)
+    ok(info.kind === 'retryable' && shared.modelErrorCause(text) === cause, `刷新时断网、超时或令牌接口 5xx 不算登录失效：${text.slice(0, 60)}`, info.kind + '/' + shared.modelErrorCause(text))
+    ok(!shared.isOAuthRefreshFailure(text) && !shared.isAuthRejected(text), `不触发重新登录与换号：${text.slice(0, 60)}`)
+    ok(!/登录已失效|重新登录/.test(shared.modelErrorNotice(text)), `提示不要求重新登录：${text.slice(0, 60)}`)
+  }
+  for (const text of ['OAuth refresh failed for anthropic: fetch failed', 'OAuth refresh failed for openai-codex: read ECONNRESET', 'OAuth refresh failed for anthropic: TimeoutError: The operation was aborted due to timeout', 'OAuth refresh failed for github-copilot: User OAuth refresh failed (HTTP 503): upstream unavailable']) {
+    ok(shared.isTransientModelError(text), `刷新时的网络、超时与 5xx 走原有瞬时错误续跑：${text.slice(0, 60)}`)
+  }
+  for (const text of [
+    'OAuth refresh failed for anthropic: User OAuth refresh failed (HTTP 400): {"error":"invalid_grant"}',
+    'OAuth refresh failed for anthropic: invalid_grant',
+    'OAuth refresh failed for openai-codex: Error: 401 Unauthorized',
+    'OAuth refresh failed for kimi-coding: Kimi Code token refresh unauthorized (status 401)',
+    'OAuth refresh failed for openai-codex: refresh token was revoked',
+    'OAuth refresh failed for openai-codex: Refresh token has expired',
+    'OAuth refresh failed for anthropic: User OAuth refresh failed (HTTP 503): invalid_grant',
+    'OAuth refresh failed for anthropic: token refresh failed with status 403',
+    'OAuth refresh failed for anthropic: Token refresh response missing required fields',
+    'OAuth refresh failed for anthropic: refresh returned 500 tokens'
+  ]) {
+    ok(shared.isOAuthRefreshFailure(text) && shared.isAuthRejected(text) && shared.modelErrorCause(text) === 'authExpired', `明确的令牌失效仍算登录失效：${text.slice(0, 70)}`)
+    ok(!shared.isTransientModelError(text), `登录失效不当作瞬时错误：${text.slice(0, 70)}`)
+  }
   ok(shared.modelErrorNotice('upstream request cancelled').includes('upstream request cancelled'), '取消类原文仍保留在错误内容里')
   ok(/quota/.test(shared.modelErrorNotice({ error: { code: 'insufficient_quota', message: 'quota exhausted' } })), '嵌套服务商错误字段可读取')
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')

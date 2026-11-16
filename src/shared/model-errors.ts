@@ -130,11 +130,30 @@ export function isAuthRejected(text: unknown): boolean {
     /\b401\b|unauthorized|unauthenticated|authentication[ _]error|invalid authentication/i.test(info.text)
 }
 
+const REFRESH_PREFIX_RE = /oauth (?:token )?refresh failed(?: for [\w.-]+)?\s*:?/i
+const REFRESH_BARE_RE = /token refresh (?:failed|unauthorized|request failed|error)/i
+const REFRESH_DEFINITIVE_RE = /invalid_grant|invalid_client|unauthorized_client|\b(?:400|401|403)\b|unauthorized|forbidden|revoked|reused|refresh[ _-]?token.{0,40}(?:expired|invalid|not found)|token.{0,12}expired/i
+const REFRESH_SERVER_ERROR_RE = /(?:status(?: code)?|http)[\s:=(]*5\d\d\b|\(5\d\d\)|^\s*5\d\d\b|\b5\d\d\s+(?:internal server error|bad gateway|service unavailable|gateway time-?out)/i
+
+function oauthRefreshCause(text: string): string | null {
+  const prefixed = REFRESH_PREFIX_RE.exec(text)
+  if (prefixed) return text.slice(prefixed.index + prefixed[0].length)
+  const bare = REFRESH_BARE_RE.exec(text)
+  return bare ? text.slice(bare.index) : null
+}
+
+function isTransientOAuthRefresh(text: string): boolean {
+  const cause = oauthRefreshCause(text)
+  if (!cause || !cause.trim() || REFRESH_DEFINITIVE_RE.test(cause)) return false
+  return STREAM_BROKEN_RE.test(cause) || TIMEOUT_RE.test(cause) || UNREACHABLE_RE.test(cause) || REFRESH_SERVER_ERROR_RE.test(cause)
+}
+
 export function classifyModelError(text: unknown): ModelErrorInfo {
   const raw = modelErrorText(text)
   if (raw === TRUNCATED_OUTPUT_NOTICE) return { kind: 'truncated', text: raw, label: '输出被截断' }
+  const transientRefresh = isTransientOAuthRefresh(raw)
   for (const item of PATTERNS) {
-    if (item.re.test(raw)) {
+    if (!transientRefresh && item.re.test(raw)) {
       return item.kind === 'quota'
         ? { kind: item.kind, text: raw, label: item.label, quotaScope: quotaScopeOf(raw) }
         : { kind: item.kind, text: raw, label: item.label }

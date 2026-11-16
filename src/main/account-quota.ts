@@ -62,7 +62,7 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   return settle(base, async () => {
     if (!t.credential) {
       return t.problem === 'expired'
-        ? { status: 'expired', refreshable: true, hint: pick('登录令牌已过期，下次对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it on the next chat.') }
+        ? { status: 'expired', refreshable: t.refreshable === true, hint: pick('登录令牌已过期，下次对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it on the next chat.') }
         : { status: 'error', error: t.problem ?? pick('没有可用的登录凭证', 'No usable sign-in credentials') }
     }
     const [usage, resetCredits] = await Promise.all([

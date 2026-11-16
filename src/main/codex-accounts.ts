@@ -33,6 +33,7 @@ export interface CodexAccountTarget {
   active: boolean
   credential?: CodexOAuthCredential
   problem?: 'expired' | string
+  refreshable?: boolean
 }
 
 function identityOf(credential: CodexOAuthCredential): ChatGptIdentity {
@@ -205,7 +206,7 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
       const active = account.key === activeKey
       const base = { key: account.key, email: account.email, plan: account.plan, active }
       if (active) {
-        targets.push(current && !isExpired(current) ? { ...base, credential: current } : { ...base, problem: 'expired' })
+        targets.push(current && !isExpired(current) ? { ...base, credential: current } : { ...base, problem: 'expired', refreshable: !!current?.refresh })
         continue
       }
       if (!isExpired(account.credential)) {

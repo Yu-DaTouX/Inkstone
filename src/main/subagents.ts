@@ -2312,7 +2312,7 @@ export class SubagentController {
 
   private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {
     const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run)).catch(() => null)
-    logModelEvent('account-switch', { reason: 'quota', outcome: label ? 'switched' : 'none', to: label ?? undefined, model: run.model, subagent: run.id })
+    logModelEvent('account-switch', { reason: 'quota', outcome: label ? 'switched' : 'none', model: run.model, subagent: run.id })
     if (!label || !live()) return false
     await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`), continuationPrompt('account-switch', 'subagent'))
     return true

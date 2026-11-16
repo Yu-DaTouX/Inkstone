@@ -132,7 +132,7 @@ import { createSubagentNoticeStore } from './subagent-notice-store'
 import { buildSubagentOvertimeNotice } from '../shared/subagent-notice'
 import { createSubagentPushBatch } from './subagent-push-batch'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
-import { switchToSpareAccount } from './account-autoswitch'
+import { activeAccountKey, switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, DANGER_CONFIRM_TIMEOUT_MS, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
@@ -1820,6 +1820,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         browserHost: () => browser,
         subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context) },
         switchSpareAccount: switchToSpareAccount,
+        activeAccountKey,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         ensureMcpAppTools: (projectId) => mcpAppProxyService().ensureFresh({ callerProjectId: projectId }).then(() => undefined),
         providerExtensions: launchResources().providers,
