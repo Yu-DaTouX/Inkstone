@@ -10,6 +10,7 @@ const MAX_ARG_BYTES = 256 * 1024
 const LOCK_STALE_MS = 10_000
 const LOCK_ATTEMPTS = 10
 const LOCK_RETRY_MS = 20
+const LOCK_BUSY_CODES = new Set(['EEXIST', 'EPERM', 'EBUSY'])
 
 function resolveAgentDir() {
   const envDir = process.env.PI_CODING_AGENT_DIR?.trim()
@@ -64,23 +65,34 @@ export function withFileLockSync(file, run) {
   const lockDir = `${file}.lock`
   mkdirSync(dirname(file), { recursive: true })
   let held = false
+  let lastBusy
   for (let attempt = 1; attempt <= LOCK_ATTEMPTS && !held; attempt++) {
     try {
       mkdirSync(lockDir)
       held = true
     } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-      let age
+      if (!LOCK_BUSY_CODES.has(error?.code)) throw error
+      lastBusy = error
+      let seen
       try {
-        age = Date.now() - statSync(lockDir).mtimeMs
+        seen = statSync(lockDir)
       } catch (statError) {
-        if (statError?.code === 'ENOENT') continue
-        throw statError
+        if (statError?.code !== 'ENOENT') throw statError
+        if (error.code !== 'EEXIST' && attempt < LOCK_ATTEMPTS) sleepSync(LOCK_RETRY_MS)
+        continue
       }
-      if (age > LOCK_STALE_MS) {
+      if (Date.now() - seen.mtimeMs > LOCK_STALE_MS) {
+        let again
         try {
-          rmdirSync(lockDir)
+          again = statSync(lockDir)
         } catch {
+          continue
+        }
+        if (again.mtimeMs === seen.mtimeMs && again.ino === seen.ino) {
+          try {
+            rmdirSync(lockDir)
+          } catch {
+          }
         }
         continue
       }
@@ -90,6 +102,7 @@ export function withFileLockSync(file, run) {
   if (!held) {
     const error = new Error(`${file} 正被另一个进程写入，已放弃这次修改（没有写入）`)
     error.code = 'ELOCKED'
+    if (lastBusy) error.cause = lastBusy
     throw error
   }
   try {

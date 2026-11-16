@@ -62,6 +62,7 @@ export function watchModelsFile(opts: ModelsWatchOptions): ModelsWatcher {
   let retry: ReturnType<typeof setTimeout> | null = null
   let watcher: { close(): void } | null = null
   let missingOnce = false
+  let openFailureReported = false
   let generation = 0
   let baseline: Promise<void> = Promise.resolve()
 
@@ -113,6 +114,7 @@ export function watchModelsFile(opts: ModelsWatchOptions): ModelsWatcher {
       }
       const handle = opts.watch ? opts.watch(dir, listener) : (fsWatch(dir, { persistent: false }, listener) as FSWatcher)
       watcher = handle
+      openFailureReported = false
       handle.on('error', () => {
         try { handle.close() } catch {}
         if (watcher === handle) watcher = null
@@ -121,7 +123,10 @@ export function watchModelsFile(opts: ModelsWatchOptions): ModelsWatcher {
         retry.unref?.()
       })
     } catch (error) {
-      opts.onError?.(error)
+      if (!openFailureReported) {
+        openFailureReported = true
+        opts.onError?.(error)
+      }
       if (closed) return
       retry = setTimeout(() => { retry = null; open() }, retryMs)
       retry.unref?.()

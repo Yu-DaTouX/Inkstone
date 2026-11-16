@@ -561,24 +561,41 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
       const failed: string[] = []
       const skipped: string[] = []
       for (const file of files) {
-        const copies = await backupsOf(file)
-        if (!copies.length) continue
-        const raw = await readRaw(file).catch(() => null)
-        if (raw !== null && isSealed(raw) && !(await open(file, raw).then(() => true, () => false))) {
-          skipped.push(...copies)
-          await deps.log(file, `backup-kept ${file} (the encrypted file cannot be read right now, so its ${copies.length} plaintext backup(s) were not deleted)`)
-          continue
-        }
-        for (const copy of copies) {
+        await locked(file, async () => {
+          const copies = await backupsOf(file)
+          if (!copies.length) return
+          let blocker: string | null = null
           try {
-            await remove(copy)
-            removed.push(copy)
-            await deps.log(file, `backup-deleted ${copy} (removed by the user from Settings)`)
+            const raw = await readRaw(file)
+            if (raw === null) blocker = 'the main file is missing'
+            else if (isSealed(raw)) {
+              if (!(await open(file, raw).then(() => true, () => false))) blocker = 'the encrypted file cannot be decrypted right now'
+            } else {
+              try {
+                JSON.parse(raw)
+              } catch {
+                blocker = 'the main file is not valid JSON'
+              }
+            }
           } catch (error) {
-            failed.push(copy)
-            await deps.log(file, `backup-delete-failed ${copy} ${error instanceof Error ? error.message : String(error)}`)
+            blocker = `the main file cannot be read (${error instanceof Error ? error.message : String(error)})`
           }
-        }
+          if (blocker !== null) {
+            skipped.push(...copies)
+            await deps.log(file, `backup-kept ${file} (${blocker}, so its ${copies.length} plaintext backup(s) were not deleted)`)
+            return
+          }
+          for (const copy of copies) {
+            try {
+              await remove(copy)
+              removed.push(copy)
+              await deps.log(file, `backup-deleted ${copy} (removed by the user from Settings)`)
+            } catch (error) {
+              failed.push(copy)
+              await deps.log(file, `backup-delete-failed ${copy} ${error instanceof Error ? error.message : String(error)}`)
+            }
+          }
+        })
       }
       return { removed, failed, skipped }
     }

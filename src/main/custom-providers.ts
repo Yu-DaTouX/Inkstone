@@ -69,8 +69,8 @@ async function writeAtomic(json: Json): Promise<void> {
   await mkdir(PI_AGENT_DIR, { recursive: true })
   await backupModels()
   const text = `${JSON.stringify(json, null, 2)}\n`
-  noteModelsWritten(text)
   await atomicWriteFile(MODELS_FILE, text)
+  noteModelsWritten(text)
 }
 
 export async function contextWindowAssumed(provider: string, modelId: string): Promise<boolean> {

@@ -617,6 +617,46 @@ async function retentionTests(ok, compile, root) {
   const failed = await vault.removeBackups([file], async () => { throw new Error('in use') })
   ok(failed.failed.length === 1 && (await vault.backups([file])).length === 1 && lines.some((line) => line.startsWith('backup-delete-failed')), '删除失败的备份保留并记日志')
 
+  const guardOf = async (prepare, restore) => {
+    await prepare()
+    const result = await vault.removeBackups([file], async (path) => rm(path))
+    await restore()
+    return result
+  }
+  const sealedMain = await readFile(file, 'utf8')
+  const moved = `${file}.moved`
+  const unreadableMain = await guardOf(async () => { await rename(file, moved); await mkdir(file) }, async () => { await rm(file, { recursive: true }); await rename(moved, file) })
+  ok(unreadableMain.skipped.length === 1 && unreadableMain.removed.length === 0 && (await vault.backups([file])).length === 1 && lines.some((line) => line.includes('backup-kept') && line.includes('cannot be read')), '主文件读取出错（非缺失）时跳过并记原因，不删备份')
+  const missingMain = await guardOf(() => rename(file, moved), () => rename(moved, file))
+  ok(missingMain.skipped.length === 1 && missingMain.removed.length === 0 && (await vault.backups([file])).length === 1 && lines.some((line) => line.includes('backup-kept') && line.includes('missing')), '主文件缺失时跳过并记原因，不删唯一一份备份')
+  const junkMain = await guardOf(() => writeFile(file, '{not json'), () => writeFile(file, sealedMain))
+  ok(junkMain.skipped.length === 1 && junkMain.removed.length === 0 && (await vault.backups([file])).length === 1 && lines.some((line) => line.includes('backup-kept') && line.includes('not valid JSON')), '主文件是解析不了的明文时跳过并记原因，不删备份')
+
+  const holdDir = join(root, 'remove-lock')
+  await mkdir(holdDir, { recursive: true })
+  const holdFile = join(holdDir, 'api-keys.json')
+  let holdRelease = () => undefined
+  let holdGate = null
+  const holdVault = v.createCredentialVault({
+    cipher: v.safeStorageCipher(async () => fake.safeStorage, async () => currentKey),
+    plaintext: () => false,
+    log: () => undefined,
+    io: { atomicWrite: async (target, content) => { if (holdGate) await holdGate; await writeFile(target, content) } }
+  })
+  await writeFile(holdFile, '{"key":"sk-hold"}')
+  await holdVault.sweep([holdFile])
+  holdGate = new Promise((done) => { holdRelease = done })
+  const holdWrite = holdVault.write(holdFile, '{"key":"sk-hold-2"}')
+  let holdRemoved = false
+  const holdRemoval = holdVault.removeBackups([holdFile], async (path) => { holdRemoved = true; await rm(path) })
+  await new Promise((done) => setTimeout(done, 60))
+  ok(!holdRemoved && (await holdVault.backups([holdFile])).length === 1, '删除备份与写入共用文件锁：写入未完成时不动备份')
+  holdRelease()
+  await holdWrite
+  const holdResult = await holdRemoval
+  ok(holdRemoved && holdResult.removed.length === 1 && (await holdVault.read(holdFile)) === '{"key":"sk-hold-2"}', '写入完成后才删除备份，且新内容可读')
+  await writeFile(file, sealedMain)
+
   const pdir = join(root, 'progress')
   await mkdir(pdir, { recursive: true })
   const pfile = join(pdir, 'api-keys.json')

@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { lstat, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +7,8 @@ const RETRY_CODES = new Set(['EEXIST', 'EPERM', 'EACCES'])
 const TRANSIENT_RENAME_CODES = new Set(['EBUSY', 'EPERM', 'EACCES'])
 const RENAME_ATTEMPTS = 8
 const RENAME_BACKOFF_MS = 25
+const SYNC_RENAME_ATTEMPTS = 5
+const SYNC_RENAME_BACKOFF_MS = 20
 
 export interface AtomicWriteOptions {
   mode?: number
@@ -52,6 +54,31 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
         if (target?.isDirectory()) throw error
       }
       await new Promise((done) => setTimeout(done, RENAME_BACKOFF_MS * (attempt + 1)))
+    }
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function renameSyncWithRetry(from: string, to: string): void {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!code || !TRANSIENT_RENAME_CODES.has(code) || attempt >= SYNC_RENAME_ATTEMPTS) throw error
+      if (attempt === 0) {
+        let isDirectory = false
+        try {
+          isDirectory = lstatSync(to).isDirectory()
+        } catch {
+        }
+        if (isDirectory) throw error
+      }
+      sleepSync(SYNC_RENAME_BACKOFF_MS * (attempt + 1))
     }
   }
 }
@@ -102,7 +129,7 @@ export function atomicWriteFileSync(file: string, content: string): void {
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
     writeFileSync(temp, content, { encoding: 'utf8', flag: 'wx' })
-    renameSync(temp, file)
+    renameSyncWithRetry(temp, file)
   } catch (error) {
     try {
       rmSync(temp, { force: true })

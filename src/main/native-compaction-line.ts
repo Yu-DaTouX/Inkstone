@@ -137,7 +137,11 @@ export function syncNativeCompactionLines(models: LineModel[], cap: number): Pro
         if (!isObj(value)) throw new Error(pick(`${recordFile} 不是 JSON 对象，已拒绝覆盖`, `${recordFile} is not a JSON object. Refusing to overwrite`))
         return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
       },
-      () => ({})
+      () => ({}),
+      async (backup) => {
+        console.warn(`[native-compaction-line] ${recordFile} was corrupt and was backed up to ${backup}; the record of reserveTokens overrides written by Inkstone is lost, so overrides already in settings.json are left as they are`)
+        await atomicWriteFile(recordFile, '{}\n').catch((error) => console.warn(`[native-compaction-line] could not write an empty ${recordFile} after the backup`, error))
+      }
     )
     const written = await modifyPiSettings<{ owned?: Record<string, number> }>(file, (settings) => {
       if (!settings) return { result: {} }

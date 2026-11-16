@@ -26,7 +26,7 @@ export async function backupCorruptFile(file: string): Promise<string> {
   return target
 }
 
-export async function readPersistedJson<T>(file: string, parse: (value: unknown) => T, empty: () => T): Promise<T> {
+export async function readPersistedJson<T>(file: string, parse: (value: unknown) => T, empty: () => T, onRecovered?: (backup: string) => Promise<void>): Promise<T> {
   let text: string
   try {
     text = await readFile(file, 'utf8')
@@ -39,14 +39,16 @@ export async function readPersistedJson<T>(file: string, parse: (value: unknown)
     value = JSON.parse(text.replace(/^\uFEFF/, ''))
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error
+    let backup: string
     try {
-      await backupCorruptFile(file)
+      backup = await backupCorruptFile(file)
     } catch (backupError) {
       throw new Error(
         pick(`文件已损坏且无法备份，已拒绝覆盖：${file}（${backupError instanceof Error ? backupError.message : String(backupError)}）`, `The file is corrupt and could not be backed up. Refusing to overwrite: ${file} (${backupError instanceof Error ? backupError.message : String(backupError)})`),
         { cause: backupError }
       )
     }
+    await onRecovered?.(backup)
     return empty()
   }
   return parse(value)

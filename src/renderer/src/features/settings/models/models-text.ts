@@ -126,7 +126,7 @@ const ZH: Record<ModelsTextKey, string> = {
   backupsBody: '彻底删除 {n} 份明文备份，不进回收站，无法恢复。加密后的凭据文件不受影响；之后如果它们解不开，就只能重新登录或重新填写。',
   backupsDone: '已彻底删除 {n} 份明文备份（没有进回收站）。',
   backupsFailed: '有 {n} 份明文备份没能删除，详情见同目录的 credential-vault.log。',
-  backupsSkipped: '另有 {n} 份没删：对应的加密文件此刻解不开，备份是恢复它们的唯一途径。'
+  backupsSkipped: '另有 {n} 份没删：对应的凭据文件此刻缺失、读不出、解不开或不是有效内容，备份可能是恢复它们的唯一途径。'
 }
 
 const EN: Record<ModelsTextKey, string> = {
@@ -192,7 +192,7 @@ const EN: Record<ModelsTextKey, string> = {
   backupsBody: 'Permanently delete {n} plaintext backups. They do not go to the Recycle Bin and cannot be recovered. The encrypted credential files are not touched; if they ever cannot be decrypted, you will have to sign in or enter the keys again.',
   backupsDone: 'Permanently deleted {n} plaintext backups (not moved to the Recycle Bin).',
   backupsFailed: '{n} plaintext backups could not be deleted; see credential-vault.log in the same folder.',
-  backupsSkipped: '{n} more were kept: their encrypted files cannot be read right now, and the backups are the only way to recover them.'
+  backupsSkipped: '{n} more were kept: their credential files are missing, unreadable, undecryptable or invalid right now, and the backups may be the only way to recover them.'
 }
 
 export function modelsText(lang: string, key: ModelsTextKey): string {

@@ -1,6 +1,7 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { utimesSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -156,6 +157,113 @@ console.log(JSON.stringify({ locked }))
   await utimes(`${stale}.lock`, old, old)
   extension.writeEnabledModels(stale, ['y'])
   ok(JSON.parse(await readFile(stale, 'utf8')).enabledModels?.[0] === 'y', '扩展：过期的锁同样被接管')
+
+  console.log('\n--- Windows 上锁目录正在被删时的 EPERM/EBUSY ---')
+  const fsShim = {
+    name: 'fs-shim',
+    setup(b) {
+      b.onResolve({ filter: /^node:fs$/ }, () => ({ path: 'fs', namespace: 'fs-shim' }))
+      b.onLoad({ filter: /.*/, namespace: 'fs-shim' }, () => ({
+        loader: 'js',
+        contents: `
+import { createRequire } from 'node:module'
+const real = createRequire(import.meta.url)('node:fs')
+const hooks = () => (globalThis.__fsHooks ??= {})
+export const { existsSync, readFileSync, realpathSync, renameSync, rmSync, rmdirSync, writeFileSync } = real
+export const mkdirSync = (path, options) => {
+  const hook = hooks().mkdir
+  if (hook && String(path).endsWith('.lock')) hook(path)
+  return real.mkdirSync(path, options)
+}
+export const statSync = (path, options) => {
+  const result = real.statSync(path, options)
+  const hook = hooks().stat
+  if (hook && String(path).endsWith('.lock')) hook(path)
+  return result
+}
+`
+      }))
+    }
+  }
+  const shimmedBundle = join(root, 'extension-shimmed.mjs')
+  await build({ entryPoints: [resolve('resources/pi-extensions/native-session-bridge.js')], outfile: shimmedBundle, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [fsShim] })
+  const shimmed = await import(pathToFileURL(shimmedBundle).href)
+  const transient = join(root, 'transient', 'settings.json')
+  await mkdir(join(root, 'transient'), { recursive: true })
+  await writeFile(transient, JSON.stringify({ base: 1 }), 'utf8')
+  for (const code of ['EPERM', 'EBUSY']) {
+    let failures = 2
+    globalThis.__fsHooks = { mkdir: () => { if (failures-- > 0) throw Object.assign(new Error(code), { code }) } }
+    shimmed.writeEnabledModels(transient, [code])
+    ok(failures < 0 && JSON.parse(await readFile(transient, 'utf8')).enabledModels?.[0] === code, `扩展：取锁时遇到 ${code} 当作被占用重试后写入成功`)
+  }
+  globalThis.__fsHooks = { mkdir: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }) } }
+  let alwaysEperm
+  try {
+    shimmed.writeEnabledModels(transient, ['never'])
+  } catch (error) {
+    alwaysEperm = error
+  }
+  ok(alwaysEperm?.code === 'ELOCKED' && alwaysEperm.cause?.code === 'EPERM' && JSON.parse(await readFile(transient, 'utf8')).enabledModels?.[0] === 'EBUSY', '扩展：EPERM 持续不消时超过次数后报 ELOCKED（带原始错误），不写入')
+  globalThis.__fsHooks = { mkdir: () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }) } }
+  let accessError
+  try {
+    shimmed.writeEnabledModels(transient, ['never'])
+  } catch (error) {
+    accessError = error
+  }
+  ok(accessError?.code === 'EACCES', '扩展：其它错误码仍然直接抛出')
+
+  const takeover = join(root, 'takeover', 'settings.json')
+  await mkdir(join(root, 'takeover'), { recursive: true })
+  await writeFile(takeover, JSON.stringify({ base: 1 }), 'utf8')
+  await mkdir(`${takeover}.lock`)
+  await utimes(`${takeover}.lock`, old, old)
+  let renewed = false
+  globalThis.__fsHooks = { stat: (path) => {
+    if (renewed) return
+    renewed = true
+    const now = new Date()
+    utimesSync(path, now, now)
+  } }
+  let takeoverError
+  try {
+    shimmed.writeEnabledModels(takeover, ['stolen'])
+  } catch (error) {
+    takeoverError = error
+  }
+  ok(renewed && takeoverError?.code === 'ELOCKED' && (await stat(`${takeover}.lock`)).isDirectory() && JSON.parse(await readFile(takeover, 'utf8')).enabledModels === undefined, '扩展：过期接管前再 stat 一次，发现锁刚被别的进程更新就不删它')
+  await rm(`${takeover}.lock`, { recursive: true, force: true })
+  globalThis.__fsHooks = {}
+
+  const lockStub = {
+    name: 'lockfile-stub',
+    setup(b) {
+      b.onResolve({ filter: /^proper-lockfile$/ }, () => ({ path: 'lockfile', namespace: 'lock-stub' }))
+      b.onLoad({ filter: /.*/, namespace: 'lock-stub' }, () => ({
+        loader: 'js',
+        contents: `export default { lock: async () => {
+  const plan = globalThis.__lockPlan
+  plan.calls++
+  if (plan.failures.length) throw Object.assign(new Error(plan.failures[0]), { code: plan.failures.shift() })
+  return async () => { plan.released++ }
+} }`
+      }))
+    }
+  }
+  const stubbedBundle = join(root, 'lock-stubbed.mjs')
+  await build({ entryPoints: [resolve('src/main/pi-settings-file-lock.ts')], outfile: stubbedBundle, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [lockStub] })
+  const stubbed = await import(pathToFileURL(stubbedBundle).href)
+  globalThis.__lockPlan = { calls: 0, released: 0, failures: ['ELOCKED', 'EPERM', 'EBUSY'] }
+  let ran = 0
+  await stubbed.withPiSettingsFileLock(join(root, 'stub', 'settings.json'), async () => { ran++ })
+  ok(ran === 1 && globalThis.__lockPlan.calls === 4 && globalThis.__lockPlan.released === 1, '主进程：ELOCKED/EPERM/EBUSY 都按被占用重试，取到锁后执行并释放', JSON.stringify(globalThis.__lockPlan))
+  globalThis.__lockPlan = { calls: 0, released: 0, failures: ['EACCES'] }
+  const denied = await stubbed.withPiSettingsFileLock(join(root, 'stub', 'settings.json'), async () => 'ran').catch((error) => error)
+  ok(denied?.code === 'EACCES' && globalThis.__lockPlan.calls === 1, '主进程：其它错误码不重试，直接抛出')
+  globalThis.__lockPlan = { calls: 0, released: 0, failures: Array.from({ length: 20 }, () => 'EPERM') }
+  const exhausted = await stubbed.withPiSettingsFileLock(join(root, 'stub', 'settings.json'), async () => 'ran').catch((error) => error)
+  ok(exhausted?.code === 'EPERM' && globalThis.__lockPlan.calls === 10, '主进程：EPERM 持续不消时最多尝试 10 次后抛出', JSON.stringify(globalThis.__lockPlan))
 
   console.log('\n--- 文件不存在时 ---')
   const fresh = join(root, 'fresh', 'settings.json')

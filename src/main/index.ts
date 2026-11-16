@@ -3073,6 +3073,20 @@ app.whenReady().then(async () => {
     reportMainError('mcp-app-view', error)
   }
 
+  let agentStartSettled = false
+  let modelsChangedWhileStarting = false
+  modelsWatcher ??= watchModelsFile({
+    file: MODELS_FILE,
+    onChange: () => {
+      if (!agentStartSettled) {
+        modelsChangedWhileStarting = true
+        return
+      }
+      void restartAgent('models.json changed').catch((error) => reportMainError('models-watch-refresh', error))
+    },
+    onError: (error) => console.error('[models-watch]', error)
+  })
+
   const [, restore] = await Promise.all([
     migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error)),
     restorePreviousSession()
@@ -3087,13 +3101,12 @@ app.whenReady().then(async () => {
   } finally {
     primaryRestoring = false
     primaryRestoreFile = null
+    agentStartSettled = true
   }
-
-  modelsWatcher ??= watchModelsFile({
-    file: MODELS_FILE,
-    onChange: () => { void restartAgent('models.json changed').catch((error) => reportMainError('models-watch-refresh', error)) },
-    onError: (error) => console.error('[models-watch]', error)
-  })
+  if (modelsChangedWhileStarting) {
+    modelsChangedWhileStarting = false
+    void restartAgent('models.json changed').catch((error) => reportMainError('models-watch-refresh', error))
+  }
 
   const initialControl = decodeControlCommand(process.argv)
   if (initialControl) void dispatchControlCommand(initialControl)

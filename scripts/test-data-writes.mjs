@@ -67,6 +67,27 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(refused && (await readFile(recordFile, 'utf8')) === '[1,2,3]', '记录文件结构不对：拒绝覆盖，原文件保持原样', String(refused?.message))
     ok((await readdir(yanDir)).every((name) => !name.endsWith('.tmp')), '没有遗留 .tmp')
 
+    await writeFile(recordFile, '{ broken-again', 'utf8')
+    const settingsBefore = await readFile(settingsFile, 'utf8')
+    const warns = []
+    const realWarn = console.warn
+    console.warn = (...args) => { warns.push(args.map(String).join(' ')) }
+    try {
+      await lines.syncNativeCompactionLines(model, 80_000)
+      await lines.syncNativeCompactionLines(model, 80_000)
+      await lines.syncNativeCompactionLines(model, 80_000)
+    } finally {
+      console.warn = realWarn
+    }
+    const again = []
+    for (const name of (await readdir(yanDir)).filter((entry) => entry.startsWith('compaction-lines.json.corrupt-'))) {
+      if ((await readFile(join(yanDir, name), 'utf8')) === '{ broken-again') again.push(name)
+    }
+    ok(again.length === 1, '记录文件损坏且设置没变化：只备份一份，连续同步不再重复备份', String(again.length))
+    ok(JSON.stringify(JSON.parse(await readFile(recordFile, 'utf8'))) === '{}', '备份后立即写回一份空文档')
+    ok(warns.length === 1 && warns[0].includes('lost') && warns[0].includes('left as they are'), '说明 owned 丢失后只记日志（一次）', warns.join(' | '))
+    ok((await readFile(settingsFile, 'utf8')) === settingsBefore, '不猜测、不删除 settings.json 里已有的覆盖项')
+
     console.log('\n--- ultracode-sessions.json：串行读改写、损坏先备份 ---')
     const ultra = await compile('src/main/ultracode-sessions.ts')
     const ultraFile = join(root, 'ultracode-sessions.json')
@@ -101,6 +122,51 @@ await runSuite(import.meta.url, async (ok, compile) => {
       threw = true
     }
     ok(threw && (await readdir(join(root, 'sync'))).every((name) => !name.endsWith('.tmp')), '同步原子写：rename 失败时抛错并删掉自己的临时文件')
+
+    const renameShim = {
+      name: 'rename-shim',
+      setup(b) {
+        b.onResolve({ filter: /^node:fs$/ }, () => ({ path: 'fs', namespace: 'rename-shim' }))
+        b.onLoad({ filter: /.*/, namespace: 'rename-shim' }, () => ({
+          loader: 'js',
+          contents: `
+import { createRequire } from 'node:module'
+const real = createRequire(import.meta.url)('node:fs')
+export const { lstatSync, mkdirSync, rmSync, writeFileSync } = real
+export const renameSync = (from, to) => {
+  const plan = globalThis.__renamePlan
+  if (plan) {
+    plan.calls++
+    if (plan.failures > 0) {
+      plan.failures--
+      throw Object.assign(new Error(plan.code), { code: plan.code })
+    }
+  }
+  return real.renameSync(from, to)
+}
+`
+        }))
+      }
+    }
+    const flaky = await compile('src/main/atomic-write.ts', { plugins: [renameShim] })
+    const flakyTarget = join(root, 'sync-retry', 'links.json')
+    for (const code of ['EBUSY', 'EPERM', 'EACCES']) {
+      globalThis.__renamePlan = { code, failures: 2, calls: 0 }
+      flaky.atomicWriteFileSync(flakyTarget, `["${code}"]`)
+      ok(globalThis.__renamePlan.calls === 3 && (await readFile(flakyTarget, 'utf8')) === `["${code}"]` && (await readdir(join(root, 'sync-retry'))).length === 1, `同步原子写：rename 遇到 ${code} 重试后成功，不留临时文件`, JSON.stringify(globalThis.__renamePlan))
+    }
+    globalThis.__renamePlan = { code: 'EBUSY', failures: 1000, calls: 0 }
+    const exhausted = await rejection(() => flaky.atomicWriteFileSync(flakyTarget, '["never"]'))
+    ok(exhausted?.code === 'EBUSY' && globalThis.__renamePlan.calls === 6 && (await readFile(flakyTarget, 'utf8')) === '["EACCES"]' && (await readdir(join(root, 'sync-retry'))).length === 1, '同步原子写：重试有限（共 6 次），用尽后抛错、原文件不变、临时文件被删', JSON.stringify(globalThis.__renamePlan))
+    globalThis.__renamePlan = { code: 'ENOSPC', failures: 1000, calls: 0 }
+    const other = await rejection(() => flaky.atomicWriteFileSync(flakyTarget, '["x"]'))
+    ok(other?.code === 'ENOSPC' && globalThis.__renamePlan.calls === 1, '同步原子写：非瞬时错误码不重试')
+    const flakyDir = join(root, 'sync-retry', 'dir.json')
+    await mkdir(flakyDir)
+    globalThis.__renamePlan = { code: 'EPERM', failures: 1000, calls: 0 }
+    const dirError = await rejection(() => flaky.atomicWriteFileSync(flakyDir, 'x'))
+    ok(dirError?.code === 'EPERM' && globalThis.__renamePlan.calls === 1, '同步原子写：目标是目录时不重试')
+    globalThis.__renamePlan = undefined
 
     console.log('\n--- session-layout / session-chains 用 durable 写 ---')
     const layout = await compile('src/main/session-layout.ts', { plugins: [atomicSpy] })

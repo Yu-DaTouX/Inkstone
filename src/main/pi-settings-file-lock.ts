@@ -4,6 +4,7 @@ import { delay } from '../shared/delay'
 
 const LOCK_ATTEMPTS = 10
 const LOCK_RETRY_MS = 20
+const LOCK_BUSY_CODES = new Set(['ELOCKED', 'EPERM', 'EBUSY'])
 
 async function acquire(file: string): Promise<() => Promise<void>> {
   const { default: lockfile } = await import('proper-lockfile')
@@ -14,7 +15,8 @@ async function acquire(file: string): Promise<() => Promise<void>> {
         onCompromised: (error) => console.warn('[pi-settings-lock] lock compromised:', error.message)
       })
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ELOCKED' || attempt >= LOCK_ATTEMPTS) throw error
+      const code = (error as NodeJS.ErrnoException)?.code
+      if (!code || !LOCK_BUSY_CODES.has(code) || attempt >= LOCK_ATTEMPTS) throw error
       await delay(LOCK_RETRY_MS)
     }
   }
