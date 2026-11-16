@@ -18,10 +18,11 @@ const scanner = NativeModules.InkstonePairScanner as {
   readClipboard(): Promise<string | null>
 } | undefined
 
-export function PairScreen({ onPaired, prefill, onCancel }: {
+export function PairScreen({ onPaired, prefill, onCancel, notice }: {
   onPaired: (connection: Connection) => Promise<void>
   prefill?: PairingPrefill | null
   onCancel?: () => void
+  notice?: string
 }) {
   const p = usePalette()
   const bottomInset = useBottomInset()
@@ -138,6 +139,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
           {onCancel ? <Button label={pick('返回', 'Back')} variant="ghost" compact onPress={onCancel} /> : null}
         </View>
         <Text style={[styles.headline, { color: p.fg }]}>{pick('连接电脑', 'Connect to desktop')}</Text>
+        {notice ? <Text accessibilityRole="alert" style={[styles.notice, { color: p.warn, backgroundColor: p.warnSoft }]}>{notice}</Text> : null}
 
         <View style={[styles.step, { backgroundColor: p.bg1, borderColor: p.borderSoft }]}>
           <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>01</Text><Text style={[styles.stepTitle, { color: p.fg }]}>{pick('连接同一个网络', 'Join the same network')}</Text></View>
@@ -186,6 +188,7 @@ const styles = StyleSheet.create({
   stepBody: { fontSize: font.sm, lineHeight: 20 },
   linkRow: { marginTop: space[1], paddingTop: space[3], borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   linkText: { fontSize: font.sm, fontWeight: weight.medium },
+  notice: { fontSize: font.sm, lineHeight: 20, padding: space[3], borderRadius: radius.md },
   scanned: { fontSize: font.sm, marginTop: space[1] },
   pairActions: { flexDirection: 'row', gap: space[2], marginTop: space[2] },
   pairAction: { flex: 1 },

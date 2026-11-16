@@ -1,5 +1,16 @@
 import type { HistoryMessage, HistoryPage } from './api/client'
 
+const sizes = new WeakMap<HistoryMessage, number>()
+
+function sizeOf(message: HistoryMessage): number {
+  let size = sizes.get(message)
+  if (size === undefined) {
+    size = JSON.stringify(message).length * 2
+    sizes.set(message, size)
+  }
+  return size
+}
+
 export class HistoryCache {
   private entries = new Map<string, { page: HistoryPage; size: number }>()
   private size = 0
@@ -15,7 +26,7 @@ export class HistoryCache {
     let size = 0
     const tail: HistoryMessage[] = []
     for (let i = messages.length - 1; i >= 0 && tail.length < 120; i--) {
-      const messageSize = JSON.stringify(messages[i]).length * 2
+      const messageSize = sizeOf(messages[i])
       if (size + messageSize > 1024 * 1024) break
       tail.unshift(messages[i])
       size += messageSize

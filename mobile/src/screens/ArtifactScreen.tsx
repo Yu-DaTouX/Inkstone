@@ -44,12 +44,12 @@ export function ArtifactScreen({
         subtitle={artifact.mediaType}
         left={<View style={{ flexDirection: 'row' }}>{onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? pick('收起项目和会话列表', 'Hide project and session list') : pick('展开项目和会话列表', 'Show project and session list')} onPress={onToggleSidebar} /> : null}<IconButton name="back" label={pick('返回会话', 'Back to session')} onPress={onBack} /></View>}
       />
-      {error ? <Text style={[styles.error, { color: p.err }]}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={[styles.error, { color: p.err }]}>{error}</Text> : null}
       {isImage ? (
         <RemoteImage client={client} style={styles.image} resizeMode="contain" source={client.artifactSource(sessionId, artifact.id)} accessibilityLabel={artifact.filename} />
       ) : isText ? (
         <ScrollView contentContainerStyle={styles.textBox}>
-          <Text selectable style={[styles.text, { color: p.fg }]}>{text ?? pick('读取中…', 'Loading…')}</Text>
+          {error && text === null ? null : <Text selectable style={[styles.text, { color: p.fg }]}>{text ?? pick('读取中…', 'Loading…')}</Text>}
         </ScrollView>
       ) : (
         <EmptyState>{pick(`请在电脑上打开 ${artifact.mediaType} 文件。`, `Open this ${artifact.mediaType} file on the desktop.`)}</EmptyState>

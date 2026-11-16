@@ -32,8 +32,10 @@ type CompletionPayload = {
   usage?: { prompt_tokens?: number; completion_tokens?: number }
 }
 
+type ParsedUrl = { hostname: string; username: string; password: string; search: string; hash: string; protocol: string; toString(): string }
+
 export function safeModelBaseUrl(input: string): string {
-  const url = new URL(input)
+  const url = new URL(input) as unknown as ParsedUrl
   const host = url.hostname.toLowerCase()
   const loopback = host === 'localhost' || host === '[::1]' || host === '::1' || /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(host)
   if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) {

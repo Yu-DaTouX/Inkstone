@@ -121,6 +121,7 @@ async function relayRequest<T>(
     return json as T
   } catch (error) {
     if (error instanceof RemoteHttpError) throw error
+    if (error instanceof RelayError && error.denied) throw new RemoteHttpError(401, error.message, 'relay_denied')
     if (error instanceof RelayError && error.timedOut && init.upload && init.timeoutMs) throw uploadTimedOut(init.timeoutMs)
     throw new RemoteHttpError(0, error instanceof RelayError ? error.message : pick('经中继连不上电脑：请确认电脑上的砚在运行并开启了中继接入', 'Cannot reach the desktop via relay. Check that Inkstone is running with relay enabled.'))
   }
@@ -673,9 +674,14 @@ export class RemoteEventStream {
           this.rotate()
         }
       },
-      onEnd: () => {
+      onEnd: (error) => {
         if (this.epoch !== epoch) return
         this.cancelRelay = null
+        if (error instanceof RelayError && error.denied && !this.stopped) {
+          this.stopped = true
+          this.handlers.onUnauthorized()
+          return
+        }
         if (this.stopped || this.rotating) return
         this.scheduleReconnect()
       }

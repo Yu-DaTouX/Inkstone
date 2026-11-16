@@ -30,6 +30,13 @@ function spanText(ms?: number): string {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
+function toolStatus(tool: { failed: boolean; denied: boolean; running: boolean; awaiting: boolean }, live: boolean): string {
+  if (tool.failed) return pick('失败', 'failed')
+  if (tool.denied) return pick('已拒绝', 'denied')
+  if (tool.running || (live && tool.awaiting)) return pick('进行中', 'in progress')
+  return pick('完成', 'done')
+}
+
 const clock = (at?: number) => at ? new Date(at).toTimeString().slice(0, 5) : ''
 
 export function errorTitle(kind: ModelErrorKind): string {
@@ -103,7 +110,7 @@ export const TimelineRow = memo(function TimelineRow({ item, live, expandedTools
           </View>
           const tool = step.tool
           return <View key={step.key}>
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${tool.name} ${tool.summary}`} disabled={!tool.output && !tool.images.length} onPress={() => onToggle(step.key)} style={[styles.toolRow, tool.nested ? { paddingLeft: space[4] } : null]}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: open, disabled: !tool.output && !tool.images.length }} accessibilityLabel={`${tool.name} ${tool.summary}${pick('，', ', ')}${toolStatus(tool, live)}`} disabled={!tool.output && !tool.images.length} onPress={() => onToggle(step.key)} style={[styles.toolRow, tool.nested ? { paddingLeft: space[4] } : null]}>
               <Icon name={toolIcon(tool.name)} size={14} color={tool.failed ? p.err : p.fgMute} />
               <Text numberOfLines={open ? undefined : 1} style={{ flex: 1, minWidth: 0, color: tool.failed ? p.err : p.fgDim, fontSize: font.sm }}>{tool.name}{tool.summary ? <Text style={{ color: p.fgMute, fontFamily: mono, fontSize: font.xs }}>  {tool.summary}</Text> : null}</Text>
               {tool.running || (live && tool.awaiting && !tool.failed && !tool.denied) ? <GlyphSpinner /> : <Text style={[styles.toolMark, { color: tool.failed ? p.err : p.fgMute }]}>{tool.failed ? '✕' : tool.denied ? '–' : '✓'}</Text>}
@@ -122,12 +129,15 @@ export const TimelineRow = memo(function TimelineRow({ item, live, expandedTools
   const message = item.message
   if (message.role === 'bash' && message.bash) {
     const failed = message.bash.exitCode !== null && message.bash.exitCode !== 0
+    const running = message.bash.exitCode === null && !message.bash.cancelled
     const open = expandedTools.includes(message.id)
+    const output = message.toolCalls?.[0]?.output ?? ''
     return <View style={styles.process}>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => onToggle(message.id)} style={styles.processHead}>
-        <Text numberOfLines={open ? undefined : 2} style={{ color: failed ? p.err : p.fgDim, fontSize: font.sm, fontFamily: mono }}>$ {redactCommandSecrets(message.bash.command)}{message.bash.cancelled ? pick('  （已取消）', '  (cancelled)') : failed ? pick(`  （退出码 ${message.bash.exitCode}）`, `  (exit code ${message.bash.exitCode})`) : ''}</Text>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open, disabled: !output }} disabled={!output} onPress={() => onToggle(message.id)} style={styles.processHead}>
+        <Text numberOfLines={open ? undefined : 2} style={{ flexShrink: 1, color: failed ? p.err : p.fgDim, fontSize: font.sm, fontFamily: mono }}>$ {redactCommandSecrets(message.bash.command)}{message.bash.cancelled ? pick('  （已取消）', '  (cancelled)') : failed ? pick(`  （退出码 ${message.bash.exitCode}）`, `  (exit code ${message.bash.exitCode})`) : ''}</Text>
+        {running ? <GlyphSpinner /> : null}
       </Pressable>
-      {open && message.text ? <CodeBlock value={message.text.length > 4000 ? `…${message.text.slice(-4000)}` : message.text} size={font.xs} /> : null}
+      {open && output ? <CodeBlock value={output.length > 4000 ? `…${output.slice(-4000)}` : output} size={font.xs} /> : null}
     </View>
   }
   const mine = message.role === 'user'
@@ -155,12 +165,12 @@ export const TimelineRow = memo(function TimelineRow({ item, live, expandedTools
         </View>
       ))}</View> : message.text ? <MessageBody text={message.text} selectable={!userMenu} /> : null}
       {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <Pressable key={index} accessibilityRole="imagebutton" accessibilityLabel={pick(`消息图片 ${index + 1}，点按放大`, `Message image ${index + 1}, tap to enlarge`)} onPress={() => onView({ messageId: message.id, index, label: pick(`图片 ${index + 1}/${message.images!.length}`, `Image ${index + 1}/${message.images!.length}`) })}><RemoteImage client={client} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} /></Pressable>)}</View> : null}
-      {failure ? <View accessibilityRole="alert" style={[styles.errorCard, { borderColor: p.err }]}>
-        <Text style={{ color: p.err, fontSize: font.sm, fontWeight: '600' }}>{errorTitle(failure.kind)}</Text>
+      {failure ? <View accessibilityRole={failure.kind === 'aborted' ? undefined : 'alert'} style={[styles.errorCard, { borderColor: failure.kind === 'aborted' ? p.borderSoft : p.err }]}>
+        <Text style={{ color: failure.kind === 'aborted' ? p.fgDim : p.err, fontSize: font.sm, fontWeight: '600' }}>{errorTitle(failure.kind)}</Text>
         <Text selectable numberOfLines={4} style={{ color: p.fgDim, fontSize: font.xs, fontFamily: mono }}>{message.error}</Text>
         {(onRetry && failure.kind !== 'truncated') || (onCompact && failure.kind === 'context') ? <View style={styles.errorActions}>
           {onCompact && failure.kind === 'context' ? <Pressable accessibilityRole="button" onPress={onCompact} style={styles.errorButton}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('压缩上下文', 'Compact context')}</Text></Pressable> : null}
-          {onRetry && failure.kind !== 'aborted' && failure.kind !== 'truncated' ? <Pressable accessibilityRole="button" onPress={onRetry} style={styles.errorButton}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('重试', 'Retry')}</Text></Pressable> : null}
+          {onRetry && failure.kind !== 'aborted' ? <Pressable accessibilityRole="button" onPress={onRetry} style={styles.errorButton}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('重试', 'Retry')}</Text></Pressable> : null}
         </View> : null}
       </View> : null}
       {(message.artifacts ?? []).map((artifact) => (

@@ -134,6 +134,40 @@ for (const [name, { old, now }] of Object.entries(results)) {
 }
 
 {
+  const retried = [
+    { id: 'u1', role: 'user', text: '跑一下' },
+    { id: 'a1', role: 'assistant', text: '先说一半', error: 'overloaded_error: 529' },
+    { id: 'a2', role: 'assistant', toolCalls: [call('t1', 'bash')] },
+    { id: 'a3', role: 'assistant', text: '跑完了' }
+  ]
+  const now = after.makeTimeline(retried)
+  const notice = now.find((entry) => entry.kind === 'notice')
+  ok(!!notice && notice.key === 'recovered-a1' && notice.body === 'overloaded_error: 529', '有意差异：重试成功的模型错误收成一条可展开的短提示，带原始错误')
+  const shownText = (entry) => JSON.stringify(entry, (key, value) => (key === 'sources' ? undefined : value))
+  ok(now.every((entry) => entry.kind === 'notice' || !shownText(entry).includes('先说一半')), '有意差异：失败那条里没写完的半截文字不再出现（与桌面一致）')
+  ok(now.every((entry) => entry.kind === 'notice' || !entry.message?.error), '有意差异：重试成功后没有红色错误卡，也就不会再出现重试按钮')
+  const old = JSON.stringify(before.makeTimeline(retried))
+  ok(old.includes('先说一半') && old.includes('overloaded_error: 529'), '改前：错误与半截文字都留在列表里')
+
+  const stuck = [
+    { id: 'u1', role: 'user', text: '跑一下' },
+    { id: 'a1', role: 'assistant', text: '先说一半', error: 'overloaded_error: 529' },
+    { id: 'a2', role: 'assistant', thinking: '再想想' }
+  ]
+  const left = after.makeTimeline(stuck)
+  ok(!left.some((entry) => entry.kind === 'notice') && left.some((entry) => entry.kind === 'message' && entry.message.id === 'a1' && entry.message.error === 'overloaded_error: 529' && !entry.message.text), '后续只有思考没有重试成功时：错误卡仍在，半截文字不显示')
+
+  const twice = [
+    { id: 'u1', role: 'user', text: '跑一下' },
+    { id: 'a1', role: 'assistant', text: '', error: 'overloaded_error: 529' },
+    { id: 'a2', role: 'assistant', text: '', error: 'rate limit 429' }
+  ]
+  const last = after.makeTimeline(twice).filter((entry) => entry.kind === 'message' && entry.message.error)
+  ok(last.length === 1 && last[0].message.id === 'a2', '连续失败时只显示最后一次的错误卡')
+  ok(after.makeTimeline(twice).at(-1).sources[0] === twice[2], '错误卡的来源仍是原始消息对象')
+}
+
+{
   const messages = cases.工具调用与思考
   const first = after.makeTimeline(messages)
   const again = after.makeTimeline(messages)

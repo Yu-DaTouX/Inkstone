@@ -217,9 +217,9 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       <IconButton name="pencil" label={pick('新建会话', 'New session')} busy={creating} disabled={stream !== 'open'} onPress={() => setPicker(true)} />
     </View>
     {(refreshing || creating || stream === 'connecting' || stream === 'reconnecting') ? <View style={styles.activity}><ActivityLine state="run" text={creating ? pick('正在新建会话', 'Creating session') : refreshing ? pick('正在刷新会话', 'Refreshing sessions') : STATUS_TEXT[stream]} /></View> : null}
-    {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{/连接超时|Timed out/.test(error) ? pick('连接超时，请检查电脑和 Tailscale。', 'Timed out. Check the desktop and Tailscale.') : error}</Text> : null}
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{/连接超时|Timed out/.test(error) ? pick('连接超时，请检查电脑和 Tailscale。', 'Timed out. Check the desktop and Tailscale.') : error}</Text> : null}
     <FlatList data={rows} keyExtractor={(row) => row.key} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list} renderItem={renderRow}
-      ListFooterComponent={rows.length && !query && !sessions.length ? <Meta style={styles.empty}>{stream === 'open' ? pick('还没有会话', 'No sessions yet') : pick('正在等待电脑的会话…', 'Waiting for desktop sessions…')}</Meta> : null} />
+      ListFooterComponent={rows.length && !query && !sessions.length ? <Meta style={styles.empty}>{stream === 'open' ? pick('还没有会话', 'No sessions yet') : pick('正在等待电脑的会话…', 'Waiting for desktop sessions…')}</Meta> : query.trim() && !rows.some((row) => row.kind === 'session') ? <Meta style={styles.empty}>{pick('没有匹配的会话', 'No matching sessions')}</Meta> : null} />
     {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('开启待回答提醒', 'Enable question alerts')}</Text></Pressable> : null}
     <View style={[styles.foot, { borderTopColor: p.borderSoft, paddingBottom: Math.max(0, bottomInset - space[2]) }]}>
       <StatusDot color={stream === 'open' ? p.online : p.warn} label={STATUS_TEXT[stream]} />

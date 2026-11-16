@@ -24,7 +24,7 @@ export { generateKeyPair, toB64u } from './src/main/relay-bridge/crypto'`,
 }
 
 function createTunnel(mods) {
-  const state = { hostKey: null, target: () => null, pairCodes: new Set(), keys: new Set() }
+  const state = { hostKey: null, target: () => null, pairCodes: new Set(), keys: new Set(), sessions: new Set() }
   const client = (clientKey, name) => ({ id: `relay-${clientKey.slice(0, 8)}`, key: clientKey, name, kind: 'phone', addedAt: Date.now(), lastSeenAt: Date.now(), revokedAt: null, pairedAt: Date.now(), pendingUntil: null })
   const direct = new mods.DirectTunnelEndpoint((pipe) => {
     const session = new mods.TunnelSession(pipe, {
@@ -42,7 +42,7 @@ function createTunnel(mods) {
       onOpen: () => undefined,
       onClose: () => undefined
     })
-    void session
+    state.sessions.add(session)
   })
   return { direct, state }
 }
@@ -180,6 +180,11 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
   const baseUrl = `http://127.0.0.1:${info.port}`
   return {
     server, devices, state, calls, baseUrl,
+    forgetTunnelClients() {
+      tunnelState.keys.clear()
+      for (const session of tunnelState.sessions) session.close()
+      tunnelState.sessions.clear()
+    },
     startPairing: () => {
       invite = null
       return devices.startPairing().code

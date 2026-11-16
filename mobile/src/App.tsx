@@ -81,6 +81,7 @@ function AppRoot() {
   const [localRoute, setLocalRoute] = useState<'welcome' | 'assistant' | 'assistant-settings'>('welcome')
   const assistantSettingsFrom = useRef<'assistant' | 'settings'>('assistant')
   const [pairingPrefill, setPairingPrefill] = useState<PairingPrefill | null>(null)
+  const [revoked, setRevoked] = useState(false)
   const connectionState = useRef<Connection | null | undefined>(undefined)
   const pendingLink = useRef<string | null>(null)
   const [alertsEnabled, setAlertsEnabled] = useState(false)
@@ -177,6 +178,9 @@ function AppRoot() {
     setDetail(null)
   }, [connection])
 
+  const unpairByUser = useCallback(() => { setRevoked(false); return unpair() }, [unpair])
+  const unpairByDesktop = useCallback(async () => { await unpair(); setRevoked(true) }, [unpair])
+
   const enableAlerts = useCallback(async () => {
     if (!connection) return
     try { setAlertsEnabled(await startQuestionAlerts(connection, true)) }
@@ -270,7 +274,7 @@ function AppRoot() {
       alertsEnabled={alertsEnabled}
       onEnableAlerts={() => void enableAlerts()}
       onDisableAlerts={() => { void stopQuestionAlerts(); setAlertsEnabled(false) }}
-      onUnpair={unpair}
+      onUnpair={unpairByUser}
       onBack={() => setRoute({ name: 'home' })}
       sidebarVisible={listShown}
       onToggleSidebar={mode === 'split' ? () => setSidebarCollapsed((c) => !c) : undefined}
@@ -352,9 +356,11 @@ function AppRoot() {
               </View> : null}
               <PairScreen
                 prefill={pairingPrefill}
+                notice={revoked && !connection ? pick('电脑已不再认这台手机（配对被移除或授权被撤销）。请在电脑「设置 → 设备连接」重新生成配对码后再连接。', 'The desktop no longer accepts this phone (pairing removed or access revoked). Generate a new code in Settings → Device connection on the desktop, then pair again.') : undefined}
                 onCancel={connection ? () => setPairingPrefill(null) : undefined}
                 onPaired={async (next) => {
                   await saveConnection(next)
+                  setRevoked(false)
                   setConnection(next)
                   setPairingPrefill(null)
                   setRoute({ name: 'home' })
@@ -363,7 +369,7 @@ function AppRoot() {
             </>}
           </View>
         ) : (
-          <RemoteProvider connection={connection} onUnauthorized={unpair}>
+          <RemoteProvider connection={connection} onUnauthorized={unpairByDesktop}>
             {booting ? <RemoteReady onReady={markRemoteReady} /> : null}
             {remoteBody()}
           </RemoteProvider>

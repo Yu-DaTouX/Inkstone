@@ -40,6 +40,19 @@ assert.equal(clipped.nextBefore, clipped.messages[0].id)
 cache.set('s1', { messages: [{ id: 'm1', role: 'user', text: 'y' }], hasMore: false })
 assert.equal(cache.get('s1').messages.length, 1)
 assert.equal(cache.get('s1').hasMore, false)
+{
+  const stable = Array.from({ length: 50 }, (_, index) => ({ id: `k${index}`, role: 'assistant', text: 'z'.repeat(200) }))
+  const real = JSON.stringify
+  let calls = 0
+  JSON.stringify = (...args) => { calls++; return real(...args) }
+  try {
+    cache.set('sized', { messages: stable, hasMore: false })
+    const first = calls
+    cache.set('sized', { messages: stable, hasMore: false })
+    assert.ok(first >= stable.length, '第一次按消息计算体积')
+    assert.equal(calls, first, '同一批消息对象再次缓存时不重复序列化')
+  } finally { JSON.stringify = real }
+}
 for (let index = 0; index < 8; index++) cache.set(`s${index}`, { messages: [{ id: `x${index}`, role: 'user', text: 'y' }], hasMore: false })
 assert.equal(cache.get('s1'), undefined)
 assert.ok(cache.get('s7'))

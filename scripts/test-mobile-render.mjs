@@ -4,6 +4,7 @@ import { startFakeDesktop } from './mobile-render/fake-desktop.mjs'
 import { edgeFlows } from './mobile-render/flows-edge.mjs'
 import { moreFlows } from './mobile-render/flows-more.mjs'
 import { liveFlows } from './mobile-render/flows-live.mjs'
+import { uxFlows } from './mobile-render/flows-ux.mjs'
 import { reportSkip } from './lib/test-skip.mjs'
 
 const lib = await loadApp().catch((error) => {
@@ -266,7 +267,7 @@ await run('模型错误', flowModelErrors)
 await run('改名与搜索', flowRenameSearch)
 await run('首页分组', flowHomeSections)
 await run('撤销设备', flowRevoked)
-for (const [name, fn] of [...edgeFlows({ boot, openSession, check, env }), ...moreFlows({ boot, openSession, check, env }), ...liveFlows({ boot, openSession, check, env })]) await run(name, fn)
+for (const [name, fn] of [...edgeFlows({ boot, openSession, check, env }), ...moreFlows({ boot, openSession, check, env }), ...liveFlows({ boot, openSession, check, env }), ...uxFlows({ boot, openSession, check, env })]) await run(name, fn)
 
 console.error = realError
 console.warn = realWarn

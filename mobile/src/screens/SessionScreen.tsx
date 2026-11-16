@@ -97,7 +97,7 @@ export function SessionScreen({
   const [voicePhase, setVoicePhase] = useState<SpeechPhase>('idle')
   const [expandedTools, setExpandedTools] = useState<string[]>([])
   const [viewing, setViewing] = useState<(ImageRef & { label: string }) | null>(null)
-  const toggleExpanded = (key: string) => setExpandedTools((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key])
+  const toggleExpanded = useCallback((key: string) => setExpandedTools((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]), [])
   const listRef = useRef<FlatList<TimelineEntry>>(null)
   const listSize = useRef({ content: 0, viewport: 0 })
   const followBottom = useRef(true)
@@ -134,10 +134,12 @@ export function SessionScreen({
   }, [timeline])
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const draftChange = useRef(onDraftChange)
+  draftChange.current = onDraftChange
   const compose = useCallback((text: string) => {
     const current = draftRef.current.trim()
-    onDraftChange(current ? `${draftRef.current.trimEnd()}\n${text}` : text)
-  }, [onDraftChange])
+    draftChange.current(current ? `${draftRef.current.trimEnd()}\n${text}` : text)
+  }, [])
   const runInList = !!liveKey
   const snapBottom = (animated = false) => {
     if (alive.current && followBottom.current && listSize.current.viewport > 0) listRef.current?.scrollToOffset({ offset: Math.max(0, listSize.current.content - listSize.current.viewport), animated })
@@ -305,17 +307,24 @@ export function SessionScreen({
 
   useEffect(() => { void loadSubagents() }, [loadSubagents])
 
+  const retrying = useRef(false)
   const retryFailed = useCallback(async () => {
+    if (retrying.current) return
     const at = rawHistory.current.findIndex((message) => message.id === failedKey)
     let text = ''
-    for (let index = at - 1; index >= 0 && !text; index--) if (rawHistory.current[index].role === 'user') text = rawHistory.current[index].text?.trim() ?? ''
+    let source: HistoryMessage | undefined
+    for (let index = at - 1; index >= 0 && !text; index--) if (rawHistory.current[index].role === 'user') { source = rawHistory.current[index]; text = source.text?.trim() ?? '' }
     if (!text) { setError(pick('找不到要重试的消息，请重新输入', 'Could not find the message to retry. Type it again.')); return }
+    if (source?.images?.length) { setError(pick('这条消息带图片，手机上无法原样重试：请重新添加图片发送，或在电脑上重试', 'This message had images, which the phone cannot resend as they were. Add the images again, or retry on the desktop.')); return }
+    retrying.current = true
     try {
       await client.send(sessionId, text, idempotencyKey())
       followBottom.current = true
       void load()
     } catch (err) {
       setError(err instanceof Error ? err.message : pick('重试没发出去', 'Retry not sent'))
+    } finally {
+      retrying.current = false
     }
   }, [client, failedKey, sessionId, load])
   const compactNow = useCallback(async () => {
@@ -385,7 +394,7 @@ export function SessionScreen({
       />
       <View style={styles.flex}>
       {(loading || sending) && !runner?.running ? <View style={styles.loading}><GlyphSpinner /><Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>{sending ? pick('正在发送', 'Sending') : pick('正在读取会话', 'Loading session')}</Text></View> : null}
-      {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft, borderLeftColor: p.err }]}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={[styles.error, { color: p.err, backgroundColor: p.errSoft, borderLeftColor: p.err }]}>{error}</Text> : null}
       <FlatList
         ref={listRef}
         contentContainerStyle={styles.list}

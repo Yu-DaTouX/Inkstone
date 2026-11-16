@@ -1,14 +1,17 @@
 import { pick } from '../../../src/shared/ui-lang'
 import { StyleSheet, Text, View } from 'react-native'
+import { parseHostNotice } from '../../../src/shared/host-notice'
 import { font, radius, space, usePalette, weight } from '../theme'
 
 const SHOWN = 3
 
+const visible = (text: string) => !parseHostNotice(text)
+
 export function queuedRows(queue: { steering: string[]; followUp: string[] } | undefined): { kind: 'steer' | 'queue'; text: string }[] {
   if (!queue) return []
   return [
-    ...queue.steering.map((text) => ({ kind: 'steer' as const, text })),
-    ...queue.followUp.map((text) => ({ kind: 'queue' as const, text }))
+    ...queue.steering.filter(visible).map((text) => ({ kind: 'steer' as const, text })),
+    ...queue.followUp.filter(visible).map((text) => ({ kind: 'queue' as const, text }))
   ]
 }
 

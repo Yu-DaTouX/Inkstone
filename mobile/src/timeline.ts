@@ -63,7 +63,29 @@ const projectTurns = createTurnProjector()
 
 const isHiddenSubagentNotice = (message: HistoryMessage) => message.role === 'user' && parseHostNotice(message.text)?.kind === 'subagent'
 
-function processEntry(turn: HistoryMessage[], entries: TimelineEntry[]): void {
+function recoveredErrorLabel(): string {
+  return pick('模型请求出错，已自动重试', 'Model request failed; retried automatically')
+}
+
+function settleErrors(turn: HistoryMessage[]): { shown: HistoryMessage[]; recovered: number } {
+  let errorAt = -1
+  turn.forEach((message, index) => { if (message.error) errorAt = index })
+  if (errorAt < 0) return { shown: turn, recovered: -1 }
+  const recovered = turn.slice(errorAt + 1).some((message) => message.text?.trim() || message.toolCalls?.length)
+  const shown = turn.map((message, index) => {
+    if (!message.error) return message
+    const later = index < turn.length - 1
+    const keep = index === errorAt && !recovered
+    if (keep && !later) return message
+    const { error: _error, ...rest } = message
+    return { ...rest, ...(later ? { text: '' } : {}), ...(keep ? { error: message.error } : {}) }
+  })
+  return { shown, recovered: recovered ? errorAt : -1 }
+}
+
+function processEntry(sources: HistoryMessage[], entries: TimelineEntry[]): void {
+  const { shown: turn, recovered } = settleErrors(sources)
+  if (recovered >= 0) entries.push({ kind: 'notice', key: `recovered-${sources[recovered].id}`, message: sources[recovered], sources: [sources[recovered]], icon: 'refresh', label: recoveredErrorLabel(), body: sources[recovered].error })
   let replyIndex = -1
   turn.forEach((message, index) => { if (hasReply(message)) replyIndex = index })
   const steps: ProcessStep[] = []
@@ -101,11 +123,11 @@ function processEntry(turn: HistoryMessage[], entries: TimelineEntry[]): void {
   const counted = [...tools.values()].filter((tool) => !tool.nested && !(UNCOUNTED_TOOLS.has(tool.name) && !tool.failed))
   const thinking = steps.filter((step) => step.kind === 'thinking').length
   if (counted.length || thinking) {
-    entries.push({ kind: 'process', key: `process-${turn[0].id}`, sources: turn, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, images: [...tools.values()].reduce((sum, tool) => sum + tool.images.length, 0), ms: last > first ? last - first : undefined })
+    entries.push({ kind: 'process', key: `process-${turn[0].id}`, sources, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, images: [...tools.values()].reduce((sum, tool) => sum + tool.images.length, 0), ms: last > first ? last - first : undefined })
   } else {
-    for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message, sources: [step.message] })
+    for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message, sources: [sources[turn.indexOf(step.message)]] })
   }
-  if (replyIndex >= 0) entries.push({ kind: 'message', key: turn[replyIndex].id, message: turn[replyIndex], sources: [turn[replyIndex]] })
+  if (replyIndex >= 0) entries.push({ kind: 'message', key: turn[replyIndex].id, message: turn[replyIndex], sources: [sources[replyIndex]] })
 }
 
 export function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {

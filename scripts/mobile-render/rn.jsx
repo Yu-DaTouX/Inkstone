@@ -55,6 +55,7 @@ export const View = forwardRef(function View(props, ref) {
 })
 
 export const Text = forwardRef(function Text(props, ref) {
+  env.onText?.(props)
   return <span ref={keep(props)} {...attrs(props, { 'data-rn': 'Text' })}>{props.children}</span>
 })
 
