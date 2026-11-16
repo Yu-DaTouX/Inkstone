@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 7d599acb3864ac1bd75a0b9bace63e6750b61fb090815d248ef3d5abb429de45 */
+/* source-sha256: 1b7269a6d0ef73a028b225e5794c85cbc26f1e120f51c02376b1406aafff0f57 */
 var active = "zh-CN";
 var resolver = null;
 function uiLang() {
@@ -104,12 +104,25 @@ var CUSTOM_API_CHOICES = [
   { id: "google-generative-ai", label: "Google Generative AI" },
   { id: "mistral-conversations", label: "Mistral Conversations" }
 ];
-function cleanModelCost(value) {
+function readModelCost(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
   const raw = value;
   const num = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
-  const cost = { input: num(raw.input), output: num(raw.output), cacheRead: num(raw.cacheRead), cacheWrite: num(raw.cacheWrite) };
-  return cost.input > 0 || cost.output > 0 ? cost : void 0;
+  return { input: num(raw.input), output: num(raw.output), cacheRead: num(raw.cacheRead), cacheWrite: num(raw.cacheWrite) };
+}
+function cleanModelCost(value) {
+  const cost = readModelCost(value);
+  return cost && (cost.input > 0 || cost.output > 0) ? cost : void 0;
+}
+function isFreeModelId(id) {
+  return !!id && /[:/_-]free$/i.test(id.trim());
+}
+function explicitFreeCost(raw) {
+  const cost = readModelCost(raw.cost);
+  if (!cost || cost.input > 0 || cost.output > 0) return void 0;
+  const id = typeof raw.id === "string" ? raw.id : void 0;
+  if (isFreeModelId(id)) return { ...cost, input: 0, output: 0 };
+  return void 0;
 }
 var THINKING_LEVEL_KEYS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 function cleanThinkingLevelMap(value) {
@@ -383,12 +396,15 @@ export {
   catalogKey,
   cleanModelCost,
   describeDiscoveredModels,
+  explicitFreeCost,
   hasExecutablePrefix,
+  isFreeModelId,
   isYanProviderId,
   mergeCustomProviders,
   modelsWriteRisk,
   parseModelEntries,
   readCustomProviders,
+  readModelCost,
   sameBaseUrl,
   validateBaseUrl,
   validateCustomProvider

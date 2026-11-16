@@ -77,6 +77,7 @@ let starts = []
 const controller = {
   setContext() {}, hasActiveWriter: () => false, list: () => [own, foreign, { ...own, id: 'sub-c3c3c3c3', parentSessionId: undefined }],
   get: id => [own, foreign].find(run => run.id === id),
+  parentOwns: (id, sessionId) => !!sessionId && [own, foreign].find(run => run.id === id)?.parentSessionId === sessionId,
   getFull: async id => { fullReads++; return controller.get(id) },
   stop: async () => { stops++; return { ok: true } },
   start: async (_task, _model, isolation) => { starts.push({ isolation }); return { ok: true, run: own } }
@@ -150,7 +151,7 @@ function agentWith(manager, permissionMode = 'all') {
   agent.rpcInstanceId = 'fixture-owner'
   agent.capabilityOpts = { runnerGeneration: 1 }
   agent.getPermissionMode = async () => permissionMode
-  agent.mcp = { connectionManager: () => manager, configError: () => undefined }
+  agent.mcp = { connectionManager: () => manager, configError: () => undefined, current: () => undefined }
   return agent
 }
 function managerWith(callTool, readOnly = true) {

@@ -141,7 +141,7 @@
     ok(ctrlQPrevented && sent.length === 1 && sent[0].mode === 'followUp', '运行时 Ctrl+Q 以 followUp 排队')
 
     out.push('')
-    out.push('=== 3. 压缩期间：仍以 followUp 投递，不进待定区 ===')
+    out.push('=== 3. 压缩期间：消息先进待定区，不立即投递 ===')
     sent.length = 0
     idle()
     await sleep(150)
@@ -156,10 +156,13 @@
       pressEnter()
       await sleep(300)
       note(`压缩期投递 = ${JSON.stringify(sent)} · 待定 = ${pending().length}`)
-      ok(sent.length === 1 && sent[0].mode === 'followUp', '压缩期间 Enter 以 followUp 投递（主进程按 isCompacting 加 streamingBehavior）')
-      ok(pending().length === 0, '压缩期间不再写入待定区')
+      ok(sent.length === 0, '压缩期间 Enter 不立即投递')
+      ok(pending().length === 1 && pending()[0].text === 'YAN-PENDING-COMPACT', '压缩期间的消息进入待定区')
       setCompacting(false)
       await sleep(200)
+      for (const item of [...pending()]) store.getState().restoreSend(item.id)
+      composer.set('', editor())
+      await sleep(150)
     }
 
     out.push('')

@@ -1095,8 +1095,8 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       await drop.stopAll()
       const dropped = await drop.discard(dropRun.id)
       ok(dropped.ok && drop.get(dropRun.id)?.review === 'discarded' && !existsSync(join(root, 'drop.txt')) && !existsSync(dropRun.cwd), '退出后保留的也能放弃，放弃时才删工作树且不动项目', JSON.stringify(dropped))
-      await history.discard(run.id)
-      ok(existsSync(join(root, 'new.txt')) && history.get(run.id)?.review === 'discarded', '历史放弃不清理旧 cwd 或删除原项目，调用快照仍保留')
+      const mergedDiscard = await history.discard(run.id)
+      ok(mergedDiscard.ok && !!mergedDiscard.warning && existsSync(join(root, 'new.txt')) && history.get(run.id)?.review === 'merged', '已合并的历史记录再放弃：只带提示、状态仍是已合并，不删原项目文件')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
