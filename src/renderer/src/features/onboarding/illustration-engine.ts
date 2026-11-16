@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from '../../lib/reduced-motion'
 export interface IllustrationState {
   readonly scene: number
   readonly light: boolean
@@ -190,7 +191,7 @@ const DRAW_EASE = 'cubic-bezier(.165,.84,.44,1)'
 const fixed = (n: number): string => n.toFixed(2)
 
 export function startIllustration(svg: SVGSVGElement, box: HTMLElement, initial: IllustrationState): IllustrationEngine {
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const reduce = prefersReducedMotion()
   const layer = svg.querySelector<SVGGElement>('[data-actors]')
   const scenes = Array.from(svg.querySelectorAll<SVGGElement>('[data-scene]'))
   const anchors = scenes.map((el) =>

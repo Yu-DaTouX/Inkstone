@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from '../lib/reduced-motion'
 export type MessageLocator = (messageId: string) => Promise<boolean>
 
 const HIGHLIGHT_MS = 1800
@@ -21,7 +22,7 @@ export function cssQuoted(value: string): string {
 }
 
 export function highlightMessageElement(el: Element): void {
-  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
+  const reduceMotion = prefersReducedMotion()
   el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
   el.classList.add('msg-located')
   window.setTimeout(() => el.classList.remove('msg-located'), HIGHLIGHT_MS)

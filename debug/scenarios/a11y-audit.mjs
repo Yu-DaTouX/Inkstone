@@ -1,6 +1,32 @@
-import { MOD } from '../lib/review-kit.mjs'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { MOD, textAudit, controls } from '../lib/review-kit.mjs'
 
-export const meta = { description: '可访问性审计：AX 树角色/名称/状态、live region、Tab 焦点序列与焦点陷阱、分屏/审批/提问/右栏/设置/命令面板/Ctrl+Tab 的焦点去向，含减少动效复走；不调用真实模型' }
+const WF_SCRIPT = `export const meta = {
+  name: '假模型三阶段演示',
+  description: '侦察两路、逐个审计六个文件（结构化输出）、四名复核',
+  phases: ['侦察', '审计', '复核']
+}
+
+phase('侦察')
+const scout = await parallel([1, 2].map((i) => agent('WFAGENT WFDELAY1500 WFITEM=scout' + i + ' 侦察范围', { label: '侦察 ' + i, readOnly: true, model: 'fake/fake-model' })))
+
+phase('审计')
+const files = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']
+const audits = await pipeline(files, (file) => agent('WFAGENT WFJSON WFDELAY4000 WFITEM=' + file + ' 审计这个文件', {
+  label: '审计 ' + file,
+  readOnly: true,
+  model: 'fake/fake-model',
+  schema: { type: 'object', required: ['item', 'ok'], properties: { item: { type: 'string' }, ok: { type: 'boolean' }, notes: { type: 'array', items: { type: 'string' } } } }
+}))
+log('审计完成 ' + audits.filter(Boolean).length + ' 个')
+
+phase('复核')
+const votes = await parallel([1, 2, 3, 4].map((i) => agent('WFAGENT WFDELAY1500 WFITEM=review' + i + ' 复核结论', { label: '复核 ' + i, readOnly: true, model: 'fake/fake-model' })))
+return { scouted: scout.filter(Boolean).length, audited: audits.filter(Boolean).map((a) => a.item), reviews: votes.filter(Boolean).length }
+`
+
+export const meta = { description: '可访问性审计：AX 树角色/名称/状态、live region、Tab 焦点序列与焦点陷阱、分屏/审批/提问/右栏/设置/命令面板/Ctrl+Tab 的焦点去向，含减少动效复走；另覆盖设置各页（含 MCP 检查失败报错、明文备份进度与删除确认框）、工具行计时、子代理与工作流卡片、右栏各面板的名称/同名按钮/对比度（深浅）/窄屏溢出/终端逃生键；不调用真实模型' }
 
 const HELPERS = `(() => {
   if (window.__a11y) return
@@ -27,8 +53,17 @@ const HELPERS = `(() => {
     const ringedWhileFocused = new Map(entries.map(([el]) => [el, window.__a11y.static.get(el)]))
     document.activeElement?.blur?.()
     const out = []
+    const suspects = []
     for (const [el, sig] of entries) {
-      if (sigOf(el) === sig && !ringedWhileFocused.get(el)) out.push(el.tagName.toLowerCase() + '|' + (el.getAttribute('data-testid') || el.id || '') + '|' + label(el))
+      if (sigOf(el) === sig && !ringedWhileFocused.get(el)) suspects.push([el, sig])
+    }
+    for (const [el, sig] of suspects) {
+      const blurredSig = sigOf(el)
+      el.focus({ focusVisible: true, preventScroll: true })
+      await new Promise((r) => setTimeout(r, 300))
+      const ringed = staticRing(el) || sigOf(el) !== blurredSig
+      el.blur()
+      if (!ringed) out.push(el.tagName.toLowerCase() + '|' + (el.getAttribute('data-testid') || el.id || '') + '|' + label(el))
     }
     window.__a11y.sigs = new Map()
     window.__a11y.static = new Map()
@@ -127,7 +162,7 @@ export default async function run(ctx) {
     }
     const keys = seq.map((d) => `${d.tag}|${d.id}|${d.label}|${(d.rect ?? []).join(',')}`)
     const inside = scopeSel ? await ev(`!!document.activeElement?.closest(${JSON.stringify(scopeSel)})`) : null
-    const hidden = seq.filter((d) => d.tag !== 'body' && !d.visible)
+    const hidden = seq.filter((d) => d.tag !== 'body' && !d.visible && !/xterm-helper-textarea/.test(d.id))
     const noRing = await ev(`window.__a11y.unringed()`)
     const lost = seq.filter((d) => d.tag === 'body').length
     const unique = new Set(keys).size
@@ -137,7 +172,7 @@ export default async function run(ctx) {
     const counts = {}
     for (const k of keys) counts[k] = (counts[k] || 0) + 1
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
-    if (top && steps > 0 && unique > 1 && top[1] >= 4 && steps < unique * 3) note(scope, '疑似焦点陷阱', top)
+    if (top && steps > 0 && unique > 1 && top[1] >= 4 && steps < unique * 3 && !/xterm-helper-textarea/.test(top[0])) note(scope, '疑似焦点陷阱', top)
     report.sections[scope + ':tab'] = keys
     await ev(`document.getElementById('__a11y-notrans')?.remove()`)
     return { seq, keys, unique, inside }
@@ -496,6 +531,265 @@ export default async function run(ctx) {
     await cc('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
     await ev(`window.__yanSplit.getState().apply({ tiles: [], live: 0 })`).catch(() => {})
     await sleep(600)
+  })
+
+  const setTheme = async (theme) => {
+    await ev(`window.__yanStore.getState().patchSettings({ theme: ${JSON.stringify(theme)} })`)
+    await sleep(450)
+  }
+  const ambiguousButtons = (root) => ev(`(() => {
+    const root = document.querySelector(${JSON.stringify(root)})
+    if (!root) return []
+    const counts = new Map()
+    for (const b of root.querySelectorAll('button,[role=button]')) {
+      if (!b.checkVisibility?.()) continue
+      const name = (b.getAttribute('aria-label') || b.textContent || '').trim()
+      if (!name || name.length > 12) continue
+      const ctx = b.parentElement?.closest('article,[role=group],[role=listitem],[role=region],li,section')
+      if (ctx && root.contains(ctx) && (ctx.getAttribute('aria-label') || ctx.getAttribute('aria-labelledby'))) continue
+      counts.set(name, (counts.get(name) || 0) + 1)
+    }
+    return [...counts].filter(([, n]) => n >= 3).map(([name, n]) => name + ' ×' + n)
+  })()`)
+  const surfaceAudit = async (scope, root, { walk = 20, contrast = true, scopeSel = null, ambiguous = true } = {}) => {
+    await axAudit(scope)
+    const c = await controls(cdp, root)
+    if (c.error) { note(scope, '找不到审计根节点', c.error); return }
+    report.sections[scope + ':controls'] = { total: c.total, small: c.small.length, noName: c.noName.length }
+    if (ambiguous) {
+      const amb = await ambiguousButtons(root)
+      if (amb.length) note(scope, '同名按钮重复出现且所在行没有名称，读屏无法分辨对象', amb.slice(0, 6))
+    }
+    if (walk) await tabWalk(scope, walk, { scopeSel })
+    if (contrast) {
+      for (const theme of ['dark', 'light']) {
+        await setTheme(theme)
+        const r = await textAudit(cdp, root)
+        if (r.lowContrast) { r.lowContrast = r.lowContrast.filter((i) => !/sidebar|t3-thread|t3-favicon|t3-shelf|composer-suggestion|terminal-host/.test(i.el)); r.lowContrastCount = r.lowContrast.length }
+        if (r.error) { note(scope + ' [' + theme + ']', '对比度审计找不到根节点', r.error); continue }
+        report.sections[scope + ':contrast:' + theme] = { texts: r.textNodes, low: r.lowContrastCount, tiny: r.tinyFont.length }
+        if (r.lowContrastCount) note(scope + ' [' + theme + ']', `${r.lowContrastCount} 处文字对比度低于 WCAG AA`, r.lowContrast.slice(0, 8).map((i) => `${i.el} "${i.text}" ${i.contrast}`))
+      }
+      await setTheme('dark')
+    }
+  }
+  const dialogCheck = async (scope, triggerSel, { expectRole = 'dialog,alertdialog' } = {}) => {
+    const before = await ev(`(() => { const e = document.querySelector(${JSON.stringify(triggerSel)}); e?.focus(); return !!e })()`)
+    const countBefore = await ev(`document.querySelectorAll(${JSON.stringify(expectRole.split(',').map((r) => `[role=${r}]`).join(','))}).length`)
+    if (!before) { note(scope, '找不到触发按钮', triggerSel); return }
+    await press('Enter', 0, 700)
+    const sel = expectRole.split(',').map((r) => `[role=${r}]`).join(',')
+    const opened = await ev(`(() => { const all = [...document.querySelectorAll(${JSON.stringify(sel)})]; const d = all.length > ${countBefore} ? all.at(-1) : null; return d ? { role: d.getAttribute('role'), label: d.getAttribute('aria-label') || d.getAttribute('aria-labelledby'), modal: d.getAttribute('aria-modal'), inside: !!document.activeElement?.closest(${JSON.stringify(sel)}) } : null })()`)
+    report.sections[scope + ':dialog'] = opened
+    if (!opened) { note(scope, '按 Enter 后没有弹出对话框', null); return }
+    if (!opened.inside) note(scope, '对话框打开后焦点不在对话框内', opened)
+    const named = (await axTree()).filter((n) => n.role === 'dialog' || n.role === 'alertdialog').map((n) => n.name)
+    if (named.some((n) => !String(n).trim())) note(scope, '对话框没有可读名称', named)
+    const trap = await tabWalk(scope + ':对话框', 14, { scopeSel: sel })
+    if (trap.inside === false) note(scope, '对话框内 Tab 14 次后焦点跑出对话框', trap.seq.at(-1))
+    await ev(`(() => { const all = [...document.querySelectorAll(${JSON.stringify(sel)})]; const d = all.at(-1); if (d && !d.contains(document.activeElement)) (d.querySelector('button,[tabindex]') ?? d).focus() })()`)
+    await press('Escape', 0, 700)
+    const countNow = await ev(`document.querySelectorAll(${JSON.stringify(sel)}).length`)
+    const gone = countNow <= countBefore
+    if (!gone) note(scope, 'Esc 关不掉对话框', { countBefore, countNow, active: await active() })
+    else {
+      const back = await ev(`document.activeElement === document.querySelector(${JSON.stringify(triggerSel)})`)
+      const f = await active()
+      if (f.tag === 'body') note(scope, '对话框关闭后焦点丢到 body', f)
+      else if (!back) note(scope, '对话框关闭后焦点没回到触发按钮', f)
+    }
+  }
+
+  const sandboxFixtures = async () => {
+    writeFileSync(join(box.dataDir, 'api-keys.json.plaintext-20261110T120000Z-a11y01.bak'), '{}')
+    const snap = await ev(`window.yan.capabilities.mcpServices()`)
+    const res = await ev(`window.yan.capabilities.changeMcpService(${JSON.stringify({ context: snap.context, revision: snap.revision, scope: 'global', action: 'add', name: 'a11y-broken', owner: 'inkstone', config: { command: 'a11y-no-such-binary-xyz', args: ['--serve'] } })})`)
+    report.sections['夜间新界面:fixtures'] = { mcpAdd: res }
+  }
+
+  await phase('夜间新界面：准备', sandboxFixtures)
+
+  await phase('设置页全览', async () => {
+    await newSession(box.projects[0] ?? box.project)
+    await ev(`window.__yanStore.getState().openSettings()`)
+    await sleep(1200)
+    const ids = await ev(`[...document.querySelectorAll('.ui-settings [data-testid^="v3-settings-nav-"]')].map((n) => n.getAttribute('data-testid'))`)
+    const capTabs = ['skills', 'mcp', 'tools', 'market']
+    const openPage = async (id) => {
+      if (id.startsWith('caps-tab-')) await ev(`window.__yanStore.getState().openSettings(${JSON.stringify(id.slice(9))})`)
+      else await ev(`document.querySelector('[data-testid="${id}"]')?.click()`)
+    }
+    ids.push(...capTabs.map((tab) => 'caps-tab-' + tab))
+    report.sections['设置:pages'] = ids
+    if (ids.length < 6) note('设置页全览', '找不到足够的设置导航项', ids)
+    for (const id of ids) {
+      await openPage(id)
+      await sleep(id.startsWith('caps-tab-') ? 1600 : 900)
+      const scope = '设置页:' + id.replace('v3-settings-nav-', '').replace('caps-tab-', 'caps-')
+      await surfaceAudit(scope, '.ui-settings', { walk: 18, scopeSel: '[role=dialog],.ui-settings' })
+      const ov = await ev(`(() => { const c = document.querySelector('.ui-settings__content'); return c ? [c.scrollWidth, c.clientWidth] : null })()`)
+      if (ov && ov[0] > ov[1] + 2) note(scope, '内容区出现横向溢出', ov)
+      if (id.endsWith('-models')) {
+        report.sections['设置页:模型:备份行'] = await ev(`(() => { const e = document.querySelector('[data-testid="ms-plaintext-backups"]'); return e ? { text: e.textContent.trim().slice(0, 200) } : null })()`)
+        if (!report.sections['设置页:模型:备份行']) note(scope, '预置的明文备份没有显示（夹具未生效）', null)
+        else {
+          await shot('a11y-settings-backups')
+          await dialogCheck(scope + ':删除明文备份', '[data-testid="ms-backups-delete"]')
+        }
+      }
+      if (id === 'caps-tab-mcp') {
+        const clicked = await ev(`(() => { const row = [...document.querySelectorAll('[data-testid="mcp-service"]')].find((r) => r.textContent.includes('a11y-broken')); const b = row && [...row.querySelectorAll('button')].find((x) => /检查|Check/.test(x.textContent)); if (!b) return false; b.focus(); b.click(); return true })()`)
+        if (!clicked) { note(scope, '找不到预置的失败 MCP 服务行或其检查按钮', await ev(`[...document.querySelectorAll('[data-testid="mcp-service"]')].map((r) => r.textContent.slice(0, 40))`)); continue }
+        const t0 = await nowT()
+        await waitFor(`!!document.querySelector('[data-testid="mcp-check-error"]')`, 30000, 200).catch(() => {})
+        await sleep(600)
+        const err = await ev(`(() => { const pre = document.querySelector('[data-testid="mcp-check-error"]'); if (!pre) return null; const alert = pre.parentElement?.querySelector('[role=alert]'); const cs = getComputedStyle(pre); return { text: pre.textContent.slice(0, 120), role: pre.getAttribute('role'), label: pre.getAttribute('aria-label'), alertText: alert?.textContent.slice(0, 60) ?? null, scrolls: pre.scrollHeight > pre.clientHeight, tabIndex: pre.tabIndex } })()`)
+        report.sections['设置页:MCP报错'] = err
+        await shot('a11y-mcp-error')
+        if (!err) { note(scope, '检查失败后没有显示服务报错原因', null); continue }
+        if (!err.alertText) note(scope, '检查失败的提示没有 role=alert', err)
+        if (!err.role && !err.label) note(scope, '服务报错原文是无名称的 pre，读屏不知道它是什么', err)
+        const live = await liveSince(t0)
+        report.sections['设置页:MCP报错:live'] = live.slice(0, 6)
+        if (!live.some((l) => /失败|错误|error|fail/i.test(l.text))) note(scope, '检查失败时 live region 没有播报', live.slice(0, 4))
+        await surfaceAudit(scope + ':报错后', '.ui-settings', { walk: 0 })
+      }
+    }
+    await cc('Emulation.setDeviceMetricsOverride', { width: 640, height: 900, deviceScaleFactor: 1, mobile: false })
+    await sleep(800)
+    const narrow = []
+    for (const id of ids) {
+      await openPage(id)
+      await sleep(700)
+      const ov = await ev(`(() => { const c = document.querySelector('.ui-settings__content'); const w = c ? [c.scrollWidth, c.clientWidth] : null; const wide = c ? [...c.querySelectorAll('*')].filter((e) => e.checkVisibility?.() && e.getBoundingClientRect().right > c.getBoundingClientRect().right + 2 && !e.closest('pre,code,[data-scroll-x],.ui-scroll')).slice(0, 3).map((e) => e.tagName + '.' + String(e.className).slice(0, 30)) : []; return { w, wide } })()`)
+      narrow.push({ id, ...ov })
+      if (ov.w && ov.w[0] > ov.w[1] + 2) note('设置页窄屏 640px', `${id} 内容横向溢出`, ov)
+    }
+    report.sections['设置页:窄屏'] = narrow
+    await shot('a11y-settings-narrow')
+    await cc('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
+    await press('Escape', 0, 700)
+    await sleep(500)
+  })
+
+  await phase('工具行计时与消息流', async () => {
+    await newSession(box.projects[0] ?? box.project)
+    const t0 = await nowT()
+    await send('BIGOUT 看看')
+    await waitFor(running, 15000, 30)
+    await waitFor(`document.querySelectorAll('[data-testid="v3-step-elapsed"]').length > 0`, 20000, 100).catch(() => {})
+    await sleep(1500)
+    const info = await ev(`(() => { const e = document.querySelector('[data-testid="v3-step-elapsed"]'); if (!e) return null; const host = e.closest('[aria-live]:not([aria-live=off]),[role=status],[role=log],[role=alert]'); const head = e.closest('[data-testid="v3-step"],[data-testid="v3-step-group"]'); return { text: e.textContent, inLive: !!host, hidden: e.getAttribute('aria-hidden'), headTag: head?.tagName, headExpanded: head?.getAttribute('aria-expanded') } })()`)
+    report.sections['工具行:计时'] = info
+    await shot('a11y-tool-row-running')
+    if (!info) note('工具行计时', '运行中找不到工具行用时元素', null)
+    else if (info.inLive) note('工具行计时', '用时每秒变化却位于 live region 内，读屏会被刷屏', info)
+    const during = (await liveSince(t0)).filter((l) => !/live-announcer/.test(l.id))
+    report.sections['工具行:计时:非播报区 live'] = during.slice(0, 6)
+    if (during.length > 6) note('工具行计时', '运行期间有大量非播报区的 live region 变化', during.slice(0, 6))
+    await surfaceAudit('工具行运行中', 'body', { walk: 12, ambiguous: false })
+    await waitFor(`!(${running})`, 180000, 200).catch(async () => { await ev(`window.__yanStore.getState().stop()`) })
+    await sleep(2200)
+    await surfaceAudit('工具行完成后', 'body', { walk: 12, ambiguous: false })
+    await shot('a11y-tool-row-done')
+  })
+
+  await phase('子代理卡片', async () => {
+    const prevMode = await ev(`window.__yanStore.getState().settings?.permissionMode ?? 'ask'`)
+    await ev(`window.__yanStore.getState().patchSettings({ permissionMode: 'all' })`)
+    await newSession(box.projects[0] ?? box.project)
+    await send('SUBAGENTS8-LOOK 先派子代理，再继续')
+    const ok = await ctx.until(`(s.subagents ?? []).filter((a) => a.status === 'running').length >= 4`, 90000, 200)
+    if (!ok) { note('子代理卡片', '假模型没有派出足够的运行中子代理，跳过', null); await ev(`window.__yanStore.getState().patchSettings({ permissionMode: ${JSON.stringify(prevMode)} })`); return }
+    await sleep(2500)
+    await ev(`document.querySelector('[data-testid="v3-subagents"]')?.scrollIntoView({ block: 'center' })`)
+    await sleep(500)
+    await shot('a11y-subagent-card')
+    const tiles = await ev(`[...document.querySelectorAll('[data-testid="v3-subagent-tile"]')].slice(0, 4).map((e) => ({ tag: e.tagName, role: e.getAttribute('role'), label: e.getAttribute('aria-label'), name: (e.textContent || '').trim().slice(0, 40), tab: e.tabIndex, pressed: e.getAttribute('aria-pressed'), selected: e.getAttribute('aria-selected') ?? e.getAttribute('data-selected') }))`)
+    const lines = await ev(`[...document.querySelectorAll('[data-testid="v3-subagent-line"]')].slice(0, 4).map((e) => ({ tag: e.tagName, role: e.getAttribute('role'), label: e.getAttribute('aria-label'), tab: e.tabIndex }))`)
+    report.sections['子代理:tiles'] = { tiles, lines }
+    const group = await ev(`(() => { const e = document.querySelector('[data-testid="v3-subagent-list"]'); return e ? { role: e.getAttribute('role'), label: e.getAttribute('aria-label'), live: e.getAttribute('aria-live') } : null })()`)
+    report.sections['子代理:list'] = group
+    if (tiles.some((x) => !x.label)) note('子代理卡片', '子代理格子没有拼好的 aria-label，读屏名称由相邻 span 硬拼（如「压测1压测128s运行 bash」）', tiles.map((x) => x.name))
+    if (tiles.length && tiles.some((x) => x.tag !== 'BUTTON' && x.tab < 0)) note('子代理卡片', '子代理格子不是按钮也不在 Tab 序列里', tiles)
+    await surfaceAudit('子代理卡片', '[data-testid="v3-subagents"]', { walk: 0, ambiguous: false })
+    await ev(`(() => { const e = document.querySelector('[data-testid="v3-subagent-tile"]'); e?.focus() })()`)
+    const focused = await active()
+    if (focused.tag === 'body') note('子代理卡片', '子代理格子无法获得焦点', tiles[0])
+    await press('Enter', 0, 900)
+    const pane = await ev(`(() => { const p = document.querySelector('[data-testid^="rp-surface-subagent:"]'); return p ? { role: p.getAttribute('role'), label: p.getAttribute('aria-label'), inside: !!document.activeElement?.closest('[data-testid^="rp-surface-subagent:"]') } : null })()`)
+    report.sections['子代理:键盘打开面板'] = { pane, focusAfter: await active() }
+    if (!pane) note('子代理卡片', '格子上按 Enter 没有打开转录面板', null)
+    else {
+      await shot('a11y-subagent-pane')
+      await surfaceAudit('子代理转录面板', '[data-testid^="rp-surface-subagent:"]', { walk: 12, ambiguous: false })
+    }
+    await ev(`window.__yanRightPanel.getState().closeAll()`)
+    await sleep(500)
+    await ev(`window.__yanStore.getState().stop()`).catch(() => {})
+    await waitFor(`!(${running})`, 60000, 200).catch(() => {})
+    await ev(`window.__yanStore.getState().patchSettings({ permissionMode: ${JSON.stringify(prevMode)} })`)
+  })
+
+  await phase('工作流卡片', async () => {
+    const prevMode = await ev(`window.__yanStore.getState().settings?.permissionMode ?? 'ask'`)
+    await ev(`window.__yanStore.getState().patchSettings({ permissionMode: 'all' })`)
+    await newSession(box.project)
+    writeFileSync(join(box.project, 'wf-demo.js'), WF_SCRIPT)
+    await send('WFDEMO 用工作流跑一遍三阶段演示')
+    const ok = await ctx.until(`!!document.querySelector('[data-testid="v3-workflow"]')`, 60000, 300)
+    if (!ok) { note('工作流卡片', '没有出现工作流运行卡，跳过', null); await ev(`window.__yanStore.getState().patchSettings({ permissionMode: ${JSON.stringify(prevMode)} })`); return }
+    await ev(`document.querySelector('[data-testid="v3-workflow-head"]')?.click()`)
+    await sleep(6000)
+    await ev(`document.querySelector('[data-testid="v3-workflow"]')?.scrollIntoView({ block: 'center' })`)
+    await sleep(500)
+    await shot('a11y-workflow-card')
+    const head = await ev(`(() => { const h = document.querySelector('[data-testid="v3-workflow-head"]'); const w = document.querySelector('[data-testid="v3-workflow"]'); const stop = w?.querySelector('[data-testid="v3-workflow-stop"]'); return { tag: h?.tagName, expanded: h?.getAttribute('aria-expanded'), name: (h?.getAttribute('aria-label') || h?.textContent || '').trim().slice(0, 60), stopName: stop ? (stop.getAttribute('aria-label') || stop.textContent || '').trim() : null, phases: [...w.querySelectorAll('[data-testid="v3-workflow-phase"]')].map((p) => p.tagName + ':' + (p.getAttribute('aria-label') || '').slice(0, 20)), canvas: (() => { const c = w.querySelector('canvas'); return c ? { role: c.getAttribute('role'), label: c.getAttribute('aria-label'), hidden: c.getAttribute('aria-hidden') } : null })() } })()`)
+    report.sections['工作流:head'] = head
+    if (head.canvas && !head.canvas.label && head.canvas.hidden !== 'true') note('工作流卡片', 'model() 点阵画布既无文字替代也没有 aria-hidden', head.canvas)
+    await surfaceAudit('工作流卡片', '[data-testid="v3-workflow"]', { walk: 0, ambiguous: false })
+    await ev(`(() => { const e = document.querySelector('[data-testid="v3-workflow-head"]'); e?.focus() })()`)
+    await press('Tab', 0, 200)
+    const f = await active()
+    log('工作流头部 Tab 后', f)
+    await ev(`document.querySelector('[data-testid="v3-workflow-stop"]')?.click()`)
+    await sleep(2500)
+    await waitFor(`!(${running})`, 90000, 300).catch(() => {})
+    await surfaceAudit('工作流卡片（已停止）', '[data-testid="v3-workflow"]', { walk: 0, ambiguous: false })
+    await ev(`window.__yanStore.getState().patchSettings({ permissionMode: ${JSON.stringify(prevMode)} })`)
+  })
+
+  await phase('右栏各面板', async () => {
+    await newSession(box.projects[0] ?? box.project)
+    await ev(`window.__yanRightPanel.getState().setOpen(true)`)
+    for (const kind of ['changes', 'terminal', 'files', 'context', 'branch', 'logs', 'quota', 'device', 'pullRequests']) {
+      await ev(`window.__yanRightPanel.getState().open({ id: ${JSON.stringify(kind)}, kind: ${JSON.stringify(kind)} })`)
+      await sleep(1100)
+      const scope = '右栏:' + kind
+      const present = await ev(`!!document.querySelector('[data-testid="rp-surface-${kind}"]')`)
+      if (!present) { note(scope, '面板没有渲染出 rp-surface 节点', null); continue }
+      await shot('a11y-rp-' + kind)
+      await surfaceAudit(scope, `[data-testid="rp-surface-${kind}"]`, { walk: 14, ambiguous: true })
+      if (kind === 'terminal') {
+        const inTerm = await ev(`(() => { const t = document.querySelector('.xterm-helper-textarea'); t?.focus(); return !!document.activeElement?.closest('.xterm') })()`)
+        if (inTerm) {
+          await press('b', MOD.ctrl | MOD.alt, 700)
+          const left = await ev(`!document.activeElement?.closest('.xterm')`)
+          report.sections['右栏:terminal:逃生键'] = { inTerm, left }
+          await ev(`window.__yanRightPanel.getState().setOpen(true)`)
+          await sleep(600)
+          if (!left) note(scope, '焦点进入终端后 Ctrl+Alt+B 无法把焦点移出终端（键盘陷阱；Ctrl+L 与 Tab 按设计交给 shell）', await active())
+        }
+      }
+    }
+    await surfaceAudit('右栏:标签栏与外壳', '.rp-surfaces', { walk: 0, ambiguous: false })
+    await cc('Emulation.setDeviceMetricsOverride', { width: 900, height: 800, deviceScaleFactor: 1, mobile: false })
+    await sleep(900)
+    await shot('a11y-rp-narrow')
+    await surfaceAudit('右栏:窄屏 900px', '.rp-surfaces', { walk: 14, ambiguous: false })
+    await cc('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
+    await ev(`window.__yanRightPanel.getState().closeAll()`)
+    await ev(`window.__yanRightPanel.getState().setOpen(false)`)
   })
 
   await cc('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })

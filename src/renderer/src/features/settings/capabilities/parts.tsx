@@ -1,4 +1,4 @@
-import { Fragment, type ReactElement, type ReactNode } from 'react'
+import { Fragment, useId, type ReactElement, type ReactNode } from 'react'
 import { Badge, EmptyState, Notice, SettingSection, Skeleton, settingCardClass, type BadgeTone } from '../../../ui'
 import { cx } from '../../../ui/cx'
 
@@ -72,6 +72,7 @@ export function Entry({
   testId?: string
   settingId?: string
 }): ReactElement {
+  const nameId = useId()
   const parts = (meta ?? []).filter((part) => part !== false && part !== null && part !== undefined && part !== '')
   const title = metaTitle ?? (parts.every((part) => typeof part === 'string')
     ? parts.map((part, index) => (index < parts.length - 1 ? trimSentenceEnd(part as string) : part)).join(' · ')
@@ -83,9 +84,9 @@ export function Entry({
     </div>
   ) : null
   return (
-    <article className="caps-item caps-entry" data-testid={testId} data-setting-id={settingId} data-meta={parts.length > 0 ? '1' : '0'}>
+    <article className="caps-item caps-entry" aria-labelledby={nameId} data-testid={testId} data-setting-id={settingId} data-meta={parts.length > 0 ? '1' : '0'}>
       <div className="caps-item-head">
-        <span className="caps-name" title={nameTitle}>
+        <span className="caps-name" id={nameId} title={nameTitle}>
           {name}
         </span>
         {badge}

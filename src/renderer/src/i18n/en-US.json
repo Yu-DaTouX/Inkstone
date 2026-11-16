@@ -123,6 +123,7 @@
   "cap.loadFailed": "Could not load capabilities",
   "cap.operation.cancelled": "Connection cancelled",
   "cap.operation.error": "Verification failed; check the service configuration or authentication.",
+  "cap.operation.errorDetail": "Error details",
   "cap.operation.ready": "Tool list refreshed",
   "cap.operation.stale": "The runtime changed; no action was taken on the new session.",
   "cap.projectScoped": "Project-scoped",

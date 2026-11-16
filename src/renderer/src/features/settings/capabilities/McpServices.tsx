@@ -180,7 +180,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       {!snapshot?.project && !loading ? <Meta>{text.noProject}</Meta> : null}
       {scope === 'project' && snapshot && !snapshot.projectTrusted ? <Warn>{text.untrusted}</Warn> : null}
       {error ? <Warn>{error}</Warn> : null}
-      {errorDetail ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={error} data-testid="mcp-check-error">{errorDetail}</pre> : null}
+      {errorDetail ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={t('cap.operation.errorDetail')} data-testid="mcp-check-error">{errorDetail}</pre> : null}
       {notice ? <Meta>{notice}</Meta> : null}
       {warning ? <McpWarning text={warning} /> : null}
       {snapshot?.managedToolsChanged?.length ? <div data-testid="mcp-tools-changed"><Meta>{t('cap.mcpToolsChanged', { names: snapshot.managedToolsChanged.join(lang === 'en-US' ? ', ' : '、') })}</Meta></div> : null}

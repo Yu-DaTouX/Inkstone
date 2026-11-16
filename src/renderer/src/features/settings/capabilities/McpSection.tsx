@@ -149,7 +149,7 @@ function McpServerRow({
           {operation.toolCount !== undefined ? <span> · {t('cap.toolCount', { count: operation.toolCount })}</span> : null}
         </p>
       ) : null}
-      {operation?.state === 'error' && operation.error ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={t('cap.operation.error')} data-testid="caps-mcp-error">{operation.error}</pre> : null}
+      {operation?.state === 'error' && operation.error ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={t('cap.operation.errorDetail')} data-testid="caps-mcp-error">{operation.error}</pre> : null}
     </Entry>
   )
 }

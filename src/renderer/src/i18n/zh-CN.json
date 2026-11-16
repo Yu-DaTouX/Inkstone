@@ -123,6 +123,7 @@
   "cap.loadFailed": "读取能力列表失败",
   "cap.operation.cancelled": "已取消连接",
   "cap.operation.error": "验证失败；请查看服务配置或认证状态。",
+  "cap.operation.errorDetail": "错误详情",
   "cap.operation.ready": "工具表已刷新",
   "cap.operation.stale": "运行实例已切换，未对新会话执行操作",
   "cap.projectScoped": "项目范围",

@@ -456,6 +456,7 @@ export function ModelsSettings(): ReactElement {
                 <Button
                   variant="secondary"
                   isDisabled={busy || codexLogging || !!oauth}
+                  aria-label={`${t('auth.signOut')} · ${providerName(p)}`}
                   data-testid={`ms-remove-${p.id}`}
                   onPress={() => setPendingRemove(p)}
                 >
@@ -466,6 +467,7 @@ export function ModelsSettings(): ReactElement {
                 <Button
                   variant="secondary"
                   isDisabled={busy || codexLogging || !!oauth}
+                  aria-label={`${text('addKey')} · ${providerName(p)}`}
                   data-testid={`ms-set-${p.id}`}
                   onPress={() => {
                     setEditing(p.id)
@@ -481,6 +483,7 @@ export function ModelsSettings(): ReactElement {
                 loginInProgress(p) ? (
                   <Button
                     variant="secondary"
+                    aria-label={`${t('ui.cancel')} · ${providerName(p)}`}
                     data-testid={`ms-login-cancel-${p.id}`}
                     onPress={() => {
                       if (p.id === 'openai-codex') void window.yan.codexLoginCancel()
@@ -493,6 +496,7 @@ export function ModelsSettings(): ReactElement {
                   <Button
                     variant="secondary"
                     isDisabled={busy || codexLogging || !!oauth}
+                    aria-label={`${state === 'ready' || accounts.length > 0 ? text('addAccount') : t('auth.loginInApp')} · ${providerName(p)}`}
                     data-testid={`ms-login-${p.id}`}
                     onPress={() => void startLogin(p)}
                   >

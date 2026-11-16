@@ -359,6 +359,7 @@ const SubagentRow = memo(function SubagentRow({ run, snapshot, index = 0 }: { ru
       data-selected={selected ? '' : undefined}
       aria-current={selected ? 'true' : undefined}
       title={rowTitle}
+      aria-label={[label, status, activity || usage || (context ? summary : ''), time, modelName].filter(Boolean).join(', ')}
       style={{ '--sa-index': index } as CSSProperties}
       onClick={() => openSubagentPane(run.id)}
     >
@@ -437,6 +438,7 @@ export const SubagentTile = memo(function SubagentTile({ run, snapshot, index = 
       data-selected={selected ? '' : undefined}
       aria-current={selected ? 'true' : undefined}
       title={[model.task, tt('subagentOpenPane')].filter(Boolean).join('\n')}
+      aria-label={[label, status, detail, time, modelName].filter(Boolean).join(', ')}
       style={{ '--sa-index': index } as CSSProperties}
       onClick={() => openSubagentPane(run.id)}
     >

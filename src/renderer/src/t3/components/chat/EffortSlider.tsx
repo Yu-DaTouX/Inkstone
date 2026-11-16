@@ -4,6 +4,7 @@ import { useT } from '../../../i18n'
 import { FluidEffortSlider } from '../../../ui/FluidEffortSlider'
 import { EFFORT_TITLE, effortHint, type ComposerTraitsAdapter } from '../../adapters/composer-thinking'
 import { cx } from '../../../ui/cx'
+import { prefersReducedMotion } from '../../../lib/reduced-motion'
 import { Tooltip, TooltipTrigger } from '../../../ui'
 import { ComposerControl, type ComposerControlSize } from './ComposerControl'
 import { composerFloatingLayerProps } from './composerEventScope'
@@ -197,7 +198,7 @@ export function EffortSlider(props: {
     const label = labelRef.current
     const slot = label?.parentElement
     if (!label || !slot) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (prefersReducedMotion()) return
     const direction = index > previous.index ? -1 : 1
     const easing = readEasing()
     const computed = getComputedStyle(label)
