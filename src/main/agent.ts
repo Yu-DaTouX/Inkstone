@@ -46,6 +46,8 @@ import { isSubagentNotice, parseSubagentNotice } from '../shared/subagent-notice
 import { isHostTextNotice } from '../shared/host-notice-text'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import { piStartFailureText } from '../shared/pi-start-failure'
+import { piExtensionSkipRetryFailure, type PiExtensionSkip } from '../shared/pi-extension-skip'
+import { piExtensionSkipLaunch, type PiExtensionSkipLaunch } from './pi-extension-skip'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import type { ApprovalDecision } from '../shared/approval'
@@ -963,11 +965,21 @@ export class AgentController extends EventEmitter {
   private spawnFailure: string | undefined
   private startupStderr: string[] = []
   private startupReady = false
+  private pendingExtensionSkip: PiExtensionSkipLaunch | null = null
+  private extensionSkipState: PiExtensionSkip | null = null
   private nativeWitnessPending: McpNativeBootWitness | null = null
   private nativeWitness: McpNativeBootWitness | null = null
 
   getConn(): { state: 'starting' | 'ready' | 'exited' | 'error'; detail: string } {
     return { state: this.conn, detail: this.connDetail }
+  }
+
+  extensionSkip(): PiExtensionSkip | null {
+    return this.extensionSkipState
+  }
+
+  extensionSkipSource(): { skip: PiExtensionSkip; cwd: string } | null {
+    return this.extensionSkipState ? { skip: this.extensionSkipState, cwd: this.cwd } : null
   }
 
   private setConn(state: 'starting' | 'ready' | 'exited' | 'error', detail = ''): void {
@@ -989,6 +1001,9 @@ export class AgentController extends EventEmitter {
     this.loopGuardAutoContinueCount = 0
     this.loopGuardContinuationVersion += 1
     this.loopGuardHit = undefined
+    const skipLaunch = this.pendingExtensionSkip
+    this.pendingExtensionSkip = null
+    this.extensionSkipState = null
     this.setConn('starting')
 
     const probe = resolvePi({ override: this.piBin })
@@ -1006,7 +1021,7 @@ export class AgentController extends EventEmitter {
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
-      args: agentOwnedPiArgs([
+      args: skipLaunch ? skipLaunch.args : agentOwnedPiArgs([
         '--no-extensions',
         ...(this.hostToolTokenExtension ? ['--extension', this.hostToolTokenExtension] : []),
         ...(this.nativeSessionExtension ? ['--extension', this.nativeSessionExtension] : []),
@@ -1104,7 +1119,9 @@ export class AgentController extends EventEmitter {
       this.spawnFailure = raw.slice(0, 300) || pick('未知启动错误', 'Unknown start error')
     })
 
+    let exited = false
     rpc.on('exit', (code) => {
+      exited = true
       if (this.rpc !== rpc) return
       this.operations.reset()
       this.stream.flushNow()
@@ -1132,7 +1149,7 @@ export class AgentController extends EventEmitter {
         this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false, pendingMessageCount: 0 }
         this.push({ ch: 'state', payload: this.state })
       }
-      this.setConn('exited', pick(`pi 已退出（code=${code ?? 'null'}）`, `pi exited (code=${code ?? 'null'})`))
+      if (this.startupReady) this.setConn('exited', pick(`pi 已退出（code=${code ?? 'null'}）`, `pi exited (code=${code ?? 'null'})`))
       this.nativeWitness = null
       this.nativeWitnessPending = null
       const runSink = this.runObserver
@@ -1174,11 +1191,21 @@ export class AgentController extends EventEmitter {
     this.startupReady = false
     const ok = await this.waitReady(20_000, rpc)
     if (!ok) {
-      const msg = piStartFailureText({ spawnFailure: this.spawnFailure, running: rpc.running, stderr: this.startupStderr })
+      if (!this.spawnFailure && !rpc.running && !exited) await Promise.race([new Promise((r) => rpc.once('exit', r)), new Promise((r) => setTimeout(r, 1_500))])
+      const retry = !skipLaunch && !this.spawnFailure && !rpc.running && !this.stopping && this.rpc === rpc
+        ? await piExtensionSkipLaunch({ stderr: this.startupStderr, args: rpc.launchOptions.args ?? [], userPaths: projectPackageArgs.filter((_, index) => index % 2 === 1), cwd: this.cwd, piBin: this.piBin }).catch(() => null)
+        : null
+      if (retry && this.rpc === rpc && !this.stopping) {
+        this.pendingExtensionSkip = retry
+        return this.start()
+      }
+      const failure = piStartFailureText({ spawnFailure: this.spawnFailure, running: rpc.running, stderr: this.startupStderr })
+      const msg = skipLaunch ? piExtensionSkipRetryFailure(skipLaunch.skip, failure) : failure
       this.setConn('error', msg)
       return { ok: false, error: msg }
     }
     this.startupReady = true
+    this.extensionSkipState = skipLaunch?.skip ?? null
 
     this.setConn('ready')
 

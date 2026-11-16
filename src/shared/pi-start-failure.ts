@@ -6,14 +6,16 @@ export interface PiExtensionFailure {
   name: string
   reason: string
   conflict: boolean
+  owner?: string
 }
 
 const FAILURE_LINE = /Failed to load extension "([^"]+)":\s*(.*)$/
+const CONFLICT_OWNER = /^(?:Tool|Flag) "[^"]+" conflicts with (.+)$/
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g
 const REASON_MAX_CHARS = 200
 const LISTED_FAILURES = 3
 
-function extensionName(path: string): string {
+export function extensionName(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean)
   const last = parts.at(-1) ?? path
   if (/^index\.(?:[cm]?[jt]s)$/i.test(last) && parts.length > 1) return parts.at(-2)!
@@ -27,8 +29,10 @@ export function parsePiExtensionFailures(lines: readonly string[]): PiExtensionF
     if (!match) continue
     const path = match[1]
     if (failures.some((item) => item.path === path)) continue
-    const reason = redactSecretText(match[2].trim()).slice(0, REASON_MAX_CHARS)
-    failures.push({ path, name: extensionName(path), reason, conflict: /\bconflicts with\b/.test(reason) })
+    const detail = match[2].trim()
+    const reason = redactSecretText(detail).slice(0, REASON_MAX_CHARS)
+    const owner = CONFLICT_OWNER.exec(detail)?.[1]?.trim()
+    failures.push({ path, name: extensionName(path), reason, conflict: /\bconflicts with\b/.test(reason), ...(owner ? { owner } : {}) })
   }
   return failures
 }

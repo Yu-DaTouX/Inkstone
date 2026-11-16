@@ -60,6 +60,7 @@ import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from './
 import type { OAuthAccountPools } from './oauth-accounts'
 import type { QuotaForecast } from './quota-forecast'
 import type { TurnOutcome } from './turn-outcome'
+import type { PiExtensionSkip } from './pi-extension-skip'
 
 export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 
@@ -192,6 +193,7 @@ export interface RunnerStatus {
   isActive: boolean
   isolation?: 'waiting' | 'ready'
   isolationBranch?: string
+  extensionSkip?: PiExtensionSkip
 }
 
 export interface ForkPoint {

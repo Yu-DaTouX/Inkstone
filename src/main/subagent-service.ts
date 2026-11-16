@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { findGitRoot, hasGitCommit, outputBytesText } from './subagent-isolation'
 import { outputsTreeBytes, subagentOutputsPolicy } from './subagent-prune'
-import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentQuotaWatch } from './subagents'
+import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentExtensionSkip, type SubagentQuotaWatch } from './subagents'
 import type { ModelReviewReceiptInput } from './approval-log'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
@@ -127,6 +127,7 @@ export interface SubagentServiceDeps {
   ): Promise<boolean | SubagentDangerAnswer>
   recordDangerReview?(review: ModelReviewReceiptInput, origin?: SubagentApprovalOrigin): void
   forkSource?(context: SubagentCommandContext): SubagentForkSource | string
+  extensionSkip?(context: SubagentCommandContext): SubagentExtensionSkip | null
   quotaWatch?: SubagentQuotaWatch
   onChange(run: SubagentRun, patch?: SubagentPatch): void
   onPatch?(payload: SubagentPatch): void
@@ -295,7 +296,8 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const startContext = { ...context, ...(model ? { modelPinned: true } : {}), ...(thinkingLevel ? { thinkingLevel } : {}) }
+      const extensionSkip = this.deps.extensionSkip?.(context) ?? null
+      const startContext = { ...context, ...(model ? { modelPinned: true } : {}), ...(thinkingLevel ? { thinkingLevel } : {}), ...(extensionSkip ? { extensionSkip } : {}) }
       const autoIsolate = !readOnly && !isolation && (params.isolation === undefined || params.isolation === null || params.isolation === '')
       const started = autoIsolate
         ? await this.startDefaultWriter(ctrl, context.cwd, (choice) => ctrl.start(task, model ?? context.model, choice, briefInput, undefined, startContext))

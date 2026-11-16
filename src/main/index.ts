@@ -456,6 +456,11 @@ const subagentService: SubagentService = new SubagentService({
       (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
     return parent ? parent.forkSource() : '来源会话已关闭，不能派 fork 子代理'
   },
+  extensionSkip: (context) => {
+    const parent = (context.parentRunId ? runners?.agentOf(context.parentRunId) : null) ??
+      (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
+    return parent?.extensionSkipSource() ?? null
+  },
   quotaWatch: subagentQuotaWatch,
   onChange: (run, patch) => {
     if (run.status !== 'starting' && run.status !== 'running') {
@@ -1006,6 +1011,7 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
   if (msg.ch === 'state' || msg.ch === 'proc') piPackageActivation.request()
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) isolation.scheduleRefresh()
   if (msg.ch === 'state') pushRunners()
+  if (msg.ch === 'proc' && (msg.payload.state === 'starting' || msg.payload.state === 'ready')) pushRunners()
   if (msg.ch === 'ui-request' || msg.ch === 'ui-resolved') pushRunners()
 }
 

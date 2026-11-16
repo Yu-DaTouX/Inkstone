@@ -512,6 +512,20 @@
     flex: 0 1 auto;
     white-space: nowrap;
   }
+  .v3-extension-skip {
+    flex: none;
+    align-self: center;
+    width: min(560px, calc(100% - var(--s-32)));
+    margin-block: var(--s-8) 0;
+  }
+  .v3-extension-skip-actions {
+    display: flex;
+    gap: var(--s-4);
+  }
+  .v3-extension-skip-detail {
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
 }
 
 @property --col-pl-at {

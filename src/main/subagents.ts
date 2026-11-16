@@ -25,6 +25,8 @@ import { PiRpc, resolvePi } from './protocol'
 import { CapabilityServer, type CapabilityCommandResult } from './capability-server'
 import { BackgroundBashCommands } from './background-bash'
 import { nativePiToolsSupported } from '../shared/agent-context'
+import type { PiExtensionSkip } from '../shared/pi-extension-skip'
+import { reapplyPiExtensionSkip, resolvePiExtensions } from './pi-extension-skip'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { AUTH_BLIP_RETRY_MS, isAuthBlip, isAuthBlipRecoverable, providerOfModelLabel, providerUsesOAuth, waitAuthBlip } from './auth-blip'
 import { logModelEvent, modelErrorLogFields } from './main-log'
@@ -248,6 +250,12 @@ export interface SubagentContext {
   projectId?: string
   thinkingLevel?: string
   modelPinned?: boolean
+  extensionSkip?: SubagentExtensionSkip
+}
+
+export interface SubagentExtensionSkip {
+  skip: PiExtensionSkip
+  cwd: string
 }
 
 export type SubagentSendMode = 'steer' | 'followUp'
@@ -266,6 +274,7 @@ export interface SubagentOptions {
   parentGeneration?: number
   parentMessageId?: string
   projectId?: string
+  extensionSkip?: SubagentExtensionSkip
   archiveDir?: string
   previewHtml?: PreviewHtml
   confirmDanger?(
@@ -292,6 +301,7 @@ export interface SubagentOptions {
   onOvertime?: (run: SubagentRun, minutes: number) => void
   onEvent?: (runId: string, evt: Record<string, unknown>, run: SubagentRun) => void
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
+  resolveExtensions?: typeof resolvePiExtensions
   prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<PreparedWorkspace>
 }
 
@@ -1144,7 +1154,11 @@ export class SubagentController {
     if (fork) return this.createForkRpc(ctx, id, fork, sessionFile)
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
-    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension, thinkingLevel: ctx.thinkingLevel })
+    const baseArgs = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension, thinkingLevel: ctx.thinkingLevel })
+    const skip = ctx.extensionSkip
+    const args = skip && !baseArgs.includes('--no-extensions')
+      ? reapplyPiExtensionSkip({ args: baseArgs, skip: skip.skip, resolved: await (ctx.resolveExtensions ?? resolvePiExtensions)({ cwd, piBin: ctx.piBin }), sourceCwd: skip.cwd, targetCwd: cwd })
+      : baseArgs
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
     return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR, YAN_RUNNER_KIND: 'subagent', ...(ctx.parentSessionFile ? { YAN_PARENT_SESSION_FILE: ctx.parentSessionFile } : {}), ...(isolation === 'controlled-cwd' ? { YAN_READ_ONLY_SUBAGENT: '1' } : {}) }, ctx.runReadOnlyCommand)
   }

@@ -1106,7 +1106,8 @@ export class RunnerRegistry {
       const st = r.agent.getState()
       const conn = r.agent.getConn().state
       const isolation = this.opts.isolationOf?.(r.cwd)
-      return runStatus({
+      const extensionSkip = r.agent.extensionSkip?.() ?? null
+      const status: RunnerStatus = runStatus({
         id: r.id,
         projectId: r.projectId,
         generation: r.generation,
@@ -1119,6 +1120,7 @@ export class RunnerRegistry {
         isActive: r.id === this.activeId,
         isolation
       })
+      return extensionSkip ? { ...status, extensionSkip } : status
     })
   }
 
