@@ -15,6 +15,7 @@ import type {
   UIToolCall
 } from '../../../shared/ipc'
 import { applySyncDelta, mergeSyncHistory } from './session-message-merge'
+import { noteTextArrival } from './text-arrival'
 
 export interface SessionRuntimeSnapshot {
   touchedAt?: number
@@ -172,6 +173,7 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
       ? {}
       : { thinking: (current.thinking ?? '') + thinkingDelta })
   }
+  noteTextArrival(id, current.text, next.text)
   const out = list.slice()
   out[index] = next
   return out

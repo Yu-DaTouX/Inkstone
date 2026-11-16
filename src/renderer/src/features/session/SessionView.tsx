@@ -43,7 +43,7 @@ import { SessionFindBar, type VirtualFindSource } from './SessionFindBar'
 import { turnFindText, type TurnFindText } from './session-find'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, wheelReachesBottom, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
-import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, resolveAnchorPoint, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
+import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, resolveAnchorPoint, readScrollSnapshot, pinnedBottomTop, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, tailGap, type SettleAnchor } from './scroll-position'
 import { FLIGHT_FRAME_CAP_MS, FLIGHT_INSET_PX, FLIGHT_SETTLE_FRAMES, FLIGHT_SETTLE_STILL, flightPhase, flightTravel, landingIndices, planFlight, skipCruise } from './timeline-flight'
 import './session.css'
 import { readVirtualCache, saveVirtualCache, virtualizeSession } from './virtual-cache'
@@ -414,7 +414,10 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   if (streamingSeenRef.current.identity !== identity || streamingSeenRef.current.streamingId !== streamingId || streamingSeenRef.current.tailRunning !== tailRunning) {
     const seen = streamingSeenRef.current
     const settleBox = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
-    if (seen.identity === identity && (seen.streamingId && !streamingId || seen.tailRunning && !tailRunning) && settleBox) settleRef.current = settleAnchor(settleBox, stickRef.current)
+    if (seen.identity === identity && (seen.streamingId && !streamingId || seen.tailRunning && !tailRunning) && settleBox) {
+      const anchor = settleAnchor(settleBox, stickRef.current)
+      settleRef.current = anchor && { ...anchor, tailGap: tailGap(settleBox) }
+    }
     streamingSeenRef.current = { identity, streamingId, tailRunning }
   }
 
@@ -424,7 +427,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     settleRef.current = null
     if (!anchor || !box) return undefined
     if (stickRef.current) {
-      if (!userScrollActive(intentRef.current, performance.now())) box.scrollTop = box.scrollHeight
+      if (!userScrollActive(intentRef.current, performance.now())) box.scrollTop = pinnedBottomTop(box, anchor.tailGap)
       glideSettle(anchor, settleShift(box, anchor))
       return undefined
     }

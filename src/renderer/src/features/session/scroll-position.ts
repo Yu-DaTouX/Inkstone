@@ -142,6 +142,23 @@ export function restoreDomScroll(box: HTMLElement, snapshot: ScrollSnapshot | un
 export interface SettleAnchor {
   node: HTMLElement
   top: number
+  tailGap?: number | null
+}
+
+const TAIL_ROW = '.v3-stream-row--tail'
+
+export function tailGap(box: HTMLElement): number | null {
+  const tail = box.querySelector<HTMLElement>(TAIL_ROW)
+  if (!tail) return null
+  return box.scrollHeight - box.scrollTop - (tail.getBoundingClientRect().bottom - box.getBoundingClientRect().top)
+}
+
+export function pinnedBottomTop(box: HTMLElement, gap: number | null | undefined): number {
+  const tail = gap == null ? null : box.querySelector<HTMLElement>(TAIL_ROW)
+  const max = box.scrollHeight - box.clientHeight
+  if (!tail || gap == null) return max
+  const bottom = box.scrollTop + tail.getBoundingClientRect().bottom - box.getBoundingClientRect().top + gap
+  return Math.max(0, Math.min(max, bottom - box.clientHeight))
 }
 
 function readingNodeAnchor(box: HTMLElement): SettleAnchor | null {

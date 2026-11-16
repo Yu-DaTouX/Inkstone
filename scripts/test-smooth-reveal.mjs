@@ -301,6 +301,25 @@ check('新出现的短文字从头打出，重新挂载接着上次进度，历�
   assert.equal(initialShown(30, true, undefined, true), 30)
 })
 
+check('本次挂载时刚到的首块超过阈值也从头打出，切换进来或已完成的长文不重放', () => {
+  assert.equal(initialShown(1200, true, undefined, false, true), 0)
+  assert.equal(initialShown(1200, true, undefined, false, false), 1200)
+  assert.equal(initialShown(1200, false, undefined, false, true), 1200)
+  assert.equal(initialShown(1200, true, 400, false, true), 400)
+  assert.equal(initialShown(1200, true, undefined, true, true), 1200)
+})
+
+check('刚到的千字首块判为突发，按约 120 tok/s 起打，不一下全显', () => {
+  const text = '检查配置'.repeat(300)
+  const watch = watchBurst(startBurstWatch(0), text, 2000, 1000)
+  assert.equal(watch.burst, true)
+  let state = startReveal(0, 0)
+  let now = 0
+  for (; now <= 1000; now += 16) state = stepReveal(state, text.length, now, true, typeRate(text.slice(Math.floor(state.shown))))
+  assert.ok(state.shown > 150 && state.shown < 500, String(state.shown))
+  assert.equal(watchBurst(startBurstWatch(text.length, 2000), text, 2000, 1000).burst, false)
+})
+
 check('整段已到的短句按打字速度排空，不一下弹出', () => {
   let state = startReveal(0, 0)
   let firstFrame = 0

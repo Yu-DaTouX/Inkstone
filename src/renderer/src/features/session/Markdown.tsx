@@ -9,6 +9,7 @@ import { Button, IconButton } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { textArrivedWithin } from '../../state/text-arrival'
 import { classifyLink, type LinkTarget } from '../../../../shared/links'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { isVisualBlockLang } from '../../../../shared/visual-blocks'
@@ -24,7 +25,7 @@ import { markdownCacheKey } from './markdown-cache-key'
 import { MarkdownTable } from './MarkdownTable'
 import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
-import { useSmoothReveal } from './smooth-reveal'
+import { FRESH_ARRIVAL_MS, useSmoothReveal } from './smooth-reveal'
 import { mathLoadState, mathPlugins, needsMath, requestMath, subscribeMath, type MathPlugins } from './markdown-math'
 import { rehypeTypingCaret } from './typing-caret'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
@@ -665,7 +666,8 @@ export const Markdown = memo(function Markdown({
     const own = sessionId ? s.sessionRuntimes[sessionId]?.messages.findLast((m) => m.id === id) : undefined
     return (own ?? s.messages.findLast((m) => m.id === id))?.timestamp
   })
-  const revealedText = useSmoothReveal(text, live, messageId ? `${sessionId ?? ''}|${messageId}` : null, fresh, startedAt)
+  const [arrived] = useState(() => live && fresh && !!messageId && textArrivedWithin(messageId.replace(/[#:].*$/, ''), FRESH_ARRIVAL_MS))
+  const revealedText = useSmoothReveal(text, live, messageId ? `${sessionId ?? ''}|${messageId}` : null, fresh, startedAt, arrived)
   const draining = !live && revealedText.length < text.length
   const running = live || draining
   const renderedText = prepareStreamingMarkdown(running ? revealedText : text, running)

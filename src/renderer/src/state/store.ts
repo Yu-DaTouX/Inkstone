@@ -91,6 +91,7 @@ import { createPreviewSlice, type FilePreviewState } from './slices/preview'
 import { createSubagentsSlice } from './slices/subagents'
 import { createModelSlice } from './slices/model'
 import { createQuotaResumeSlice, stopRetryWhenQuotaWindowFull } from './slices/quota-resume'
+import { noteTextArrival } from './text-arrival'
 
 export { pushNotice }
 export { blankViewKey, pendingSendsForView }
@@ -392,6 +393,7 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
     ...(textDelta ? { text: (cur.text ?? '') + textDelta } : null),
     ...(thinkingDelta ? { thinking: (cur.thinking ?? '') + thinkingDelta } : null)
   }
+  noteTextArrival(id, cur.text, next[i].text)
   return next
 }
 

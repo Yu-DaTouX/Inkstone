@@ -32,6 +32,7 @@ const EASE_OFF = 0.35
 const FLOOR_RATE = 0.04
 const FRAME_CAP_MS = 50
 export const FRESH_TYPE_CHARS = 240
+export const FRESH_ARRIVAL_MS = 1000
 const PROGRESS_LIMIT = 400
 const HEAD_CHARS = 24
 
@@ -51,10 +52,10 @@ function savedShown(id: string | null | undefined, text: string): number | undef
   return saved.head.slice(0, length) === text.slice(0, length) ? saved.shown : undefined
 }
 
-export function initialShown(length: number, fresh: boolean, saved: number | undefined, reduced: boolean): number {
+export function initialShown(length: number, fresh: boolean, saved: number | undefined, reduced: boolean, arrived = false): number {
   if (reduced) return length
   if (saved !== undefined) return Math.min(saved, length)
-  return fresh && length <= FRESH_TYPE_CHARS ? 0 : length
+  return fresh && (arrived || length <= FRESH_TYPE_CHARS) ? 0 : length
 }
 
 export interface RevealState {
@@ -156,9 +157,9 @@ export function revealLength(text: string, shown: number): number {
   return length
 }
 
-export function useSmoothReveal(text: string, live: boolean, id?: string | null, fresh = live, startedAt?: number): string {
+export function useSmoothReveal(text: string, live: boolean, id?: string | null, fresh = live, startedAt?: number, arrived = false): string {
   const reduced = prefersReducedMotion()
-  const [start] = useState(() => initialShown(text.length, fresh, savedShown(id, text), reduced))
+  const [start] = useState(() => initialShown(text.length, fresh, savedShown(id, text), reduced, arrived))
   const [shown, setShown] = useState(start)
   const shownRef = useRef(shown)
   const stateRef = useRef<RevealState | null>(null)
@@ -168,7 +169,7 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
   const wasLiveProp = useRef(live)
   const drainRef = useRef(start < text.length)
   const baseRef = useRef(start)
-  const [initialWatch] = useState(() => startBurstWatch(text.length, Date.now()))
+  const [initialWatch] = useState(() => (arrived && start === 0 ? startBurstWatch(0) : startBurstWatch(text.length, Date.now())))
   const burstRef = useRef<BurstWatch>(initialWatch)
   textRef.current = text
   liveRef.current = live

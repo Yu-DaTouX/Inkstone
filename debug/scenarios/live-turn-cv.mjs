@@ -72,7 +72,7 @@ function pageRecorder() {
         for (const el of tracked()) {
           const r = el.getBoundingClientRect()
           const y = r.top - top
-          if (y < 0 || y > vh) continue
+          if ((rec.partial ? r.bottom - top <= 0 || el.matches('.v3-msg.assistant') : y < 0) || y > vh) continue
           next.set(el, y)
           const before = rec.prev.get(el)
           if (before !== undefined) deltas.push(y - before - rec.expect)
@@ -237,7 +237,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
       out.append = { ...summarize(await ev('window.__cvRec.frames')), endGap: await bottomGap() }
       log(key, 'append', out.tailOpen, out.append)
 
-      await ev(`(() => { const rec = window.__cvRec; rec.frames = []; rec.prev = new Map(); rec.on = true })()`)
+      await ev(`(() => { const rec = window.__cvRec; rec.frames = []; rec.prev = new Map(); rec.partial = true; rec.on = true })()`)
       const traced = []
       const from = cdp.events.length
       await cdp.call('Tracing.start', { categories: 'devtools.timeline,disabled-by-default-devtools.timeline', transferMode: 'ReportEvents' })
@@ -247,7 +247,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
       await cdp.call('Tracing.end')
       for (let i = 0; i < 100 && !cdp.events.slice(from).some((e) => e.method === 'Tracing.tracingComplete'); i++) await sleep(100)
       for (const event of cdp.events.slice(from)) if (event.method === 'Tracing.dataCollected') traced.push(...event.params.value)
-      await ev('window.__cvRec.on = false')
+      await ev('window.__cvRec.on = false; window.__cvRec.partial = false')
       const endFrames = (await ev('window.__cvRec.frames')).filter((f) => f.t >= endAt)
       const mains = traced.filter((e) => e.name === 'thread_name' && e.args?.name === 'CrRendererMain').map((e) => `${e.pid}:${e.tid}`)
       const busiest = mains.map((id) => [id, traced.filter((e) => `${e.pid}:${e.tid}` === id && e.name === 'RunTask').length]).sort((a, b) => b[1] - a[1])[0]?.[0]
@@ -333,6 +333,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
     check(`${key} 查找命中并滚到可见`, out.find.active === 1 && out.find.inView, out.find)
     check(`${key} 键盘焦点落在叙述链接上`, out.focus.onLink && out.focus.focusVisible, out.focus)
     check(`${key} 回合结束后 data-live 去掉且仍贴底`, out.turnEnd.liveGone && out.turnEnd.endGap <= 2, out.turnEnd)
+    check(`${key} 回合结束那一刻可见内容不跳（含部分可见项；只剩约 27px 的结算滑动，单帧偏差 ≤3px）`, out.turnEnd.frames.maxShiftPx <= 3, out.turnEnd.frames)
   }
   for (const [key, out] of Object.entries(results)) {
     if (!out.resize) continue
