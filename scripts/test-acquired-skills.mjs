@@ -1,6 +1,6 @@
 import './lib/test-isolate.mjs'
 import { existsSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from '../node_modules/esbuild/lib/main.js'
@@ -204,6 +204,34 @@ try {
   ok(JSON.parse(await readFile(join(root, 'skills', 'pdf', acq.SOURCE_META_FILE), 'utf8')).scope === 'user', '保留后来源记录改为 user')
   await acq.installAcquiredSkill({ root, scope: 'session', sessionId, name: 'tmp-skill', description: '', files: [{ path: 'SKILL.md', content: enc('x') }], source })
   ok((await acq.removeSessionSkill(root, sessionId, 'tmp-skill')) && !existsSync(join(root, 'capabilities', 'session-skills', sessionId, 'tmp-skill')), '移除会话技能')
+
+  console.log('覆盖安装的原子性')
+  const replaceRoot = join(root, 'replace')
+  const target = join(replaceRoot, 'demo')
+  await mkdir(replaceRoot, { recursive: true })
+  const skillFiles = (text) => [{ path: 'SKILL.md', content: enc(text) }]
+  await acq.writeSkillDir(target, skillFiles('v1'), { v: 1 })
+  const lockedMoves = []
+  const failingMove = async (from, to) => {
+    lockedMoves.push([from, to])
+    if (from.includes('.tmp-') && to === target) throw Object.assign(new Error('locked'), { code: 'EBUSY' })
+    await rename(from, to)
+  }
+  await rejects(() => acq.writeSkillDir(target, skillFiles('v2'), { v: 2 }, failingMove), 'EBUSY', '放入新目录失败时报错')
+  ok((await readFile(join(target, 'SKILL.md'), 'utf8')) === 'v1', '放入新目录失败后旧技能原样还原')
+  ok(lockedMoves.length === 3 && lockedMoves[0][0] === target && lockedMoves[2][1] === target, '先改名旧目录，失败后改回', JSON.stringify(lockedMoves.map((m) => m.map((p) => p.split(/[\\/]/).pop()))))
+  ok(lockedMoves.every(([from, to]) => [from, to].filter((p) => p !== target).every((p) => p.split(/[\\/]/).pop().startsWith('.'))), '临时目录与旧目录以点开头，残留时不会被当成技能')
+  ok((await readdir(replaceRoot)).join(',') === 'demo', '失败后不留 tmp 与 .old 残渣', (await readdir(replaceRoot)).join(','))
+  const blockedOld = async (from, to) => {
+    if (from === target) throw Object.assign(new Error('locked'), { code: 'EPERM' })
+    await rename(from, to)
+  }
+  await rejects(() => acq.writeSkillDir(target, skillFiles('v3'), { v: 3 }, blockedOld), 'EPERM', '旧目录改名失败时报错')
+  ok((await readFile(join(target, 'SKILL.md'), 'utf8')) === 'v1' && (await readdir(replaceRoot)).join(',') === 'demo', '旧目录改名失败时旧技能未动、tmp 已清理')
+  await acq.writeSkillDir(target, skillFiles('v4'), { v: 4 })
+  ok((await readFile(join(target, 'SKILL.md'), 'utf8')) === 'v4' && (await readdir(replaceRoot)).join(',') === 'demo', '成功覆盖后新内容生效且旧目录已删除')
+  await acq.writeSkillDir(join(replaceRoot, 'fresh'), skillFiles('n'), { v: 0 })
+  ok(existsSync(join(replaceRoot, 'fresh', 'SKILL.md')), '目标不存在时直接创建')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

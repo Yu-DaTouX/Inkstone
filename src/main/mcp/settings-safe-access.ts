@@ -79,6 +79,7 @@ export function managedRuntimeFacts(access: SettingsSafeAccess, serverId: string
 export interface ManagedVerifyResult {
   status: McpServerStatus
   toolCount: number
+  error?: string
 }
 
 export async function verifyManagedServer(
@@ -94,7 +95,8 @@ export async function verifyManagedServer(
   const host = access.host()
   await host.reconcile(serverId)
   const tools = await host.listToolsWithMeta(serverId, callerProjectId ? { projectId: callerProjectId } : {})
-  return { status: host.statusOf(serverId).status, toolCount: tools.length }
+  const state = host.statusOf(serverId)
+  return { status: state.status, toolCount: tools.length, ...(state.error ? { error: state.error } : {}) }
 }
 
 export async function disconnectManagedServer(

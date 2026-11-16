@@ -1,6 +1,5 @@
 import { pick } from '../../shared/ui-lang'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StdioTreeClientTransport } from './stdio-tree-transport'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
@@ -24,6 +23,14 @@ interface Connection {
   generation: number
   transportError?: unknown
   connecting?: Promise<void>
+}
+
+function stderrTailOf(transport: unknown): string {
+  return transport instanceof StdioTreeClientTransport ? transport.stderrTail() : ''
+}
+
+function withStderr(message: string, tail: string): string {
+  return tail ? `${message}\n${pick('服务输出（stderr）：', 'Server output (stderr):')}\n${tail}` : message
 }
 
 function isTransportFailure(
@@ -114,6 +121,29 @@ export class McpConnectionManager {
   }
 
   private readonly toolCache = new Map<string, { tools: McpToolDescriptor[]; at: number }>()
+  private activeRequests = 0
+  private idleWaiters: Array<() => void> = []
+
+  isBusy(): boolean {
+    if (this.activeRequests > 0 || this.activeInputCalls > 0) return true
+    for (const conn of this.connections.values()) if (conn.connecting) return true
+    return false
+  }
+
+  onceIdle(callback: () => void): void {
+    if (!this.isBusy()) {
+      callback()
+      return
+    }
+    this.idleWaiters.push(callback)
+  }
+
+  private settleIdle(): void {
+    if (this.idleWaiters.length === 0 || this.isBusy()) return
+    const waiters = this.idleWaiters
+    this.idleWaiters = []
+    for (const waiter of waiters) waiter()
+  }
 
   list(): McpServerConfig[] {
     return [...this.connections.values()].map((c) => c.config)
@@ -177,14 +207,16 @@ export class McpConnectionManager {
   private async withTimeout<T>(
     work: Promise<T>,
     what: string,
-    onTimeout?: () => Promise<void>,
-    timeoutMs = this.timeoutMs
+    onTimeout?: (error: Error) => Promise<void>,
+    timeoutMs = this.timeoutMs,
+    suffix?: () => string
   ): Promise<T> {
     let timer: NodeJS.Timeout | undefined
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error(pick(`${what} 超时（${timeoutMs}ms）`, `${what} timed out (${timeoutMs}ms)`)))
-        void onTimeout?.().catch(() => undefined)
+        const error = new Error(withStderr(pick(`${what} 超时（${timeoutMs}ms）`, `${what} timed out (${timeoutMs}ms)`), suffix?.() ?? ''))
+        reject(error)
+        void onTimeout?.(error).catch(() => undefined)
       }, timeoutMs)
     })
     try {
@@ -223,9 +255,8 @@ export class McpConnectionManager {
       return new StdioTreeClientTransport({
         command: config.command,
         args: config.args ?? [],
-        env,
-        stderr: 'ignore'
-      })
+        env
+      }, undefined, undefined, undefined, { secretValues: Object.values(config.env ?? {}).filter((value): value is string => typeof value === 'string') })
     }
     if (!config.url) throw new Error(pick(`MCP 服务 ${config.id} 缺少 url`, `MCP service ${config.id} is missing url`))
     return new StreamableHTTPClientTransport(new URL(config.url))
@@ -255,6 +286,14 @@ export class McpConnectionManager {
     else if (transport) await transport.close().catch(() => undefined)
   }
 
+  private async timeoutConnection(conn: Connection, timeoutError: Error): Promise<void> {
+    await this.cancelConnection(conn)
+    if (!conn.client && !conn.connecting && conn.status === 'disconnected') {
+      conn.status = 'error'
+      conn.error = timeoutError.message
+    }
+  }
+
   private async connect(conn: Connection): Promise<void> {
     if (conn.client) return
     if (conn.connecting) return conn.connecting
@@ -262,7 +301,7 @@ export class McpConnectionManager {
     conn.status = 'connecting'
     conn.transportError = undefined
     conn.connecting = (async () => {
-      let transport: StdioClientTransport | StreamableHTTPClientTransport | undefined
+      let transport: StdioTreeClientTransport | StreamableHTTPClientTransport | undefined
       let client: Client | undefined
       try {
         transport = this.makeTransport(conn.config)
@@ -283,8 +322,9 @@ export class McpConnectionManager {
         await this.withTimeout(
           client.connect(transport),
           pick(`连接 ${conn.config.id}`, `Connecting ${conn.config.id}`),
-          () => this.cancelConnection(conn),
-          conn.config.id === WINDOWS_MCP_SERVER_ID ? Math.max(this.timeoutMs, WINDOWS_MCP_CONNECT_TIMEOUT_MS) : this.timeoutMs
+          (timeoutError) => this.timeoutConnection(conn, timeoutError),
+          conn.config.id === WINDOWS_MCP_SERVER_ID ? Math.max(this.timeoutMs, WINDOWS_MCP_CONNECT_TIMEOUT_MS) : this.timeoutMs,
+          () => stderrTailOf(transport)
         )
         if (generation !== conn.generation) {
           await client.close().catch(() => undefined)
@@ -296,16 +336,19 @@ export class McpConnectionManager {
         conn.error = undefined
       } catch (error) {
         if (generation !== conn.generation) throw error
-        const message = error instanceof Error ? error.message : String(error)
+        const rawMessage = error instanceof Error ? error.message : String(error)
+        const tail = stderrTailOf(transport)
+        const message = rawMessage.includes(tail) && tail ? rawMessage : withStderr(rawMessage, tail)
         if (client) await client.close().catch(() => undefined)
         else if (transport) await transport.close().catch(() => undefined)
         conn.client = null
         conn.transport = undefined
         conn.status = looksLikeAuthFailure(message) ? 'needs-auth' : 'error'
         conn.error = message
-        throw error
+        throw message === rawMessage ? error : new Error(message, { cause: error })
       } finally {
         if (generation === conn.generation) conn.connecting = undefined
+        this.settleIdle()
       }
     })()
     return conn.connecting
@@ -319,7 +362,7 @@ export class McpConnectionManager {
   }
 
   private async dropClient(conn: Connection, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = withStderr(error instanceof Error ? error.message : String(error), stderrTailOf(conn.transport))
     const client = conn.client
     const transport = conn.transport
     conn.client = null
@@ -365,6 +408,7 @@ export class McpConnectionManager {
       timer = setTimeout(() => cancelThis(new McpRequestCancelledError(pick(`${what} 超时（${timeoutMs}ms）`, `${what} timed out (${timeoutMs}ms)`))), timeoutMs)
     }
     const transportErrorBeforeRequest = conn.transportError
+    this.activeRequests++
     try {
       return await run(controller.signal)
     } catch (error) {
@@ -381,6 +425,8 @@ export class McpConnectionManager {
     } finally {
       if (timer) clearTimeout(timer)
       if (external) external.removeEventListener('abort', onExternalAbort)
+      this.activeRequests--
+      this.settleIdle()
     }
   }
 
@@ -494,6 +540,7 @@ export class McpConnectionManager {
           this.activeInputCalls--
           if (this.activeInputCalls === 0 && this.releaseAfterInput) void this.releaseComputerControl()
           else this.scheduleIdleRelease()
+          this.settleIdle()
         }
       }
     }

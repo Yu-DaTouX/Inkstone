@@ -38,6 +38,7 @@ export class RunnerMcpConnections {
   private releasing = new Map<string, Promise<McpCloseOutcome>>()
   private retiredCloseTail: Promise<void> = Promise.resolve()
   private lastConfigError?: string
+  private syncDeferred = false
 
   constructor(private readonly deps: RunnerMcpConnectionsDeps) {}
 
@@ -131,7 +132,7 @@ export class RunnerMcpConnections {
     return servers
   }
 
-  async verify(serverId: string): Promise<{ status: McpServerStatus; toolCount: number }> {
+  async verify(serverId: string): Promise<{ status: McpServerStatus; toolCount: number; error?: string }> {
     const access = this.settingsAccess()
     const managed = await this.reconcileForManaged(serverId)
     if (managed.managed) {
@@ -141,7 +142,8 @@ export class RunnerMcpConnections {
     await this.closeRetired()
     if (!manager.listServerIds().includes(serverId)) throw new Error(pick('当前 runner 没有这个 MCP 服务', 'This runner has no such MCP server'))
     const tools = await manager.listToolsCached(serverId, { refresh: true })
-    return { status: manager.statusOf(serverId).status, toolCount: tools.length }
+    const state = manager.statusOf(serverId)
+    return { status: state.status, toolCount: tools.length, ...(state.error ? { error: state.error } : {}) }
   }
 
   async disconnect(serverId: string): Promise<boolean> {
@@ -149,6 +151,32 @@ export class RunnerMcpConnections {
     const managed = await this.reconcileForManaged(serverId)
     if (managed.managed) return disconnectManagedServer(access, serverId, this.deps.projectId())
     return this.connectionManager().disconnect(serverId)
+  }
+
+  async syncChanged(): Promise<'none' | 'synced' | 'deferred'> {
+    const manager = this.manager
+    if (!manager) return 'none'
+    if (manager.isBusy()) {
+      if (!this.syncDeferred) {
+        this.syncDeferred = true
+        manager.onceIdle(() => {
+          this.syncDeferred = false
+          if (this.manager === manager) void this.applySync()
+        })
+      }
+      return 'deferred'
+    }
+    await this.applySync()
+    return 'synced'
+  }
+
+  private async applySync(): Promise<void> {
+    try {
+      this.connectionManager()
+      await Promise.allSettled([...this.releasing.values()])
+      await this.closeRetired()
+    } catch {
+    }
   }
 
   async closeCurrent(): Promise<void> {

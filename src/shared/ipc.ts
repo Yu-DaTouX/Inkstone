@@ -1302,6 +1302,7 @@ export interface CapabilityVerificationStatus {
   operationId: string
   state: 'connecting' | 'ready' | 'error' | 'cancelled' | 'stale'
   toolCount?: number
+  error?: string
 }
 
 export interface PromptTemplateDirectories {

@@ -344,5 +344,73 @@ export async function runMcpTests(ok, modules) {
     }
   }
 
+  {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    const failing = join(root, 'failing-server.cjs')
+    await writeFile(failing, [
+      "process.stderr.write('boom: missing dependency foo\\n')",
+      "process.stderr.write('key sk-abcdefghijklmnop leaked, env=' + process.env.MY_SERVER_SECRET + '\\n')",
+      'process.exit(1)'
+    ].join('\n'))
+    const failManager = new managerMod.McpConnectionManager([
+      { id: 'fails', transport: 'stdio', command: process.execPath, args: [failing], env: { MY_SERVER_SECRET: 'hunter2-hunter2' } }
+    ])
+    let failure = ''
+    try {
+      await failManager.listTools('fails')
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error)
+    }
+    const failStatus = failManager.statusOf('fails')
+    ok(failure.includes('boom: missing dependency foo'), 'MCP 启动失败：错误里带上服务的 stderr', failure)
+    ok(failStatus.status === 'error' && failStatus.error?.includes('missing dependency foo'), 'MCP 启动失败：状态里保留失败原因')
+    ok(!failure.includes('sk-abcdefghijklmnop') && !failure.includes('hunter2-hunter2') && failure.includes('[redacted]'), 'MCP 启动失败：stderr 里的密钥与配置里的环境变量值已遮蔽', failure)
+    await failManager.close()
+
+    const hang = join(root, 'hang-server.cjs')
+    await writeFile(hang, [
+      "process.stderr.write('starting up, waiting for license\\n')",
+      "process.stdin.on('data', () => {})",
+      "process.stdin.on('end', () => process.exit(0))",
+      'setInterval(() => {}, 1000)'
+    ].join('\n'))
+    const hangManager = new managerMod.McpConnectionManager([
+      { id: 'hangs', transport: 'stdio', command: process.execPath, args: [hang] }
+    ], 700)
+    ok(hangManager.isBusy() === false, '空闲的管理器不忙')
+    let idleCalls = 0
+    const pending = hangManager.listTools('hangs').then(() => '', (error) => (error instanceof Error ? error.message : String(error)))
+    await sleep(150)
+    ok(hangManager.isBusy() === true, '连接进行中算忙')
+    hangManager.onceIdle(() => { idleCalls++ })
+    ok(idleCalls === 0, '忙时 onceIdle 不立即回调')
+    const timeoutMessage = await pending
+    ok(/超时|timed out/.test(timeoutMessage) && timeoutMessage.includes('waiting for license'), '连接超时：错误里有超时文案和 stderr', timeoutMessage)
+    for (let i = 0; i < 100 && (hangManager.statusOf('hangs').status !== 'error' || idleCalls === 0); i++) await sleep(100)
+    const hangStatus = hangManager.statusOf('hangs')
+    ok(hangStatus.status === 'error' && /超时|timed out/.test(hangStatus.error ?? ''), '连接超时：状态保留为 error 与超时原因，不被清成未连接', JSON.stringify(hangStatus))
+    ok(idleCalls === 1 && hangManager.isBusy() === false, '连接结束后回调一次 onceIdle')
+    let immediate = 0
+    hangManager.onceIdle(() => { immediate++ })
+    ok(immediate === 1, '空闲时 onceIdle 立即回调')
+    await hangManager.close()
+
+    const busyManager = new managerMod.McpConnectionManager([
+      { id: 'fx', transport: 'stdio', command: process.execPath, args: [fixture] }
+    ])
+    try {
+      await busyManager.listTools('fx')
+      ok(busyManager.isBusy() === false, '请求结束后回到空闲')
+      const controller = new AbortController()
+      const call = busyManager.callTool('fx', 'echo', { text: 'x' }, { signal: controller.signal })
+      for (let tick = 0; tick < 12; tick++) await Promise.resolve()
+      ok(busyManager.isBusy() === true, '请求进行中算忙')
+      await call
+      ok(busyManager.isBusy() === false, '请求完成后回到空闲')
+    } finally {
+      await busyManager.close()
+    }
+  }
+
   await rm(root, { recursive: true, force: true })
 }

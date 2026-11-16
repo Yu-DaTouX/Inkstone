@@ -27,6 +27,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [errorDetail, setErrorDetail] = useState('')
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
   const requestId = useRef(0)
@@ -74,6 +75,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     const view = viewKey()
     setBusy(true)
     setError('')
+    setErrorDetail('')
     setNotice('')
     try {
       const result = await window.yan.capabilities.changeMcpService(input)
@@ -94,6 +96,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     const view = viewKey()
     setBusy(true)
     setError('')
+    setErrorDetail('')
     setNotice('')
     try {
       await reloadCurrentMcp(sessionId, snapshot.context)
@@ -116,6 +119,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     setBusy(true)
     setNotice('')
     setError('')
+    setErrorDetail('')
     try {
       if (service.backend === 'native') {
         const state = useStore.getState()
@@ -139,8 +143,12 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
           const result = await window.yan.capabilities.verification(start.operationId)
           if (result && result.state !== 'connecting') {
             if (view !== viewKey()) return
-            setNotice(t(`cap.operation.${result.state}` as 'cap.operation.ready'))
+            if (result.state !== 'error') setNotice(t(`cap.operation.${result.state}` as 'cap.operation.ready'))
             await refresh()
+            if (result.state === 'error' && view === viewKey()) {
+              setError(t('cap.operation.error'))
+              setErrorDetail(result.error ?? '')
+            }
             return
           }
         }
@@ -164,6 +172,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       {!snapshot?.project && !loading ? <Meta>{text.noProject}</Meta> : null}
       {scope === 'project' && snapshot && !snapshot.projectTrusted ? <Warn>{text.untrusted}</Warn> : null}
       {error ? <Warn>{error}</Warn> : null}
+      {errorDetail ? <pre className="caps-raw" data-testid="mcp-check-error">{errorDetail}</pre> : null}
       {notice ? <Meta>{notice}</Meta> : null}
       {snapshot?.errors.map((problem) => <Warn key={problem}>{problem}</Warn>)}
       {adding && snapshot ? <McpServiceForm snapshot={snapshot} initialScope={scope} onSave={change} onCancel={() => setAdding(false)} busy={busy} /> : null}

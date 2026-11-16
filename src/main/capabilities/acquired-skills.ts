@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { reviewSkillFiles, type SkillSecurityFinding, type SkillSecurityReview } from '../../shared/skill-security'
 import { USER_SKILL_NAME_PATTERN } from '../../shared/user-skill'
@@ -187,8 +187,17 @@ async function readIndex(root: string, sessionId: string): Promise<SessionSkillI
   return { version: 1, sessionId, skills: [] }
 }
 
-async function writeSkillDir(target: string, files: readonly AcquiredSkillFile[], meta: Record<string, unknown>): Promise<void> {
-  const tmp = `${target}.tmp-${randomBytes(4).toString('hex')}`
+function hiddenSibling(target: string, kind: 'tmp' | 'old'): string {
+  return join(dirname(target), `.${basename(target)}.${kind}-${randomBytes(4).toString('hex')}`)
+}
+
+export async function writeSkillDir(
+  target: string,
+  files: readonly AcquiredSkillFile[],
+  meta: Record<string, unknown>,
+  move: (from: string, to: string) => Promise<void> = renameWithRetry
+): Promise<void> {
+  const tmp = hiddenSibling(target, 'tmp')
   await mkdir(tmp, { recursive: true })
   try {
     for (const file of files) {
@@ -198,8 +207,16 @@ async function writeSkillDir(target: string, files: readonly AcquiredSkillFile[]
       await writeFile(out, file.content)
     }
     await writeFile(join(tmp, SOURCE_META_FILE), JSON.stringify(meta, null, 2), 'utf8')
-    await rm(target, { recursive: true, force: true })
-    await renameWithRetry(tmp, target)
+    const previous = hiddenSibling(target, 'old')
+    const replacing = existsSync(target)
+    if (replacing) await move(target, previous)
+    try {
+      await move(tmp, target)
+    } catch (error) {
+      if (replacing) await move(previous, target)
+      throw error
+    }
+    if (replacing) await rm(previous, { recursive: true, force: true }).catch(() => undefined)
   } catch (error) {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
     throw error
@@ -334,7 +351,7 @@ async function promoteSessionSkillUnlocked(
   if (existsSync(target)) throw new AcquiredSkillError('name-taken', `我的技能里已有「${safe}」，不会覆盖`)
   const source = join(sessionSkillsDir(root, sessionId), safe)
   await mkdir(userSkillsDir(root), { recursive: true })
-  const tmp = `${target}.tmp-${randomBytes(4).toString('hex')}`
+  const tmp = hiddenSibling(target, 'tmp')
   try {
     await cp(source, tmp, { recursive: true, errorOnExist: true, verbatimSymlinks: true })
     const meta = (await readMeta(tmp)) ?? {}
@@ -352,7 +369,7 @@ export async function acquiredUserSkillNames(root: string): Promise<Set<string>>
   const names = new Set<string>()
   try {
     for (const entry of await readdir(userSkillsDir(root), { withFileTypes: true })) {
-      if (entry.isDirectory() && existsSync(join(userSkillsDir(root), entry.name, SOURCE_META_FILE))) names.add(entry.name)
+      if (entry.isDirectory() && !entry.name.startsWith('.') && existsSync(join(userSkillsDir(root), entry.name, SOURCE_META_FILE))) names.add(entry.name)
     }
   } catch {
   }

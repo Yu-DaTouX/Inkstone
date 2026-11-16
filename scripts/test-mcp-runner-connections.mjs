@@ -176,6 +176,34 @@ try {
       await connections.closeCurrent()
       ok(connections.current() === undefined && next.closed === 1, 'closeCurrent 关闭并放下当前管理器')
     }
+
+    {
+      const { connections, env } = harness({ servers: [{ id: 'legacy', transport: 'stdio', command: 'node' }, { id: 'windows-mcp', transport: 'stdio', command: 'uvx', args: ['a'] }] })
+      ok((await connections.syncChanged()) === 'none', '没有管理器时同步什么也不做')
+      const manager = connections.connectionManager()
+      manager.busy = false
+      manager.idleWaiters = []
+      manager.isBusy = () => manager.busy
+      manager.onceIdle = (callback) => { if (!manager.busy) callback(); else manager.idleWaiters.push(callback) }
+      const syncs = []
+      const baseSync = manager.syncServers
+      manager.syncServers = (next) => { syncs.push(next.map((config) => config.id)); return baseSync(next) }
+      env.servers = [{ id: 'legacy', transport: 'stdio', command: 'node' }]
+      ok((await connections.syncChanged()) === 'synced' && syncs.length === 1 && manager.closed === 0 && env.created.length === 1, '空闲时只做差量同步，不关闭整个管理器也不新建')
+      ok(manager.configs.map((config) => config.id).join() === 'legacy', '同步后管理器只剩配置里的服务')
+
+      env.servers = [{ id: 'legacy', transport: 'stdio', command: 'node' }, { id: 'windows-mcp', transport: 'stdio', command: 'uvx' }]
+      manager.busy = true
+      const before = syncs.length
+      ok((await connections.syncChanged()) === 'deferred' && syncs.length === before, '有进行中的 MCP 调用时延后，不动现有连接')
+      ok((await connections.syncChanged()) === 'deferred' && manager.idleWaiters.length === 1, '重复触发只登记一次等待')
+      manager.busy = false
+      for (const waiter of manager.idleWaiters.splice(0)) waiter()
+      await settle()
+      await settle()
+      ok(syncs.length === before + 1 && manager.configs.map((config) => config.id).join() === 'legacy,windows-mcp', '空闲后补做同步')
+      ok(manager.closed === 0, '延后同步也不关闭整个管理器')
+    }
   })
 } finally {
   await rm(dataDir, { recursive: true, force: true })

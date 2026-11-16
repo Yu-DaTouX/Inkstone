@@ -1,4 +1,5 @@
 import { pick } from '../../shared/ui-lang'
+import { verificationErrorText } from '../mcp/verification-error'
 import type { IpcRegistrar } from './registrar'
 import { searchDoctor } from '../search/search'
 import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey } from '../search/config'
@@ -37,8 +38,10 @@ type CapabilityVerification = {
   serverId: string
   state: 'connecting' | 'ready' | 'error' | 'cancelled' | 'stale'
   toolCount?: number
+  error?: string
   updatedAt: number
 }
+
 const capabilityVerifications = new Map<string, CapabilityVerification>()
 
 function pruneCapabilityVerifications(): void {
@@ -304,11 +307,15 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
         } else {
           operation.state = result.status === 'ready' ? 'ready' : 'error'
           operation.toolCount = result.toolCount
+          if (operation.state === 'error') operation.error = verificationErrorText(result.error)
         }
         operation.updatedAt = Date.now()
       },
-      () => {
-        if (operation.state !== 'cancelled') operation.state = 'error'
+      (error: unknown) => {
+        if (operation.state !== 'cancelled') {
+          operation.state = 'error'
+          operation.error = verificationErrorText(error)
+        }
         operation.updatedAt = Date.now()
       }
     )
@@ -327,7 +334,8 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     return {
       operationId,
       state: operation.state,
-      ...(operation.toolCount !== undefined ? { toolCount: operation.toolCount } : {})
+      ...(operation.toolCount !== undefined ? { toolCount: operation.toolCount } : {}),
+      ...(operation.state === 'error' && operation.error ? { error: operation.error } : {})
     }
   })
   handle('yan:capabilities:cancelVerification', async (value: unknown) => {

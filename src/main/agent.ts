@@ -45,6 +45,7 @@ import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice, parseSubagentNotice } from '../shared/subagent-notice'
 import { isHostTextNotice } from '../shared/host-notice-text'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
+import { piStartFailureText } from '../shared/pi-start-failure'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import type { ApprovalDecision } from '../shared/approval'
@@ -169,6 +170,7 @@ const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
 const STOP_ABORT_TIMEOUT_MS = 5_000
 const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
 const STOP_TOTAL_BUDGET_MS = 12_000
+const STARTUP_STDERR_LINES = 200
 
 async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -955,6 +957,8 @@ export class AgentController extends EventEmitter {
   private titleLifecycle = 0
   private stopping = false
   private spawnFailure: string | undefined
+  private startupStderr: string[] = []
+  private startupReady = false
   private nativeWitnessPending: McpNativeBootWitness | null = null
   private nativeWitness: McpNativeBootWitness | null = null
 
@@ -1080,7 +1084,12 @@ export class AgentController extends EventEmitter {
     )
 
     this.spawnFailure = undefined
+    this.startupStderr = []
     rpc.on('stderr', (line) => {
+      if (this.rpc === rpc && !this.startupReady) {
+        this.startupStderr.push(line)
+        if (this.startupStderr.length > STARTUP_STDERR_LINES) this.startupStderr.shift()
+      }
       this.push({ ch: 'proc', payload: { state: 'stderr', detail: line } })
     })
 
@@ -1157,16 +1166,14 @@ export class AgentController extends EventEmitter {
 
     rpc.spawn()
 
+    this.startupReady = false
     const ok = await this.waitReady(20_000, rpc)
     if (!ok) {
-      const msg = this.spawnFailure
-        ? pick(`无法启动 pi：${this.spawnFailure}。可跑 npm run probe-pi 排查。`, `Cannot start pi: ${this.spawnFailure}. Run npm run probe-pi to investigate.`)
-        : rpc.running
-          ? pick('pi 启动超时（20s）。点「详情」看 stderr，或跑 npm run probe-pi。', 'pi start timed out (20s). See stderr under Details, or run npm run probe-pi.')
-          : pick('pi 启动后立即退出。点「详情」看 stderr，或跑 npm run probe-pi。', 'pi exited right after starting. See stderr under Details, or run npm run probe-pi.')
+      const msg = piStartFailureText({ spawnFailure: this.spawnFailure, running: rpc.running, stderr: this.startupStderr })
       this.setConn('error', msg)
       return { ok: false, error: msg }
     }
+    this.startupReady = true
 
     this.setConn('ready')
 
@@ -4417,10 +4424,9 @@ export class AgentController extends EventEmitter {
   }
 
   async reloadMcpServers(): Promise<void> {
-    await this.mcp.closeCurrent()
     this.nativeWitness = null
     this.nativeWitnessPending = null
-    await this.mcp.closeRetired()
+    await this.mcp.syncChanged()
   }
 
   processId(): number | undefined {
