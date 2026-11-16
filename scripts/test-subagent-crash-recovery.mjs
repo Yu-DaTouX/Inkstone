@@ -35,9 +35,10 @@ try {
   await build({ entryPoints: ['src/main/subagents.ts'], outfile: output, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   const { SubagentController } = await import(pathToFileURL(output).href)
   const archive = join(work, 'archives')
+  const recovered = []
   const make = (repo) => {
     const controller = new SubagentController({
-      cwd: repo, archiveDir: archive, onChange: () => {}, onFinished: () => {},
+      cwd: repo, archiveDir: archive, onChange: () => {}, onFinished: () => {}, onRecovered: (run) => recovered.push(run),
       createRpc: () => {
         const rpc = new EventEmitter()
         rpc.running = false
@@ -69,10 +70,20 @@ try {
       delete saved.resume.workspace
       await writeFile(savedFile, JSON.stringify(saved))
     }
+    const earlierPatch = join(archive, `${id}.patch`)
+    await writeFile(earlierPatch, 'earlier patch\n')
 
+    recovered.length = 0
     const restarted = make(repo)
     await restarted.loadHistory()
     const run = restarted.get(id)
+    ok((await readFile(earlierPatch, 'utf8')) === 'earlier patch\n', `${label}：崩溃恢复不覆盖已有的 <id>.patch`)
+    ok(new RegExp(`${id}-recovered-\\d{14}\\.patch$`).test(run.diff?.patchPath ?? ''), `${label}：崩溃恢复另写 <id>-recovered-<时间>.patch，记录里指向它`)
+    ok(recovered.length === 1 && recovered[0].id === id && recovered[0].review === 'pending' && recovered[0].endReason === 'interrupted' && recovered[0].resumable?.ok === true, `${label}：恢复后待审阅的记录交给续接通知`)
+    const again = make(repo)
+    recovered.length = 0
+    await again.loadHistory()
+    ok(recovered.length === 0, `${label}：再次启动不重复交给续接通知`)
     ok(run.status === 'cancelled' && run.endReason === 'interrupted', `${label}：重启后标为中断`)
     ok(run.review === 'pending' && run.diff?.files === 2 && existsSync(run.diff.patchPath), `${label}：改动存成补丁，审阅状态可合并`)
     ok(existsSync(worktree), `${label}：工作树保留，可以原地续接`)

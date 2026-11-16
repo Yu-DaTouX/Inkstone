@@ -120,6 +120,7 @@ export interface SubagentServiceDeps {
   onPatch?(payload: SubagentPatch): void
   onRemove(id: string): void
   onFinished?(run: SubagentRun): void
+  onRecovered?(run: SubagentRun): void
   onOvertime?(run: SubagentRun, minutes: number): void
   onEvent?(runId: string, evt: Record<string, unknown>, run: SubagentRun): void
 }
@@ -193,6 +194,7 @@ export class SubagentService {
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
       onRemove: (id) => this.deps.onRemove(id),
       onFinished: (run) => this.deps.onFinished?.(run),
+      onRecovered: (run) => this.deps.onRecovered?.(run),
       onOvertime: (run, minutes) => this.deps.onOvertime?.(run, minutes),
       ...(this.deps.onEvent ? { onEvent: (runId, evt, run) => this.deps.onEvent?.(runId, evt, run) } : {})
     })

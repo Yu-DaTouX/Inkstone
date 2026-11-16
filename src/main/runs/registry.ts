@@ -407,7 +407,7 @@ export class RunRegistry {
       endedAt: now,
       terminal,
       ...(phase.kind === 'failed' ? { cause: phase.cause, ...(phase.errorKind ? { errorKind: phase.errorKind } : {}), message: phase.message } : {}),
-      ...(phase.kind === 'stopped' ? { cause: phase.by } : {}),
+      ...(phase.kind === 'stopped' ? { cause: phase.reason ?? phase.by } : {}),
       segments: [...entry.segments],
       ...(entry.state.costUsd !== undefined ? { costUsd: entry.state.costUsd } : {}),
       counts: entry.state.counts

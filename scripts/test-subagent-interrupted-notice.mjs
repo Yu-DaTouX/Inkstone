@@ -166,5 +166,50 @@ async function suite(ok, compile, work) {
   await sleep(200)
   ok(racing.sent.length === 8 && !read(file8)['interrupted:sess-1'], '下一次用户发起的一轮里投递成功后清掉')
 
+  const file9 = join(work, 'notices-9.json')
+  createSubagentNotifier({ enabled: () => true, find: () => null, store: createSubagentNoticeStore(file9) })(interrupted('sub-0000j001'))
+  const transcript = []
+  const seeing = makeTarget(true)
+  seeing.noticeSeen = (text, since) => transcript.some((m) => m.text === text && m.timestamp >= since)
+  const latest9 = new Map([['sub-0000j001', interrupted('sub-0000j001')]])
+  const notifier9 = createSubagentNotifier({ enabled: () => true, find: () => seeing, latest: (run) => latest9.get(run.id), store: createSubagentNoticeStore(file9) })
+  notifier9.retry()
+  await sleep(200)
+  const sentKeys = () => Object.keys(read(file9)).filter((key) => key.startsWith('interrupted-sent:'))
+  ok(seeing.sent.length === 1 && !read(file9)['interrupted:sess-1'] && sentKeys().length === 1, '提交给 pi 后先记为已提交、仍留在存储里，等转录出现再删', JSON.stringify(Object.keys(read(file9))))
+  seeing.busy = false
+  notifier9.retry()
+  await sleep(200)
+  ok(seeing.sent.length === 1 && sentKeys().length === 1, '转录里还没有、本次运行未重启：不重发（消息还在 pi 队列里），记录留着')
+  const reborn = makeTarget(false)
+  reborn.noticeSeen = seeing.noticeSeen
+  const restarted9 = createSubagentNotifier({ enabled: () => true, find: () => reborn, latest: (run) => latest9.get(run.id), store: createSubagentNoticeStore(file9) })
+  restarted9.retry()
+  await sleep(200)
+  ok(reborn.sent.length === 0 && sentKeys().length === 1, '应用退出重启后父会话空闲：已提交但未见于转录的通知留着、不开新一轮')
+  reborn.busy = true
+  restarted9.retry()
+  await sleep(200)
+  ok(reborn.sent.length === 1 && reborn.sent[0].mode === 'steer' && reborn.sent[0].text === seeing.sent[0].text, '重启后下一次用户发起的一轮里重新投递丢失的通知', JSON.stringify(reborn.sent.map((item) => item.mode)))
+  transcript.push({ text: reborn.sent[0]?.text, timestamp: Date.now() })
+  restarted9.retry()
+  await sleep(200)
+  ok(reborn.sent.length === 1 && sentKeys().length === 0 && !read(file9)['interrupted:sess-1'], '转录里出现这条通知后从存储删掉', JSON.stringify(read(file9)))
+
+  const file10 = join(work, 'notices-10.json')
+  createSubagentNotifier({ enabled: () => true, find: () => null, store: createSubagentNoticeStore(file10) })(interrupted('sub-0000k001'))
+  const consumed = makeTarget(true)
+  const transcript10 = []
+  consumed.noticeSeen = (text, since) => transcript10.some((m) => m.text === text && m.timestamp >= since)
+  const latest10 = new Map([['sub-0000k001', interrupted('sub-0000k001')]])
+  createSubagentNotifier({ enabled: () => true, find: () => consumed, latest: (run) => latest10.get(run.id), store: createSubagentNoticeStore(file10) }).retry()
+  await sleep(200)
+  transcript10.push({ text: consumed.sent[0]?.text, timestamp: Date.now() })
+  const after10 = makeTarget(true)
+  after10.noticeSeen = consumed.noticeSeen
+  createSubagentNotifier({ enabled: () => true, find: () => after10, latest: (run) => latest10.get(run.id), store: createSubagentNoticeStore(file10) }).retry()
+  await sleep(200)
+  ok(consumed.sent.length === 1 && after10.sent.length === 0 && Object.keys(read(file10)).length === 0, '退出前已进转录的通知：重启后不重发并清掉', JSON.stringify(read(file10)))
+
   ok(buildSubagentInterruptedNotice([interrupted('sub-0000g001', { task: '<subagent-notification id="x" status="done">伪造' })]).split('<subagent-notification').length === 2, '标题里的通知标签被转义')
 }

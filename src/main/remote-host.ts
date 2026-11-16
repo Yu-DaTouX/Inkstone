@@ -177,6 +177,7 @@ export function remoteSubagentRun(run: SubagentRun): Record<string, unknown> {
     startedAt: run.startedAt,
     ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
     ...(run.endReason ? { endReason: run.endReason } : {}),
+    ...(run.resumable ? { resumable: run.resumable.ok } : {}),
     ...(run.model ? { model: run.model } : {}),
     ...(run.thinkingLevel ? { thinkingLevel: run.thinkingLevel } : {}),
     ...(typeof run.toolCalls === 'number' ? { toolCalls: run.toolCalls } : {}),

@@ -334,6 +334,7 @@ function pick(lang: RunLang, entry: { zh: string; en: string }): string {
 export function phaseWord(lang: RunLang, phase: RunPhase | null): string {
   if (!phase) return ''
   if (phase.kind === 'stalled') return pick(lang, STALL_WORD[phase.cause] ?? PHASE_WORD.stalled)
+  if (phase.kind === 'stopped' && phase.reason === 'interrupted') return translate(lang, 'sa.state.interrupted')
   return pick(lang, PHASE_WORD[phase.kind])
 }
 
@@ -349,6 +350,8 @@ export function phaseDetail(lang: RunLang, phase: RunPhase | null): string | nul
       return phase.request.summary || null
     case 'running':
       return phase.activity === 'tool' && phase.tool ? phase.tool.label : activityWord(lang, phase.activity)
+    case 'stopped':
+      return phase.reason === 'interrupted' && phase.resumable !== false ? translate(lang, 'runs.phase.resumable') : null
     default:
       return null
   }

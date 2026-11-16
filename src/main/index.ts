@@ -502,9 +502,12 @@ const subagentService: SubagentService = new SubagentService({
     })().catch(() => undefined)
   },
   onFinished: (run) => {
-    runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)
+    runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? (run.endReason === 'interrupted' ? 'interrupted' : 'stopped') : 'failed', run.error)
     if (workflowService.owns(run)) workflowService.onSubagentFinished(run)
     else if (!run.launchFailed && !run.sideQuestion) notifySubagentFinished(run)
+  },
+  onRecovered: (run) => {
+    if (!workflowService.owns(run) && !run.launchFailed && !run.sideQuestion) notifySubagentFinished(run)
   }
 })
 const workflowService: WorkflowService = new WorkflowService({

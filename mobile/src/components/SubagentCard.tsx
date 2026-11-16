@@ -39,8 +39,13 @@ function botMood(run: SubagentInfo): BotSpriteMood {
 function statusText(run: SubagentInfo): string {
   if (isLive(run)) return run.status === 'starting' ? pick('启动中', 'Starting') : pick('运行中', 'Running')
   if (run.status === 'error') return run.endReason === 'timeout' ? pick('超时', 'Timed out') : pick('失败', 'Failed')
+  if (interrupted(run)) return run.resumable === false ? pick('已中断', 'Interrupted') : pick('已中断 · 可续接', 'Interrupted · can resume')
   if (run.status === 'cancelled') return pick('已停止', 'Stopped')
   return pick('完成', 'Done')
+}
+
+function interrupted(run: Pick<SubagentInfo, 'status' | 'endReason'>): boolean {
+  return run.status === 'cancelled' && run.endReason === 'interrupted'
 }
 
 export function SubagentCard({ runs, plain = false, sessionId }: { runs: SubagentInfo[]; plain?: boolean; sessionId?: string }) {

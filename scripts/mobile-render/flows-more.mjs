@@ -31,13 +31,19 @@ export function moreFlows({ boot, openSession, check, env }) {
     const ctx = await boot({ lang, desktop: { tweak: (_, state) => {
       state.subagents = [
         { id: 'sub-ab12', title: '审查代码', task: '审查', status: 'running', startedAt: Date.now() - 5000, toolCalls: 2, latestActivity: '读取文件' },
-        { id: 'sub-cd34', title: '已结束的任务', task: '跑完', status: 'done', startedAt: Date.now() - 9000, endedAt: Date.now() - 1000, summary: '完成' }
+        { id: 'sub-cd34', title: '已结束的任务', task: '跑完', status: 'done', startedAt: Date.now() - 9000, endedAt: Date.now() - 1000, summary: '完成' },
+        { id: 'sub-ef56', title: '退出时中断', task: '中断', status: 'cancelled', endReason: 'interrupted', resumable: true, startedAt: Date.now() - 9000, endedAt: Date.now() - 2000 },
+        { id: 'sub-gh78', title: '手动停止', task: '停止', status: 'cancelled', endReason: 'stopped', startedAt: Date.now() - 9000, endedAt: Date.now() - 3000 }
       ]
     } } })
     const { desk, h } = ctx
     await openSession(h, '第一个会话')
     await h.pressLabel(t('打开会话详情', 'Open session details'))
     await h.waitFor(() => h.has(t('子代理', 'Subagents')), `${tag} 详情里显示子代理`)
+    const rowLabel = (title) => h.all('[aria-label]').map((n) => n.getAttribute('aria-label')).find((label) => label.startsWith(`${title}${t('，', ', ')}`)) ?? ''
+    check(rowLabel('退出时中断').startsWith(`退出时中断${t('，已中断 · 可续接', ', Interrupted · can resume')}`), `${tag} 退出时中断的子代理显示为已中断、可续接`, rowLabel('退出时中断'))
+    check(rowLabel('手动停止').startsWith(`手动停止${t('，已停止', ', Stopped')}`), `${tag} 手动停止的仍显示为已停止`, rowLabel('手动停止'))
+    check(!h.byLabel(t('停止子代理 退出时中断', 'Stop subagent 退出时中断')).length, `${tag} 已中断的子代理不加操作按钮`)
     await h.pressText('已结束的任务')
     await h.waitFor(() => h.has('完成'), `${tag} 展开已结束子代理`)
     check(!h.byLabel(t('停止子代理 已结束的任务', 'Stop subagent 已结束的任务')).length, `${tag} 已结束的子代理没有停止按钮`)

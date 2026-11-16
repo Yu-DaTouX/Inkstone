@@ -16,7 +16,7 @@ export interface RunsSnapshot {
 export interface RunsHost {
   observerFor(options?: { generation?: number }): RunObserver
   observeSubagentEvent(run: SubagentRunIdentity, evt: Record<string, unknown>): void
-  settleSubagent(run: SubagentRunIdentity, outcome: 'done' | 'failed' | 'stopped', message?: string): void
+  settleSubagent(run: SubagentRunIdentity, outcome: 'done' | 'failed' | 'stopped' | 'interrupted', message?: string): void
   snapshot(): RunsSnapshot
   markSeen(runId: string): { ok: boolean }
   observeApproval(request: ApprovalRequest): void
@@ -197,7 +197,9 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
           ? { type: 'agent-settled', aborted: false }
           : outcome === 'stopped'
             ? { type: 'stopped', by: 'user' }
-            : { type: 'host-fail', message: message ?? '\u5b50 Agent \u8fd0\u884c\u5931\u8d25' }
+            : outcome === 'interrupted'
+              ? { type: 'stopped', by: 'host', reason: 'interrupted', resumable: run.resumable?.ok !== false }
+              : { type: 'host-fail', message: message ?? '\u5b50 Agent \u8fd0\u884c\u5931\u8d25' }
       feed(ctx, signal)
     },
     snapshot() {

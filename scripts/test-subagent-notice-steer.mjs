@@ -63,6 +63,34 @@ await runSuite(import.meta.url, async (ok) => {
     const skipped = await auto.agent.steerIntoUserRun('notice')
     ok(!skipped.ok && skipped.idle === true && auto.submitted.length === 0, '宿主自发的一轮（额度续跑、通知触发）不附')
     ok(!make({ running: false }).agent.userRunActive() && make().agent.userRunActive() && !make({ fromUser: false }).agent.userRunActive(), 'userRunActive 只在用户发起且正在运行时为真')
+
+    const stopping = make()
+    stopping.agent.loopGuardStopping = true
+    const blocked = await stopping.agent.steerIntoUserRun('notice')
+    ok(!blocked.ok && blocked.idle === true && stopping.submitted.length === 0, '流式防护正在停止：按空闲处理，不计投递失败')
+    const expired = make()
+    expired.agent.queue.run = async () => { throw new Error('同一工作目录的执行入场已失效，本次操作未开始') }
+    const gated = await expired.agent.steerIntoUserRun('notice')
+    ok(!gated.ok && gated.idle === true && expired.submitted.length === 0, '执行入场失效等队列门禁在提交前拒绝：按空闲处理，不计投递失败', JSON.stringify(gated))
+    const broken = make()
+    broken.agent.queue.submit = async () => { throw new Error('rpc broke') }
+    let thrown = ''
+    try { await broken.agent.steerIntoUserRun('notice') } catch (error) { thrown = error.message }
+    ok(thrown === 'rpc broke', '已经进入队列后提交出错：照常报错、算投递失败')
+
+    const notice = '<subagent-notification id="sub-1" status="interrupted">\nx\n</subagent-notification>'
+    const viewer = make()
+    const history = []
+    viewer.agent.items = { uiMessages: () => history }
+    ok(!viewer.agent.noticeSeen(notice, 1_000), '转录里没有这条通知：未送达')
+    history.push({ id: 'm1', role: 'user', text: notice, timestamp: 500 })
+    ok(!viewer.agent.noticeSeen(notice, 1_000), '只有早于本次中断的同文通知：未送达')
+    history.push({ id: 'm2', role: 'assistant', text: notice, timestamp: 2_000 })
+    ok(!viewer.agent.noticeSeen(notice, 1_000), '助手消息里的同文不算')
+    history.push({ id: 'm3', role: 'user', text: notice.replace('sub-1', 'sub-2'), timestamp: 2_000 })
+    ok(!viewer.agent.noticeSeen(notice, 1_000), '别的子代理的通知不算')
+    history.push({ id: 'm4', role: 'user', text: notice, timestamp: 2_000 })
+    ok(viewer.agent.noticeSeen(notice, 1_000), '本次中断之后的用户消息里出现这条通知：已送达')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

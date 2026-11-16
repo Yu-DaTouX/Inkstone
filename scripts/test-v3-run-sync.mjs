@@ -245,6 +245,12 @@ async function main() {
     assert.equal(phaseWord('zh-CN', { kind: 'done', at: 1, seen: false }), '已完成')
     assert.equal(phaseDetail('zh-CN', { kind: 'failed', at: 1, cause: 'model-error', message: '上游 502', seen: false }), '上游 502')
     assert.equal(phaseDetail('zh-CN', { kind: 'done', at: 1, seen: true }), null)
+    assert.equal(phaseWord('zh-CN', { kind: 'stopped', at: 1, by: 'user' }), '已停止')
+    assert.equal(phaseWord('zh-CN', { kind: 'stopped', at: 1, by: 'host', reason: 'interrupted', resumable: true }), '已中断')
+    assert.equal(phaseWord('en-US', { kind: 'stopped', at: 1, by: 'host', reason: 'interrupted', resumable: true }), 'Interrupted')
+    assert.equal(phaseDetail('zh-CN', { kind: 'stopped', at: 1, by: 'host', reason: 'interrupted', resumable: true }), '可续接')
+    assert.equal(phaseDetail('en-US', { kind: 'stopped', at: 1, by: 'host', reason: 'interrupted', resumable: false }), null)
+    assert.equal(phaseDetail('zh-CN', { kind: 'stopped', at: 1, by: 'user' }), null)
   }
 
   {

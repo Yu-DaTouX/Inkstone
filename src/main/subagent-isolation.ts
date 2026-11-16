@@ -392,10 +392,11 @@ export function ignoredOutputRank(path: string): number {
 interface OutputFile { rel: string; top: string; size: number; rank: number }
 interface OutputScan { found: OutputFile[]; overflow: Set<string>; links: Set<string>; withheld: string[] }
 
-const SECRET_OUTPUT = /^(?:\.env(?:\..*)?|.*\.(?:pem|key|pfx|p12)|id_(?:rsa|ed25519|ecdsa|dsa).*|auth\.json|\.netrc|_netrc|\.npmrc|credentials.*|secrets.*\.json)$/i
+const SECRET_OUTPUT = /^(?:\.env(?:[._-].*)?|.+\.env(?:\..*)?|\.envrc|.*\.(?:pem|key|pfx|p12|p8|ppk|kdbx|jks|keystore|tfvars)|.*\.tfstate(?:\.backup)?|id_(?:rsa|ed25519|ecdsa|dsa).*|auth\.json|\.netrc|_netrc|\.npmrc|\.pypirc|\.git-credentials|\.htpasswd|kubeconfig.*|.*\.kubeconfig|credentials.*|application_default_credentials\.json|client_secret.*\.json|secrets?(?:[._-].*)?\.(?:json|ya?ml|toml)|service[-_]?account.*\.json)$/i
+const SECRET_OUTPUT_PATH = /(?:^|\/)(?:\.kube\/config|\.docker\/config\.json|\.aws\/config)$/i
 
 export function withheldOutput(rel: string): boolean {
-  return SECRET_OUTPUT.test(rel.split('/').pop() ?? rel)
+  return SECRET_OUTPUT.test(rel.split('/').pop() ?? rel) || SECRET_OUTPUT_PATH.test(rel)
 }
 
 async function linkOnPath(root: string, rel: string): Promise<boolean> {

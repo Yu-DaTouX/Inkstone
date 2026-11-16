@@ -11,6 +11,8 @@ const MAX_DELIVERY_ATTEMPTS = 5
 export const NOTICE_MAX_UNDELIVERED_RUNS = 20
 const READ_RESULTS_MAX = 200
 const INTERRUPTED_KEY = 'interrupted:'
+const SENT_KEY = 'interrupted-sent:'
+const MAX_SENT_BATCHES = 20
 
 const readResults = new Map<string, number | undefined>()
 const readListeners = new Set<(id: string, endedAt?: number) => void>()
@@ -40,6 +42,7 @@ export interface NoticeTarget {
   holdsNotices?(): boolean
   userRunActive?(): boolean
   steerIntoUserRun?(text: string): Promise<{ ok: boolean; idle?: boolean; error?: string }>
+  noticeSeen?(text: string, since: number): boolean
 }
 
 function targetBusy(target: NoticeTarget): boolean {
@@ -118,6 +121,16 @@ function awaitsReview(run: SubagentRun): boolean {
   return run.review === 'pending' || run.review === 'conflict'
 }
 
+interface SentBatch {
+  key: string
+  runs: SubagentRun[]
+  restored: boolean
+}
+
+function sentSince(runs: SubagentRun[]): number {
+  return runs.reduce((latest, run) => Math.max(latest, typeof run.endedAt === 'number' && Number.isFinite(run.endedAt) ? run.endedAt : 0), 0)
+}
+
 function unref(timer: ReturnType<typeof setTimeout>): void {
   if (typeof timer === 'object' && timer !== null && 'unref' in timer) timer.unref()
 }
@@ -134,11 +147,15 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
   const pending = new Map<string, PendingBatch>()
   const undelivered = new Map<string, SubagentRun[]>()
   const failedAttempts = new Map<string, number>()
+  let sent: SentBatch[] = []
   let retrying = false
   const persist = (): void => {
     if (!deps.store) return
     const state: Record<string, SubagentRun[]> = {}
     for (const [key, runs] of undelivered) state[key] = runs.map(slimNoticeRun)
+    sent.forEach((batch, index) => {
+      state[`${SENT_KEY}${index}:${batch.key.slice(INTERRUPTED_KEY.length)}`] = batch.runs.map(slimNoticeRun)
+    })
     try {
       deps.store.save(state)
     } catch {
@@ -146,7 +163,16 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
   }
   if (deps.store) {
     try {
-      for (const [key, runs] of Object.entries(deps.store.load())) if (runs.length) undelivered.set(key, runs)
+      for (const [key, runs] of Object.entries(deps.store.load())) {
+        if (!runs.length) continue
+        if (!key.startsWith(SENT_KEY)) {
+          undelivered.set(key, runs)
+          continue
+        }
+        const rest = key.slice(SENT_KEY.length)
+        const sessionId = rest.slice(rest.indexOf(':') + 1)
+        if (rest.includes(':') && sessionId) sent.push({ key: `${INTERRUPTED_KEY}${sessionId}`, runs, restored: true })
+      }
     } catch {
     }
     readListeners.add((id, endedAt) => {
@@ -307,6 +333,10 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     }
     if (result.ok) {
       failedAttempts.delete(key)
+      if (target.noticeSeen) {
+        sent.push({ key, runs, restored: false })
+        if (sent.length > MAX_SENT_BATCHES) sent = sent.slice(-MAX_SENT_BATCHES)
+      }
       persist()
     } else if (result.idle) {
       undelivered.set(key, [...runs, ...(undelivered.get(key) ?? [])])
@@ -314,15 +344,50 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     } else keepUndelivered(key, runs)
   }
 
+  const confirmSent = (): void => {
+    if (sent.length === 0) return
+    const kept: SentBatch[] = []
+    let changed = false
+    for (const batch of sent) {
+      const target = deps.find(batch.runs[batch.runs.length - 1])
+      if (!target) {
+        kept.push(batch)
+        continue
+      }
+      let seen = !target.noticeSeen
+      try {
+        seen ||= target.noticeSeen!(buildSubagentInterruptedNotice(batch.runs), sentSince(batch.runs))
+      } catch {
+      }
+      if (seen) {
+        changed = true
+        continue
+      }
+      if (batch.restored && target.userRunActive?.()) {
+        changed = true
+        const known = new Set((undelivered.get(batch.key) ?? []).map((run) => run.id))
+        undelivered.set(batch.key, [...batch.runs.filter((run) => !known.has(run.id)), ...(undelivered.get(batch.key) ?? [])])
+        continue
+      }
+      kept.push(batch)
+    }
+    if (!changed) return
+    sent = kept
+    trimUndelivered()
+    persist()
+  }
+
   const retry = (): void => {
-    if (retrying || undelivered.size === 0) return
+    if (retrying || (undelivered.size === 0 && sent.length === 0)) return
     retrying = true
     void (async () => {
       if (!(await deps.enabled())) {
         undelivered.clear()
+        sent = []
         persist()
         return
       }
+      confirmSent()
       for (const key of [...undelivered.keys()]) {
         const held = undelivered.get(key)
         if (!held || pending.has(key)) continue

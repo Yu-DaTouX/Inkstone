@@ -273,6 +273,7 @@ export interface SubagentInfo {
   startedAt: number
   endedAt?: number
   endReason?: string
+  resumable?: boolean
   model?: string
   thinkingLevel?: string
   toolCalls?: number

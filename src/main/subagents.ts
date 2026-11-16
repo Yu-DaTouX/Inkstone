@@ -299,6 +299,7 @@ export interface SubagentOptions {
   onPatch?: (payload: SubagentPatch) => void
   onRemove?: (id: string) => void
   onFinished?: (run: SubagentRun) => void
+  onRecovered?: (run: SubagentRun) => void
   onOvertime?: (run: SubagentRun, minutes: number) => void
   onEvent?: (runId: string, evt: Record<string, unknown>, run: SubagentRun) => void
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
@@ -507,7 +508,7 @@ export class SubagentController {
           console.warn('[subagent] interrupted worktree failed verification; diff not collected', run.id, untrusted)
           continue
         }
-        const collected = await collectDiff(workspace, archiveDir, run.id)
+        const collected = await collectDiff(workspace, archiveDir, run.id, { patchName: `${run.id}-recovered-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}` })
         if (workflowOwned(run) && await this.archiveRecoveredWorkflow(record, workspace, collected, archiveDir)) continue
         const next: SubagentRun = {
           ...run,
@@ -518,6 +519,13 @@ export class SubagentController {
           latestActivity: `${interruptedActivity()}${pick('；', '; ')}${keptWorktreeNote()}`
         }
         await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, resume: { ...record.resume, workspace } })
+        const saved = this.history.get(run.id)
+        if (saved?.run.review === 'pending' && !workflowOwned(saved.run)) {
+          try {
+            this.opts.onRecovered?.(this.historic(saved))
+          } catch {
+          }
+        }
       } catch (error) {
         console.warn('[subagent] 恢复中断的 worktree 子代理失败', run.id, error)
       }

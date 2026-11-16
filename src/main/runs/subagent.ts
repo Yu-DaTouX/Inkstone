@@ -11,6 +11,7 @@ export interface SubagentRunIdentity {
   model?: string
   thinkingLevel?: string
   activeSince?: number
+  resumable?: { ok: boolean }
 }
 
 export function subagentScopeId(id: string): string {

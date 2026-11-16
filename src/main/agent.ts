@@ -41,7 +41,7 @@ import { readAuthEntry } from './credentials'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
-import { isSubagentNotice } from '../shared/subagent-notice'
+import { isSubagentNotice, parseSubagentNotice } from '../shared/subagent-notice'
 import { isHostTextNotice } from '../shared/host-notice-text'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
@@ -3075,8 +3075,30 @@ export class AgentController extends EventEmitter {
     return this.agentRunning && this.runFromUser
   }
 
+  noticeSeen(text: string, since: number): boolean {
+    const wanted = parseSubagentNotice(text)
+    if (!wanted) return false
+    return this.messages.some((message) => {
+      if (message.role !== 'user' || (message.timestamp ?? 0) < since) return false
+      const seen = parseSubagentNotice(message.text)
+      return !!seen && seen.id === wanted.id && seen.status === wanted.status
+    })
+  }
+
   async steerIntoUserRun(text: string): Promise<{ ok: boolean; idle?: boolean; error?: string }> {
+    if (this.loopGuardStopping || this.loopGuardAbortSent || !this.userRunActive()) return { ok: false, idle: true }
+    let entered = false
+    try {
+      return await this.steerIntoUserRunQueued(text, () => { entered = true })
+    } catch (error) {
+      if (!entered) return { ok: false, idle: true }
+      throw error
+    }
+  }
+
+  private steerIntoUserRunQueued(text: string, enter: () => void): Promise<{ ok: boolean; idle?: boolean; error?: string }> {
     return this.queue.run(async () => {
+      enter()
       if (!this.userRunActive()) return { ok: false, idle: true }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, idle: true }

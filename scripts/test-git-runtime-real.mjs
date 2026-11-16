@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
@@ -96,6 +96,13 @@ try {
 
   const b = await install('B 空格', 'yan git test ')
   cleanup.push(b.work)
+  const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
+  const managedEnv = { ...process.env, [pathKey]: `${b.paths.cmdDir}${delimiter}${process.env[pathKey] ?? ''}` }
+  const managedVersion = execFileSync('git', ['--version'], { env: managedEnv, encoding: 'utf8' }).trim()
+  assert.match(managedVersion, /git version 2\.56\.0/, `联接测试前 git 应命中受管那份：${managedVersion}`)
+  const junction = spawnSync(process.execPath, ['scripts/test-worktree-junction-cleanup.mjs'], { env: managedEnv, encoding: 'utf8', timeout: 300_000 })
+  assert.equal(junction.status, 0, `受管 Git 上的联接清理测试失败：\n${junction.stdout}\n${junction.stderr}`)
+  console.log(`  ✓ 受管 ${managedVersion} 上的联接清理测试通过：${(junction.stdout.trim().split(/\r?\n/).pop() ?? '').trim()}`)
   const alignedB = await alignWithoutSystemGit(b.root, b.work)
   assert.equal(alignedB.found.git, true)
   assert.equal(alignedB.found.bash, true, 'B：ASCII 路径下 bash 应可用')

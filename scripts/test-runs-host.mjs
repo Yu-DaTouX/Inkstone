@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -234,7 +234,26 @@ async function runV3RunsSubagentTests() {
       host.observeSubagentEvent({ id: 'sub-orphan' }, { type: 'agent_start' })
       assert.equal(host.snapshot().runs.length, beforeTotal + 1)
 
+      host.observeSubagentEvent({ id: 'sub-quit', parentSessionId: 's1', brief: { title: '退出时还在跑' } }, messageEvent('text_delta'))
+      host.observeSubagentEvent({ id: 'sub-gone', parentSessionId: 's1', brief: { title: '工作树已不在' } }, messageEvent('text_delta'))
+      await waitFor(() => host.snapshot().runs.some((r) => r.title === '工作树已不在'))
+      host.settleSubagent({ id: 'sub-quit', parentSessionId: 's1', resumable: { ok: true } }, 'interrupted')
+      host.settleSubagent({ id: 'sub-gone', parentSessionId: 's1', resumable: { ok: false } }, 'interrupted')
+      const quit = host.snapshot().runs.find((r) => r.title === '退出时还在跑')
+      const gone = host.snapshot().runs.find((r) => r.title === '工作树已不在')
+      assert.deepEqual({ kind: quit.phase.kind, by: quit.phase.by, reason: quit.phase.reason, resumable: quit.phase.resumable }, { kind: 'stopped', by: 'host', reason: 'interrupted', resumable: true }, '退出时中断的子代理：由宿主停止、标为已中断且可续接，不再记作用户停止')
+      assert.equal(gone.phase.resumable, false, '不能续接的中断如实标出')
+      assert.equal(host.snapshot().runs.find((r) => r.code === 'S1·2').phase.reason, undefined, '用户停止的不带中断标记')
+
       await host.dispose()
+      const historyLines = []
+      for (const name of await readdir(join(dir, 'subagent-code', 'runs')).catch(() => [])) {
+        if (!name.endsWith('.jsonl')) continue
+        historyLines.push(...(await readFile(join(dir, 'subagent-code', 'runs', name), 'utf8')).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line)))
+      }
+      const quitRecord = historyLines.find((record) => record.title === '退出时还在跑')
+      assert.equal(quitRecord?.terminal, 'stopped')
+      assert.equal(quitRecord?.cause, 'interrupted', '运行历史里中断原因记为 interrupted')
     }
 
     {

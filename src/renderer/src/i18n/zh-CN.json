@@ -1353,6 +1353,7 @@
   "state.workspace.sessionChanged": "会话已切换，工作区没有打开；请在目标会话重试",
   "runs.syncUnavailable": "运行状态通道不可用",
   "runs.snapshotMalformed": "运行快照格式不完整",
+  "runs.phase.resumable": "可续接",
   "state.log.piError": "[错误] pi 进程：{detail}",
   "state.log.extension": "[扩展] {text}",
   "state.log.error": "[错误] {text}",

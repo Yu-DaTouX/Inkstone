@@ -1353,6 +1353,7 @@
   "state.workspace.sessionChanged": "The session changed so the workspace was not opened; retry in the target session",
   "runs.syncUnavailable": "Run status channel unavailable",
   "runs.snapshotMalformed": "Run snapshot is incomplete",
+  "runs.phase.resumable": "Can resume",
   "state.log.piError": "[error] pi process: {detail}",
   "state.log.extension": "[extension] {text}",
   "state.log.error": "[error] {text}",

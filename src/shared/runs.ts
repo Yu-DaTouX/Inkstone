@@ -37,7 +37,7 @@ export type RunPhase =
   | { kind: 'needs-you'; since: number; request: { id: string; type: RunRequestType; summary: string } }
   | { kind: 'stalled'; since: number; cause: StallCause; detail?: string; retry?: RunRetry }
   | { kind: 'failed'; at: number; cause: FailCause; errorKind?: string; message: string; seen: boolean }
-  | { kind: 'stopped'; at: number; by: 'user' | 'host' }
+  | { kind: 'stopped'; at: number; by: 'user' | 'host'; reason?: 'interrupted'; resumable?: boolean }
   | { kind: 'done'; at: number; seen: boolean }
 
 export interface RunCounts {
@@ -117,7 +117,7 @@ export type RunSignal =
   | { type: 'host-fail'; message: string }
   | { type: 'agent-end'; willRetry?: boolean }
   | { type: 'agent-settled'; aborted: boolean }
-  | { type: 'stopped'; by: 'user' | 'host' }
+  | { type: 'stopped'; by: 'user' | 'host'; reason?: 'interrupted'; resumable?: boolean }
   | { type: 'pi-exit'; code?: number | null; signal?: string | null }
   | { type: 'seen' }
   | { type: 'context'; used: number | null; window: number; percent?: number | null }
@@ -412,7 +412,10 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
     }
 
     case 'stopped':
-      return withPhase(state, now, { kind: 'stopped', at: now, by: signal.by }, { requests: [], stallBeforeWait: undefined, pendingError: undefined })
+      return withPhase(state, now, {
+        kind: 'stopped', at: now, by: signal.by,
+        ...(signal.reason === 'interrupted' ? { reason: signal.reason, resumable: signal.resumable !== false } : {})
+      }, { requests: [], stallBeforeWait: undefined, pendingError: undefined })
 
     case 'pi-exit':
       return fail(state, now, 'pi-exit', pick(`pi 进程在运行中退出（code=${signal.code ?? 'null'}）`, `pi process exited while running (code=${signal.code ?? 'null'})`))
