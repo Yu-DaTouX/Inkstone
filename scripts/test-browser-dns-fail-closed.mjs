@@ -62,12 +62,13 @@ let ready = true
 let resolveTarget = async () => false
 const blocked = []
 const host = {
-  tabs: new Map([[1, { view: { webContents: { id: 1 } }, pendingMainFrameUrl: 'http://127.0.0.1/', committedUrl: 'https://public.test/' }]]),
+  tabs: new Map([[0, { view: { webContents: undefined } }], [1, { view: { webContents: { id: 1 } }, pendingMainFrameUrl: 'http://127.0.0.1/', committedUrl: 'https://public.test/' }]]),
   resolvesToPrivateTarget: (hostname) => resolveTarget(hostname),
   recordBlockedRequest: (...args) => blocked.push(args)
 }
-const listener = new Function('view', 'pinnedGuardStatus', 'decideRequestBoundary', `${js}; return callback`).call(host,
-  { webContents: { session: {} } }, () => ({ status: ready ? 'ready' : 'failed' }), policy.decideRequestBoundary)
+const browserSession = {}
+const listener = new Function('view', 'browserSession', 'pinnedGuardStatus', 'decideRequestBoundary', `${js}; return callback`).call(host,
+  { webContents: undefined }, browserSession, (ses) => ({ status: ready && ses === browserSession ? 'ready' : 'failed' }), policy.decideRequestBoundary)
 async function request(url, resourceType = 'xhr') {
   let calls = 0
   const result = await new Promise(resolve => listener({ url, resourceType, webContentsId: 1, frame: { url: 'https://public.test/' } }, (value) => { calls++; resolve(value) }))
@@ -80,7 +81,7 @@ ok((await request('https://broken.test/')).cancel === true, 'embedded browser ca
 resolveTarget = async () => true
 ok((await request('https://private.test/')).cancel === true && blocked.length === 1, 'private DNS answer is denied and recorded')
 resolveTarget = async () => false
-ok(!(await request('https://public.test/')).cancel, 'confirmed public browser request remains allowed')
+ok(!(await request('https://public.test/')).cancel, 'confirmed public browser request remains allowed; the boundary uses the session captured at install, not the first tab view (closed tab: view.webContents is undefined)')
 ok(!(await request('http://127.0.0.1/', 'mainFrame')).cancel, 'explicit local top-level navigation remains allowed')
 ok((await request('http://127.0.0.1/', 'subFrame')).cancel === true, 'the same local address is denied for a remote subframe')
 ready = false

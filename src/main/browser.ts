@@ -604,7 +604,8 @@ export class BrowserController {
     }
     if (!this.requestBoundaryAttached) {
       try {
-        view.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+        const browserSession = view.webContents.session
+        browserSession.webRequest.onBeforeRequest((details, callback) => {
         let target: URL
         try {
           target = new URL(details.url)
@@ -616,12 +617,12 @@ export class BrowserController {
           callback({})
           return
         }
-        if (pinnedGuardStatus(view.webContents.session).status !== 'ready') {
+        if (pinnedGuardStatus(browserSession).status !== 'ready') {
           callback({ cancel: true })
           return
         }
         const owner = [...this.tabs.values()].find(
-          (t) => t.view.webContents.id === details.webContentsId
+          (t) => t.view.webContents?.id === details.webContentsId
         )
         const requestFrame = details.frame
         const frameUrl = details.resourceType === 'subFrame' ? requestFrame?.parent?.url : requestFrame?.url
