@@ -172,6 +172,57 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await off.transport.close()
       ok(scans.length === 0, '非 Windows 不扫描进程表')
     }
+    {
+      const { ProcessTreeWatch } = await compile('src/main/process-tree.ts', { packages: 'external' })
+      const nowBase = Date.now()
+      const rows = [
+        { pid: 93001, ppid: 1, created: nowBase },
+        { pid: 93002, ppid: 93001, created: nowBase + 10 },
+        { pid: 93003, ppid: 93002, created: nowBase + 20 },
+        { pid: 93004, ppid: 93003, created: nowBase + 30 }
+      ]
+      const treeKills = []
+      const eachKills = []
+      const watch = new ProcessTreeWatch(93001, {
+        now: () => nowBase + 40,
+        listProcesses: async () => rows,
+        isAlive: () => true,
+        keep: (row) => row.pid !== 93003,
+        kill: async (pid) => { treeKills.push(pid) },
+        killEach: async (pid) => { eachKills.push(pid) }
+      })
+      await watch.snapshot()
+      ok(!watch.trackedPids().includes(93003) && !watch.trackedPids().includes(93004), '被白名单筛掉的进程及其子孙不进入跟踪', JSON.stringify(watch.trackedPids()))
+      await watch.sweep()
+      ok(treeKills.length === 0 && eachKills.sort((a, b) => a - b).join() === '93001,93002', '有白名单时按 pid 逐个结束，不用整树结束', `tree=${JSON.stringify(treeKills)} each=${JSON.stringify(eachKills)}`)
+    }
+    {
+      const { windowsMcpKeepsProcess } = await compile('src/main/mcp/windows-mcp-tree.ts', { packages: 'external' })
+      const row = (name, commandLine) => ({ pid: 1, ppid: 0, created: 1, name, ...(commandLine ? { commandLine } : {}) })
+      ok(windowsMcpKeepsProcess(row('uvx.exe', 'uvx --python 3.14 windows-mcp==0.8.9 serve')), 'uvx 根进程算自己的')
+      ok(windowsMcpKeepsProcess(row('python.exe', 'C:\\Users\\u\\AppData\\Local\\uv\\cache\\archive-v0\\x\\python.exe -m windows_mcp')), 'uv 缓存里的服务进程算自己的')
+      ok(windowsMcpKeepsProcess(row('powershell.exe', 'powershell -NoProfile -EncodedCommand abc')), '服务起的编码命令 PowerShell 算自己的')
+      ok(!windowsMcpKeepsProcess(row('powershell.exe', 'powershell.exe')), '用户自己的 PowerShell 不算自己的')
+      ok(!windowsMcpKeepsProcess(row('chrome.exe', '"C:\\Program Files\\Google\\Chrome\\chrome.exe"')), '通过 App 打开的程序不算自己的')
+      ok(!windowsMcpKeepsProcess(row('python.exe')), '读不到命令行的 python 不猜')
+    }
+    if (process.platform === 'win32') {
+      const killTreeCalls = []
+      const killEachCalls = []
+      const sinceArgs = []
+      const stubbornKeep = await start(server('stubborn-keep', false), async (pid) => { killTreeCalls.push(pid) }, 'win32', {
+        listProcesses: async (options) => { sinceArgs.push(options?.since); return [] },
+        isAlive: () => true,
+        keep: () => false,
+        killEach: async (pid) => { killEachCalls.push(pid); await killProcessTree(pid) }
+      })
+      const began = Date.now()
+      const wrapperPid = stubbornKeep.transport.pid
+      await stubbornKeep.transport.close()
+      ok(killTreeCalls.length === 0, '有白名单时超时兜底不再 taskkill /T', JSON.stringify(killTreeCalls))
+      ok(killEachCalls.includes(wrapperPid), '超时只结束服务进程本身', JSON.stringify(killEachCalls))
+      ok(sinceArgs.length >= 2 && sinceArgs[1] >= began, '关闭前的快照按新扫描取，不吃旧缓存', JSON.stringify(sinceArgs))
+    }
 
     {
       const noisy = join(dir, 'noisy.cjs')

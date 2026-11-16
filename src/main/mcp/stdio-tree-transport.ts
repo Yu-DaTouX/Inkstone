@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import { StdioClientTransport, type StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { redactSecretText } from '../../shared/redact-diagnostic'
 import { decodeProcessOutput } from './stderr-decode'
-import { killProcessTree, ProcessTreeWatch, type ListProcesses } from '../process-tree'
+import { killProcessTree, ProcessTreeWatch, type ListProcesses, type TreeProcess } from '../process-tree'
 
 export { killProcessTree }
 
@@ -16,6 +16,8 @@ export interface StdioTreeOptions {
   isAlive?: (pid: number) => boolean
   scanCapMs?: number
   secretValues?: readonly string[]
+  keep?: (row: TreeProcess) => boolean
+  killEach?: (pid: number) => Promise<void>
 }
 
 function running(child: ChildProcess): boolean {
@@ -30,6 +32,8 @@ export class StdioTreeClientTransport extends StdioClientTransport {
   private readonly isAlive: ((pid: number) => boolean) | undefined
   private readonly secretValues: string[]
   private readonly scanCapMs: number
+  private readonly keep: ((row: TreeProcess) => boolean) | undefined
+  private readonly killEach: ((pid: number) => Promise<void>) | undefined
 
   constructor(
     params: StdioServerParameters,
@@ -43,6 +47,8 @@ export class StdioTreeClientTransport extends StdioClientTransport {
     this.isAlive = options.isAlive
     this.scanCapMs = options.scanCapMs ?? STDIO_TREE_SCAN_CAP_MS
     this.secretValues = (options.secretValues ?? []).filter((value) => value.length >= 6)
+    this.keep = options.keep
+    this.killEach = options.killEach
     this.stderr?.on('data', (chunk: Buffer | string) => {
       const joined = Buffer.concat([this.stderrRaw, typeof chunk === 'string' ? Buffer.from(chunk) : chunk])
       if (joined.length > STDERR_RAW_KEEP_BYTES) {
@@ -71,7 +77,9 @@ export class StdioTreeClientTransport extends StdioClientTransport {
       const watch = new ProcessTreeWatch(rootPid, {
         ...(this.listProcesses ? { listProcesses: this.listProcesses } : {}),
         kill: this.killTree,
-        ...(this.isAlive ? { isAlive: this.isAlive } : {})
+        ...(this.isAlive ? { isAlive: this.isAlive } : {}),
+        ...(this.keep ? { keep: this.keep } : {}),
+        ...(this.killEach ? { killEach: this.killEach } : {})
       })
       this.watch = watch
       const child = (this as unknown as { _process?: ChildProcess })._process
@@ -90,7 +98,7 @@ export class StdioTreeClientTransport extends StdioClientTransport {
     }
     let capTimer: ReturnType<typeof setTimeout> | undefined
     await Promise.race([
-      watch.snapshot(),
+      watch.snapshot({ fresh: this.keep !== undefined }),
       new Promise<void>((resolve) => {
         capTimer = setTimeout(resolve, this.scanCapMs)
       })
@@ -107,7 +115,10 @@ export class StdioTreeClientTransport extends StdioClientTransport {
         })
       ])
       if (timer) clearTimeout(timer)
-      if (!exited && running(child)) await this.killTree(child.pid)
+      if (!exited && running(child)) {
+        if (this.keep) await watch.killNow([child.pid])
+        else await this.killTree(child.pid)
+      }
     }
     await super.close()
     await watch.sweep(undefined, { cheap: true })

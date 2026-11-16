@@ -6,6 +6,7 @@ import { ToolListChangedNotificationSchema, type ClientCapabilities } from '@mod
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
 import { sharedResources, INTERACTIVE_RESOURCE } from '../interactive-resources'
 import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
+import { windowsMcpKeepsProcess } from './windows-mcp-tree'
 
 const WINDOWS_MCP_CONNECT_TIMEOUT_MS = 60_000
 const WINDOWS_MCP_OBSERVE_TOOLS = new Set(['Snapshot', 'Screenshot', 'DisplayInventory', 'Wait', 'WaitFor'])
@@ -324,7 +325,10 @@ export class McpConnectionManager {
         command: config.command,
         args: config.args ?? [],
         env
-      }, undefined, undefined, undefined, { secretValues: Object.values(config.env ?? {}).filter((value): value is string => typeof value === 'string') })
+      }, undefined, undefined, undefined, {
+        secretValues: Object.values(config.env ?? {}).filter((value): value is string => typeof value === 'string'),
+        ...(config.id === WINDOWS_MCP_SERVER_ID ? { keep: windowsMcpKeepsProcess } : {})
+      })
     }
     if (!config.url) throw new Error(pick(`MCP 服务 ${config.id} 缺少 url`, `MCP service ${config.id} is missing url`))
     return new StreamableHTTPClientTransport(new URL(config.url))

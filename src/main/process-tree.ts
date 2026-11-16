@@ -32,6 +32,12 @@ export function killProcessTree(pid: number): Promise<void> {
   })
 }
 
+export function killProcessOnly(pid: number): Promise<void> {
+  return new Promise((resolve) => {
+    execFile('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true }, () => resolve())
+  })
+}
+
 const PROCESS_SCAN_SCRIPT = [
   'function B($s) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$s)) }',
   `Get-CimInstance -ClassName Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,CommandLine | Where-Object { $_.CreationDate } | ForEach-Object { $c = [string]$_.CommandLine; if ($c.Length -gt ${COMMAND_LINE_KEEP}) { $c = $c.Substring(0, ${COMMAND_LINE_KEEP}) }; '{0},{1},{2},{3},{4}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds(), (B $_.Name), (B $c) }`
@@ -96,11 +102,17 @@ function runProcessScan(): Promise<TreeProcess[]> {
   })
 }
 
+export interface DescendOptions {
+  keep?: (row: TreeProcess) => boolean
+  skipped?: TreeProcess[]
+}
+
 export function descendantsOf(
   rows: readonly TreeProcess[],
   seeds: readonly TreeProcess[],
   notBefore: number,
-  notAfter = Number.POSITIVE_INFINITY
+  notAfter = Number.POSITIVE_INFINITY,
+  options: DescendOptions = {}
 ): TreeProcess[] {
   const found: TreeProcess[] = []
   const seen = new Set<number>(seeds.map((seed) => seed.pid))
@@ -110,6 +122,10 @@ export function descendantsOf(
     for (const row of rows) {
       if (row.ppid !== parent.pid || seen.has(row.pid) || row.created < notBefore || row.created > notAfter) continue
       if (row.created < parent.created) continue
+      if (options.keep && !options.keep(row)) {
+        options.skipped?.push(row)
+        continue
+      }
       seen.add(row.pid)
       found.push(row)
       queue.push(row)
@@ -137,7 +153,9 @@ export interface ProcessTreeWatchOptions {
   isAlive?: (pid: number) => boolean
   now?: () => number
   select?: (row: TreeProcess) => boolean
+  keep?: (row: TreeProcess) => boolean
   onSkipped?: (rows: readonly TreeProcess[]) => void
+  killEach?: (pid: number) => Promise<void>
 }
 
 export class ProcessTreeWatch {
@@ -150,7 +168,9 @@ export class ProcessTreeWatch {
   private readonly kill: (pid: number) => Promise<void>
   private readonly isAlive: (pid: number) => boolean
   private readonly select: ((row: TreeProcess) => boolean) | undefined
+  private readonly keep: ((row: TreeProcess) => boolean) | undefined
   private readonly onSkipped: ((rows: readonly TreeProcess[]) => void) | undefined
+  private readonly killEach: (pid: number) => Promise<void>
   private sweeping: Promise<number[]> | null = null
 
   constructor(
@@ -161,7 +181,9 @@ export class ProcessTreeWatch {
     this.kill = options.kill ?? killProcessTree
     this.isAlive = options.isAlive ?? pidAlive
     this.select = options.select
+    this.keep = options.keep
     this.onSkipped = options.onSkipped
+    this.killEach = options.killEach ?? killProcessOnly
     this.startedAt = (options.now ?? Date.now)()
   }
 
@@ -202,16 +224,22 @@ export class ProcessTreeWatch {
     const found: TreeProcess[] = []
     if (rootSeed && (!rootReused || limit !== undefined)) {
       const direct = this.directChildren(rows, rootSeed, bound)
-      const tops = this.select ? direct.filter((row) => this.select!(row)) : direct
-      if (this.select) for (const row of direct) if (!tops.includes(row) && !this.tracked.has(row.pid)) skipped.push(row)
-      found.push(...tops, ...descendantsOf(rows, tops, rootSeed.created - CREATED_SLACK_MS, bound))
+      const tops: TreeProcess[] = []
+      for (const row of direct) {
+        if ((this.select && !this.select(row)) || (this.keep && !this.keep(row))) {
+          if (!this.tracked.has(row.pid)) skipped.push(row)
+          continue
+        }
+        tops.push(row)
+      }
+      found.push(...tops, ...descendantsOf(rows, tops, rootSeed.created - CREATED_SLACK_MS, bound, { keep: this.keep, skipped }))
     }
     const seeds: TreeProcess[] = []
     for (const entry of this.tracked.values()) {
       const live = byPid.get(entry.pid)
       if (live && live.created === entry.created) seeds.push(live)
     }
-    if (seeds.length) found.push(...descendantsOf(rows, seeds, this.rootFloor() - CREATED_SLACK_MS))
+    if (seeds.length) found.push(...descendantsOf(rows, seeds, this.rootFloor() - CREATED_SLACK_MS, Number.POSITIVE_INFINITY, { keep: this.keep, skipped }))
     for (const entry of found) this.tracked.set(entry.pid, entry)
     return skipped
   }
@@ -221,9 +249,16 @@ export class ProcessTreeWatch {
     this.discover(rows)
   }
 
-  async snapshot(): Promise<void> {
-    const rows = await this.listProcesses({ since: this.startedAt }).catch(() => null)
+  async snapshot(options: { fresh?: boolean } = {}): Promise<void> {
+    const rows = await this.listProcesses({ since: options.fresh ? Date.now() : this.startedAt }).catch(() => null)
     if (rows) this.observe(rows)
+  }
+
+  async killNow(extraPids: readonly number[] = []): Promise<void> {
+    const pids = new Set<number>(extraPids)
+    for (const entry of this.tracked.values()) pids.add(entry.pid)
+    this.tracked.clear()
+    await Promise.all([...pids].map((pid) => this.killEach(pid)))
   }
 
   sweep(exitedAt?: number, options: { cheap?: boolean } = {}): Promise<number[]> {
@@ -252,9 +287,13 @@ export class ProcessTreeWatch {
     if (skipped.length && this.onSkipped) this.onSkipped(skipped.filter(identical))
     const alive = [...this.tracked.values()].filter(identical)
     if (this.select === undefined && this.root && identical(this.root)) alive.push(this.root)
+    this.tracked.clear()
+    if (this.keep) {
+      await Promise.all(alive.map((entry) => this.killEach(entry.pid)))
+      return alive.map((entry) => entry.pid)
+    }
     const aliveIds = new Set(alive.map((entry) => entry.pid))
     const tops = alive.filter((entry) => !aliveIds.has(entry.ppid))
-    this.tracked.clear()
     await Promise.all(tops.map((entry) => this.kill(entry.pid)))
     return alive.map((entry) => entry.pid)
   }
