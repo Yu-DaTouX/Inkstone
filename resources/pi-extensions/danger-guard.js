@@ -4,7 +4,7 @@ import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { isHostAutomatedMessage } from './host-message.js'
-import { REVIEW_STREAK_LIMIT, REVIEW_STOP_NOTE, parentUserMessages, reviewDeniedReason, reviewFailedReason, reviewPrompt, reviewTranscript, runReview } from './danger-review.js'
+import { REVIEW_STREAK_LIMIT, REVIEW_STOP_NOTE, UNREVIEWED_REPEAT_LIMIT, parentUserMessages, reviewDeniedReason, reviewFailedReason, reviewPrompt, reviewTranscript, runReview, unreviewedRepeatReason } from './danger-review.js'
 
 const CONFIRM_TIMEOUT_MS = 35 * 60 * 1000
 const PREFS_TIMEOUT_MS = 5000
@@ -1766,12 +1766,14 @@ function stopRun(ctx) {
 export default function dangerGuardExtension(pi) {
   let criticalTimeouts = 0
   let reviewStreak = 0
+  const unreviewed = new Map()
 
   pi.on('before_agent_start', (event) => {
     if (event?.messageType === 'custom') return undefined
     if (isHostAutomatedMessage(String(event?.prompt ?? ''))) return undefined
     criticalTimeouts = 0
     reviewStreak = 0
+    unreviewed.clear()
     return undefined
   })
 
@@ -1805,6 +1807,8 @@ export default function dangerGuardExtension(pi) {
     if (reasons.length === 0) return undefined
     const unique = [...new Set(reasons)]
     const approvedDigest = inputDigest(input)
+    const unreviewedKey = `${name}\u0000${approvedDigest}`
+    if ((unreviewed.get(unreviewedKey) ?? 0) >= UNREVIEWED_REPEAT_LIMIT) return { block: true, reason: unreviewedRepeatReason(unique) }
     const askedAt = Date.now()
     const answer = await askHost(name, input, unique, outside, toolCallId)
     if (answer.allowed) {
@@ -1819,7 +1823,10 @@ export default function dangerGuardExtension(pi) {
       reviewStreak = 0
       return inputDigest(input) === approvedDigest ? undefined : { block: true, reason: CHANGED_AFTER_APPROVAL }
     }
-    if (verdict.decision !== 'deny') return { block: true, reason: reviewFailedReason(unique, verdict.reason) }
+    if (verdict.decision !== 'deny') {
+      unreviewed.set(unreviewedKey, (unreviewed.get(unreviewedKey) ?? 0) + 1)
+      return { block: true, reason: reviewFailedReason(unique, verdict.reason) }
+    }
     reviewStreak += 1
     const reason = reviewDeniedReason(unique, verdict.reason)
     if (reviewStreak < REVIEW_STREAK_LIMIT) return { block: true, reason }

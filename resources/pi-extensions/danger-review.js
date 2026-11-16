@@ -232,4 +232,10 @@ export function reviewFailedReason(reasons, reason) {
   return `High-risk operation not run: ${reasons.join('; ')}. The user did not answer the approval request within 1 minute and the independent review could not finish (${reason || 'unknown error'}). This does not mean the operation is unsafe, but it was not run. Do not retry it by another route; continue with other work, or stop and tell the user what you need.`
 }
 
+export const UNREVIEWED_REPEAT_LIMIT = 2
+
+export function unreviewedRepeatReason(reasons) {
+  return `High-risk operation not run: ${reasons.join('; ')}. This exact operation already could not be reviewed ${UNREVIEWED_REPEAT_LIMIT} times in this run while the user is away, so it is now declined without asking or reviewing again. Do not retry it in this run; continue with work that does not need it, or tell the user it needs their approval.`
+}
+
 export const REVIEW_STOP_NOTE = 'Several operations in a row were not approved while the user is away, so this run is being stopped. The user will decide when they return.'
