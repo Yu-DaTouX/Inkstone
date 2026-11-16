@@ -39,16 +39,20 @@ import {
   applyPatch,
   cleanupWorkspace as removeWorkspace,
   collectDiff,
+  outputBytesText,
   prepareWorkspace,
   preserveIgnoredOutputs,
   recoverWorktree,
   savedOutputsDir,
   verifyKeptWorktree,
   type PreparedWorkspace,
-  type PreservedOutputs
+  type PreservedOutputs,
+  type SkippedOutput
 } from './subagent-isolation'
 
-export type SubagentReviewResult = { ok: boolean; error?: string; outputs?: PreservedOutputs }
+export type SubagentReviewResult = { ok: boolean; error?: string; warning?: string; cleanupPending?: boolean; outputs?: PreservedOutputs }
+export interface SubagentDiscardOptions { dropOutputs?: boolean }
+const MOVE_OVERFLOW = { moveOverflow: true }
 
 const MAX_CONCURRENT = 24
 const STALL_TIMEOUT_MS = 10 * 60 * 1000
@@ -163,6 +167,7 @@ interface Run extends SubagentRun {
   quotaBounces?: number
   overtimeNoticed?: boolean
   workspace: PreparedWorkspace
+  outputsOverflow?: { skipped: string[]; skippedSizes?: SkippedOutput[] }
   finalizing?: Promise<void>
   settling?: Promise<void>
   worktreeDone?: boolean
@@ -297,9 +302,19 @@ const QUOTA_BOUNCE_LIMIT = 3
 export const QUOTA_SWITCH_AFTER_MS = 15 * 60_000
 export const QUOTA_GIVE_UP_AFTER_MS = 30 * 60_000
 const ignoredOnlyNote = () => pick('子 Agent只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
-const skippedOutputsNote = (skipped: readonly string[]) => {
-  const list = `${skipped.slice(0, 5).join(pick('、', ', '))}${skipped.length > 5 ? pick(' 等', ' and more') : ''}`
-  return pick(`被忽略的产物超出 200MB 另存上限，这些路径下有文件没有另存（说明文件与图片优先保留），已随工作区清理：${list}`, `Ignored outputs exceeded the 200MB save limit; some files under these paths were not saved (notes and images are kept first) and were removed with the workspace: ${list}`)
+const sizeList = (sizes: readonly SkippedOutput[]): string => `${sizes.slice(0, 5).map((item) => pick(`${item.path}（约 ${outputBytesText(item.bytes)}${item.partial ? ' 以上' : ''}）`, `${item.path} (about ${outputBytesText(item.bytes)}${item.partial ? '+' : ''})`)).join(pick('、', ', '))}${sizes.length > 5 ? pick(' 等', ' and more') : ''}`
+const skippedSizesOf = (saved: { skipped?: string[]; skippedSizes?: SkippedOutput[] }): SkippedOutput[] => saved.skippedSizes ?? (saved.skipped ?? []).map((path) => ({ path, bytes: 0, partial: true }))
+const skippedOutputsNote = (saved: { skipped?: string[]; skippedSizes?: SkippedOutput[] }, tree = '') =>
+  pick(`被忽略的产物超出 200MB 另存上限，又没能整体搬到另存目录（多半跨盘或文件被占用）：${sizeList(skippedSizesOf(saved))}；工作树已保留，没有删除：${tree}`, `Ignored outputs exceeded the 200MB save limit and could not be moved to the saved-outputs folder (usually another drive or files in use): ${sizeList(skippedSizesOf(saved))}. The worktree was kept, not deleted: ${tree}`)
+const overflowMergeWarning = (tree = '') => pick(`补丁已合并；被忽略的产物超出另存上限又没能搬走，工作树已保留：${tree}。闲置超期后会再试搬走并清理；也可以挪走需要的产物后再次 merge，只清理工作树（不会重复应用补丁）`, `The patch is merged; ignored outputs exceeded the save limit and could not be moved, so the worktree was kept: ${tree}. Idle cleanup will retry later; or move the outputs you need and merge again to clean up the worktree only (the patch is not applied twice)`)
+const overflowDiscardError = (id: string, tree: string, saved: { skipped?: string[]; skippedSizes?: SkippedOutput[] }) => pick(`被忽略的产物超出另存上限又没能搬走，工作树已保留，改动仍未放弃：${tree}。没另存的：${sizeList(skippedSizesOf(saved))}。确认不要这些产物时用 yan subagent discard --id ${id} --drop-outputs`, `Ignored outputs exceeded the save limit and could not be moved; the worktree was kept and the changes were not discarded: ${tree}. Not saved: ${sizeList(skippedSizesOf(saved))}. If you do not need them, run yan subagent discard --id ${id} --drop-outputs`)
+const overflowMergedDiscardError = (id: string, tree: string, saved: { skipped?: string[]; skippedSizes?: SkippedOutput[] }) => pick(`补丁早已合并；被忽略的产物超出另存上限又没能搬走，工作树已保留：${tree}。没另存的：${sizeList(skippedSizesOf(saved))}。确认不要这些产物时用 yan subagent discard --id ${id} --drop-outputs，只清理工作树、状态仍是已合并`, `The patch was already merged; ignored outputs exceeded the save limit and could not be moved, so the worktree was kept: ${tree}. Not saved: ${sizeList(skippedSizesOf(saved))}. If you do not need them, run yan subagent discard --id ${id} --drop-outputs; it only cleans up the worktree and the state stays merged`)
+const droppedOutputsNote = (saved: { skipped?: string[]; skippedSizes?: SkippedOutput[] }) => pick(`按确认丢弃了没另存的被忽略产物：${sizeList(skippedSizesOf(saved))}`, `Unsaved ignored outputs were dropped as confirmed: ${sizeList(skippedSizesOf(saved))}`)
+const mergedDiscardNote = () => pick('补丁早已合并，这次只清理了工作树，状态仍是已合并', 'The patch was already merged; only the worktree was cleaned up and the state stays merged')
+
+function withNote(error: string | undefined, note: string): string {
+  const lines = (error ?? '').split(String.fromCharCode(10)).filter(Boolean)
+  return lines.includes(note) ? lines.join(String.fromCharCode(10)) : [...lines, note].join(String.fromCharCode(10))
 }
 
 export interface SubagentHostCommands {
@@ -379,7 +394,7 @@ export class SubagentController {
     const retired: string[] = []
     for (const record of this.history.list()) {
       const { run } = record
-      if (run.isolation !== 'worktree' || (run.review !== 'pending' && run.review !== 'conflict')) continue
+      if (run.isolation !== 'worktree' || (run.review !== 'pending' && run.review !== 'conflict' && run.review !== 'merged')) continue
       if (now - Math.max(run.endedAt ?? 0, run.startedAt) <= maxIdleMs) continue
       if (this.runs.has(run.id) || this.resuming.has(run.id) || this.reviewing.has(run.id) || this.stoppingAll) continue
       const workspace = keptWorktreeOf(record)
@@ -418,14 +433,15 @@ export class SubagentController {
 
   private async retireWorktree(id: string, workspace: PreparedWorkspace, maxIdleMs: number, now: number): Promise<boolean> {
     const record = this.history.get(id)
-    if (!record || this.runs.has(id) || (record.run.review !== 'pending' && record.run.review !== 'conflict')) return false
+    if (!record || this.runs.has(id) || (record.run.review !== 'pending' && record.run.review !== 'conflict' && record.run.review !== 'merged')) return false
+    const merged = record.run.review === 'merged'
     const untrusted = await verifyKeptWorktree(id, workspace)
     if (untrusted) return this.keepIdleWorktree(record, idleKeptNote(untrusted))
     const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
     const previous = record.run.diff
     const exitPatch = previous?.patchPath
     const exitPatchStat = exitPatch ? await stat(exitPatch).catch(() => null) : null
-    const baselineFresh = previous ? (previous.files === 0 ? !exitPatch : !!exitPatchStat && exitPatchStat.mtimeMs >= (record.run.endedAt ?? 0) - 1000) : false
+    const baselineFresh = previous ? merged || (previous.files === 0 ? !exitPatch : !!exitPatchStat && exitPatchStat.mtimeMs >= (record.run.endedAt ?? 0) - 1000) : false
     const freshName = `${id}-idle-${new Date(now).toISOString().replace(/\D/g, '').slice(0, 14)}`
     const collected = await collectDiff(workspace, archiveDir, id, { patchName: freshName })
     const dropFresh = async (): Promise<void> => { if (collected.patchPath) await rm(collected.patchPath, { force: true }).catch(() => undefined) }
@@ -450,22 +466,24 @@ export class SubagentController {
       patchPath = exitPatch
       diff = previous
     }
-    const saved = await preserveIgnoredOutputs(workspace, archiveDir, id)
+    const saved = await preserveIgnoredOutputs(workspace, archiveDir, id, undefined, MOVE_OVERFLOW)
     if (!saved.ok) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物没能另存：${saved.error}`, `Ignored outputs could not be saved: ${saved.error}`)))
-    if (saved.skipped?.length) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物超出另存上限，没能全部存下（${saved.skipped.slice(0, 5).join(', ')}）`, `Ignored outputs exceeded the save limit and were not all saved (${saved.skipped.slice(0, 5).join(', ')})`)))
+    if (saved.skipped?.length) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物超出另存上限又没能搬到另存目录（${sizeList(skippedSizesOf(saved))}）`, `Ignored outputs exceeded the save limit and could not be moved to the saved-outputs folder (${sizeList(skippedSizesOf(saved))})`)))
     if (saved.links?.length) return this.keepIdleWorktree(record, idleKeptNote(pick(`被忽略的产物里有穿过链接的路径，没有另存（${saved.links.slice(0, 5).join(', ')}）`, `Some ignored outputs pass through links and were not saved (${saved.links.slice(0, 5).join(', ')})`)))
     if (this.stoppingAll || this.runs.has(id) || this.history.get(id) !== record) return false
     const cleaned = await removeWorkspace(workspace)
     const days = Math.round(maxIdleMs / DAY_MS * 10) / 10
-    const notes = [record.run.error, ...(saved.withheld?.length ? [withheldOutputsNote(saved.withheld)] : []), ...(cleaned.ok ? [] : cleaned.errors)].filter(Boolean)
+    const notes = [record.run.error, ...outputNotes(saved), ...(cleaned.ok ? [] : cleaned.errors)].filter(Boolean)
     const next: SubagentRun = {
       ...record.run,
-      review: cleaned.ok ? 'archived' : record.run.review,
+      review: cleaned.ok && !merged ? 'archived' : record.run.review,
       diff: patchPath ? { ...diff, patchPath } : diff,
       resultPath: cleaned.ok ? patchPath ?? saved.path ?? workspace.worktreePath : workspace.worktreePath,
       ...(saved.path ? { savedOutputsPath: saved.path } : {}),
       latestActivity: cleaned.ok
-        ? pick(`闲置超过 ${days} 天无人处置，工作树已清理；改动已存成补丁，仍可合并`, `Idle for over ${days} days without being handled; worktree removed, changes kept as a patch that can still be merged`)
+        ? merged
+          ? pick(`合并后保留的工作树闲置超过 ${days} 天，已清理`, `The worktree kept after merging was idle for over ${days} days and has been removed`)
+          : pick(`闲置超过 ${days} 天无人处置，工作树已清理；改动已存成补丁，仍可合并`, `Idle for over ${days} days without being handled; worktree removed, changes kept as a patch that can still be merged`)
         : record.run.latestActivity,
       ...(notes.length ? { error: notes.join(String.fromCharCode(10)) } : {})
     }
@@ -517,7 +535,7 @@ export class SubagentController {
     const { run } = record
     if (collected.summary.files > 0 && !collected.patchPath) return false
     if (await verifyKeptWorktree(run.id, workspace)) return false
-    const saved = await preserveIgnoredOutputs(workspace, archiveDir, run.id)
+    const saved = await preserveIgnoredOutputs(workspace, archiveDir, run.id, undefined, MOVE_OVERFLOW)
     if (!saved.ok || saved.skipped?.length || saved.links?.length) return false
     const cleaned = await removeWorkspace(workspace)
     if (!cleaned.ok) return false
@@ -527,7 +545,7 @@ export class SubagentController {
       diff: collected.summary,
       resultPath: collected.patchPath ?? saved.path,
       ...(saved.path ? { savedOutputsPath: saved.path } : {}),
-      ...(saved.withheld?.length ? { error: [run.error, withheldOutputsNote(saved.withheld)].filter(Boolean).join(String.fromCharCode(10)) } : {})
+      ...(outputNotes(saved).length ? { error: [run.error, ...outputNotes(saved)].filter(Boolean).join(String.fromCharCode(10)) } : {})
     }
     delete next.pendingOutputs
     await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, resume: { ...record.resume, workspace: undefined } })
@@ -780,6 +798,11 @@ export class SubagentController {
     if (run) return this.snapshot(run)
     const record = await this.history.full(id)
     return record ? this.historic(record) : undefined
+  }
+
+  private emitHistoric(run: SubagentRun): void {
+    const record = this.history.get(run.id)
+    this.opts.onChange(record ? this.historic(record) : run)
   }
 
   private historic(record: SubagentHistoryRecord): SubagentRun {
@@ -1551,6 +1574,10 @@ export class SubagentController {
           run.review = 'archived'
           run.resultPath = collected.patchPath ?? run.workspace.worktreePath
           await this.cleanupRunWorkspace(run)
+          if (run.outputsOverflow) {
+            run.review = 'pending'
+            run.resultPath = run.workspace.worktreePath
+          }
         } else {
           run.review = 'pending'
           run.resultPath = run.workspace.worktreePath
@@ -1599,23 +1626,33 @@ export class SubagentController {
     }
   }
 
-  private async cleanupRunWorkspace(run: Run): Promise<PreservedOutputs | undefined> {
+  private async cleanupRunWorkspace(run: Run, options: SubagentDiscardOptions = {}): Promise<PreservedOutputs | undefined> {
     let outputs: PreservedOutputs | undefined
     if (run.isolation === 'worktree') {
-      const saved = await preserveIgnoredOutputs(run.workspace, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id)
+      const saved = await preserveIgnoredOutputs(run.workspace, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id, undefined, MOVE_OVERFLOW)
       outputs = saved
       if (!saved.ok) {
         run.worktreeDone = false
         run.error = [run.error, pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${run.workspace.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${run.workspace.worktreePath}`)].filter(Boolean).join('\n')
         return outputs
       }
+      if (saved.skipped?.length && !options.dropOutputs) {
+        if (saved.path) run.savedOutputsPath = saved.path
+        run.worktreeDone = false
+        run.outputsOverflow = { skipped: saved.skipped, ...(saved.skippedSizes ? { skippedSizes: saved.skippedSizes } : {}) }
+        run.error = withNote(run.error, skippedOutputsNote(saved, run.workspace.worktreePath))
+        const moved = movedOutputsNote(saved)
+        if (moved) run.error = withNote(run.error, moved)
+        return outputs
+      }
+      if (saved.skipped?.length) run.error = withNote(run.error, droppedOutputsNote(saved))
+      run.outputsOverflow = undefined
       run.pendingOutputs = undefined
       if (saved.path) {
         run.savedOutputsPath = saved.path
         if (run.error?.startsWith(ignoredOnlyNote())) run.error = pick(`${ignoredOnlyNote()}，已另存到 ${saved.path}`, `${ignoredOnlyNote()}; saved to ${saved.path}`)
         if (!run.diff?.patchPath) run.resultPath = saved.path
       }
-      if (saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join('\n')
       const extra = outputNotes(saved)
       if (extra.length) run.error = [run.error, ...extra].filter(Boolean).join('\n')
     }
@@ -1641,6 +1678,11 @@ export class SubagentController {
 
   private async archiveOnExit(run: Run): Promise<void> {
     if (run.worktreeDone) return
+    if (run.outputsOverflow) {
+      await this.writeMetadata(run, run.diff?.patchPath)
+      this.emit(run)
+      return
+    }
 
     if (run.isolation === 'worktree' && (run.review === 'pending' || run.review === 'conflict')) {
       if (this.keepsWorktreeOnExit(run)) {
@@ -1663,6 +1705,10 @@ export class SubagentController {
     }
 
     await this.cleanupRunWorkspace(run)
+    if (run.outputsOverflow && run.review === 'archived') {
+      run.review = 'pending'
+      run.resultPath = run.workspace.worktreePath
+    }
     await this.writeMetadata(run)
     this.emit(run)
   }
@@ -1700,8 +1746,14 @@ export class SubagentController {
     return this.exclusiveReview(id, () => this.mergeOnce(id))
   }
 
-  discard(id: string): Promise<SubagentReviewResult> {
-    return this.exclusiveReview(id, () => this.discardOnce(id))
+  discard(id: string, options: SubagentDiscardOptions = {}): Promise<SubagentReviewResult> {
+    return this.exclusiveReview(id, () => this.discardOnce(id, options))
+  }
+
+  private mergedCleanupResult(run: Run, outputs: PreservedOutputs | undefined): SubagentReviewResult {
+    if (run.worktreeDone) return { ok: true, ...(outputs ? { outputs } : {}) }
+    if (run.outputsOverflow) return { ok: true, warning: overflowMergeWarning(run.workspace.worktreePath), ...(outputs ? { outputs } : {}) }
+    return { ok: false, cleanupPending: true, error: mergeCleanupPending(run) }
   }
 
   private async mergeOnce(id: string): Promise<SubagentReviewResult> {
@@ -1714,7 +1766,7 @@ export class SubagentController {
       const outputs = await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
-      return run.worktreeDone ? { ok: true, ...(outputs ? { outputs } : {}) } : { ok: false, error: mergeCleanupPending(run) }
+      return this.mergedCleanupResult(run, outputs)
     }
     if (run.review !== 'pending' && run.review !== 'conflict' && run.review !== 'archived') {
       return { ok: false, error: pick('该任务没有待合并的改动', 'This task has no changes to merge') }
@@ -1741,43 +1793,49 @@ export class SubagentController {
       const outputs = run.worktreeDone ? undefined : await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, patchPath)
       this.emit(run)
-      return run.worktreeDone ? { ok: true, ...(outputs ? { outputs } : {}) } : { ok: false, error: mergeCleanupPending(run) }
+      return this.mergedCleanupResult(run, outputs)
     } catch (error) {
       return { ok: false, error: pick(`合并失败：${error instanceof Error ? error.message : String(error)}`, `Merge failed: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
-  private async discardOnce(id: string): Promise<SubagentReviewResult> {
+  private async discardOnce(id: string, options: SubagentDiscardOptions): Promise<SubagentReviewResult> {
     const run = this.runs.get(id)
-    if (!run) return this.reviewHistory(id, 'discarded')
+    if (!run) return this.reviewHistory(id, 'discarded', options)
     await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，先停止它', 'Subagent is still running; stop it first') }
     const previousReview = run.review
+    const merged = previousReview === 'merged'
+    if (merged && run.worktreeDone) return { ok: true, warning: mergedDiscardNote() }
     try {
-      const outputs = run.worktreeDone ? undefined : await this.cleanupRunWorkspace(run)
+      const outputs = run.worktreeDone ? undefined : await this.cleanupRunWorkspace(run, options)
       if (!run.worktreeDone) {
-        const error = run.error ?? pick('清理工作树失败，改动仍未放弃；工作树已保留', 'Could not clean up the worktree; the changes were not discarded and the workspace was kept')
+        const error = run.outputsOverflow ? (merged ? overflowMergedDiscardError : overflowDiscardError)(run.id, run.workspace.worktreePath ?? '', run.outputsOverflow) : run.error ?? pick('清理工作树失败，改动仍未放弃；工作树已保留', 'Could not clean up the worktree; the changes were not discarded and the workspace was kept')
         await this.writeMetadata(run, run.diff?.patchPath)
         this.emit(run)
-        return { ok: false, error }
+        return { ok: false, error, ...(outputs ? { outputs } : {}) }
       }
-      run.review = 'discarded'
-      run.resultPath = run.diff?.patchPath ?? run.savedOutputsPath
+      if (!merged) {
+        run.review = 'discarded'
+        run.resultPath = run.diff?.patchPath ?? run.savedOutputsPath
+      }
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
-      return { ok: true, ...(outputs ? { outputs } : {}) }
+      return { ok: true, ...(merged ? { warning: mergedDiscardNote() } : {}), ...(outputs ? { outputs } : {}) }
     } catch (error) {
       run.review = previousReview
       return { ok: false, error: pick(`放弃改动失败：${error instanceof Error ? error.message : String(error)}`, `Could not discard changes: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
-  private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<SubagentReviewResult> {
+  private async reviewHistory(id: string, review: 'merged' | 'discarded', options: SubagentDiscardOptions = {}): Promise<SubagentReviewResult> {
     const record = this.history.get(id)
     if (!record) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
     const run = { ...record.run }
     const kept = keptWorktreeOf(record)
-    const cleanupRetry = review === 'merged' && run.review === 'merged' && run.isolation === 'worktree' && !!kept
+    const alreadyMerged = run.review === 'merged'
+    const cleanupRetry = alreadyMerged && run.isolation === 'worktree' && !!kept
+    if (alreadyMerged && review === 'discarded' && !cleanupRetry) return { ok: true, warning: mergedDiscardNote() }
     if (run.review === review && !cleanupRetry) return { ok: true }
     const untrusted = kept && run.isolation === 'worktree' ? await verifyKeptWorktree(run.id, kept) : null
     if (untrusted) return { ok: false, error: pick(`保留的工作树没通过核对，没有合并或清理：${untrusted}`, `The kept worktree failed verification; nothing was merged or cleaned up: ${untrusted}`) }
@@ -1790,33 +1848,44 @@ export class SubagentController {
       run.review = 'merged'
       run.error = undefined
       await this.history.save(run, record.rootCwd)
-      this.opts.onChange(run)
+      this.emitHistoric(run)
     }
+    const finalReview = run.review === 'merged' ? 'merged' : review
+    const warning = alreadyMerged && review === 'discarded' ? mergedDiscardNote() : undefined
     let outputs: PreservedOutputs | undefined
     if (kept && run.isolation === 'worktree') {
-      const saved = await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id)
+      const saved = await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id, undefined, MOVE_OVERFLOW)
       if (!saved.ok) return { ok: false, error: pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${kept.worktreePath}`), outputs: saved }
       outputs = saved
+      if (saved.path) run.savedOutputsPath = saved.path
+      const tree = kept.worktreePath ?? ''
+      if (saved.skipped?.length && !(review === 'discarded' && options.dropOutputs)) {
+        run.error = withNote(run.error, skippedOutputsNote(saved, tree))
+        const moved = movedOutputsNote(saved)
+        if (moved) run.error = withNote(run.error, moved)
+        await this.history.save(run, record.rootCwd)
+        this.emitHistoric(run)
+        if (review === 'merged') return { ok: true, warning: overflowMergeWarning(tree), outputs: saved }
+        return { ok: false, outputs: saved, error: (finalReview === 'merged' ? overflowMergedDiscardError : overflowDiscardError)(run.id, tree, saved) }
+      }
+      if (saved.skipped?.length) run.error = withNote(run.error, droppedOutputsNote(saved))
       const cleaned = await cleanupWorkspace(kept)
       delete run.pendingOutputs
-      if (saved.path) run.savedOutputsPath = saved.path
-      if (saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join(String.fromCharCode(10))
       const extra = outputNotes(saved)
       if (extra.length) run.error = [run.error, ...extra].filter(Boolean).join(String.fromCharCode(10))
       if (!cleaned.ok) {
         run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
-        if (review === 'merged') run.review = 'merged'
         await this.history.save(run, record.rootCwd)
-        this.opts.onChange(run)
-        return { ok: false, error: review === 'merged'
-          ? pick(`补丁已合并，但工作树没能清理，可再次 merge 只重试清理（不会重复应用补丁）：${cleaned.errors.join('；') || kept.worktreePath}`, `The patch is merged, but the worktree could not be cleaned up; merge again retries the cleanup only (the patch is not applied twice): ${cleaned.errors.join('; ') || kept.worktreePath}`)
-          : pick(`工作树没能清理，改动仍未放弃：${cleaned.errors.join('；') || kept.worktreePath}`, `The worktree could not be cleaned up, so the changes were not discarded: ${cleaned.errors.join('; ') || kept.worktreePath}`) }
+        this.emitHistoric(run)
+        return finalReview === 'merged'
+          ? { ok: false, cleanupPending: true, error: pick(`补丁已合并，但工作树没能清理，可再次 merge 只重试清理（不会重复应用补丁）：${cleaned.errors.join('；') || kept.worktreePath}`, `The patch is merged, but the worktree could not be cleaned up; merge again retries the cleanup only (the patch is not applied twice): ${cleaned.errors.join('; ') || kept.worktreePath}`) }
+          : { ok: false, error: pick(`工作树没能清理，改动仍未放弃：${cleaned.errors.join('；') || kept.worktreePath}`, `The worktree could not be cleaned up, so the changes were not discarded: ${cleaned.errors.join('; ') || kept.worktreePath}`) }
       }
     }
-    run.review = review
+    run.review = finalReview
     await this.history.save(run, record.rootCwd)
-    this.opts.onChange(run)
-    return { ok: true, ...(outputs ? { outputs } : {}) }
+    this.emitHistoric(run)
+    return { ok: true, ...(warning ? { warning } : {}), ...(outputs ? { outputs } : {}) }
   }
 
   private stallLimit(run: Run): number {
@@ -2323,8 +2392,16 @@ const retiringError = (): string => pick('正在清理这个子 Agent的闲置�
 const staleOwnerError = (): string => pick('这个子 Agent是上次启动时由还没保存的会话派出的，归属无法确认；只能由用户在界面里续接、合并或放弃', 'This subagent was started last session by a conversation that had not been saved yet, so its owner cannot be confirmed; only the user can resume, merge or discard it in the app')
 const withheldOutputsNote = (files: readonly string[]): string => pick(`可能含凭据的被忽略文件没有另存，只记下文件名：${files.slice(0, 10).join('、')}${files.length > 10 ? ' 等' : ''}`, `Ignored files that may hold credentials were not saved; only their names are recorded: ${files.slice(0, 10).join(', ')}${files.length > 10 ? ', …' : ''}`)
 
-function outputNotes(saved: { links?: string[]; withheld?: string[] }): string[] {
+function movedOutputsNote(saved: { moved?: string[]; movedFiles?: number; movedBytes?: number; path?: string }): string | undefined {
+  if (!saved.moved?.length) return undefined
+  const list = `${saved.moved.slice(0, 5).join(pick('、', ', '))}${saved.moved.length > 5 ? pick(' 等', ' and more') : ''}`
+  return pick(`被忽略的产物超出 200MB 另存上限的部分已整体搬到另存目录（没有拷贝）：${list}，${saved.movedFiles ?? 0} 个文件，约 ${outputBytesText(saved.movedBytes ?? 0)}，在 ${saved.path ?? ''}`, `Ignored outputs beyond the 200MB save limit were moved (not copied) to the saved-outputs folder: ${list}, ${saved.movedFiles ?? 0} file(s), about ${outputBytesText(saved.movedBytes ?? 0)}, in ${saved.path ?? ''}`)
+}
+
+function outputNotes(saved: { links?: string[]; withheld?: string[]; moved?: string[]; movedFiles?: number; movedBytes?: number; path?: string }): string[] {
+  const moved = movedOutputsNote(saved)
   return [
+    ...(moved ? [moved] : []),
     ...(saved.links?.length ? [pick(`被忽略的产物里有穿过链接的路径，没有另存：${saved.links.slice(0, 5).join('、')}${saved.links.length > 5 ? ' 等' : ''}`, `Some ignored outputs pass through links and were not saved: ${saved.links.slice(0, 5).join(', ')}${saved.links.length > 5 ? ', …' : ''}`)] : []),
     ...(saved.withheld?.length ? [withheldOutputsNote(saved.withheld)] : [])
   ]

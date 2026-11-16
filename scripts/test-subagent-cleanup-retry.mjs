@@ -46,6 +46,7 @@ try {
         export const prepareWorkspace = async () => ({})
         export const preserveIgnoredOutputs = async () => ({ ok: true, files: [] })
         export const savedOutputsDir = (dir, id) => dir + '/' + id + '-outputs'
+        export const outputBytesText = (bytes) => bytes + ' B'
         export const recoverWorktree = async () => null
         export const verifyKeptWorktree = async () => null
       ` }))

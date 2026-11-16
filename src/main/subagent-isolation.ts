@@ -1,6 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
-import { copyFile, lstat, mkdtemp, mkdir, readdir, realpath, rm, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdtemp, mkdir, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { existsSync, mkdtempSync, realpath as realpathFs, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -389,7 +389,7 @@ export function ignoredOutputRank(path: string): number {
   return 2
 }
 
-interface OutputFile { rel: string; top: string; size: number; rank: number }
+interface OutputFile { rel: string; top: string; size: number; rank: number; mtimeMs: number }
 interface OutputScan { found: OutputFile[]; overflow: Set<string>; links: Set<string>; withheld: string[] }
 
 const SECRET_OUTPUT = /^(?:\.env(?:[._-].*)?|.+\.env(?:\..*)?|\.envrc|.*\.(?:pem|key|pfx|p12|p8|ppk|kdbx|jks|keystore|tfvars)|.*\.tfstate(?:\.backup)?|id_(?:rsa|ed25519|ecdsa|dsa).*|auth\.json|\.netrc|_netrc|\.npmrc|\.pypirc|\.git-credentials|\.htpasswd|kubeconfig.*|.*\.kubeconfig|credentials.*|application_default_credentials\.json|client_secret.*\.json|secrets?(?:[._-].*)?\.(?:json|ya?ml|toml)|service[-_]?account.*\.json)$/i
@@ -422,7 +422,7 @@ async function listOutputFiles(root: string, rel: string, top: string, scan: Out
   if (!info.isDirectory()) {
     if (info.nlink > 1) scan.links.add(rel)
     else if (withheldOutput(rel)) scan.withheld.push(rel)
-    else scan.found.push({ rel, top, size: info.size, rank: ignoredOutputRank(rel) })
+    else scan.found.push({ rel, top, size: info.size, rank: ignoredOutputRank(rel), mtimeMs: info.mtimeMs })
     return
   }
   for (const entry of await readdir(join(root, rel))) {
@@ -451,9 +451,29 @@ export function savedOutputsDir(archiveDir: string, id: string): string {
   return join(archiveDir, `${id}-outputs`)
 }
 
-export type PreservedOutputs = { ok: true; path?: string; files: string[]; skipped?: string[]; links?: string[]; withheld?: string[] } | { ok: false; error: string }
+export interface SkippedOutput { path: string; bytes: number; partial?: boolean }
 
-export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archiveDir: string, id: string, limit = IGNORED_OUTPUT_COPY_LIMIT): Promise<PreservedOutputs> {
+export type PreservedOutputs = {
+  ok: true
+  path?: string
+  files: string[]
+  skipped?: string[]
+  skippedSizes?: SkippedOutput[]
+  moved?: string[]
+  movedFiles?: number
+  movedBytes?: number
+  links?: string[]
+  withheld?: string[]
+} | { ok: false; error: string }
+
+export interface PreserveOptions { moveOverflow?: boolean }
+
+async function copiedAlready(to: string, file: OutputFile): Promise<boolean> {
+  const info = await stat(to).catch(() => null)
+  return !!info && info.isFile() && info.size === file.size && info.mtimeMs >= file.mtimeMs
+}
+
+export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archiveDir: string, id: string, limit = IGNORED_OUTPUT_COPY_LIMIT, options: PreserveOptions = {}): Promise<PreservedOutputs> {
   if (workspace.isolation !== 'worktree' || !workspace.worktreePath) return { ok: true, files: [] }
   const tree = workspace.worktreePath
   let outputs: string[]
@@ -471,18 +491,8 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
       else await listOutputFiles(tree, rel, rel, scan)
     }
     const { kept, dropped } = pickIgnoredOutputs(scan.found, limit)
-    const keptTops = new Set(kept.map((file) => file.top))
-    const droppedTops = new Set([...dropped.map((file) => file.top), ...scan.overflow])
-    const files = outputs.filter((rel) => keptTops.has(rel))
-    const skipped = outputs.filter((rel) => droppedTops.has(rel))
-    const extra = {
-      ...(skipped.length ? { skipped } : {}),
-      ...(scan.links.size ? { links: [...scan.links].sort() } : {}),
-      ...(scan.withheld.length ? { withheld: scan.withheld.sort() } : {})
-    }
-    if (!files.length) return { ok: true, files, ...extra }
     const target = savedOutputsDir(archiveDir, id)
-    const realTree = await realpath(tree)
+    const realTree = kept.length || (options.moveOverflow && dropped.length) ? await realpath(tree) : ''
     for (const file of kept) {
       const from = join(tree, file.rel)
       const real = await realpath(from)
@@ -491,13 +501,63 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
         continue
       }
       const to = join(target, file.rel)
+      if (await copiedAlready(to, file)) continue
       await mkdir(dirname(to), { recursive: true })
       await copyFile(from, to)
     }
-    return { ok: true, path: target, files, ...extra, ...(scan.links.size ? { links: [...scan.links].sort() } : {}) }
+    const movedFiles: OutputFile[] = []
+    let unmoved = dropped
+    if (options.moveOverflow && dropped.length) {
+      unmoved = []
+      let failed = false
+      for (const file of dropped) {
+        if (failed) {
+          unmoved.push(file)
+          continue
+        }
+        const from = join(tree, file.rel)
+        const real = await realpath(from)
+        if (!pathInside(realTree, real)) {
+          scan.links.add(file.rel)
+          continue
+        }
+        const to = join(target, file.rel)
+        try {
+          await mkdir(dirname(to), { recursive: true })
+          await rename(from, to)
+          movedFiles.push(file)
+        } catch {
+          failed = true
+          unmoved.push(file)
+        }
+      }
+    }
+    const keptTops = new Set(kept.map((file) => file.top))
+    const movedTops = new Set(movedFiles.map((file) => file.top))
+    const droppedTops = new Set([...unmoved.map((file) => file.top), ...scan.overflow])
+    const files = outputs.filter((rel) => keptTops.has(rel))
+    const moved = outputs.filter((rel) => movedTops.has(rel))
+    const skipped = outputs.filter((rel) => droppedTops.has(rel))
+    const skippedSizes = skipped.map((rel): SkippedOutput => ({
+      path: rel,
+      bytes: unmoved.filter((file) => file.top === rel).reduce((sum, file) => sum + file.size, 0),
+      ...(scan.overflow.has(rel) ? { partial: true } : {})
+    }))
+    const extra = {
+      ...(skipped.length ? { skipped, skippedSizes } : {}),
+      ...(moved.length ? { moved, movedFiles: movedFiles.length, movedBytes: movedFiles.reduce((sum, file) => sum + file.size, 0) } : {}),
+      ...(scan.links.size ? { links: [...scan.links].sort() } : {}),
+      ...(scan.withheld.length ? { withheld: scan.withheld.sort() } : {})
+    }
+    if (!files.length && !moved.length) return { ok: true, files, ...extra }
+    return { ok: true, path: target, files, ...extra }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+export function outputBytesText(bytes: number): string {
+  return bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`
 }
 
 export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ ok: boolean; error?: string }> {

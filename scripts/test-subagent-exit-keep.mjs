@@ -278,7 +278,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(retired.includes(resumedBefore.run.id) && (await readFile(resumedPatch, 'utf8')) === resumedPatchText, '续接过（补丁比结束时间旧）：重新收集但不覆盖原补丁')
       const resumedRun = reopened.get(resumedBefore.run.id)
       ok(/-idle-\d{14}\.patch$/.test(resumedRun.diff.patchPath ?? '') && (await readFile(resumedRun.diff.patchPath, 'utf8')).includes('resumed change'), '新补丁写成新文件名，记录指向它', resumedRun.diff.patchPath)
-      ok(!retired.includes(big.run.id) && existsSync(big.run.cwd) && /另存上限/.test(reopened.get(big.run.id).error ?? ''), '被忽略产物超出另存上限：保留工作树并写进记录', reopened.get(big.run.id).error)
+      ok(retired.includes(big.run.id) && !existsSync(big.run.cwd) && existsSync(join(archive, `${big.run.id}-outputs`, 'reports', 'big.bin')) && /整体搬到另存目录/.test(reopened.get(big.run.id).error ?? ''), '被忽略产物超出另存上限：同盘整体搬到另存目录后照常清理，并写进记录', reopened.get(big.run.id).error)
       ok(!retired.includes(tampered.run.id) && existsSync(tampered.run.cwd) && existsSync(join(repo, 'a.txt')) && /不是砚为/.test(reopened.get(tampered.run.id).error ?? ''), '记录被改过：不清理，主仓库不动', reopened.get(tampered.run.id).error)
       const errorsBefore = reopened.get(grow.run.id).error
       await reopened.pruneIdleWorktrees({ now: later })

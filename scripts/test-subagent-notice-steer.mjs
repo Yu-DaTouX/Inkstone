@@ -91,6 +91,15 @@ await runSuite(import.meta.url, async (ok) => {
     ok(!viewer.agent.noticeSeen(notice, 1_000), '别的子代理的通知不算')
     history.push({ id: 'm4', role: 'user', text: notice, timestamp: 2_000 })
     ok(viewer.agent.noticeSeen(notice, 1_000), '本次中断之后的用户消息里出现这条通知：已送达')
+    const untimed = make()
+    untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice }] }
+    ok(untimed.agent.noticeSeen(notice, 1_000), '用户消息没带时间戳：只比对 id 与状态，判为已送达，不在重启后重投')
+    untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice.replace('interrupted', 'done') }] }
+    ok(!untimed.agent.noticeSeen(notice, 1_000), '没带时间戳但状态不同：仍判为未送达')
+    untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice }, { id: 'm2', role: 'assistant', text: 'ok', timestamp: 500 }] }
+    ok(!untimed.agent.noticeSeen(notice, 1_000), '同一子代理上一次中断的旧通知（没带时间戳，排在本次中断之前的消息前面）：不算本次已送达')
+    untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice }, { id: 'm2', role: 'assistant', text: 'ok', timestamp: 500 }, { id: 'm3', role: 'user', text: notice }] }
+    ok(untimed.agent.noticeSeen(notice, 1_000), '排在中断之后的同文通知（没带时间戳）：已送达')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

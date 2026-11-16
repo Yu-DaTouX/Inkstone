@@ -244,6 +244,14 @@ async function runV3RunsSubagentTests() {
       assert.deepEqual({ kind: quit.phase.kind, by: quit.phase.by, reason: quit.phase.reason, resumable: quit.phase.resumable }, { kind: 'stopped', by: 'host', reason: 'interrupted', resumable: true }, '退出时中断的子代理：由宿主停止、标为已中断且可续接，不再记作用户停止')
       assert.equal(gone.phase.resumable, false, '不能续接的中断如实标出')
       assert.equal(host.snapshot().runs.find((r) => r.code === 'S1·2').phase.reason, undefined, '用户停止的不带中断标记')
+      host.refreshSubagent({ id: 'sub-quit', parentSessionId: 's1', resumable: { ok: true } })
+      assert.equal(host.snapshot().runs.find((r) => r.title === '退出时还在跑').phase, quit.phase, '续接状态没变时不改不推')
+      host.refreshSubagent({ id: 'sub-quit', parentSessionId: 's1', resumable: { ok: false } })
+      const refreshed = host.snapshot().runs.find((r) => r.title === '退出时还在跑')
+      assert.equal(refreshed.phase.resumable, false, '之后合并、放弃或清理了工作树：运行列表不再显示可续接')
+      assert.equal(refreshed.phase.reason, 'interrupted', '刷新只改可续接，不改中断原因')
+      host.refreshSubagent({ id: 'sub-b', parentSessionId: 's1', resumable: { ok: false } })
+      assert.equal(host.snapshot().runs.find((r) => r.code === 'S1·2').phase.resumable, undefined, '用户停止的运行不加续接标记')
 
       await host.dispose()
       const historyLines = []

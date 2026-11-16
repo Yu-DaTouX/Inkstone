@@ -1,6 +1,6 @@
 import { createRunPipeline, type RunContext, type RunError, type RunPipeline } from './runs'
 import { runSignalFromDangerConfirmation, runSignalFromUiResolved, signalsFromPiEvent } from './runs/pi-events'
-import { subagentRunContext, type SubagentRunIdentity } from './runs/subagent'
+import { subagentRunContext, subagentScopeId, type SubagentRunIdentity } from './runs/subagent'
 import { type RunSignal, type RunModel, type RunSnapshot } from '../shared/runs'
 import type { MainPush } from '../shared/ipc'
 import type { ApprovalRequest } from '../shared/approval'
@@ -17,6 +17,7 @@ export interface RunsHost {
   observerFor(options?: { generation?: number }): RunObserver
   observeSubagentEvent(run: SubagentRunIdentity, evt: Record<string, unknown>): void
   settleSubagent(run: SubagentRunIdentity, outcome: 'done' | 'failed' | 'stopped' | 'interrupted', message?: string): void
+  refreshSubagent(run: SubagentRunIdentity): void
   snapshot(): RunsSnapshot
   markSeen(runId: string): { ok: boolean }
   observeApproval(request: ApprovalRequest): void
@@ -201,6 +202,10 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
               ? { type: 'stopped', by: 'host', reason: 'interrupted', resumable: run.resumable?.ok !== false }
               : { type: 'host-fail', message: message ?? '\u5b50 Agent \u8fd0\u884c\u5931\u8d25' }
       feed(ctx, signal)
+    },
+    refreshSubagent(run) {
+      if (disposed || !run.id || !run.resumable) return
+      pipeline.registry.refreshResumable(subagentScopeId(run.id), run.resumable.ok)
     },
     snapshot() {
       pipeline.publisher?.flush()

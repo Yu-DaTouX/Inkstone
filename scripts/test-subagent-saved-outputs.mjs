@@ -134,7 +134,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(!plain.includes('另存'), '没有被忽略产物时不加这句')
 
     const summary = service.subagentOutputsSummary({ savedOutputsPath: 'D:/x-outputs' }, { ok: true, path: 'D:/x-outputs', files: ['.tmp', 'reports'], skipped: ['debug'] })
-    ok(summary.savedOutputs === 'D:/x-outputs' && summary.savedOutputsFiles?.includes('.tmp') && summary.savedOutputsSkipped?.includes('debug') && /200MB/.test(summary.savedOutputsSkippedNote), '回执摘要写明位置、另存了哪些、哪些超限', JSON.stringify(summary))
+    ok(summary.savedOutputs === 'D:/x-outputs' && summary.savedOutputsFiles?.includes('.tmp') && summary.savedOutputsSkipped?.includes('debug') && /另存上限/.test(summary.savedOutputsSkippedNote) && /--drop-outputs/.test(summary.savedOutputsSkippedNote), '回执摘要写明位置、另存了哪些、哪些超限且没能搬走', JSON.stringify(summary))
     ok(/没能另存/.test(service.subagentOutputsSummary(undefined, { ok: false, error: 'EBUSY' }).savedOutputsError ?? ''), '另存失败写进摘要')
     ok(/没有需要另存/.test(service.subagentOutputsSummary({}, { ok: true, files: [] }).savedOutputs ?? ''), '没有被忽略产物时明说，不让人以为丢了')
 

@@ -3078,8 +3078,17 @@ export class AgentController extends EventEmitter {
   noticeSeen(text: string, since: number): boolean {
     const wanted = parseSubagentNotice(text)
     if (!wanted) return false
-    return this.messages.some((message) => {
-      if (message.role !== 'user' || (message.timestamp ?? 0) < since) return false
+    const messages = this.messages
+    let start = 0
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const at = messages[i].timestamp
+      if (at !== undefined && at < since) {
+        start = i + 1
+        break
+      }
+    }
+    return messages.slice(start).some((message) => {
+      if (message.role !== 'user') return false
       const seen = parseSubagentNotice(message.text)
       return !!seen && seen.id === wanted.id && seen.status === wanted.status
     })

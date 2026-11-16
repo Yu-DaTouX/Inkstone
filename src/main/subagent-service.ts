@@ -60,12 +60,13 @@ function listPaths(paths: readonly string[]): string[] {
   return paths.length > SUMMARY_OUTPUT_PATHS ? [...paths.slice(0, SUMMARY_OUTPUT_PATHS), `… +${paths.length - SUMMARY_OUTPUT_PATHS}`] : [...paths]
 }
 
-export function subagentOutputsSummary(run: Pick<SubagentRun, 'savedOutputsPath' | 'pendingOutputs'> | undefined, outputs?: PreservedOutputs): Record<string, unknown> {
+export function subagentOutputsSummary(run: Pick<SubagentRun, 'savedOutputsPath' | 'pendingOutputs'> | undefined, outputs?: PreservedOutputs, dropped = false): Record<string, unknown> {
   if (outputs && !outputs.ok) return { savedOutputsError: pick(`被 .gitignore 忽略的产物没能另存：${outputs.error}`, `Outputs ignored by .gitignore could not be saved: ${outputs.error}`) }
   const path = outputs?.path ?? run?.savedOutputsPath
-  const skipped = outputs?.skipped?.length
-    ? { savedOutputsSkipped: listPaths(outputs.skipped), savedOutputsSkippedNote: pick('这些路径下超出 200MB 另存上限的文件没有另存，已随工作区清理；说明文件与图片优先保留', 'Files under these paths beyond the 200MB save limit were not saved and were removed with the workspace; notes and images are kept first') }
-    : {}
+  const skipped = {
+    ...(outputs?.moved?.length ? { savedOutputsMoved: listPaths(outputs.moved), savedOutputsMovedNote: pick('这些路径下超出 200MB 另存上限的文件已整体搬到 savedOutputs（没有拷贝）', 'Files under these paths beyond the 200MB save limit were moved (not copied) to savedOutputs') } : {}),
+    ...(outputs?.skipped?.length ? { savedOutputsSkipped: listPaths(outputs.skipped), savedOutputsSkippedNote: dropped ? pick('这些路径下没另存的文件已按 --drop-outputs 确认随工作树删除', 'Unsaved files under these paths were deleted with the worktree as confirmed by --drop-outputs') : pick('这些路径下的文件超出另存上限又没能搬走，工作树已保留；只有 discard --drop-outputs 确认后才会随工作树删除', 'Files under these paths exceeded the save limit and could not be moved; the worktree was kept. They are deleted with the worktree only after discard --drop-outputs') } : {})
+  }
   if (path) return { savedOutputs: path, ...(outputs?.files.length ? { savedOutputsFiles: listPaths(outputs.files) } : {}), ...skipped }
   if (run?.pendingOutputs) return { ignoredOutputs: listPaths(run.pendingOutputs.files), ignoredOutputsSaveTo: run.pendingOutputs.path, ignoredOutputsNote: pick('合并或放弃时按原相对路径另存到 ignoredOutputsSaveTo', 'Saved with their relative paths to ignoredOutputsSaveTo on merge or discard') }
   if (outputs) return { savedOutputs: pick('无：工作树里没有需要另存的被忽略产物', 'none: the worktree had no ignored outputs to save'), ...skipped }
@@ -401,18 +402,20 @@ export class SubagentService {
           throw new CapabilityCommandError('subagent_merge_outside_project', `补丁里有项目目录之外的路径，不合并：${escaping}`)
         }
       }
-      const result = merging ? await ctrl.merge(id) : await ctrl.discard(id)
+      const dropOutputs = [params['drop-outputs'], params.dropOutputs].some((value) => value === true || value === 'true')
+      const result = merging ? await ctrl.merge(id) : await ctrl.discard(id, { dropOutputs })
       if (!result.ok) {
+        if (merging && result.cleanupPending) throw new CapabilityCommandError('subagent_merge_cleanup_pending', result.error ?? `补丁已合并，工作树没能清理：${id}`)
         throw new CapabilityCommandError(
           merging ? 'subagent_merge_failed' : 'subagent_discard_failed',
           merging ? `${result.error ?? `合并失败：${id}`}。工作树已保留；可用 yan subagent send --id ${id} 让它基于最新代码解决冲突后再合并，或 yan subagent discard --id ${id} 放弃` : result.error ?? `放弃失败：${id}`
         )
       }
       const run = ctrl.get(id)
-      const outputs = subagentOutputsSummary(run, result.outputs)
+      const outputs = subagentOutputsSummary(run, result.outputs, !merging && dropOutputs)
       return {
         data: run ? { ...run, ...(result.outputs ? { savedOutputs: result.outputs } : {}) } : run,
-        summary: { kind: 'subagent', action: merging ? 'merge' : 'discard', id, review: run?.review, ...outputs }
+        summary: { kind: 'subagent', action: merging ? 'merge' : 'discard', id, review: run?.review, ...(result.warning ? { warning: result.warning } : {}), ...outputs }
       }
     }
 

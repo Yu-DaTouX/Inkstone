@@ -279,6 +279,18 @@ export class RunRegistry {
     return this.apply(entry, { type: 'seen' }, this.now())
   }
 
+  refreshResumable(sessionId: string, resumable: boolean): RunSnapshot | null {
+    if (this.disposed) return null
+    let latest: RunEntry | undefined
+    for (const entry of this.runs.values()) if (entry.state.sessionId === sessionId) latest = entry
+    const phase = latest?.state.phase
+    if (!latest || phase?.kind !== 'stopped' || phase.reason !== 'interrupted' || (phase.resumable !== false) === resumable) return null
+    latest.state = { ...latest.state, phase: { ...phase, resumable }, revision: latest.state.revision + 1 }
+    const snapshot = snapshotOf(latest.state)
+    this.emit([snapshot], false)
+    return snapshot
+  }
+
   runningStates(): RunState[] {
     return [...this.runs.values()]
       .map((entry) => entry.state)

@@ -474,6 +474,7 @@ const subagentService: SubagentService = new SubagentService({
     if (run.status !== 'starting' && run.status !== 'running') {
       approvals.cancel((pending) => pending.subagentId === run.id)
       approvals.forgetSubagent(run.id)
+      if (run.endReason === 'interrupted') runsHost?.refreshSubagent(run)
     }
     queueSubagentRun(run, patch)
     refreshTaskbar()
