@@ -94,17 +94,25 @@
   .ms-backups {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--s-8);
     min-width: 0;
     margin-top: var(--s-8);
+    margin-bottom: var(--s-16);
     color: var(--fg2);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .ms-backups-text {
+    display: flex;
     flex: 1 1 16rem;
+    flex-direction: column;
+    gap: var(--s-4);
     min-width: 0;
+  }
+
+  .ms-backups-rule {
+    color: var(--fg3);
   }
 
   .ms-file-path {

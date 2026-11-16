@@ -28,6 +28,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [errorDetail, setErrorDetail] = useState('')
+  const [warning, setWarning] = useState('')
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
   const requestId = useRef(0)
@@ -52,6 +53,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     setRuntime(null)
     setAdding(false)
     setNotice('')
+    setWarning('')
     setBusy(false)
     void refresh()
     return () => {
@@ -77,13 +79,15 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     setError('')
     setErrorDetail('')
     setNotice('')
+    setWarning('')
     try {
       const result = await window.yan.capabilities.changeMcpService(input)
       if (view !== viewKey()) return
       if (!result.ok) setError(result.error || text.failed)
       else {
         const effect = result.takesEffect === 'next-call' ? text.nextCall : result.takesEffect === 'next-call-list-later' ? text.nextCallListLater : text.nextSession
-        setNotice(result.warning ? `${effect} ${result.warning}` : effect)
+        setNotice(effect)
+        setWarning(result.warning ?? '')
         notifyMcpSettingsChanged()
         if (input.action === 'add') setAdding(false)
         await refresh()
@@ -99,6 +103,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     setError('')
     setErrorDetail('')
     setNotice('')
+    setWarning('')
     try {
       await reloadCurrentMcp(sessionId, snapshot.context)
       if (view === viewKey()) { setNotice(text.applied); await refresh() }
@@ -119,6 +124,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     const view = viewKey()
     setBusy(true)
     setNotice('')
+    setWarning('')
     setError('')
     setErrorDetail('')
     try {
@@ -147,7 +153,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
             if (result.state !== 'error') setNotice(t(`cap.operation.${result.state}` as 'cap.operation.ready'))
             await refresh()
             if (result.state === 'error' && view === viewKey()) {
-              setError(t('cap.operation.error'))
+              setError(`${service.title}${lang === 'en-US' ? ': ' : '：'}${t('cap.operation.error')}`)
               setErrorDetail(result.error ?? '')
             }
             return
@@ -165,16 +171,17 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       <Button isPending={loading} isDisabled={busy} onPress={() => void refresh()} data-testid="caps-mcp-reload">{text.refresh}</Button>
       <Button isDisabled={busy || loading || runtimeBusy || !runtime?.nativeMcpAvailable || !useStore.getState().session?.sessionId || !!useStore.getState().peekedPath || !!useStore.getState().peekedSessionId} onPress={() => void apply()} data-testid="mcp-apply">{text.apply}</Button>
     </>}>
-      {snapshot?.project ? <SegmentedControl className="mcp-scope-seg" label={text.scopeLabel} value={scope} onChange={(value) => { setScope(value); setAdding(false); setNotice('') }} isDisabled={busy || loading} options={[
+      {snapshot?.project ? <SegmentedControl className="mcp-scope-seg" label={text.scopeLabel} value={scope} onChange={(value) => { setScope(value); setAdding(false); setNotice(''); setWarning('') }} isDisabled={busy || loading} options={[
         { value: 'global', label: text.global, testId: 'mcp-scope-global' },
-        { value: 'project' as const, label: `${text.project}：${snapshot.project.name || snapshot.project.cwd.split(/[\\/]/).filter(Boolean).pop() || ''}`, testId: 'mcp-scope-project' }
+        { value: 'project' as const, label: `${text.project}${lang === 'en-US' ? ': ' : '：'}${snapshot.project.name || snapshot.project.cwd.split(/[\\/]/).filter(Boolean).pop() || ''}`, testId: 'mcp-scope-project' }
       ]} /> : snapshot ? <Meta>{text.scopeGlobalOnly}</Meta> : null}
       <Meta>{scope === 'global' ? text.globalHint : text.projectHint}</Meta>
       {!snapshot?.project && !loading ? <Meta>{text.noProject}</Meta> : null}
       {scope === 'project' && snapshot && !snapshot.projectTrusted ? <Warn>{text.untrusted}</Warn> : null}
       {error ? <Warn>{error}</Warn> : null}
-      {errorDetail ? <pre className="caps-raw" data-testid="mcp-check-error">{errorDetail}</pre> : null}
+      {errorDetail ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={error} data-testid="mcp-check-error">{errorDetail}</pre> : null}
       {notice ? <Meta>{notice}</Meta> : null}
+      {warning ? <McpWarning text={warning} /> : null}
       {snapshot?.managedToolsChanged?.length ? <div data-testid="mcp-tools-changed"><Meta>{t('cap.mcpToolsChanged', { names: snapshot.managedToolsChanged.join(lang === 'en-US' ? ', ' : '、') })}</Meta></div> : null}
       {snapshot?.errors.map((problem) => <Warn key={problem}>{problem}</Warn>)}
       {adding && snapshot ? <McpServiceForm snapshot={snapshot} initialScope={scope} onSave={change} onCancel={() => setAdding(false)} busy={busy} /> : null}
@@ -188,6 +195,15 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       <div className="caps-stack">{advanced}</div>
     </SettingsAdvanced>
   </Panel>
+}
+
+function McpWarning({ text }: { text: string }) {
+  const [head, ...rest] = text.split('\n')
+  const detail = rest.join('\n').trim()
+  return <>
+    <Warn>{head}</Warn>
+    {detail ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={head} data-testid="mcp-change-warning">{detail}</pre> : null}
+  </>
 }
 
 function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCheck }: {

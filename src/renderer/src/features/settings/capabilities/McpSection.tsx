@@ -142,13 +142,13 @@ function McpServerRow({
       }
     >
       {verifyError ? <Warn>{verifyError}</Warn> : null}
-      {operation?.state === 'error' && operation.error ? <pre className="caps-raw" data-testid="caps-mcp-error">{operation.error}</pre> : null}
       {operation && operation.state !== 'connecting' ? (
         <p className="caps-result" role="status" data-testid="caps-mcp-operation">
           <StatusBadge tone={verificationTone(operation.state)}>{t(`cap.operation.${operation.state}` as 'cap.operation.ready')}</StatusBadge>
           {operation.toolCount !== undefined ? <span> · {t('cap.toolCount', { count: operation.toolCount })}</span> : null}
         </p>
       ) : null}
+      {operation?.state === 'error' && operation.error ? <pre className="caps-raw" tabIndex={0} role="region" aria-label={t('cap.operation.error')} data-testid="caps-mcp-error">{operation.error}</pre> : null}
     </Entry>
   )
 }

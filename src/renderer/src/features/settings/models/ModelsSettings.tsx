@@ -600,7 +600,8 @@ export function ModelsSettings(): ReactElement {
         {backupCount > 0 ? (
           <div className="ms-backups" data-testid="ms-plaintext-backups">
             <span className="ms-backups-text">
-              {text('backupsFound').replace('{n}', String(backupCount))} {backupProgressText()} {t('auth.backupsRule')}
+              <span>{text('backupsFound').replace('{n}', String(backupCount))} {backupProgressText()}</span>
+              <span className="ms-backups-rule">{t('auth.backupsRule')}</span>
             </span>
             <Button variant="secondary" size="sm" isDisabled={busy} data-testid="ms-backups-delete" onPress={() => setConfirmBackups(true)}>
               {text('backupsDelete')}

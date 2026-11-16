@@ -292,6 +292,11 @@
     overflow-wrap: anywhere;
   }
 
+  .caps-raw:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
   .caps-field {
     display: flex;
     flex-wrap: wrap;
