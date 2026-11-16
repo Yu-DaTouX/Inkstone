@@ -121,6 +121,10 @@ export class RelayBridge {
     return { hostKey: toB64u(hostKey.raw), code: this.store.startPairing(kind).code, hostFingerprint: await this.identity() }
   }
 
+  inviteActive(code: string): boolean {
+    return this.store.pairingCodeActive(code)
+  }
+
   async identity(): Promise<string> {
     return formatHostFingerprint(await sha256((await this.store.hostKey()).raw))
   }

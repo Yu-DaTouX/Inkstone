@@ -6,13 +6,13 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const source = fileURLToPath(new URL('../src/renderer/src/features/session/typing-guard.ts', import.meta.url)).replace(/\\/g, '/')
 
 const bundled = await build({
-  stdin: { contents: `export { shouldDeferCardFocus, isCardFocusKey, cardFocusKeysText, TYPING_IDLE_MS } from ${JSON.stringify(source)}\n`, resolveDir: root, loader: 'ts' },
+  stdin: { contents: `export { shouldDeferCardFocus, isCardFocusKey, isTypingKey, cardFocusKeysText, TYPING_IDLE_MS } from ${JSON.stringify(source)}\n`, resolveDir: root, loader: 'ts' },
   bundle: true,
   write: false,
   platform: 'node',
   format: 'esm'
 })
-const { shouldDeferCardFocus, isCardFocusKey, cardFocusKeysText, TYPING_IDLE_MS } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
+const { shouldDeferCardFocus, isCardFocusKey, isTypingKey, cardFocusKeysText, TYPING_IDLE_MS } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
 
 const now = 100_000
 const snap = (extra = {}) => ({ now, lastTypedAt: Number.NEGATIVE_INFINITY, editableFocused: true, editableHasText: false, focusInsideCard: false, ...extra })
@@ -34,6 +34,10 @@ assert.equal(isCardFocusKey(key({ ctrlKey: false })), false, 'Shift+Enter 换行
 assert.equal(isCardFocusKey(key({ isComposing: true })), false, '输入法组合中不触发')
 assert.equal(isCardFocusKey(key({ keyCode: 229 })), false)
 assert.equal(isCardFocusKey(key({ repeat: true })), false)
+for (const typed of ['a', '中', ' ', 'Backspace', 'Delete', 'Enter', 'Process']) assert.equal(isTypingKey({ key: typed }), true, `${typed} 算打字`)
+for (const nav of ['Tab', 'Shift', 'Escape', 'ArrowDown', 'Home', 'PageUp', 'Control', 'F5']) assert.equal(isTypingKey({ key: nav }), false, `${nav} 是导航或修饰键，不算打字`)
+assert.equal(isTypingKey({ key: 'Tab', shiftKey: true }), false, 'Shift+Tab 反向移动焦点不算打字')
+assert.equal(isTypingKey({ key: 'c', ctrlKey: true }), false, '快捷键不算打字，真正改内容由 input 事件记录')
 assert.equal(cardFocusKeysText(false), 'Ctrl+Shift+Enter')
 assert.equal(cardFocusKeysText(true), 'Cmd+Shift+Enter')
 

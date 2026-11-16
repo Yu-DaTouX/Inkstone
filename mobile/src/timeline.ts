@@ -34,6 +34,7 @@ export function hostNoticeLabel(notice: HostTextNotice): string {
   if (notice.kind === 'terminal') return TERMINAL_LABEL[notice.state](notice.command)
   if (notice.kind === 'wrap-up') return pick('已要求收尾', 'Asked to wrap up')
   if (notice.kind === 'generic') return notice.title
+  if (notice.reason === 'key-failover') return pick('API Key 不可用，已换 Key 继续', 'API key unusable; switched keys and continuing')
   return notice.reason === 'loop' ? pick('输出重复已中止，自动继续', 'Stopped a repeating reply; continuing') : pick('模型请求中断，自动继续', 'Model request failed; continuing')
 }
 

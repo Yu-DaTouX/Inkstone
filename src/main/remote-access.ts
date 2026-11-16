@@ -152,6 +152,7 @@ export class RemoteAccess {
       tunnel: {
         upgrade: (req, socket, head) => this.direct.upgrade(req, socket, head),
         invite: () => this.relay.invite(),
+        inviteActive: (code) => this.relay.inviteActive(code),
         stop: () => this.direct.stop()
       },
       relayClientPaired: (clientId) => this.relay.store.markPaired(clientId).then(() => undefined),

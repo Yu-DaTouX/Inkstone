@@ -138,6 +138,11 @@ export class RelayBridgeStore {
     return { code, expiresAt }
   }
 
+  pairingCodeActive(code: string): boolean {
+    const entry = this.codes.get(hash(code))
+    return !!entry && entry.expiresAt > this.now()
+  }
+
   private async expireLocked(state: StoredState): Promise<string[]> {
     const now = this.now()
     const expired = state.clients.filter((c) => c.revokedAt === null && c.pairedAt === null && c.pendingUntil !== null && c.pendingUntil <= now)

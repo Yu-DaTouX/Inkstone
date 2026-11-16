@@ -101,6 +101,40 @@ try {
     assert.ok((await new M.RemoteClient(manual).info()).capabilities.includes('sessions'))
   })
 
+  await check('手输配对码输错一次后，同一个配对码还能重试成功', async () => {
+    const { code } = access.startPairing()
+    const wrong = code === '000000' ? '111111' : '000000'
+    await assert.rejects(() => M.pair(base, wrong, '输错的手机', async () => true), (error) => error?.code === 'invalid_code')
+    const retried = await M.pair(base, code, '重试的手机', async () => true)
+    assert.match(retried.baseUrl, /^relay:\/\//)
+    assert.ok((await new M.RemoteClient(retried).info()).capabilities.includes('sessions'))
+  })
+
+  await check('同一次配对的中继码被用掉后最多补发到 5 个，之后要重新生成配对码', async () => {
+    access.startPairing()
+    const original = access.relay.inviteActive
+    try {
+      const first = await plain('/remote/v1/tunnel/invite')
+      assert.equal(first.status, 200)
+      access.relay.inviteActive = () => false
+      const codes = new Set([first.json.code])
+      for (let i = 0; i < 4; i += 1) {
+        const again = await plain('/remote/v1/tunnel/invite')
+        assert.equal(again.status, 200)
+        codes.add(again.json.code)
+      }
+      assert.equal(codes.size, 5)
+      const capped = await plain('/remote/v1/tunnel/invite')
+      assert.equal(capped.status, 429)
+      access.startPairing()
+      access.relay.inviteActive = original
+      assert.equal((await plain('/remote/v1/tunnel/invite')).status, 200)
+    } finally {
+      access.relay.inviteActive = original
+      access.cancelPairing()
+    }
+  })
+
   await check('没有配对进行中时，拿不到加密通道邀请', async () => {
     const res = await plain('/remote/v1/tunnel/invite')
     assert.equal(res.status, 403)

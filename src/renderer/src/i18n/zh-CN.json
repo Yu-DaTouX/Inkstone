@@ -153,6 +153,7 @@
   "chat.hostMoved": "会话已移到 {path}，自动继续",
   "chat.hostLoop": "输出重复已中止，自动继续",
   "chat.hostModelError": "模型请求中断，自动继续",
+  "chat.hostKeyFailover": "API Key 不可用，已换 Key 继续",
   "chat.hostQuota": "额度已恢复，继续任务",
   "chat.hostAccountSwitch": "额度用完，已换号继续",
   "chat.hostWrapUp": "已要求收尾",

@@ -35,6 +35,13 @@ export function cardFocusKeysText(mac: boolean): string {
   return mac ? 'Cmd+Shift+Enter' : 'Ctrl+Shift+Enter'
 }
 
+const NON_TYPING_KEYS = new Set(['Tab', 'Escape', 'Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'ContextMenu', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', 'Insert'])
+
+export function isTypingKey(event: { key: string; ctrlKey?: boolean; metaKey?: boolean }): boolean {
+  if (event.ctrlKey || event.metaKey) return false
+  return !NON_TYPING_KEYS.has(event.key) && !/^F\d{1,2}$/.test(event.key)
+}
+
 let lastTypedAt = Number.NEGATIVE_INFINITY
 let tracking = false
 
@@ -52,6 +59,7 @@ function editableText(element: HTMLElement): string {
 }
 
 function noteTyping(event: Event): void {
+  if (event.type === 'keydown' && !isTypingKey(event as KeyboardEvent)) return
   if (isEditable(event.target as Element | null)) lastTypedAt = Date.now()
 }
 

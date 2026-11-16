@@ -2,7 +2,7 @@ export const QUOTA_RESUME_PROMPT = '额度已恢复，请从上一轮中断的�
 
 export type HostTextNotice =
   | { kind: 'session-moved'; cwd: string }
-  | { kind: 'auto-continue'; reason: 'loop' | 'model-error' }
+  | { kind: 'auto-continue'; reason: 'loop' | 'model-error' | 'key-failover' }
   | { kind: 'quota-resume' }
   | { kind: 'account-switch' }
   | { kind: 'terminal'; command: string; state: TerminalNoticeState }
@@ -76,13 +76,13 @@ export function parseHostTextNotice(text: string | undefined): HostTextNotice | 
     return { kind: 'terminal', command, state }
   }
   if (body.startsWith('[循环恢复 · 自动继续')) return { kind: 'auto-continue', reason: 'loop' }
-  if (body.startsWith('[模型错误恢复 · 自动继续')) return { kind: 'auto-continue', reason: 'model-error' }
+  if (body.startsWith('[模型错误恢复 · 自动继续')) return { kind: 'auto-continue', reason: body.includes('因 API Key 不可用中断') ? 'key-failover' : 'model-error' }
   if (body === QUOTA_RESUME_PROMPT) return { kind: 'quota-resume' }
   if (body.startsWith('[额度换号 · 自动继续')) return { kind: 'account-switch' }
   if (body.startsWith('[Auto-continue 1/1]')) {
     if (body.includes('has been restored')) return { kind: 'quota-resume' }
     if (body.includes('switched to another account')) return { kind: 'account-switch' }
-    return { kind: 'auto-continue', reason: body.includes('started repeating') ? 'loop' : 'model-error' }
+    return { kind: 'auto-continue', reason: body.includes('started repeating') ? 'loop' : body.includes('The API key stopped working') ? 'key-failover' : 'model-error' }
   }
   if (WRAP_UP.test(body)) return { kind: 'wrap-up' }
   const title = GENERIC_HEAD.exec(body)?.[1].trim()

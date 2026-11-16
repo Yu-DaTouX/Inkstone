@@ -88,6 +88,7 @@ export interface RemoteServerOptions {
 export interface RemoteTunnelHooks {
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void
   invite(): Promise<{ hostKey: string; code: string; hostFingerprint?: string }>
+  inviteActive?(code: string): boolean
   stop?(): void
 }
 
@@ -107,6 +108,7 @@ const MAX_MESSAGE_CHARS = 20_000
 const MAX_NAME_CHARS = 200
 const SESSION_ID_MAX = 200
 const PAIR_RATE_WINDOW_MS = 60_000
+const MAX_INVITE_ISSUES = 5
 const PAIR_RATE_LIMIT = 10
 const INVITE_RATE_LIMIT = 20
 const RELAY_HANDOFF_HEADER = 'x-yan-relay-client'
@@ -260,7 +262,7 @@ export class RemoteServer {
   private pairAttempts: number[] = []
   private readonly pairAttemptsBySource = new Map<string, number[]>()
   private readonly inviteAttempts = new Map<string, number[]>()
-  private inviteCache: { key: string; value: { hostKey: string; code: string; hostFingerprint?: string } } | null = null
+  private inviteCache: { key: string; issued: number; value: { hostKey: string; code: string; hostFingerprint?: string } } | null = null
 
   constructor(private readonly options: RemoteServerOptions) {
     const explicit = options.token?.trim()
@@ -592,7 +594,10 @@ export class RemoteServer {
       if (!this.allowInvite(source)) return writeError(res, 429, pick('配对通道请求过于频繁，请稍后再试', 'Too many pairing channel requests. Try again later'), 'rate_limited')
       const key = `${pairing.code}:${pairing.expiresAt}`
       if (!this.inviteCache || this.inviteCache.key !== key) {
-        this.inviteCache = { key, value: await this.options.tunnel.invite() }
+        this.inviteCache = { key, issued: 1, value: await this.options.tunnel.invite() }
+      } else if (this.options.tunnel.inviteActive?.(this.inviteCache.value.code) === false) {
+        if (this.inviteCache.issued >= MAX_INVITE_ISSUES) return writeError(res, 429, pick('这次配对的通道已重开多次，请在电脑上重新生成配对码', 'This pairing has reopened its channel too many times. Generate a new pairing code on the computer'), 'rate_limited')
+        this.inviteCache = { key, issued: this.inviteCache.issued + 1, value: await this.options.tunnel.invite() }
       }
       writeJson(res, 200, { ok: true, ...this.inviteCache.value, path: REMOTE_TUNNEL_PATH, computer: { name: hostname() } })
       return

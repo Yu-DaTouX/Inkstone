@@ -153,6 +153,7 @@
   "chat.hostMoved": "Session moved to {path}; continuing",
   "chat.hostLoop": "Stopped a repeating reply; continuing",
   "chat.hostModelError": "Model request failed; continuing",
+  "chat.hostKeyFailover": "API key unusable; switched keys and continuing",
   "chat.hostQuota": "Quota restored; continuing",
   "chat.hostAccountSwitch": "Quota exhausted; switched accounts and continuing",
   "chat.hostWrapUp": "Asked to wrap up",

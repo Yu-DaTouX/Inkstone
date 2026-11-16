@@ -107,14 +107,16 @@ if (process.env.MOBILE_BENCH) console.log(JSON.stringify(results))
     { id: 'h2', role: 'user', text: '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。' },
     { id: 'h3', role: 'user', text: '额度已恢复，请从上一轮中断的地方继续完成任务。' },
     { id: 'h4', role: 'user', text: '[额度换号 · 自动继续 1/1]\n上一轮因订阅账号额度用完中断。' },
+    { id: 'h5', role: 'user', text: '[模型错误恢复 · 自动继续 1/1]\n上一轮因 API Key 不可用中断，已换成同服务商的另一个 Key。' },
     { id: 's1', role: 'user', text: '<subagent-notification id="x" status="done">\n子代理完成\n</subagent-notification>' },
     { id: 'n1', role: 'note', text: '切换前讨论了两种方案', note: { kind: 'branchSummary' } }
   ])
   const notices = timeline.filter((entry) => entry.kind === 'notice')
-  assert.deepEqual(notices.map((entry) => entry.key), ['h1', 'h2', 'h3', 'h4', 'n1'], '宿主续接与分支摘要都成为短提示，子代理通知仍隐藏')
+  assert.deepEqual(notices.map((entry) => entry.key), ['h1', 'h2', 'h3', 'h4', 'h5', 'n1'], '宿主续接与分支摘要都成为短提示，子代理通知仍隐藏')
+  assert.ok(notices[4].label.includes('API Key 不可用'), '换 Key 续跑显示为换 Key 短提示，不写成模型请求中断')
   assert.ok(notices[0].label.includes('C:\\work\\new') && notices[0].icon === 'folder', '会话移动提示带新目录')
   assert.ok(notices[3].label.includes('换号'), '换号续跑显示为换号短提示')
-  assert.equal(notices[4].body, '切换前讨论了两种方案', '分支摘要可展开看正文')
+  assert.equal(notices[5].body, '切换前讨论了两种方案', '分支摘要可展开看正文')
   assert.ok(!timeline.some((entry) => entry.kind === 'message' && /砚宿主通知|自动继续|额度已恢复|额度换号/.test(entry.message.text ?? '')), '宿主消息不再当用户气泡')
   assert.ok(M.SHOWN_ROLES.has('note'), 'note 角色会被显示')
 }
@@ -126,17 +128,18 @@ if (process.env.MOBILE_BENCH) console.log(JSON.stringify(results))
     { id: 'c2', role: 'user', text: '[Auto-continue 1/1] The previous turn was stopped because its output started repeating. Do not repeat the looping content.' },
     { id: 'c3', role: 'user', text: '[Auto-continue 1/1] The subscription account ran out of quota and it has been restored. Check the tool results so far.' },
     { id: 'c4', role: 'user', text: '[Auto-continue 1/1] The subscription account ran out of quota and was switched to another account. Check the tool results so far.' },
+    { id: 'c5', role: 'user', text: '[Auto-continue 1/1] The API key stopped working and was replaced. Check the tool results so far.' },
     { id: 'w1', role: 'user', text: '【宿主提示】已到时间上限。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。' },
     { id: 'g1', role: 'user', text: '[砚宿主通知：以后新增的通知]\n正文' },
     { id: 'u1', role: 'user', text: '【宿主提示】是什么意思？' },
     { id: 'u2', role: 'user', text: '请解释 [砚宿主通知：会话已移动] 这一行' }
   ])
   const notices = timeline.filter((entry) => entry.kind === 'notice')
-  assert.deepEqual(notices.map((entry) => entry.key), ['t1', 'c1', 'c2', 'c3', 'c4', 'w1', 'g1'], '后台终端、子代理续跑、收尾提示与未知宿主通知都收成短提示')
+  assert.deepEqual(notices.map((entry) => entry.key), ['t1', 'c1', 'c2', 'c3', 'c4', 'c5', 'w1', 'g1'], '后台终端、子代理续跑、收尾提示与未知宿主通知都收成短提示')
   assert.ok(notices[0].label.includes('npm run dev') && notices[0].label.includes('停止') && notices[0].icon === 'terminal', '后台终端提示带命令与状态')
-  assert.ok(notices[1].label.includes('模型请求') && notices[2].label.includes('重复') && notices[3].label.includes('额度已恢复') && notices[4].label.includes('换号'), '子代理英文续跑句按原因归类')
-  assert.equal(notices[5].label, '已要求收尾')
-  assert.equal(notices[6].label, '以后新增的通知', '未知宿主通知显示方括号里的标题')
+  assert.ok(notices[1].label.includes('模型请求') && notices[2].label.includes('重复') && notices[3].label.includes('额度已恢复') && notices[4].label.includes('换号') && notices[5].label.includes('API Key 不可用'), '子代理英文续跑句按原因归类')
+  assert.equal(notices[6].label, '已要求收尾')
+  assert.equal(notices[7].label, '以后新增的通知', '未知宿主通知显示方括号里的标题')
   assert.deepEqual(timeline.filter((entry) => entry.kind === 'message').map((entry) => entry.key), ['u1', 'u2'], '只是提到这些字样的用户消息照常显示')
 }
 {

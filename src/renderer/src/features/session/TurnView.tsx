@@ -186,7 +186,8 @@ function HostTurnView({ turn }: { turn: HostTurn }): JSX.Element {
     : notice.kind === 'terminal' ? t(`chat.hostTerminal.${notice.state}`, { command: notice.command })
     : notice.kind === 'wrap-up' ? t('chat.hostWrapUp')
     : notice.kind === 'generic' ? notice.title
-    : notice.reason === 'loop' ? t('chat.hostLoop') : t('chat.hostModelError')
+    : notice.reason === 'loop' ? t('chat.hostLoop')
+    : notice.reason === 'key-failover' ? t('chat.hostKeyFailover') : t('chat.hostModelError')
   return (
     <article className="v3-msg host" data-msg-id={msg.id} data-turn-id={turn.id}>
       <StreamNotice
