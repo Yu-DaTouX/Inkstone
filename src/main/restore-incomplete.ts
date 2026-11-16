@@ -44,11 +44,24 @@ function writeRegistry(file: string, entries: RegistryEntry[]): Promise<void> {
   return atomicWriteFile(file, JSON.stringify({ version: 1, entries }, null, 2))
 }
 
+const restoring = new Set<string>()
+
+function stopRestoring(dir: string): void {
+  for (const item of [...restoring]) if (same(item, dir)) restoring.delete(item)
+}
+
+function isRestoring(dir: string): boolean {
+  return [...restoring].some((item) => same(item, dir))
+}
+
 export async function writeIncompleteMarker(dir: string, info: { source: string; startedAt: string; error?: string }): Promise<void> {
+  if (info.error) stopRestoring(dir)
+  else restoring.add(resolve(dir))
   await writeFile(join(dir, RESTORE_INCOMPLETE_MARKER), JSON.stringify({ format: 'inkstone-restore-incomplete', version: 1, ...info }, null, 2), { mode: 0o600 })
 }
 
 export async function clearIncompleteMarker(dir: string): Promise<void> {
+  stopRestoring(dir)
   await rm(join(dir, RESTORE_INCOMPLETE_MARKER), { force: true })
 }
 
@@ -83,10 +96,12 @@ export function listIncompleteRestores(file: string): Promise<IncompleteRestore[
     const entries = await readRegistry(file)
     const live: IncompleteRestore[] = []
     for (const item of entries) {
+      if (isRestoring(item.path)) continue
       const marker = await readMarker(item.path)
       if (marker) live.push({ path: item.path, at: item.at, ...(marker.error ? { error: marker.error } : {}) })
     }
-    if (live.length !== entries.length) await writeRegistry(file, live.map((item) => ({ path: item.path, at: item.at })))
+    const kept = entries.filter((item) => isRestoring(item.path) || live.some((entry) => entry.path === item.path))
+    if (kept.length !== entries.length) await writeRegistry(file, kept)
     return live
   })
 }
@@ -95,7 +110,7 @@ export function trashIncompleteRestore(file: string, dir: string, trash: (path: 
   return serial(async () => {
     const entries = await readRegistry(file)
     const entry = entries.find((item) => same(item.path, dir))
-    if (!entry || !(await readMarker(entry.path))) return false
+    if (!entry || isRestoring(entry.path) || !(await readMarker(entry.path))) return false
     await trash(entry.path)
     await writeRegistry(file, entries.filter((item) => item !== entry))
     return true

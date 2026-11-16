@@ -52,9 +52,21 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(existsSync(join(flaky.path, 'restored.json')) && !existsSync(join(flaky.path, 'restore-incomplete.json')), '登记或收尾钩子失败不会让恢复失败，也不会把已完成的恢复标成未完成')
     ok(warnings.length === 2 && /started/.test(warnings[0]) && /finished/.test(warnings[1]), '钩子失败只记录警告', JSON.stringify(warnings))
 
+    const running = join(out, 'Inkstone-restored-running')
+    mkdirSync(running)
+    await m.writeIncompleteMarker(running, { source: bad.path, startedAt: new Date().toISOString() })
+    await m.registerIncompleteRestore(registry, running)
+    const runningTrash = []
+    ok(!(await m.listIncompleteRestores(registry)).some((item) => item.path === running), '恢复还在进行的目录不列为未完成')
+    ok(!(await m.trashIncompleteRestore(registry, running, async (path) => { runningTrash.push(path) })) && runningTrash.length === 0 && existsSync(running), '恢复还在进行的目录不能移到回收站')
+    await m.writeIncompleteMarker(running, { source: bad.path, startedAt: new Date().toISOString(), error: '模拟失败' })
+    ok((await m.listIncompleteRestores(registry)).some((item) => item.path === running && item.error === '模拟失败'), '恢复失败后立即列为未完成')
+    await m.clearIncompleteMarker(running)
+    await m.listIncompleteRestores(registry)
+
     const crashed = join(out, 'Inkstone-restored-crash')
     mkdirSync(crashed)
-    await m.writeIncompleteMarker(crashed, { source: bad.path, startedAt: new Date().toISOString() })
+    writeFileSync(join(crashed, 'restore-incomplete.json'), JSON.stringify({ format: 'inkstone-restore-incomplete', version: 1, source: bad.path, startedAt: new Date().toISOString() }))
     await m.registerIncompleteRestore(registry, crashed)
     ok((await m.listIncompleteRestores(registry)).some((item) => item.path === crashed && item.error === undefined), '进程中途退出留下的目录（只有开始标记）同样会被列出')
 
