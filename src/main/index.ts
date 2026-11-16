@@ -3114,5 +3114,6 @@ app.on('before-quit', (e) => {
 })
 
 app.on('child-process-gone', (_event, details) => {
-  reportMainError(`child-process-gone:${details.type}`, new Error(`${details.reason} code=${details.exitCode}`))
+  const label = [details.serviceName, details.name].filter((part, index, all) => part && all.indexOf(part) === index).join(' / ')
+  reportMainError(`child-process-gone:${details.type}`, new Error(`${label ? `${label} ` : ''}${details.reason} code=${details.exitCode}`))
 })

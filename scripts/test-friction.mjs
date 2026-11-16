@@ -106,6 +106,25 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(f.isBenignFrictionError('ResizeObserver loop limit exceeded'), '旧版 ResizeObserver 警告不算报错')
   ok(!f.isBenignFrictionError('TypeError: x is undefined'), '真正的报错照常记录')
 
+  ok(f.describeLongFrame({ duration: 958.6 }) === '959ms', '长帧没有脚本信息时只记时长')
+  ok(f.describeLongFrame({ duration: 400, scripts: [] }) === '400ms', '脚本列表为空时只记时长')
+  ok(f.describeLongFrame({ duration: 400, scripts: 'x', blockingDuration: 'y' }) === '400ms', '脚本字段类型异常时退回只记时长')
+  const attributed = f.describeLongFrame({
+    duration: 640,
+    blockingDuration: 512.4,
+    scripts: [
+      { sourceURL: 'file:///E:/app/out/renderer/assets/small.js?x=1#h', sourceFunctionName: 'tiny', invokerType: 'event-listener', duration: 20 },
+      { sourceURL: 'file:///E:/app/out/renderer/assets/index-abc.js', sourceFunctionName: 'renderMessages', invokerType: 'user-callback', invoker: 'DIV#secret-token', duration: 420.2 },
+      { sourceURL: '', sourceFunctionName: '', invokerType: 'Bad Type!', duration: 90 },
+      { sourceURL: 'a.js', sourceFunctionName: 'dropped', duration: 5 },
+      { duration: 'NaN' }
+    ]
+  })
+  ok(attributed.startsWith('640ms blocking 512ms scripts: renderMessages@index-abc.js [user-callback] 420ms; (anonymous) 90ms; tiny@small.js [event-listener] 20ms'), '长帧按耗时取前三个脚本，记来源文件名、函数名、耗时', attributed)
+  ok(!attributed.includes('secret-token') && !attributed.includes('file:///') && !attributed.includes('dropped'), '不记 invoker 元素、完整路径与第四个脚本', attributed)
+  const long = f.describeLongFrame({ duration: 500, scripts: Array.from({ length: 3 }, () => ({ sourceURL: 'x'.repeat(500) + '.js', sourceFunctionName: 'f'.repeat(500), duration: 100 })) })
+  ok(long.length <= 400, '长帧说明有长度上限', String(long.length))
+
   const root = await mkdtemp(join(tmpdir(), 'inkstone-friction-'))
   try {
     process.env.YAN_DATA_DIR = join(root, 'yan')

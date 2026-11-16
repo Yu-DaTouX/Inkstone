@@ -201,6 +201,52 @@ export function isBenignFrictionError(message: string): boolean {
   return /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/.test(message.trim())
 }
 
+export interface LongFrameScriptLike {
+  sourceURL?: unknown
+  sourceFunctionName?: unknown
+  invokerType?: unknown
+  duration?: unknown
+}
+
+export interface LongFrameLike {
+  duration: number
+  blockingDuration?: unknown
+  scripts?: unknown
+}
+
+const LONG_FRAME_SCRIPTS = 3
+const LONG_FRAME_DETAIL_MAX = 400
+const INVOKER_TYPE = /^[a-z-]{1,40}$/
+
+function scriptSource(value: unknown): string {
+  if (typeof value !== 'string' || !value) return ''
+  const path = value.split(/[?#]/)[0]
+  return path.slice(path.lastIndexOf('/') + 1).slice(-60)
+}
+
+export function describeLongFrame(entry: LongFrameLike): string {
+  const parts = [`${Math.round(entry.duration)}ms`]
+  const blocking = finiteNumber(entry.blockingDuration)
+  if (blocking !== null && blocking > 0) parts.push(`blocking ${Math.round(blocking)}ms`)
+  const scripts = Array.isArray(entry.scripts) ? (entry.scripts as LongFrameScriptLike[]) : []
+  const ranked = scripts
+    .flatMap((script) => {
+      const duration = finiteNumber(script?.duration)
+      return duration === null ? [] : [{ script, duration }]
+    })
+    .sort((a, b) => b.duration - a.duration)
+    .slice(0, LONG_FRAME_SCRIPTS)
+  const lines = ranked.map(({ script, duration }) => {
+    const source = scriptSource(script.sourceURL)
+    const name = typeof script.sourceFunctionName === 'string' ? script.sourceFunctionName.slice(0, 60) : ''
+    const invoker = typeof script.invokerType === 'string' && INVOKER_TYPE.test(script.invokerType) ? script.invokerType : ''
+    const where = [name || '(anonymous)', source].filter(Boolean).join('@')
+    return `${where}${invoker ? ` [${invoker}]` : ''} ${Math.round(duration)}ms`
+  })
+  if (lines.length) parts.push(`scripts: ${lines.join('; ')}`)
+  return parts.join(' ').slice(0, LONG_FRAME_DETAIL_MAX)
+}
+
 const FONT_URL = /^file:\/\/\/[^"'()\s\\]+\.(woff2?|ttf|otf)$/i
 
 function fontUrls(value: unknown): string[] | undefined {

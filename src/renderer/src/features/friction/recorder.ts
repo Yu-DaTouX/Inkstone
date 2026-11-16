@@ -6,6 +6,7 @@ import {
   createRageClickDetector,
   createScrollJumpDetector,
   createTriggerThrottle,
+  describeLongFrame,
   isBenignFrictionError,
   isFrictionHotkey,
   type FrictionMark,
@@ -178,7 +179,13 @@ function start(): Recording {
     trigger('layout-shift', `${shift.value.toFixed(3)} ${describe(node ?? null)}`)
   }, cleanups)
   observe('long-animation-frame', (entry) => {
-    if (entry.duration >= FRICTION_LIMITS.longFrameMs) trigger('long-frame', `${Math.round(entry.duration)}ms`)
+    if (entry.duration < FRICTION_LIMITS.longFrameMs) return
+    let detail = `${Math.round(entry.duration)}ms`
+    try {
+      detail = describeLongFrame(entry as PerformanceEntry & { blockingDuration?: number; scripts?: unknown })
+    } catch {
+    }
+    trigger('long-frame', detail)
   }, cleanups)
 
   return {

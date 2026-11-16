@@ -111,11 +111,65 @@ export function resultFingerprint(event) {
   return `${serialized.length}:${createHash('sha256').update(serialized).digest('hex')}`
 }
 
+const POLL_SLEEP_SECONDS = 5
+const SUBAGENT_QUERY = /\byan(?:\.cmd|\.mjs)?\s+subagent\s+(?:list|get|wait|status)\b|[\\/]yan[\\/]subagents[\\/]/i
+const SLEEP_PATTERNS = [
+  { re: /\b(?:start-sleep|sleep)\s+(?:-(seconds|s|milliseconds|ms|m)\s+)?(?:(\d+(?:\.\d+)?)([smhd]?)(?![\w.])|\$[\w{(]\S*)/gi, seconds: (m) => {
+    if (m[2] === undefined) return Infinity
+    const value = Number(m[2])
+    const flag = (m[1] ?? '').toLowerCase()
+    if (flag === 'milliseconds' || flag === 'ms') return value / 1000
+    const unit = (m[3] ?? '').toLowerCase()
+    return value * (unit === 'm' ? 60 : unit === 'h' ? 3600 : unit === 'd' ? 86400 : 1)
+  } },
+  { re: /\btimeout(?:\.exe)?\s+\/t\s+(\d+)/gi, seconds: (m) => Number(m[1]) },
+  { re: /\bping\s+-n\s+(\d+)/gi, seconds: (m) => Number(m[1]) - 1 }
+]
+
+function longestSleepSeconds(text) {
+  let longest = 0
+  for (const { re, seconds } of SLEEP_PATTERNS) {
+    re.lastIndex = 0
+    for (const match of text.matchAll(re)) longest = Math.max(longest, seconds(match))
+  }
+  return longest
+}
+
+function hasPollSleep(text) {
+  return longestSleepSeconds(text) >= POLL_SLEEP_SECONDS
+}
+
+function loopSpans(command) {
+  const spans = []
+  const stack = []
+  for (const match of command.matchAll(/(?<=(?:^|[;&|(\n]|\bdo|\bthen)\s*)(for|while|until|select|done)\b/g)) {
+    if (match[1] === 'done') {
+      const from = stack.pop()
+      if (from !== undefined && stack.length === 0) spans.push(command.slice(from, match.index + 4))
+    } else stack.push(match.index)
+  }
+  for (const match of command.matchAll(/\b(?:while|for|foreach|do)\b/gi)) {
+    const open = command.indexOf('{', match.index)
+    if (open < 0) continue
+    let depth = 0
+    for (let i = open; i < command.length; i += 1) {
+      if (command[i] === '{') depth += 1
+      else if (command[i] === '}' && --depth === 0) {
+        spans.push(command.slice(match.index, i + 1))
+        break
+      }
+    }
+  }
+  return spans
+}
+
 export function isSubagentPollLoop(toolName, input) {
   if (toolName !== 'bash') return false
   const command = String(input?.command ?? '')
-  if (!/\byan\s+subagent\s+(?:list|get)\b/.test(command)) return false
-  return /\bsleep\s+\d|\bstart-sleep\b|\btimeout\s+\/t\b|\bping\s+-n\s+\d/i.test(command)
+  if (!SUBAGENT_QUERY.test(command) || !hasPollSleep(command)) return false
+  if (loopSpans(command).some((span) => SUBAGENT_QUERY.test(span) && hasPollSleep(span))) return true
+  const segments = command.split(/[;&|\r\n]+/)
+  return segments.some((segment, index) => hasPollSleep(segment) && index + 1 < segments.length && SUBAGENT_QUERY.test(segments[index + 1]))
 }
 
 export default function repeatGuard(pi) {

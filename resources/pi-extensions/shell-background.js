@@ -75,6 +75,8 @@ export function autoBackgroundOperations(base, { seconds, notify, dir = tmpdir()
   return {
     ...base,
     async exec(command, cwd, options) {
+      const limit = Number(options?.timeout)
+      if (limit > 0 && limit <= seconds) return base.exec(command, cwd, options)
       const outer = options?.signal
       const inner = new AbortController()
       const abortInner = () => inner.abort()

@@ -72,6 +72,36 @@ try {
   await sleep(500)
   assert.equal(notices.length, 1, '带 timeout 的调用同样转后台，结束后通知')
 
+  notices.length = 0
+  let shortSeen
+  const shortOut = []
+  const shortOps = autoBackgroundOperations(fakeBase(async (_c, _d, options) => {
+    shortSeen = options
+    options.onData(Buffer.from('start\n'))
+    await sleep(300)
+    throw new Error('timeout:0.15')
+  }), { seconds: 0.15, notify: (text) => notices.push(text), dir })
+  const shortSignal = new AbortController().signal
+  await assert.rejects(shortOps.exec('slow', dir, { timeout: 0.15, signal: shortSignal, onData: (c) => shortOut.push(c) }), /timeout:0\.15/, 'timeout 不超过转后台阈值：前台按原 timeout 结束并抛出')
+  assert.equal(shortSeen.timeout, 0.15, 'timeout 原样交给底层命令')
+  assert.equal(shortSeen.signal, shortSignal, '不转后台时 signal 直接交给底层命令')
+  assert.equal(chunks(shortOut), 'start\n', '前台输出照常流出，没有转后台说明')
+  await sleep(100)
+  assert.equal(notices.length, 0, 'timeout 不超过阈值：不转后台，也没有异常结束通知')
+
+  const shortOk = autoBackgroundOperations(fakeBase(async () => ({ exitCode: 0 })), { seconds: 120, notify: (text) => notices.push(text), dir })
+  assert.equal((await shortOk.exec('fast', dir, { timeout: 120, onData: () => {} })).exitCode, 0, 'timeout 等于阈值同样走前台')
+  assert.equal(notices.length, 0)
+
+  const zeroTimeout = autoBackgroundOperations(fakeBase(async (_c, _d, options) => {
+    await sleep(300)
+    return { exitCode: 0 }
+  }), { seconds: 0.15, notify: (text) => notices.push(text), dir })
+  await zeroTimeout.exec('slow', dir, { timeout: 0, onData: () => {} })
+  await sleep(400)
+  assert.equal(notices.length, 1, 'timeout 为 0 或未设置视为无超时，照常转后台')
+  notices.length = 0
+
   const controller = new AbortController()
   const aborted = ops.exec('slow', dir, { signal: controller.signal, onData: () => {} })
   const abortedBase = autoBackgroundOperations(fakeBase(async (_c, _d, options) => {
