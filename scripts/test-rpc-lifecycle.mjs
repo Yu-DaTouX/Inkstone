@@ -94,6 +94,78 @@ try {
   if (!gone) process.kill(grandchildPid)
   assert.ok(gone, 'pi 不响应关闭时连同它启动的子进程一起结束')
 
+  if (process.platform === 'win32') {
+    const readPid = async (file) => {
+      let pid = 0
+      for (let i = 0; i < 200 && !pid; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        pid = Number(await readFile(file, 'utf8').catch(() => '0'))
+      }
+      return pid
+    }
+    const waitGone = async (pid, ms) => {
+      for (let i = 0; i < ms / 100 && alive(pid); i++) await new Promise((resolve) => setTimeout(resolve, 100))
+      return !alive(pid)
+    }
+    const crashPi = resolve(dir, 'crash-pi.mjs')
+    const devPath = resolve(dir, 'dev-server.cjs')
+    const devPidFile = resolve(dir, 'dev.pid')
+    await writeFile(devPath, "require('node:fs').writeFileSync(" + JSON.stringify(devPidFile) + ", String(process.pid))\nsetInterval(() => {}, 1000)\n")
+    const launcherPath = resolve(dir, 'launcher.cjs')
+    const agentDir = resolve(dir, 'agent')
+    await mkdir(agentDir, { recursive: true })
+    await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: {
+      holder: { command: process.execPath, args: [holderPath] },
+      launcher: { command: process.execPath, args: [launcherPath] }
+    } }))
+    const trackedEnv = { PI_CODING_AGENT_DIR: agentDir }
+    await writeFile(crashPi, [
+      "import { spawn } from 'node:child_process'",
+      "spawn('cmd.exe', ['/d', '/s', '/c', " + JSON.stringify('""' + process.execPath + '" "' + holderPath + '""') + "], { stdio: 'ignore', windowsVerbatimArguments: true, windowsHide: true })",
+      "spawn(process.execPath, [" + JSON.stringify(devPath) + "], { stdio: 'ignore', detached: true, windowsHide: true })",
+      'setTimeout(() => process.exit(1), 7000)'
+    ].join('\n'))
+    const crashing = new PiRpc({ cwd: dir, piBin: crashPi, trackTree: true, env: trackedEnv })
+    const exited = new Promise((resolve) => crashing.once('exit', resolve))
+    await writeFile(grandchildPidFile, '0')
+    crashing.spawn()
+    const crashHolder = await readPid(grandchildPidFile)
+    assert.ok(crashHolder > 0, '会崩溃的模拟 pi 起了孙进程')
+    await exited
+    await crashing.close()
+    assert.ok(await waitGone(crashHolder, 8000), 'pi 崩溃退出后它留下的孙进程被结束（cmd 包装器随 pi 退出后孙进程成了孤儿）')
+    if (alive(crashHolder)) process.kill(crashHolder)
+    const devPid = Number(await readFile(devPidFile, 'utf8').catch(() => '0'))
+    assert.ok(devPid > 0 && alive(devPid), 'pi 崩溃后，用户让它起的长期进程（dev server）不被结束')
+    process.kill(devPid)
+
+    const orphanPidFile = resolve(dir, 'orphan.pid')
+    await writeFile(launcherPath, [
+      "const { spawn } = require('node:child_process')",
+      "const holder = spawn(process.execPath, [process.argv[2]], { stdio: 'ignore', windowsHide: true, detached: true })",
+      'setTimeout(() => process.exit(0), 5500)'
+    ].join('\n'))
+    const holderOnly = resolve(dir, 'orphan-holder.cjs')
+    await writeFile(holderOnly, "require('node:fs').writeFileSync(" + JSON.stringify(orphanPidFile) + ", String(process.pid))\nsetInterval(() => {}, 1000)\n")
+    const middlePi = resolve(dir, 'middle-pi.mjs')
+    await writeFile(middlePi, [
+      "import { spawn } from 'node:child_process'",
+      'spawn(process.execPath, [' + JSON.stringify(launcherPath) + ', ' + JSON.stringify(holderOnly) + "], { stdio: 'ignore', windowsHide: true })",
+      'process.stdin.resume()',
+      "process.stdin.on('end', () => process.exit(0))",
+      'setInterval(() => {}, 1000)'
+    ].join('\n'))
+    const middle = new PiRpc({ cwd: dir, piBin: middlePi, trackTree: true, env: trackedEnv })
+    middle.spawn()
+    const orphan = await readPid(orphanPidFile)
+    assert.ok(orphan > 0, '模拟 pi 的中间进程起了孙进程')
+    await new Promise((resolve) => setTimeout(resolve, 6500))
+    assert.ok(alive(orphan), '中间进程退出后孙进程成为孤儿，仍在运行')
+    await middle.close()
+    assert.ok(await waitGone(orphan, 8000), '停止 pi 时按运行期间记下的子孙快照结束已成孤儿的孙进程')
+    if (alive(orphan)) process.kill(orphan)
+  }
+
   console.log('test-rpc-lifecycle: 全部通过')
 } finally {
   await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })

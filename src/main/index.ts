@@ -69,6 +69,7 @@ import { installLocalServerControl } from './browser/local-server-owner'
 import { installSessionPermissionBoundary, trustedFrameTrust } from './browser/permission-boundary'
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
+import { piTreeRegistry } from './process-tree'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerAgentIpc, type PinnedSendTarget } from './ipc/agent-ipc'
@@ -1256,6 +1257,7 @@ async function runShutdown(): Promise<void> {
       { name: 'mcp-app-host', run: () => closeMcpAppHost() },
       { name: 'plugins', run: () => pluginsClosing },
       { name: 'subagents', run: () => subagentService.current()?.stopAll() },
+      { name: 'pi-process-trees', run: () => piTreeRegistry.sweepAll(), timeoutMs: 10_000 },
       { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null } } },
       { name: 'browser', run: () => browser?.dispose() },
       { name: 'pinned-network', run: () => shutdownPinnedNetworkGuard() },
@@ -2488,7 +2490,7 @@ function registerIpc(): void {
     }
   })
 
-  registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true, isKnownProject: isKnownPackageProject })
+  registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true, hasAnyBusy: () => runners?.hasBusyAnywhere() === true, isKnownProject: isKnownPackageProject })
   refreshMinecraftPluginOnStartup()
   ipc.handle('yan:plugins:action', async (id: unknown, action: unknown) => {
     if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: pick('无效插件操作', 'Invalid plugin action') }

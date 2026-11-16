@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url'
 import type { PiInfo, PiSource, PiProbe, RpcResponse } from '../shared/ipc'
 import { selectedPiRuntime } from './pi-runtime-location'
 import { killPidTree } from './git-service'
+import { piTreeRegistry, PI_TREE_FRESH_MS, PI_TREE_SNAPSHOT_CAP_MS, type ProcessTreeWatch } from './process-tree'
+import { nativeMcpSelector } from './mcp/native-process-match'
+import { PI_AGENT_DIR } from './paths'
 import { ignoresElectronRunAsNode, runtimeProbe, type PiRpcRuntime } from './pi-runtime-launch'
 
 export type { PiRpcRuntime }
@@ -203,6 +206,7 @@ export interface PiRpcOptions {
   env?: NodeJS.ProcessEnv
   inheritEnv?: boolean
   runtime?: PiRpcRuntime
+  trackTree?: boolean
 }
 
 type Pending = {
@@ -234,6 +238,8 @@ export class PiRpc extends EventEmitter {
   private finished = false
   private sawExit = false
   private exitDrainTimer: NodeJS.Timeout | null = null
+  private tree: ProcessTreeWatch | null = null
+  private treeSweep: Promise<unknown> | null = null
 
   readonly probe: PiProbe
 
@@ -277,6 +283,7 @@ export class PiRpc extends EventEmitter {
     delete env.ELECTRON_FORCE_IS_PACKAGED
     delete env.YAN_REMOTE_TOKEN
 
+    const spawnedAt = Date.now()
     const child: ChildProcessWithoutNullStreams = spawn(this.probe.cmd, rpcArgs, {
       cwd: this.opts.cwd,
       env,
@@ -284,6 +291,16 @@ export class PiRpc extends EventEmitter {
     })
 
     this.child = child
+    const watch = this.opts.trackTree === true
+      ? piTreeRegistry.watch(child.pid, {
+          now: () => spawnedAt,
+          select: nativeMcpSelector({ agentDir: this.opts.env?.PI_CODING_AGENT_DIR ?? PI_AGENT_DIR, cwd: this.opts.cwd }),
+          onSkipped: (rows) => {
+            if (rows.length) console.warn(pick(`[pi-process-tree] 未结束 pi 的 ${rows.length} 个子进程（不是 pi 原生 MCP 服务）：`, `[pi-process-tree] Left ${rows.length} pi child process(es) running (not pi native MCP servers): `) + rows.map((row) => `${row.name ?? '?'}(${row.pid})`).join(', '))
+          }
+        })
+      : null
+    this.tree = watch
 
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => this.feed(chunk))
@@ -295,6 +312,7 @@ export class PiRpc extends EventEmitter {
     child.stderr.on('error', () => {})
 
     child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      this.sweepTree(watch, Date.now())
       if (this.finished) return
       this.sawExit = true
       this.closed = true
@@ -488,14 +506,15 @@ export class PiRpc extends EventEmitter {
 
   close(): Promise<void> {
     const child = this.child
-    if (!child) return Promise.resolve()
+    if (!child) return this.settleTree()
 
     this.closed = true
     this.child = null
 
-    if (this.sawExit) return Promise.resolve()
+    if (this.sawExit) return this.settleTree()
 
-    return new Promise((resolve) => {
+    const watch = this.tree
+    const closing = new Promise<void>((resolve) => {
       let done = false
       let timer: NodeJS.Timeout | null = null
       const finish = (): void => {
@@ -507,21 +526,43 @@ export class PiRpc extends EventEmitter {
       }
 
       child.once('exit', finish)
-      try {
-        child.stdin.end()
-      } catch {
-      }
+      const snapshot = watch && watch.snapshotAge() > PI_TREE_FRESH_MS
+        ? Promise.race([watch.snapshot(), new Promise<void>((done) => setTimeout(done, PI_TREE_SNAPSHOT_CAP_MS).unref?.())]).catch(() => undefined)
+        : Promise.resolve()
+      void snapshot.then(() => {
+        if (done) return
+        try {
+          child.stdin.end()
+        } catch {
+        }
 
-      timer = setTimeout(() => {
-        void killPidTree(child.pid, () => {
-          try {
-            child.kill()
-          } catch {
-          }
-        }).finally(finish)
-      }, 1500)
-      timer.unref?.()
+        timer = setTimeout(() => {
+          void killPidTree(child.pid, () => {
+            try {
+              child.kill()
+            } catch {
+            }
+          }).finally(finish)
+        }, 1500)
+        timer.unref?.()
+      })
     })
+    return closing.then(() => this.settleTree())
+  }
+
+  private sweepTree(watch: ProcessTreeWatch | null, exitedAt: number): void {
+    if (!watch) return
+    if (this.tree === watch) this.tree = null
+    const run = watch.sweep(exitedAt).catch(() => []).finally(() => piTreeRegistry.release(watch))
+    this.treeSweep = run
+    void run.finally(() => {
+      if (this.treeSweep === run) this.treeSweep = null
+    })
+  }
+
+  private async settleTree(): Promise<void> {
+    if (this.tree) this.sweepTree(this.tree, Date.now())
+    await this.treeSweep
   }
 }
 

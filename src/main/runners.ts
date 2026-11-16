@@ -1007,6 +1007,13 @@ export class RunnerRegistry {
     return [...this.runners.values()].some((r) => this.busy(r))
   }
 
+  hasBusyAnywhere(): boolean {
+    return this.stopping.size > 0 || [...this.runners.values()].some((runner) => {
+      const state = runner.agent.getState()
+      return state?.isAgentRunning === true || state?.isStreaming === true || state?.isCompacting === true || (state?.pendingMessageCount ?? 0) > 0
+    })
+  }
+
   private runnerHasPendingWork(runner: Runner): boolean {
     if (this.busy(runner) || this.awaitingTerminal(runner) || this.awaitingSubagents(runner)) return true
     const queue = runner.agent.queueSnapshot()

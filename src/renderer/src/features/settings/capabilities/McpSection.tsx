@@ -9,6 +9,7 @@ import { Entry, Group, Meta, Panel, StatusBadge, Warn } from './parts'
 import { WINDOWS_MCP_SERVER_ID, verificationTone } from './model'
 import { McpAppRefresh } from './McpAppRefresh'
 import { McpServices } from './McpServices'
+import { summarizeMcpStatus } from './mcp-status-summary'
 
 type NativeMcpAction = 'login' | 'logout' | 'reconnect'
 
@@ -105,7 +106,7 @@ function McpServerRow({
 
   const metaParts = [
     direct ? text('mcpDirectBadge') : null,
-    server ? t(`cap.status.${server.status}` as 'cap.status.ready') : text('mcpDirectOff'),
+    server ? summarizeMcpStatus(server).short : text('mcpDirectOff'),
     server?.projectScoped ? t('cap.projectScoped') : null,
     server && !server.enabled ? t('cap.disabled') : null,
     server?.endpointOrigin,

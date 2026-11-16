@@ -3,6 +3,7 @@ import { getSettings } from '../settings'
 import { configurePackageContext, listPackages, runPackageAction } from '../packages'
 import { trustStatus } from '../project-trust'
 import { resolvePi } from '../protocol'
+import { smokeInstalledPiPackage } from '../capabilities/pi-package-smoke'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
@@ -18,6 +19,7 @@ const ANTHROPIC_OVERRIDE_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'AN
 
 export interface PackagesIpcDeps {
   hasBusyCwd(cwd: string): boolean
+  hasAnyBusy?(): boolean
   isKnownProject?(cwd: string): boolean
 }
 
@@ -58,7 +60,7 @@ export function refreshMinecraftPluginOnStartup(): void {
 
 export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): void {
   const { handle } = ipc
-  const { hasBusyCwd, isKnownProject } = deps
+  const { hasBusyCwd, hasAnyBusy, isKnownProject } = deps
   handle('yan:packages:search', async (query: unknown, offset: unknown) => {
     if (typeof query !== 'string' || (offset !== undefined && (typeof offset !== 'number' || !Number.isFinite(offset)))) {
       return { ok: false, entries: [], total: 0, error: pick('无效的搜索参数', 'Invalid search parameters') }
@@ -129,10 +131,13 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
       const kind = raw.kind === 'install' || raw.kind === 'remove' || raw.kind === 'update' ? raw.kind : null
       if (!kind) return { ok: false, error: pick('未知的操作', 'Unknown action') }
       const st = await getSettings()
+      const piBin = resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null
       configurePackageContext({
-        bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null,
+        bin: () => piBin,
         agentDir: () => PI_AGENT_DIR,
         hasRunningTask: hasBusyCwd,
+        ...(hasAnyBusy ? { hasAnyRunningTask: hasAnyBusy } : {}),
+        smoke: (packageDir) => smokeInstalledPiPackage({ packageRoot: packageDir, ...(piBin ? { piBin } : {}) }),
         isKnownProject,
         isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
       })

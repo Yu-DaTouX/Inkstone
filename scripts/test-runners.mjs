@@ -222,6 +222,16 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(reg.hasBusy() === true, '还有忙碌实例时 hasBusy = true')
       second.state = { ...second.state, isAgentRunning: false }
       ok(reg.hasBusy() === false, '全部空闲后 hasBusy = false')
+      second.bashRunning = true
+      second.pending = 2
+      ok(reg.hasBusy() === true && reg.hasBusyAnywhere() === false, '后台 bash 与待回答提问让 hasBusy 为真，但不算「正在跑的回合」（用户级装包不被它们拦住）')
+      second.state = { ...second.state, isStreaming: true }
+      ok(reg.hasBusyAnywhere() === true, '有会话正在跑回合时 hasBusyAnywhere 为真')
+      second.state = { ...second.state, isStreaming: false, pendingMessageCount: 1 }
+      ok(reg.hasBusyAnywhere() === true, '有排队消息待发时也算忙')
+      second.state = { ...second.state, pendingMessageCount: 0 }
+      second.bashRunning = false
+      second.pending = 0
 
       await reg.stopAll()
       ok(reg.size === 0 && reg.statuses().length === 0, 'stopAll 之后注册表清空')

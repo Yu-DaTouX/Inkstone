@@ -6,6 +6,7 @@ import { formatSkillSecurityReview, reviewSkillFiles, type SkillSecurityReview }
 import { stagingDirOf } from './acquisition-service'
 import type { PiPackageCheck } from './pi-package-scheduler'
 import { pick } from '../../shared/ui-lang'
+import { redactSecretText } from '../../shared/redact-diagnostic'
 
 type JsonObject = Record<string, unknown>
 
@@ -194,7 +195,8 @@ async function extensionFiles(packageRoot: string, entry: string): Promise<strin
 
 export async function resolvePiPackageSmokeResources(
   packageRoot: string,
-  manifest: unknown
+  manifest: unknown,
+  options: { installed?: boolean } = {}
 ): Promise<PiPackageSmokeResources> {
   const pkg = object(manifest)
   const pi = object(pkg?.pi)
@@ -208,7 +210,7 @@ export async function resolvePiPackageSmokeResources(
     }
   }
   const dependencies = object(pkg.dependencies) ?? {}
-  for (const name of Object.keys(dependencies)) {
+  for (const name of options.installed ? [] : Object.keys(dependencies)) {
     if (!bundled.has(name)) throw new Error(pick(`依赖 ${name} 未声明为随包提供；当前版本不运行候选安装来补依赖`, `Dependency ${name} is not declared as bundled; this version does not run a candidate install to fill dependencies`))
     const dependencyPath = resolve(packageRoot, 'node_modules', ...name.split('/'))
     if (!within(packageRoot, dependencyPath)) throw new Error(pick(`依赖路径越界：${name}`, `Dependency path escapes the package: ${name}`))
@@ -232,6 +234,7 @@ export async function resolvePiPackageSmokeResources(
     throw new Error(pick('Pi 包资源入口超过 256 项，拒绝冒烟', 'Pi package has more than 256 resource entries; smoke refused'))
   }
   if (extensionEntries.length === 0 && skills.length === 0) {
+    if (options.installed) return { extensions: [], skills: [] }
     throw new Error(pick('package.json 没有声明可验证的 pi.extensions 或 pi.skills', 'package.json declares no verifiable pi.extensions or pi.skills'))
   }
 
@@ -279,22 +282,21 @@ async function waitForMarker(marker: string, errors: string[], timeoutMs: number
   return false
 }
 
-export async function smokeStagedPiPackage(input: {
-  root: string
-  operationId: string
-  piBin?: string
-  timeoutMs?: number
-}): Promise<PiPackageCheck> {
-  const packageRoot = join(stagingDirOf(input.root, input.operationId), 'payload', 'package')
+const SMOKE_STDERR_KEEP = 1600
+
+export type PiPackageSmokeKind = 'load-error' | 'inconclusive'
+
+async function runPiSmoke(resources: PiPackageSmokeResources, piBin: string, timeoutMs: number): Promise<PiPackageCheck & { kind?: PiPackageSmokeKind }> {
   let rpc: PiRpc | null = null
   let tempRoot = ''
+  const stderr: string[] = []
+  const failures: string[] = []
+  const stderrTail = (): string => redactSecretText(stderr.join('\n')).slice(-SMOKE_STDERR_KEEP)
+  const withStderr = (message: string): string => {
+    const tail = stderrTail()
+    return tail ? `${message}\n${tail}` : message
+  }
   try {
-    const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as unknown
-    const resources = await resolvePiPackageSmokeResources(packageRoot, manifest)
-    const probe = resolvePi(input.piBin ? { override: input.piBin } : {})
-    const piBin = probe.args.at(-1)
-    if (!probe.ok || !piBin) throw new Error(probe.error ?? pick('Pi 可执行入口不可用', 'Pi executable is unavailable'))
-
     tempRoot = await mkdtemp(join(tmpdir(), 'yan-pi-package-smoke-'))
     const cwd = join(tempRoot, 'workspace')
     const agentDir = join(tempRoot, 'pi-agent')
@@ -316,30 +318,73 @@ export async function smokeStagedPiPackage(input: {
       ...resources.skills.flatMap((path) => ['--skill', path]),
       '--extension', sentinel
     ]
-    const failures: string[] = []
     rpc = new PiRpc({ cwd, piBin, args, env: smokeEnvironment(agentDir, dataDir, marker), inheritEnv: false })
     rpc.on('event', (event: Record<string, unknown>) => {
-      if (event.type === 'extension_error') failures.push(pick('Pi 报告扩展加载错误', 'Pi reported an extension load error'))
+      if (event.type !== 'extension_error') return
+      const detail = [event.extensionPath, event.error].filter((value) => typeof value === 'string' && value).join(': ')
+      failures.push(detail ? pick(`Pi 报告扩展加载错误：${detail}`, `Pi reported an extension load error: ${detail}`) : pick('Pi 报告扩展加载错误', 'Pi reported an extension load error'))
     })
-    rpc.on('stderr', () => {
+    rpc.on('stderr', (line: string) => {
+      stderr.push(line)
+      if (stderr.length > 40) stderr.shift()
     })
     rpc.spawn()
-    const commands = await rpc.command<{ commands?: unknown[] }>('get_commands', {}, { timeoutMs: input.timeoutMs ?? 20_000 })
+    const commands = await rpc.command<{ commands?: unknown[] }>('get_commands', {}, { timeoutMs })
     if (!commands.success) throw new Error(pick('Pi RPC 未能完成 get_commands 握手', 'Pi RPC did not complete the get_commands handshake'))
-    if (!(await waitForMarker(marker, failures, input.timeoutMs ?? 20_000))) {
+    if (!(await waitForMarker(marker, failures, timeoutMs))) {
       throw new Error(failures.length ? failures[0] : pick('临时 Pi 未触发 session_start 冒烟哨兵', 'Temporary Pi did not fire the session_start smoke sentinel'))
     }
     if (failures.length) throw new Error(failures[0])
     return { ok: true, problems: [] }
   } catch (error) {
+    const loadFailure = failures.length > 0 || /Failed to load extension/i.test(stderr.join('\n'))
     return {
       ok: false,
-      problems: [error instanceof Error ? error.message : String(error)]
+      kind: loadFailure ? 'load-error' : 'inconclusive',
+      problems: [withStderr(error instanceof Error ? error.message : String(error))]
     }
   } finally {
     if (rpc) await rpc.close().catch(() => undefined)
     if (tempRoot) {
       await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined)
     }
+  }
+}
+
+function resolveSmokePi(piBin?: string): string {
+  const probe = resolvePi(piBin ? { override: piBin } : {})
+  const resolved = probe.args.at(-1)
+  if (!probe.ok || !resolved) throw new Error(probe.error ?? pick('Pi 可执行入口不可用', 'Pi executable is unavailable'))
+  return resolved
+}
+
+export async function smokeStagedPiPackage(input: {
+  root: string
+  operationId: string
+  piBin?: string
+  timeoutMs?: number
+}): Promise<PiPackageCheck> {
+  const packageRoot = join(stagingDirOf(input.root, input.operationId), 'payload', 'package')
+  try {
+    const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as unknown
+    const resources = await resolvePiPackageSmokeResources(packageRoot, manifest)
+    return await runPiSmoke(resources, resolveSmokePi(input.piBin), input.timeoutMs ?? 20_000)
+  } catch (error) {
+    return { ok: false, problems: [error instanceof Error ? error.message : String(error)] }
+  }
+}
+
+export async function smokeInstalledPiPackage(input: {
+  packageRoot: string
+  piBin?: string
+  timeoutMs?: number
+}): Promise<PiPackageCheck & { skipped?: boolean; kind?: PiPackageSmokeKind }> {
+  try {
+    const manifest = JSON.parse(await readFile(join(input.packageRoot, 'package.json'), 'utf8')) as unknown
+    const resources = await resolvePiPackageSmokeResources(input.packageRoot, manifest, { installed: true })
+    if (resources.extensions.length === 0 && resources.skills.length === 0) return { ok: true, problems: [], skipped: true }
+    return await runPiSmoke(resources, resolveSmokePi(input.piBin), input.timeoutMs ?? 20_000)
+  } catch (error) {
+    return { ok: false, kind: 'inconclusive', problems: [error instanceof Error ? error.message : String(error)] }
   }
 }

@@ -1264,6 +1264,13 @@ export interface CapabilitySkillSettingView {
 
 export type ManagedSkillAction = 'enable' | 'disable' | 'trash'
 
+export interface CapabilityMcpCheckView {
+  at: number
+  ok: boolean
+  toolCount?: number
+  error?: string
+}
+
 export interface CapabilityMcpServerSettingView {
   id: string
   title: string
@@ -1275,6 +1282,8 @@ export interface CapabilityMcpServerSettingView {
   status: 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error'
   toolCount: number | null
   ownedBy?: 'pi' | 'inkstone'
+  connectedSessions?: number
+  lastCheck?: CapabilityMcpCheckView
 }
 
 export interface CapabilitySettingsSnapshot {

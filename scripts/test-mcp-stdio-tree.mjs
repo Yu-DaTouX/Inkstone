@@ -77,36 +77,74 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(Date.now() - started < 1800 && calls.length === 0, '服务按 stdin 结束自行退出时不动用进程树结束', `${Date.now() - started}ms calls=${calls.length}`)
     ok(await waitFor(() => !alive(polite.pid), 3000), '自行退出的服务确实退出')
 
-    const fakeRows = (rootPid, now) => [
-      { pid: rootPid, ppid: 1, created: now },
-      { pid: 90001, ppid: rootPid, created: now + 10 },
-      { pid: 90002, ppid: 90001, created: now + 20 },
-      { pid: 90003, ppid: rootPid, created: now - 600_000 },
-      { pid: 90004, ppid: 4242, created: now + 30 },
-      { pid: 90005, ppid: rootPid, created: now + 40 }
+    let base = 0
+    const fakeRows = (rootPid) => [
+      { pid: rootPid, ppid: 1, created: base },
+      { pid: 90001, ppid: rootPid, created: base + 10 },
+      { pid: 90002, ppid: 90001, created: base + 20 },
+      { pid: 90003, ppid: rootPid, created: base - 600_000 },
+      { pid: 90004, ppid: 4242, created: base + 30 },
+      { pid: 90005, ppid: rootPid, created: base + 40 }
     ]
     const fakeAlive = (pid) => pid === 90001 || pid === 90002 || pid === 90003 || pid === 90004
-    {
-      const killed = []
-      const scans = []
-      const survivor = await start(server('tree-polite', true), async (pid) => { killed.push(pid) }, 'win32', {
-        listProcesses: async () => { const rows = fakeRows(survivor.transport.pid, Date.now()); scans.push(rows.length); return rows },
-        isAlive: fakeAlive
-      })
-      await survivor.transport.close()
-      ok(scans.length === 1, '关闭时扫描一次进程表', String(scans.length))
-      ok(killed.length === 1 && killed[0] === 90001, '外层已退出时仍结束仍存活的子孙进程（只对最上层调用，排除无关与复用的 pid）', JSON.stringify(killed))
-      await survivor.transport.close()
-      ok(scans.length === 1, '重复 close 不再扫描')
+    const afterExit = (rootPid, extra) => [
+      ...fakeRows(rootPid).filter((row) => row.pid !== rootPid && row.pid !== 90005),
+      ...extra
+    ]
+    const watched = (rowsFor) => {
+      const state = { calls: 0, transport: null }
+      return {
+        state,
+        options: {
+          listProcesses: async () => {
+            const index = state.calls++
+            if (index === 0) base = Date.now()
+            return index === 0 || !state.transport ? [] : rowsFor(state.transport.pid, index)
+          },
+          isAlive: fakeAlive
+        }
+      }
     }
     {
       const killed = []
+      const fake = watched((pid, index) => (index < 2 ? fakeRows(pid) : afterExit(pid, [])))
+      const survivor = await start(server('tree-polite', true), async (pid) => { killed.push(pid) }, 'win32', fake.options)
+      fake.state.transport = survivor.transport
+      await survivor.transport.close()
+      ok(fake.state.calls === 3, '启动记一次、关闭前一次、动手前再扫一次核对', String(fake.state.calls))
+      ok(killed.length === 1 && killed[0] === 90001, '外层已退出时仍结束仍存活的子孙进程（只对最上层调用，排除无关与创建更早的 pid）', JSON.stringify(killed))
+      await survivor.transport.close()
+      ok(fake.state.calls === 3, '重复 close 不再扫描')
+    }
+    {
+      const killed = []
+      const fake = watched((pid, index) => (index < 2 ? fakeRows(pid) : afterExit(pid, []).map((row) => (row.pid === 90001 || row.pid === 90002 ? { ...row, created: row.created + 5_000_000 } : row))))
+      const reused = await start(server('tree-pid-reuse', true), async (pid) => { killed.push(pid) }, 'win32', fake.options)
+      fake.state.transport = reused.transport
+      await reused.transport.close()
+      ok(fake.state.calls === 3 && killed.length === 0, '记下的 pid 在动手前已被别的进程复用（创建时间不同）时不结束它', JSON.stringify(killed))
+    }
+    {
+      const killed = []
+      const fake = watched((pid, index) => (index < 2
+        ? [{ pid, ppid: 1, created: base }]
+        : [{ pid, ppid: 1, created: base + 9_000_000 }, { pid: 91001, ppid: pid, created: base + 9_000_100 }]))
+      fake.options.isAlive = (pid) => pid === 91001 || pid === fake.state.rootPid
+      const rootReuse = await start(server('tree-root-reuse', true), async (pid) => { killed.push(pid) }, 'win32', fake.options)
+      fake.state.transport = rootReuse.transport
+      fake.state.rootPid = rootReuse.transport.pid
+      await rootReuse.transport.close()
+      ok(fake.state.calls === 3 && killed.length === 0, '服务进程已退出且 pid 被新进程复用时，新进程和它的子进程都不结束', JSON.stringify(killed))
+    }
+    {
+      const killed = []
+      let scans = 0
       const dead = await start(server('tree-dead', true), async (pid) => { killed.push(pid) }, 'win32', {
-        listProcesses: async () => fakeRows(dead.transport.pid, Date.now()),
+        listProcesses: async () => { if (scans++ === 0) base = Date.now(); return base === 0 || !dead ? [] : fakeRows(dead.transport.pid) },
         isAlive: () => false
       })
       await dead.transport.close()
-      ok(killed.length === 0, '子孙都已退出时不动用进程树结束')
+      ok(killed.length === 0 && scans === 2, '子孙都已退出时不动用进程树结束，也不做第三次扫描', `${killed.length}/${scans}`)
     }
     {
       const killed = []
@@ -116,6 +154,16 @@ await runSuite(import.meta.url, async (ok, compile) => {
       })
       await broken.transport.close()
       ok(killed.length === 0, '进程表读取失败时 close 照常完成')
+    }
+    {
+      const stuck = await start(server('tree-scan-stuck', true), async () => {}, 'win32', {
+        listProcesses: () => new Promise(() => {}),
+        isAlive: () => false,
+        scanCapMs: 300
+      })
+      const began = Date.now()
+      await stuck.transport.close()
+      ok(Date.now() - began < 3000, '进程表读取卡住时按上限放行，不会一直等', `${Date.now() - began}ms`)
     }
     {
       const scans = []

@@ -1,6 +1,7 @@
 import { pick } from '../shared/ui-lang'
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { cp, mkdtemp, rename, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 
@@ -208,8 +209,17 @@ export function validatePackageSource(source: string): string | null {
   return null
 }
 
+export interface PackageSmokeOutcome {
+  ok: boolean
+  problems: string[]
+  skipped?: boolean
+  kind?: 'load-error' | 'inconclusive'
+}
+
 export interface PackageContext {
   hasRunningTask?: (cwd: string) => boolean
+  hasAnyRunningTask?: () => boolean
+  smoke?: (packageDir: string) => Promise<PackageSmokeOutcome>
   isProjectTrusted?: (cwd: string) => boolean | Promise<boolean>
   isKnownProject?: (cwd: string) => boolean
   bin?: () => string | null
@@ -359,7 +369,15 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
   const invalid = validatePackageSource(source)
   if (invalid) return { ok: false, error: invalid }
 
-  if (ctx.hasRunningTask?.(cwd)) {
+  const userLevel = request.local !== true
+  if (userLevel && ctx.hasAnyRunningTask?.()) {
+    return {
+      ok: false,
+      error: pick('有会话正在运行，等它们跑完再改用户级插件', 'A session is running. Change user-level plugins after they finish'),
+      detail: pick('用户级的 pi 包对所有项目生效，扩展在 pi 启动时加载；现在动手不会有即时效果，还会让正在跑的回合与磁盘状态对不上', 'User-level pi packages apply to every project and load when pi starts. Changing now has no immediate effect and desyncs running turns from disk')
+    }
+  }
+  if ((!userLevel || !ctx.hasAnyRunningTask) && ctx.hasRunningTask?.(cwd)) {
     return {
       ok: false,
       error: pick('这个目录有任务正在运行，等它跑完再改插件', 'A task is running in this folder. Change plugins after it finishes'),
@@ -388,13 +406,194 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
         ? ['remove', ...(local ? ['-l'] : []), asArg]
         : ['update', asArg]
 
-  const res = await runPi(args, local ? cwd : globalPackageCwd(), scriptPolicyEnv(request))
+  const runCwd = local ? cwd : globalPackageCwd()
+  const verifying = request.kind !== 'remove' && ctx.smoke !== undefined
+  const existed = verifying && (() => {
+    const before = listPackages(cwd)
+    return before.ok && targetEntries(before, source, request.kind, local).length > 0
+  })()
+  const previous = verifying ? await backupInstalled(cwd, source, request.kind, local) : []
+  const res = await runPi(args, runCwd, scriptPolicyEnv(request))
   if (!res.ok) {
+    await discardBackups(previous)
     return {
       ok: false,
       error: pick(`${request.kind === 'install' ? '安装' : request.kind === 'remove' ? '卸载' : '更新'}失败`, `${request.kind === 'install' ? 'Install' : request.kind === 'remove' ? 'Uninstall' : 'Update'} failed`),
       detail: res.output
     }
   }
-  return { ok: true, output: res.output || 'ok', listing: listPackages(cwd) }
+  if (!verifying) return { ok: true, output: res.output || 'ok', listing: listPackages(cwd) }
+  return verifyInstalled({ request, source, local, cwd, runCwd, output: res.output, previous, existed })
+}
+
+interface PackageBackup {
+  dir: string
+  backup: string
+  root: string
+  source: string
+}
+
+function installedPackageDir(entry: PackageEntry, cwd: string): string | null {
+  if (entry.path) return entry.path
+  if (entry.scope !== 'project' || !cwd) return null
+  const candidate = join(cwd, '.pi', 'npm', 'node_modules', ...entry.name.split('/'))
+  return existsSync(join(candidate, 'package.json')) ? candidate : null
+}
+
+function packageKey(source: string): string {
+  const trimmed = String(source ?? '').trim()
+  return trimmed.startsWith('npm:') ? `npm:${packageNameOf(trimmed).toLowerCase()}` : trimmed
+}
+
+function targetEntries(listing: PackageListing, source: string, kind: PackageActionKind, local: boolean): PackageEntry[] {
+  const key = packageKey(source)
+  return listing.entries.filter((entry) => packageKey(entry.source) === key && (kind === 'update' || entry.scope === (local ? 'project' : 'user')))
+}
+
+async function backupInstalled(cwd: string, source: string, kind: PackageActionKind, local: boolean): Promise<PackageBackup[]> {
+  if (!source.startsWith('npm:')) return []
+  const listing = listPackages(cwd)
+  if (!listing.ok) return []
+  const backups: PackageBackup[] = []
+  for (const entry of targetEntries(listing, source, kind, local)) {
+    const dir = installedPackageDir(entry, cwd)
+    if (!dir || !existsSync(join(dir, 'package.json'))) continue
+    try {
+      const root = await mkdtemp(join(globalPackageCwd(), 'rollback-'))
+      const backup = join(root, 'package')
+      await cp(dir, backup, { recursive: true })
+      backups.push({ dir, backup, root, source: entry.source })
+    } catch {
+    }
+  }
+  return backups
+}
+
+async function discardBackups(backups: readonly PackageBackup[]): Promise<void> {
+  await Promise.all(backups.map((entry) => rm(entry.root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)))
+}
+
+async function restoreDirectory(dir: string, backup: string): Promise<{ ok: boolean; error?: string }> {
+  const aside = `${dir}.yan-old-${Date.now()}`
+  try {
+    await rename(dir, aside)
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+  try {
+    await cp(backup, dir, { recursive: true })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)
+    try {
+      await rename(aside, dir)
+    } catch (back) {
+      return { ok: false, error: `${message}\n${pick(`原目录也没能改回，仍在 ${aside}：`, `The original folder could not be renamed back either; it is still at ${aside}: `)}${back instanceof Error ? back.message : String(back)}` }
+    }
+    return { ok: false, error: message }
+  }
+  await rm(aside, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
+  return { ok: true }
+}
+
+async function verifyInstalled(input: {
+  request: PackageActionRequest
+  source: string
+  local: boolean
+  cwd: string
+  runCwd: string
+  output: string
+  previous: readonly PackageBackup[]
+  existed: boolean
+}): Promise<PackageActionResult> {
+  const { request, source, local, cwd, runCwd, previous } = input
+  const smoke = ctx.smoke!
+  const listing = listPackages(cwd)
+  const targets = listing.ok ? targetEntries(listing, source, request.kind, local) : []
+  const checked: string[] = []
+  const notChecked: string[] = []
+  const warnings: string[] = []
+  for (const entry of targets) {
+    const dir = installedPackageDir(entry, cwd)
+    if (!dir) {
+      notChecked.push(entry.name)
+      continue
+    }
+    let outcome: PackageSmokeOutcome
+    try {
+      outcome = await smoke(dir)
+    } catch (error) {
+      outcome = { ok: false, kind: 'inconclusive', problems: [error instanceof Error ? error.message : String(error)] }
+    }
+    if (outcome.skipped) {
+      notChecked.push(entry.name)
+      continue
+    }
+    if (outcome.ok) {
+      checked.push(entry.name)
+      continue
+    }
+    if (outcome.kind === 'inconclusive') {
+      warnings.push(pick(`${entry.name} 的加载试跑没能完成（${outcome.problems.join('；')}），不能确认包是否可用，已保留，请自行检查。`, `The load check for ${entry.name} could not finish (${outcome.problems.join('; ')}), so it is unclear whether the package works. It was kept; please check it yourself.`))
+      continue
+    }
+    const rollback = await rollbackFailedPackage({ request, source, local, runCwd, dir, previous, existed: input.existed })
+    if (rollback.restored || !rollback.hadPrevious) await discardBackups(previous)
+    const verb = request.kind === 'install' ? pick('安装', 'Install') : pick('更新', 'Update')
+    const after = listPackages(cwd)
+    const sourceNote = rollback.hadPrevious && rollback.restored ? sourceChangeNote(after, source, request.kind, local, previous) : ''
+    return {
+      ok: false,
+      error: pick(`${verb}后的加载试跑未通过，${rollback.restored ? (rollback.hadPrevious ? '已恢复旧版本' : '已自动卸载') : '自动回滚未完成'}`, `Load check failed after ${verb.toLowerCase()}; ${rollback.restored ? (rollback.hadPrevious ? 'the previous version was restored' : 'it was uninstalled automatically') : 'automatic rollback did not finish'}`),
+      detail: [outcome.problems.join('\n'), rollback.note, sourceNote, input.output].filter(Boolean).join('\n\n'),
+      listing: after
+    }
+  }
+  await discardBackups(previous)
+  const notes: string[] = []
+  if (checked.length) notes.push(pick(`加载试跑通过：${checked.join('、')}`, `Load check passed: ${checked.join(', ')}`))
+  if (targets.length === 0 || notChecked.length) {
+    notes.push(pick('未能定位包目录或包没有可加载的扩展 / 技能，未做加载试跑', 'Could not locate the package folder, or it has no loadable extensions or skills; load check skipped'))
+  }
+  notes.push(...warnings)
+  return { ok: true, output: [input.output || 'ok', ...notes].join('\n'), listing: listPackages(cwd) }
+}
+
+function sourceChangeNote(listing: PackageListing, source: string, kind: PackageActionKind, local: boolean, previous: readonly PackageBackup[]): string {
+  if (!listing.ok) return ''
+  const now = targetEntries(listing, source, kind, local).map((entry) => entry.source)
+  const before = previous.map((entry) => entry.source)
+  if (now.length === 0 || before.length === 0 || now.every((value) => before.includes(value))) return ''
+  return pick(`注意：settings 里这个包的来源现在是 ${now.join('、')}，操作前是 ${before.join('、')}；目录已恢复为旧版本，来源写法没有改回，需要的话请在设置里重新安装旧来源。`, `Note: the package source in settings is now ${now.join(', ')} (it was ${before.join(', ')}). The folder was restored to the old version but the source entry was not changed back; reinstall the old source in settings if needed.`)
+}
+
+async function rollbackFailedPackage(input: {
+  request: PackageActionRequest
+  source: string
+  local: boolean
+  runCwd: string
+  dir: string
+  previous: readonly PackageBackup[]
+  existed: boolean
+}): Promise<{ restored: boolean; hadPrevious: boolean; note: string }> {
+  const prior = input.previous.find((entry) => resolve(entry.dir) === resolve(input.dir))
+  if (prior) {
+    const restored = await restoreDirectory(input.dir, prior.backup)
+    if (restored.ok) return { restored: true, hadPrevious: true, note: pick('已把包目录恢复到操作前的版本。', 'The package folder was restored to its previous version.') }
+    return {
+      restored: false,
+      hadPrevious: true,
+      note: pick(`恢复旧版本失败：${restored.error ?? ''}\n旧版本的备份保留在 ${prior.backup}，可手动复制回 ${input.dir}。`, `Could not restore the previous version: ${restored.error ?? ''}\nThe backup is kept at ${prior.backup}; copy it back to ${input.dir} manually.`)
+    }
+  }
+  if (input.existed) {
+    return { restored: false, hadPrevious: true, note: pick('操作前已有同名包，但没能备份旧版本，所以没有自动卸载（pi remove 按包名匹配，会把原来的包一起删掉）。请手动检查该包。', 'A package with the same name existed before but could not be backed up, so it was not uninstalled automatically (pi remove matches by name and would delete the original too). Check the package manually.') }
+  }
+  if (input.request.kind === 'update') {
+    return { restored: false, hadPrevious: false, note: pick('更新前没有可恢复的旧版本备份，请手动检查该包。', 'No backup of the previous version exists; check the package manually.') }
+  }
+  const removed = await runPi(['remove', ...(input.local ? ['-l'] : []), input.source], input.runCwd)
+  return removed.ok
+    ? { restored: true, hadPrevious: false, note: pick('已执行 pi remove 撤销本次安装。', 'Ran pi remove to undo this install.') }
+    : { restored: false, hadPrevious: false, note: pick(`自动 pi remove 失败，请在设置里手动卸载：${removed.output}`, `Automatic pi remove failed; uninstall it manually in settings: ${removed.output}`) }
 }

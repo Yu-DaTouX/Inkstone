@@ -9,6 +9,7 @@ import { useConfirm } from './confirm'
 import { Entry, Group, ListSkeleton, Meta, Panel, Warn } from './parts'
 import { McpServiceForm } from './McpServiceForm'
 import { mcpServicesText } from './mcp-services-text'
+import { summarizeMcpStatus } from './mcp-status-summary'
 import { useCodegraphStatus } from './CodegraphStatusRow'
 import { SettingsAdvanced } from '../root/controls'
 
@@ -212,7 +213,6 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
   onCheck(service: McpSettingsService): Promise<void>
 }) {
   const { lang } = useI18n()
-  const t = useT()
   const text = mcpServicesText(lang)
   const [details, setDetails] = useState(false)
   const sessionBusy = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting)
@@ -220,7 +220,7 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
   const actual = runtime?.servers.find((item) => item.id === service.name)
   const status = service.backend === 'native'
     ? service.scope === 'project' && !snapshot.projectTrusted ? text.untrusted : snapshot.nativeConfigChanged === true ? text.configChanged : snapshot.nativeConfigChanged === false ? text.configRead : text.configUnknown
-    : actual ? t(`cap.status.${actual.status}` as 'cap.status.ready') : text.configUnknown
+    : actual ? summarizeMcpStatus(actual).detail : text.configUnknown
   const locked = busy || !!service.conflict || scope === 'project' && !snapshot.projectTrusted || service.backend === 'host' && snapshot.busy
   const checkDisabled = busy || !!service.conflict || !service.enabled || sessionBusy || (service.scope === 'project' && !snapshot.projectTrusted) || (service.backend === 'native' && (!runtime?.nativeMcpAvailable || pendingStatus))
   return <Entry testId="mcp-service" name={service.special ? text.computer : service.title} badge={<Badge>{service.scope === 'project' ? text.projectOnly : service.inherited ? text.inherited : text.allSessions}</Badge>}

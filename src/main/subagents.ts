@@ -1220,7 +1220,7 @@ export class SubagentController {
     try {
       const endpoint = await approval.start({ sessionId: id, projectId: ctx.projectId ?? id })
       const rpc = new PiRpc({
-        cwd, piBin, args,
+        cwd, piBin, args, trackTree: true,
         env: { ...env,
           PATH: `${join(YAN_DIR, 'bin')}${delimiter}${env.PATH ?? process.env.PATH ?? ''}`,
           YAN_CLI_URL: endpoint.url, YAN_CLI_TOKEN: endpoint.token,

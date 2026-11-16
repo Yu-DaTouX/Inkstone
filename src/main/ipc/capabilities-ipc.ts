@@ -25,6 +25,8 @@ import { listNativeMcpServers } from '../mcp/native-list'
 import { manageNativeMcpServer } from '../mcp/native-manage'
 import { changeMcpServiceSettings, listMcpServiceSettings, type McpSettingsHost } from '../mcp/service-settings'
 import { verifyNativeStartupWitness } from '../mcp/app-native-witness'
+import { McpCheckHistory, mcpConfigFingerprint, withConnectionFacts, type McpCheckScope } from '../mcp/connection-facts'
+import { loadMcpServers } from '../mcp/config'
 import { mcpAppProxyService } from '../mcp/app-proxy-service'
 import { validateNativeSessionRequest } from '../native-session-guard'
 import type { McpSettingsMutation } from '../../shared/mcp-settings'
@@ -36,6 +38,7 @@ type CapabilityVerification = {
   generation: number
   agent: AgentController
   serverId: string
+  scope: McpCheckScope
   state: 'connecting' | 'ready' | 'error' | 'cancelled' | 'stale'
   toolCount?: number
   error?: string
@@ -153,6 +156,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:capabilities:changeMcpService', async (input: McpSettingsMutation) => {
     const host = await mcpSettingsHost()
     const result = await changeMcpServiceSettings(host, input)
+    if (result.ok) mcpChecks.clear()
     return result
   })
   const mcpApplications = new WeakSet<AgentController>()
@@ -182,9 +186,16 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     manageNativeMcpServer(await currentNativeMcpList(), value)
   )
 
+  const mcpChecks = new McpCheckHistory()
+  const checkScopeOf = (serverId: string, projectId: string | null = currentAgent()?.capabilityProjectId ?? null): McpCheckScope => ({
+    projectId,
+    fingerprint: mcpConfigFingerprint(loadMcpServers().servers.find((server) => server.id === serverId))
+  })
   handle('yan:capabilities:settings', async () => {
     const agent = currentAgent()
-    return agent ? agent.capabilitySettingsSnapshot() : { skills: [], servers: [], configWarning: false }
+    if (!agent) return { skills: [], servers: [], configWarning: false }
+    const snapshot = await agent.capabilitySettingsSnapshot()
+    return { ...snapshot, servers: withConnectionFacts(snapshot.servers, registry()?.mcpHolderSnapshots() ?? [], mcpChecks, checkScopeOf) }
   })
   const promptDirectories = (): PromptTemplateDirectories => {
     const cwd = registry()?.activeRunner()?.cwd
@@ -303,6 +314,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
       generation: runtime.generation,
       agent,
       serverId,
+      scope: checkScopeOf(serverId, agent.capabilityProjectId),
       state: 'connecting',
       updatedAt: Date.now()
     }
@@ -317,6 +329,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
           operation.state = result.status === 'ready' ? 'ready' : 'error'
           operation.toolCount = result.toolCount
           if (operation.state === 'error') operation.error = verificationErrorText(result.error)
+          mcpChecks.record(serverId, { ok: operation.state === 'ready', toolCount: result.toolCount, ...(operation.error ? { error: operation.error } : {}) }, operation.scope)
         }
         operation.updatedAt = Date.now()
       },
@@ -324,6 +337,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
         if (operation.state !== 'cancelled') {
           operation.state = 'error'
           operation.error = verificationErrorText(error)
+          mcpChecks.record(serverId, { ok: false, error: operation.error }, operation.scope)
         }
         operation.updatedAt = Date.now()
       }

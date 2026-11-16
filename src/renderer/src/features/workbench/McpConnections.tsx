@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useI18n, useT } from '../../i18n'
+import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { MCP_SETTINGS_CHANGED, mcpViewKey, notifyMcpSettingsChanged, reloadCurrentMcp } from '../../state/mcp-settings'
 import { Button, Notice, RailRow, RailValue, Switch, type StatusDotKind } from '../../ui'
 import type { McpSettingsService, McpSettingsSnapshot } from '../../../../shared/mcp-settings'
 import type { CapabilitySettingsSnapshot } from '../../../../shared/ipc'
 import type { WorkspaceOwner } from './types'
+import { summarizeMcpStatus } from '../settings/capabilities/mcp-status-summary'
 
 export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean) {
   const { lang } = useI18n()
-  const t = useT()
   const en = lang === 'en-US'
   const sessionKey = useStore((s) => JSON.stringify([s.activeRunnerId, s.session?.sessionId, s.peekedSessionId, s.peekedPath]))
   const sessionBusy = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting || !!s.session?.pendingMessageCount || s.conn !== 'ready')
@@ -112,7 +112,7 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
           const loaded = snapshot?.nativeConfigChanged === false
           const untrusted = service.scope === 'project' && !snapshot?.projectTrusted
           const connected = service.enabled && (service.backend === 'native' ? loaded : actual?.status === 'ready')
-          const status = untrusted ? en ? 'Not trusted' : '项目未信任' : !service.enabled ? en ? 'Disabled' : '已关闭' : connected ? en ? 'Connected' : '已连接' : service.backend === 'native' ? en ? 'Needs reload' : '待应用' : actual ? t(`cap.status.${actual.status}` as 'cap.status.ready') : en ? 'Not connected' : '未连接'
+          const status = untrusted ? en ? 'Not trusted' : '项目未信任' : !service.enabled ? en ? 'Disabled' : '已关闭' : connected ? en ? 'Connected' : '已连接' : service.backend === 'native' ? en ? 'Needs reload' : '待应用' : actual ? summarizeMcpStatus(actual).short : en ? 'Not checked' : '未检查'
           const dot: StatusDotKind = !service.enabled ? 'idle' : connected ? 'ok' : service.backend === 'native' ? 'idle' : actual?.status === 'ready' ? 'ok' : actual?.status === 'error' ? 'fail' : actual?.status === 'connecting' ? 'running' : actual?.status === 'needs-auth' ? 'awaiting' : 'idle'
           const disabled = pending || sessionBusy || !!service.conflict || !!snapshot?.project && !snapshot.projectTrusted || service.backend === 'host' && !!snapshot?.busy || service.backend === 'native' && !runtime?.nativeMcpAvailable
           return <RailRow key={service.key} label={service.title} title={`${service.title} · ${scopeLabel} · ${status}`} dot={dot} value={status} action={<Switch aria-label={`${service.title} · ${scopeLabel}`} isSelected={service.enabled} isDisabled={disabled} onChange={(value) => void toggle(service, value)} data-testid="rail-mcp-toggle" />} />

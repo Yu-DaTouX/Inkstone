@@ -1026,6 +1026,7 @@ export class AgentController extends EventEmitter {
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
+      trackTree: true,
       args: skipLaunch ? skipLaunch.args : agentOwnedPiArgs([
         '--no-extensions',
         ...(this.hostToolTokenExtension ? ['--extension', this.hostToolTokenExtension] : []),
