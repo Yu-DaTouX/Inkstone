@@ -53,6 +53,7 @@ function withStderrTail(message: string, tail: string): string {
 
 const REMOVE_RETRY = { recursive: true, force: true, maxRetries: 8, retryDelay: 250 } as const
 const LEFTOVER = /^plugin\.[0-9a-f-]{36}\.(old|new)$/
+const UNINSTALLED = '.uninstalled'
 const PROCESS_SCAN_TIMEOUT_MS = 8000
 
 function listWindowsProcesses(): Promise<ProcessRow[]> {
@@ -225,7 +226,7 @@ export class BundledPlugins {
         const restorable = names.filter(name => name.endsWith('.old'))
           .map(name => ({ name, mtime: statSync(join(dir, name), { throwIfNoEntry: false })?.mtimeMs ?? 0 }))
           .sort((a, b) => b.mtime - a.mtime)[0]?.name
-        if (restorable && !existsSync(target) && names.some(name => name.endsWith('.new'))) {
+        if (restorable && !existsSync(target) && !existsSync(join(dir, UNINSTALLED))) {
           await rename(join(dir, restorable), target)
           names.splice(names.indexOf(restorable), 1)
         }
@@ -253,12 +254,14 @@ export class BundledPlugins {
         if (action === 'remove') {
           if (installed && manifest.beforeRemove && manifest.process) await this.invoke(id, manifest.beforeRemove)
           await this.disconnect(id)
+          await writeFile(join(this.options.dataDir, 'plugins', id, UNINSTALLED), '', 'utf8').catch(() => undefined)
           if (installed) await this.removeDir(target)
           await this.removeLeftovers(id)
           return { ok: true, installed: false }
         }
         if (action !== 'install') throw new Error(pick('未知插件操作', 'Unknown plugin action'))
         if (existsSync(target) && !installed) throw new Error(pick('目标已有非砚安装的文件，未改动', 'Target has files not installed by Inkstone; left unchanged'))
+        await rm(join(this.options.dataDir, 'plugins', id, UNINSTALLED), { force: true })
         const wasConnected = installed && (this.connections.has(id) || this.connecting.has(id))
         if (installed) await this.disconnect(id)
         const staging = `${target}.${randomUUID()}.new`
