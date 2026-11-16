@@ -350,6 +350,8 @@ export async function runTurnTests(ok, turns) {
     ok(toolWaitSpans([{ id: 't9', name: 'bash', args: {}, status: 'running', startedAt: 100 }]).length === 0, '还在跑的调用不进分段（无结束时间）')
     ok(toolWaitSpans([{ id: 't8', name: 'bash', args: {}, status: 'ok' }]).length === 0, '没有起止时间的调用不进分段')
     ok(waitSpansMs([]) === 0, '没有分段 → 0')
+    const generated = { id: 'g1', name: 'write', args: {}, status: 'ok', startedAt: 1000, endedAt: 4000 }
+    ok(waitSpansMs(toolWaitSpans([generated])) === 3000, '起点是生成参数开始的时刻时，用时包含参数生成阶段')
 
     const turns = groupIntoTurns([
       usr('u1', 'x'),

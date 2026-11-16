@@ -347,6 +347,28 @@ try {
   noIndex.liveAssistantDelta({ type: 'text_delta', delta: 'c' }, 1)
   assert.deepEqual(noIndex.streamingContent(), { id: 'm0', text: 'abc', thinking: 'x', calls: [] }, '缺 contentIndex 时连续增量不丢内容')
 
+  const timed = new m.SessionItemProjector()
+  timed.liveMessageStart({ role: 'user', content: 'go' }, 1000)
+  timed.liveMessageStart({ role: 'assistant' }, 1001)
+  const timedCall = timed.liveAssistantDelta({ type: 'toolcall_start', contentIndex: 0, id: 'timed', toolName: 'write' }, 1002)
+  assert.equal(timedCall.startedAt, 1002, '生成参数时记下起点')
+  timed.liveAssistantDelta({ type: 'toolcall_delta', contentIndex: 0, delta: '{"path":"a.txt"}' }, 1500)
+  timed.liveAssistantDelta({ type: 'toolcall_end', contentIndex: 0, toolCall: { type: 'toolCall', id: 'timed', name: 'write', arguments: { path: 'a.txt' } } }, 2000)
+  timed.liveMessageEnd({ timestamp: 2000 })
+  const timedStart = timed.liveToolStart({ toolCallId: 'timed', toolName: 'write', args: { path: 'a.txt' } }, 3000)
+  assert.equal(timedStart.call.startedAt, 1002, '进入执行时保留生成参数时的起点，计时不归零')
+  assert.equal(timedStart.call.status, 'running')
+  const timedEnd = timed.liveToolEnd('timed', { result: { content: [{ type: 'text', text: 'ok' }] }, isError: false }, 4000)
+  assert.equal(timedEnd.startedAt, 1002, '完成后起点仍是生成参数时')
+  assert.equal(timedEnd.endedAt - timedEnd.startedAt, 2998, '用时包含参数生成阶段')
+  assert.equal(timed.uiMessages()[1].toolCalls[0].startedAt, 1002, '合成的消息里起点一致')
+  const bare = { id: 'bare', name: 'read', status: 'pending' }
+  m.startToolExecution(bare, 50)
+  assert.equal(bare.startedAt, 50, '没有经过生成参数阶段的调用以执行开始为起点')
+  const rerun = { id: 'rerun', name: 'read', status: 'ok', startedAt: 10, endedAt: 20 }
+  m.startToolExecution(rerun, 90)
+  assert.equal(rerun.startedAt, 10)
+
   const interleaved = new m.SessionItemProjector()
   interleaved.liveMessageStart({ role: 'user', content: 'go' }, 1)
   interleaved.liveMessageStart({ role: 'assistant' }, 2)

@@ -70,7 +70,7 @@ export function finishToolCallArgs(call: UIToolCall, toolCall: PiContentBlock | 
 
 export function startToolExecution(call: UIToolCall, now: number): void {
   call.status = 'running'
-  call.startedAt = now
+  if (call.startedAt === undefined) call.startedAt = now
 }
 
 export function updateToolExecution(call: UIToolCall, partial: ToolResultPayload | undefined): void {

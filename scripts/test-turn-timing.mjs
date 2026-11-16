@@ -223,6 +223,15 @@ export async function runTurnTimingStoreTests(ok, mod) {
   ok(applied[1]?.turnTiming === undefined && applied[4]?.turnTiming === undefined, '别的回合不被污染')
   ok(messages[2].turnTiming === undefined, '原数组对象不被修改（返回新数组）')
 
+  const spanned = applyTurnTimings(
+    [
+      { id: 'm0', role: 'user', text: '问' },
+      { id: 'a-w1', role: 'assistant', text: 'a', toolCalls: [{ id: 'w1', name: 'write', args: {}, status: 'ok', endedAt: 4000 }] }
+    ],
+    [{ ...record, anchorId: 'm0', sourceIds: ['a-w1'], waitSpans: [{ id: 'w1', name: 'write', startedAt: 1002, endedAt: 4000 }] }]
+  )
+  ok(spanned[1]?.toolCalls?.[0]?.startedAt === 1002 && spanned[1]?.toolCalls?.[0]?.endedAt === 4000, '重载后工具起点从记录的分段恢复（从生成参数开始），结束仍用结果时间')
+
   const fallback = applyTurnTimings(
     [
       { id: 'm-1', role: 'assistant' },
