@@ -1,10 +1,10 @@
 import { formatBytes } from '../diff/limits'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff } from '../../ui/icons'
+import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff, Search } from '../../ui/icons'
 import type { ArtifactLibraryItem as ArtifactLibraryEntry } from '../../../../shared/artifact-library'
 import { isHtmlArtifact } from '../../../../shared/html-artifact-preview'
 import { useI18n, useT } from '../../i18n'
-import { EmptyState, IconButton, Notice, PageHeader, SearchField, SegmentedControl } from '../../ui'
+import { Button, EmptyState, IconButton, MiddleTruncate, Notice, PageHeader, SearchField, SegmentedControl } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
@@ -108,6 +108,10 @@ export function ArtifactLibraryPage(): JSX.Element {
   const previewFile = useStore((s) => s.previewFile)
   const aliveRef = useRef(true)
 
+  const retry = (): void => {
+    setState({ status: 'loading' })
+    load()
+  }
   const load = useCallback(() => {
     void window.yan.listArtifactLibrary()
       .then((result) => { if (aliveRef.current) setState({ status: 'ready', entries: result.items }) })
@@ -171,7 +175,7 @@ export function ArtifactLibraryPage(): JSX.Element {
     const { artifact } = entry
     return [
       entry.versions > 1 ? `v${artifact.version ?? entry.versions}` : '',
-      artifact.unavailable ? t('artifact.unavailable') : formatBytes(artifact.bytes),
+      artifact.unavailable ? t('artifact.unavailable').replace(/\p{P}$/u, '') : formatBytes(artifact.bytes),
       dateFormat.format(artifact.createdAt),
       entry.sessionTitle ?? ''
     ].filter(Boolean).join(' · ')
@@ -205,7 +209,7 @@ export function ArtifactLibraryPage(): JSX.Element {
     return (
       <button type="button" className="artifact-library-name" disabled={unavailable || !canPreviewEntry(entry)} onClick={() => openEntry(entry)} title={artifact.filename}>
         {pinned.has(libraryEntryKey(entry)) ? <Pin size={12} aria-label={t('artifactLibrary.pinned')} className="artifact-library-pin" /> : null}
-        {artifact.filename}
+        <MiddleTruncate className="artifact-library-filename" value={artifact.filename} showTitle={false} />
       </button>
     )
   }
@@ -235,12 +239,21 @@ export function ArtifactLibraryPage(): JSX.Element {
         }
       />
       {state.status === 'loading' ? <p className="artifact-library-note">{t('artifact.reading')}</p> : null}
-      {state.status === 'error' ? <Notice tone="fail">{t('artifactLibrary.loadFailed')}</Notice> : null}
+      {state.status === 'error' ? (
+        <Notice tone="fail" action={<Button size="sm" variant="secondary" onPress={retry}>{t('artifactLibrary.retry')}</Button>} data-testid="v3-artifact-library-error">
+          {t('artifactLibrary.loadFailed')}
+        </Notice>
+      ) : null}
       {state.status === 'ready' && !state.entries.length ? (
         <EmptyState icon={<Layers size={20} />} title={t('artifactLibrary.empty')} description={t('artifactLibrary.emptyHint')} />
       ) : null}
       {state.status === 'ready' && state.entries.length > 0 && !visible.length ? (
-        <p className="artifact-library-note">{t('artifactLibrary.noMatch')}</p>
+        <EmptyState
+          size="sm"
+          icon={<Search size={20} />}
+          title={t('artifactLibrary.noMatch')}
+          action={<Button size="sm" variant="secondary" onPress={() => setQuery('')} data-testid="v3-artifact-library-clear-search">{t('artifactLibrary.clearSearch')}</Button>}
+        />
       ) : null}
       {visible.length && view === 'list' ? (
         <ul className="artifact-library-list">

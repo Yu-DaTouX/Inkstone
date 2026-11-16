@@ -27,13 +27,20 @@
     flex-direction: column;
     gap: 0.125rem;
   }
+  .t3-launcher__list + .t3-launcher__list {
+    margin-top: var(--s-12);
+  }
+  .t3-launcher__reason {
+    margin: 0;
+    padding: 0 var(--s-10) var(--s-2);
+  }
   .t3-launcher__row {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--s-10);
     width: 100%;
     height: 2rem;
-    padding-inline: 0.625rem;
+    padding-inline: var(--s-10);
     border-radius: var(--r-md);
     font-size: var(--t-body);
     text-align: left;

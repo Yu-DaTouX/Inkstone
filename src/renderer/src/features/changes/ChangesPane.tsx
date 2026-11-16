@@ -1,6 +1,6 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, FolderGit2, GitBranch, GitCommitHorizontal, GitMerge, List, RefreshCw } from '../../ui/icons'
+import { ChevronDown, CloudDownload, CloudUpload, Eye, FileDiff, FlaskConical, FolderGit2, GitBranch, GitCommitHorizontal, GitMerge, List, RefreshCw } from '../../ui/icons'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitChangesScope, GitStatusEntry } from '../../../../shared/git'
 import {
@@ -12,6 +12,7 @@ import {
   Menu,
   MenuItem,
   MenuTrigger,
+  MiddleTruncate,
   Notice,
   Popover,
   Spinner,
@@ -496,6 +497,15 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
     setReveal((prev) => ({ path, seq: (prev?.seq ?? 0) + 1 }))
   }, [binaryPaths])
 
+  const showConflictFile = useCallback(
+    (path: string): void => {
+      const norm = path.replaceAll('\\', '/')
+      const hit = itemByPath.has(norm) ? norm : items.find((item) => item.path === norm || item.path.endsWith(`/${norm}`))?.path
+      if (hit) selectFile(hit)
+    },
+    [itemByPath, items, selectFile]
+  )
+
   const toggleFile = useCallback((path: string): void => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -687,8 +697,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
 
   const branchLabel = repo ? (repo.detached ? [text.detached, repo.head?.slice(0, 7)].filter(Boolean).join(' ') : repo.branch ?? text.noBranch) : ''
   const changeCount = repo ? (scope.kind === 'working' ? repo.changedCount : items.length) : null
-  const countLabel =
-    changeCount === null ? '' : `${changeCount} ${text.changed}${repo?.unborn ? ` \u00b7 ${text.unborn}` : ''}`
+  const countWord = `${text.changed}${repo?.unborn ? ` \u00b7 ${text.unborn}` : ''}`
+  const countLabel = changeCount === null ? '' : `${changeCount} ${countWord}`
   const lineTotals = useMemo(() => {
     let added = 0
     let removed = 0
@@ -775,7 +785,19 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
         onPress={() => setBranchOpen(true)}
         data-testid="changes-branch"
       >
-        <span className="changes-pane__clip">{branchLabel}</span>
+        {repo?.detached ? (
+          <span className="changes-pane__clip" title={branchLabel}>
+            <span className="changes-pane__long">{branchLabel}</span>
+            <span className="changes-pane__short changes-pane__head-sha">{repo.head?.slice(0, 7) || 'HEAD'}</span>
+          </span>
+        ) : (
+          <>
+            <MiddleTruncate className="changes-pane__clip changes-pane__long" value={branchLabel} />
+            <span className="changes-pane__short changes-pane__tail" title={branchLabel}>
+              <span>{branchLabel}</span>
+            </span>
+          </>
+        )}
       </Button>
     ) : null
 
@@ -955,9 +977,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
             {branchButton}
             {syncMark}
             {scopeMenu}
-            {countLabel ? (
-              <span className="changes-pane__count" data-testid="changes-stats">
-                {countLabel}
+            {countLabel && changeCount ? (
+              <span className="changes-pane__count" title={countLabel} data-testid="changes-stats">
+                <FileDiff size={12} aria-hidden className="changes-pane__count-icon" />
+                {changeCount}
+                <span className="changes-pane__count-word"> {countWord}</span>
               </span>
             ) : null}
             {!fileList.shown && shownItems.length > 0 ? (
@@ -1284,6 +1308,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
           isOpen={branchOpen}
           onOpenChange={setBranchOpen}
           onChanged={refresh}
+          onShowFile={showConflictFile}
         />
       ) : null}
       <ConfirmDialog

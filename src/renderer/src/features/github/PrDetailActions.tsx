@@ -130,6 +130,8 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
             <MenuItem
               id="fix-checks"
               description={text.agent.fixChecksHint}
+              isDisabled={failedChecksOf(detail.checkItems).length === 0}
+              disabledReason={text.agent.fixChecksNone}
               trailingValue={failedChecksOf(detail.checkItems).length ? <Badge tone="fail">{failedChecksOf(detail.checkItems).length}</Badge> : undefined}
               data-testid="gh-pr-agent-fix"
             >

@@ -1,9 +1,11 @@
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { deflateSync as zlibDeflate } from 'node:zlib'
 import { shotKit } from '../lib/ui-shots.mjs'
+import { buildFakeAdb } from '../lib/fake-adb.mjs'
 import { listFrictionShots, measureUi, openFrictionSession } from '../lib/user-ui.mjs'
 
 export const meta = {
@@ -1125,7 +1127,7 @@ async function branchesTarget({ kit: S, ev, sleep, until, check, log, report, ne
   await closePicker()
 
   await go(fx.many)
-  R.manyHead = await ev(`(() => { const b = document.querySelector('[data-testid="changes-branch"]'); const r = b?.getBoundingClientRect(); const label = b?.querySelector('.changes-pane__clip'); return { text: b?.innerText ?? null, width: r ? Math.round(r.width) : null, clipped: label ? label.scrollWidth > label.clientWidth : null, count: document.querySelector('.changes-pane__count')?.offsetWidth ?? null } })()`)
+  R.manyHead = await ev(`(() => { const b = document.querySelector('[data-testid="changes-branch"]'); const r = b?.getBoundingClientRect(); const label = b?.querySelector('.changes-pane__clip'); return { text: b?.innerText ?? null, width: r ? Math.round(r.width) : null, clipped: label ? label.scrollWidth > label.clientWidth : null, count: document.querySelector('.changes-pane__count')?.offsetWidth ?? null, title: document.querySelector('.changes-pane__title')?.clientWidth ?? null, container: document.querySelector('.changes-pane__title')?.closest('.rp-sub-title')?.clientWidth ?? null } })()`)
   await S.clip('branches-02-many-head', panel, 0)
   await openPicker()
   R.many = await pickerInfo()
@@ -1170,6 +1172,13 @@ async function branchesTarget({ kit: S, ev, sleep, until, check, log, report, ne
   await shotPicker('branches-06-switch-failed')
   await S.theme('light'); await sleep(400); await S.clip('branches-06-switch-failed-pop-light', picker, 16); await S.theme('dark'); await sleep(300)
   check('分支：切换失败拍到', R.switchFailed, R.switchFailure?.text?.slice(0, 200))
+  R.showFilesButton = await ev(`!!document.querySelector('${picker} [data-testid="git-failure-show-files"]')`)
+  if (R.showFilesButton) {
+    await S.click(`${picker} [data-testid="git-failure-show-files"]`, 1200)
+    R.showFilesResult = await ev(`(() => ({ pickerOpen: !!document.querySelector('${picker}'), active: document.querySelector('.changes-pane [aria-current="true"], .changes-pane [data-active="1"], .changes-pane [aria-selected="true"]')?.innerText?.trim().slice(0, 80) ?? null }))()`)
+    await S.unhover()
+    await S.clip('branches-06-show-files-panel', panel, 0)
+  }
   await closePicker()
 
   await openPicker()
@@ -1642,6 +1651,390 @@ async function terminalTarget({ kit: S, ev, sleep, until, check, log, report, ne
   await sleep(800)
 }
 
+async function tabgapTarget({ kit: S, ev, sleep, until, check, log, report, newSession, cdp }) {
+  report.tabgap = {}
+  const R = report.tabgap
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-tabgap-'))
+  for (const name of ['alpha-notes.md', 'beta-service.ts', 'gamma-config.json']) writeFileSync(join(dir, name), `${name}\n`)
+  check('标签间距：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const panel = '[data-testid="rp-column-0"]'
+  const original = await ev('window.__yanRightPanel.getState().width')
+  R.userWidth = original
+  const setWidth = async (w) => { await ev(`(window.__yanRightPanel.getState().setWidth(${w}), true)`); await sleep(1000); await S.unhover() }
+  const measure = (listSel, plusSel) => ev(`(() => { const list = document.querySelector(${JSON.stringify(listSel)}); if (!list) return null; const tabs = [...list.querySelectorAll('.ui-ptab')]; const last = tabs[tabs.length - 1]; const active = list.querySelector('.ui-ptab[data-active="1"]'); const plus = ${plusSel ? `document.querySelector(${JSON.stringify(plusSel)})` : 'null'}; const l = list.getBoundingClientRect(); const lr = last?.getBoundingClientRect(); const ar = active?.getBoundingClientRect(); const pr = plus?.getBoundingClientRect(); const gap = getComputedStyle(list.parentElement).columnGap; return { tabs: tabs.length, listWidth: Math.round(l.width), scrollWidth: list.scrollWidth, tabWidths: tabs.map((t) => Math.round(t.getBoundingClientRect().width)), cap: list.style.getPropertyValue('--ptab-max') || null, lastToListEnd: lr ? Math.round((l.right - lr.right) * 10) / 10 : null, lastToPlus: lr && pr ? Math.round((pr.left - lr.right) * 10) / 10 : null, parentGap: gap, activeInView: ar ? ar.left >= l.left - 1 && ar.right <= l.right + 1 : null, activeWidth: ar ? Math.round(ar.width) : null } })()`)
+  const pair = async (name, listSel, plusSel, clipSel) => {
+    const out = {}
+    for (const w of [869, 360]) {
+      await setWidth(w)
+      out[w] = await measure(listSel, plusSel)
+      await S.clip(`${name}-w${w}`, clipSel, 0)
+    }
+    return out
+  }
+
+  await newSession(dir)
+  await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'terminal', kind: 'terminal' }); rp.setOpen(true); return true })()`)
+  await until(`!!document.querySelector('[data-testid="terminal-pane"] .xterm')`, 20000, 150)
+  await sleep(2000)
+  R.term1 = await pair('tabgap-01-terminal-1', '[data-testid="terminal-tabs"]', '.term-tab-new', '.term-tabbar')
+  await setWidth(869)
+  await S.click('[data-testid="terminal-new"]', 1200)
+  await S.click('[data-testid="terminal-new"]', 1500)
+  await S.unhover()
+  R.term3 = await pair('tabgap-02-terminal-3', '[data-testid="terminal-tabs"]', '.term-tab-new', '.term-tabbar')
+  const keyTab = await ev(`(() => { const a = document.querySelector('[data-testid="terminal-tabs"] .ui-ptab[data-active="1"] .ui-ptab__label'); a?.focus(); return document.activeElement === a })()`)
+  if (keyTab) {
+    await S.key('ArrowLeft', { waitMs: 400 })
+    await S.key('ArrowLeft', { waitMs: 1200 })
+    R.keyAfter = await measure('[data-testid="terminal-tabs"]', '.term-tab-new')
+    await ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); const a = list.querySelector('.ui-ptab[data-active="1"]'); list.scrollLeft = a.offsetLeft > list.scrollWidth / 2 ? 0 : list.scrollWidth; return true })()`)
+    await sleep(300)
+    R.keyHidden = await measure('[data-testid="terminal-tabs"]', '.term-tab-new')
+    await setWidth(372)
+    R.keyRevealed = await measure('[data-testid="terminal-tabs"]', '.term-tab-new')
+    await S.clip('tabgap-03-terminal-key-reveal-w372', '.term-tabbar', 0)
+    check('标签间距：键盘切换后不算用户滚动，栏宽变化时仍会滚回当前标签', R.keyAfter?.activeInView === true && R.keyRevealed?.activeInView === true, { after: R.keyAfter, hidden: R.keyHidden, revealed: R.keyRevealed })
+  }
+  check('标签间距：终端 869 宽「+」紧跟最后一个标签', [R.term1[869], R.term3[869]].every((m) => m && m.lastToPlus !== null && m.lastToPlus <= 8 && !m.cap), { one: R.term1[869], three: R.term3[869] })
+  check('标签间距：终端 360 宽单标签收缩到可用宽度', !!R.term1[360] && R.term1[360].activeInView === true && R.term1[360].activeWidth <= R.term1[360].listWidth, R.term1[360])
+
+  await setWidth(869)
+  await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'browser', kind: 'browser' }); rp.setOpen(true); return true })()`)
+  await until(`!!document.querySelector('[data-testid="browser-pane-not-open"], [data-testid="browser-pane"]')`, 15000)
+  if (await ev(`!!document.querySelector('[data-testid="browser-pane-open"]')`)) await S.click('[data-testid="browser-pane-open"]', 1500)
+  await until(`!!document.querySelector('[data-testid="browser-start-page"], [data-testid="browser-pane-viewport-menu"]')`, 15000)
+  await sleep(800)
+  if (!(await ev(`!!document.querySelector('[data-testid="browser-pane-htabs"]')`))) {
+    await S.click('[data-testid="browser-pane-viewport-menu"]', 700)
+    await S.click('[data-testid="browser-pane-layout-horizontal"]', 1200)
+  }
+  R.browserHorizontal = await until(`!!document.querySelector('[data-testid="browser-pane-htabs"]')`, 5000, 100)
+  await S.unhover()
+  if (R.browserHorizontal) {
+    R.browser1 = await pair('tabgap-04-browser-1', '[data-testid="browser-pane-htabs"]', '[data-testid="browser-pane-new-tab"]', '.v3-browser__tabrow')
+    await setWidth(869)
+    await S.click('[data-testid="browser-pane-new-tab"]', 1200)
+    await S.click('[data-testid="browser-pane-new-tab"]', 1500)
+    await S.unhover()
+    R.browser3 = await pair('tabgap-05-browser-3', '[data-testid="browser-pane-htabs"]', '[data-testid="browser-pane-new-tab"]', '.v3-browser__tabrow')
+    check('标签间距：浏览器 869 宽「+」紧跟最后一个标签', [R.browser1[869], R.browser3[869]].every((m) => m && m.lastToPlus !== null && m.lastToPlus <= 8 && !m.cap), { one: R.browser1[869], three: R.browser3[869] })
+  }
+  check('标签间距：浏览器横排标签打开', R.browserHorizontal)
+
+  await setWidth(869)
+  await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'files', kind: 'files' }); rp.setOpen(true); return true })()`)
+  R.filesTree = await until(`!!document.querySelector('[data-testid="v3-files-row-alpha-notes.md"]')`, 15000, 100)
+  const files = ['alpha-notes.md', 'beta-service.ts', 'gamma-config.json']
+  const openFile = async (name) => {
+    await ev(`(() => { const row = document.querySelector('[data-testid="v3-files-row-${name}"]'); row?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 })); return !!row })()`)
+    await until(`!!document.querySelector('[data-testid="v3-preview"]')`, 15000, 100)
+    await sleep(900)
+  }
+  await openFile(files[0])
+  await openFile(files[1])
+  await openFile(files[2])
+  await S.unhover()
+  R.preview3 = await pair('tabgap-07-preview-3', '[data-testid="v3-preview-tabs"] .ui-ptabs', null, '.v3-preview-tabbar')
+  check('标签间距：预览 869 宽标签条不留多余空白', [R.preview3[869]].every((m) => m && m.tabs === 3 && m.lastToListEnd !== null && m.lastToListEnd <= 2 && !m.cap), { three: R.preview3[869], narrow: R.preview3[360] })
+  await setWidth(original)
+}
+
+async function logsTarget({ kit: S, ev, sleep, until, check, report, newSession }) {
+  report.logs = {}
+  const R = report.logs
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-logs-'))
+  writeFileSync(join(dir, 'README.md'), '# logs fixture\n')
+  const panel = '[data-testid="rp-column-0"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const variants = async (name, { light = true, full = true } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, panel, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const info = () => ev(`(() => { const root = document.querySelector('[data-testid="v3-wb-logs"], [data-testid="v3-wb-logs-empty"]'); if (!root) return null; const r = root.getBoundingClientRect(); const body = root.querySelector('[data-testid="v3-wb-logs-body"]'); const bar = root.querySelector('.wb-logs-bar'); const kids = bar ? [...bar.children].map((n) => { const b = n.getBoundingClientRect(); return { cls: n.className.split(' ')[0], w: Math.round(b.width), h: Math.round(b.height), text: n.innerText?.trim().slice(0, 40) } }) : []; return { testid: root.getAttribute('data-testid'), text: root.innerText.replace(/\\s+/g, ' ').slice(0, 300), top: Math.round(r.top), height: Math.round(r.height), body: body ? { h: body.clientHeight, sh: body.scrollHeight, top: body.scrollTop, w: body.clientWidth, sw: body.scrollWidth } : null, bar: kids } })()`)
+  const setLogs = (logs, statuses) => ev(`(window.__yanStore.setState({ logs: ${JSON.stringify(logs)}, statuses: ${JSON.stringify(statuses)} }), true)`)
+  const openLogs = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'logs', kind: 'logs' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="v3-wb-logs"], [data-testid="v3-wb-logs-empty"]')`, 15000, 100)
+  }
+
+  await newSession(dir)
+  await setLogs([], {})
+  check('日志：面板打开', await openLogs())
+  await sleep(800)
+  R.empty = await info()
+  await variants('logs-00-empty')
+
+  await setLogs([], { 'git-sync': '已同步 3 分钟前', 'lint-watch': '运行中 · 0 错误', 'very-long-extension-status-key-name': '一段很长的扩展状态文字，用来看窄栏下键和值怎么排布，会不会挤在一起或者被截断' })
+  R.statusShown = await until(`!!document.querySelector('[data-testid="v3-wb-logs-status"]')`, 5000, 100)
+  await sleep(600)
+  R.statusStillShown = await ev(`!!document.querySelector('[data-testid="v3-wb-logs-status"]')`)
+  R.statusOnly = await info()
+  await variants('logs-01-status-only', { light: false })
+
+  const now = Date.now()
+  const stamp = (i) => new Date(now - (260 - i) * 7000).toISOString().slice(11, 19)
+  const lines = Array.from({ length: 200 }, (_, i) => {
+    if (i % 37 === 5) return `[${stamp(i)}] 错误：扩展 lint-watch 抛出异常 Error: ENOENT: no such file or directory, open 'C:\\\\Users\\\\demo\\\\project\\\\.eslintrc.json'`
+    if (i % 23 === 3) return `[${stamp(i)}] [pi] tool_call bash {"command":"npm run test -- --reporter=verbose --coverage --watch=false","cwd":"C:/Users/demo/project/packages/very-long-package-name/src"}`
+    if (i % 41 === 7) return `[${stamp(i)}] TypeError: Cannot read properties of undefined (reading 'cwd')`
+    if (i % 43 === 9) return `[${stamp(i)}] [error] extension git-sync exited with code 1`
+    if (i % 29 === 13) return `[${stamp(i)}] [warn] slow response from provider`
+    if (i % 31 === 17) return `[${stamp(i)}] info: retry after error: timeout (recovered)`
+    if (i % 11 === 0) return `[${stamp(i)}] warn: 模型响应较慢，已等待 ${(i % 9) + 3} 秒`
+    return `[${stamp(i)}] info: session event #${i} message_update delta=${(i * 37) % 997}`
+  })
+  R.stickSamples = await ev(`new Promise((done) => { window.__yanStore.setState({ logs: ${JSON.stringify(lines)}, statuses: { 'git-sync': '已同步 3 分钟前', 'lint-watch': '运行中 · 2 错误' } }); const out = []; let n = 0; const tick = () => { const x = document.querySelector('[data-testid="v3-wb-logs-body"]'); out.push(x ? Math.round(x.scrollHeight - x.scrollTop - x.clientHeight) + '/' + x.clientHeight + '/' + x.scrollHeight : 'none'); if (++n < 16) setTimeout(tick, 50); else done(out.join(' ')) }; tick() })`)
+  await sleep(800)
+  R.many = await info()
+  await variants('logs-02-many')
+  R.openedAtBottom = !!R.many?.body && R.many.body.sh - R.many.body.top - R.many.body.h < 8
+  await ev(`(window.__yanStore.setState((s) => ({ logs: [...s.logs, '[append] info: new line A', '[append] info: new line B'].slice(-200) })), true)`)
+  await sleep(500)
+  R.appendFollow = await info()
+  R.appendFollowed = !!R.appendFollow?.body && R.appendFollow.body.sh - R.appendFollow.body.top - R.appendFollow.body.h < 8
+  const bodyBox = await ev(`(() => { const b = document.querySelector('[data-testid="v3-wb-logs-body"]')?.getBoundingClientRect(); return b ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null })()`)
+  if (bodyBox) await S.cdpCall('Input.dispatchMouseEvent', { type: 'mouseWheel', x: bodyBox.x, y: bodyBox.y, deltaX: 0, deltaY: -4000 })
+  await sleep(700)
+  const firstVisible = () => ev(`(() => { const b = document.querySelector('[data-testid="v3-wb-logs-body"]'); if (!b) return null; const top = b.getBoundingClientRect().top; const line = [...b.querySelectorAll('.wb-logs-line')].find((n) => n.getBoundingClientRect().bottom > top + 1); return line ? { seq: line.dataset.seq, offset: Math.round((line.getBoundingClientRect().top - top) * 10) / 10, text: line.textContent.slice(0, 40) } : null })()`)
+  R.anchorBefore = await firstVisible()
+  for (const tag of ['C', 'D', 'E']) {
+    await ev(`(window.__yanStore.setState((s) => ({ logs: [...s.logs, '[append] info: new line ${tag}'].slice(-200) })), true)`)
+    await sleep(300)
+  }
+  await sleep(300)
+  R.appendKept = await info()
+  R.anchorAfter = await firstVisible()
+  check('日志：打开时停在最新一行，新日志跟随；上翻后满 200 行从顶部删行，最前可见行不变', R.openedAtBottom && R.appendFollowed && !!R.anchorBefore && R.anchorBefore.seq === R.anchorAfter?.seq && Math.abs(R.anchorBefore.offset - R.anchorAfter.offset) <= 2, { many: R.many?.body, follow: R.appendFollow?.body, before: R.anchorBefore, after: R.anchorAfter, kept: R.appendKept?.body })
+  await S.clip('logs-02-many-scrolled-up', panel, 0)
+  await ev(`(() => { const b = document.querySelector('[data-testid="v3-wb-logs-body"]'); if (b) b.scrollTop = b.scrollHeight; return !!b })()`)
+  await sleep(400)
+  R.manyBottom = await info()
+  await S.clip('logs-02-many-bottom', panel, 0)
+  report.hover.push(['logs-02-copy-hover', await S.hover('[data-testid="v3-wb-logs-copy"]', 1200)])
+  await S.clip('logs-02-copy-hover', panel, 0)
+  await S.unhover()
+
+  await S.click('[data-testid="v3-wb-logs-filter"]', 300)
+  await S.typeText('错误', 400)
+  await sleep(600)
+  R.filtered = await info()
+  await variants('logs-03-filtered', { light: false })
+  await S.key('Escape', { waitMs: 300 })
+  for (const [word, name] of [['rror', 'logs-03b-filter-error'], ['warn', 'logs-03c-filter-warn']]) {
+    await S.click('[data-testid="v3-wb-logs-filter"]', 300)
+    await S.typeText(word, 400)
+    await sleep(600)
+    R[name] = await ev(`[...document.querySelectorAll('.wb-logs-line')].slice(0, 30).map((n) => (n.dataset.tone || '-') + ' ' + n.textContent.slice(11, 60))`)
+    await variants(name)
+    await S.key('Escape', { waitMs: 300 })
+  }
+  await S.click('[data-testid="v3-wb-logs-filter"]', 300)
+  await S.typeText('zzz-no-such-line', 400)
+  await sleep(600)
+  R.noMatch = await info()
+  await variants('logs-04-no-match')
+  await S.key('Escape', { waitMs: 300 })
+  await ev('document.activeElement?.blur?.()')
+
+  await setLogs(lines.slice(0, 6), {})
+  await sleep(600)
+  R.few = await info()
+  await variants('logs-05-few', { light: false })
+
+  const filterBox = await ev(`(() => { const el = document.querySelector('[data-testid="v3-wb-logs-filter"]'); el?.focus(); return document.activeElement === el })()`)
+  if (filterBox) {
+    await S.key('Tab', { waitMs: 300 })
+    R.focusAfterTab = await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName`)
+    await S.clip('logs-06-focus-copy', panel, 0)
+    await S.key('Tab', { waitMs: 300 })
+    R.focusBody = await ev(`(() => { const el = document.activeElement; return { id: el?.getAttribute('data-testid') ?? el?.tagName, outline: el ? getComputedStyle(el).outlineStyle + ' ' + getComputedStyle(el).outlineWidth : null, shadow: el ? getComputedStyle(el).boxShadow.slice(0, 80) : null } })()`)
+    await S.clip('logs-06-focus-body', panel, 0)
+    await ev('document.activeElement?.blur?.()')
+  }
+
+  await setLogs(lines, { 'git-sync': '已同步 3 分钟前', 'lint-watch': '运行中 · 2 错误' })
+  const other = width === 360 ? 869 : 360
+  await ev(`(window.__yanRightPanel.getState().setWidth(${other}), true)`)
+  await sleep(1200)
+  R.otherWidth = { width: other, info: await info() }
+  await variants(`logs-07-w${other}`, { light: false, full: true })
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(900)
+  report.audit.logs = await S.audit('[data-testid="v3-wb-logs"]')
+  await setLogs([], {})
+}
+
+async function deviceTarget({ kit: S, ev, sleep, until, check, log, report, box }) {
+  report.device = {}
+  const R = report.device
+  const build = mkdtempSync(join(tmpdir(), 'inkstone-ui-device-'))
+  const fake = buildFakeAdb(build)
+  R.fake = { ok: fake.ok, csc: fake.csc, ffmpeg: fake.ffmpeg }
+  R.avdHome = box?.home ? join(box.home, '.android', 'avd') : null
+  if (R.avdHome) {
+    mkdirSync(R.avdHome, { recursive: true })
+    for (const name of ['Pixel_8_API_35', 'Medium_Phone_API_36']) writeFileSync(join(R.avdHome, `${name}.ini`), '')
+  }
+  check('设备：AVD 夹具在隔离 home 里', !!R.avdHome && R.avdHome.toLowerCase().includes('debug'), R.avdHome)
+  check('设备：假 adb 与画面夹具就绪（csc、ffmpeg）', fake.ok, R.fake)
+  check('设备：SDK 目录是隔离实例的', !!box?.androidSdk && box.androidSdk.toLowerCase().includes('debug'), box?.androidSdk)
+  if (!fake.ok || !box?.androidSdk) return
+  const tools = join(box.androidSdk, 'platform-tools')
+  const panel = '[data-testid="rp-column-0"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const variants = async (name, { light = true, full = true } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, panel, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const info = () => ev(`(() => { const root = document.querySelector('[data-testid="device-pane"]'); if (!root) return null; const canvas = root.querySelector('canvas'); const box = (n) => { if (!n) return null; const r = n.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] }; return { text: root.innerText.replace(/\\s+/g, ' ').slice(0, 300), ids: [...root.querySelectorAll('[data-testid]')].map((n) => n.getAttribute('data-testid')), canvas: canvas && !canvas.hidden ? { w: canvas.width, h: canvas.height, box: box(canvas) } : null, screen: box(root.querySelector('.device-pane__screen')), bars: [...root.querySelectorAll('.device-pane__bar')].map(box), error: root.querySelector('.device-pane__error')?.innerText ?? null, buttons: [...root.querySelectorAll('button')].filter((b) => b.getBoundingClientRect().width > 0).map((b) => b.getAttribute('aria-label') || b.innerText.trim()).slice(0, 20), head: document.querySelector(${JSON.stringify(panel)})?.querySelector('.rp-sub-title, [data-pane-title]')?.innerText ?? null } })()`)
+  const setDevices = (lines) => writeFileSync(join(tools, 'devices.txt'), lines.map((line) => `${line}\r\n`).join(''))
+  const waitText = (needle, ms = 9000) => until(`(document.querySelector('[data-testid="device-pane"]')?.innerText ?? '').includes(${JSON.stringify(needle)})`, ms, 150)
+
+  await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'device', kind: 'device' }); rp.setOpen(true); return true })()`)
+  check('设备：面板打开', await until(`!!document.querySelector('[data-testid="device-pane"]')`, 15000, 100))
+  R.noAdbShown = await until(`!!document.querySelector('[data-testid="device-pane-no-adb"]')`, 8000, 100)
+  await sleep(600)
+  R.noAdb = await info()
+  await variants('device-00-no-adb')
+
+  mkdirSync(tools, { recursive: true })
+  setDevices([])
+  copyFileSync(fake.adb, join(tools, 'adb.exe'))
+  R.noDeviceShown = await until(`!!document.querySelector('[data-testid="device-pane-empty"]')`, 9000, 150)
+  await sleep(500)
+  R.noDevice = await info()
+  await variants('device-01-no-device')
+  report.hover.push(['device-01-boot-hover', await S.hover('[data-testid="device-pane-empty"] button', 900, 0)])
+  await S.clip('device-01-boot-hover', panel, 0)
+  await S.unhover()
+
+  const bootClicked = await ev(`(() => { const b = document.querySelector('[data-testid="device-pane-empty"] button'); if (!b) return false; b.click(); return true })()`)
+  R.bootClicked = bootClicked
+  if (bootClicked) {
+    R.bootErrorShown = await until(`!!document.querySelector('[data-testid="device-pane"] .device-pane__error')`, 8000, 100)
+    await sleep(400)
+    R.bootError = await info()
+    await variants('device-02-boot-failed', { light: false })
+    await sleep(4500)
+    R.bootErrorAfterPoll = await ev(`!!document.querySelector('[data-testid="device-pane-action-error"], [data-testid="device-pane"] .device-pane__error')`)
+    check('设备：启动失败的提示不会在下一次轮询时消失', R.bootErrorAfterPoll, R.bootErrorAfterPoll)
+  }
+
+  if (bootClicked) {
+    mkdirSync(join(box.androidSdk, 'emulator'), { recursive: true })
+    copyFileSync(fake.adb, join(box.androidSdk, 'emulator', 'emulator.exe'))
+    await sleep(3500)
+    const again = await ev(`(() => { const b = document.querySelector('[data-testid="device-pane-empty"] .device-pane__avds button'); if (!b) return false; b.click(); return true })()`)
+    R.bootAgainClicked = again
+    if (again) {
+      R.bootStartingShown = await until(`(document.querySelector('[data-testid="device-pane"]')?.innerText ?? '').includes('模拟器正在启动')`, 6000, 100)
+      await sleep(600)
+      await variants('device-02b-boot-waiting', { light: false })
+      R.bootTimeoutShown = await until(`(document.querySelector('[data-testid="device-pane-action-error"]')?.innerText ?? '').includes('秒内就绪')`, 75000, 500)
+      await sleep(500)
+      R.bootTimeout = await info()
+      check('设备：模拟器启动后超时没出现，给出说明与设置入口', R.bootTimeoutShown, R.bootTimeout?.error)
+      await variants('device-02c-boot-timeout')
+      const third = await ev(`(() => { const b = document.querySelector('[data-testid="device-pane-empty"] .device-pane__avds button'); if (!b) return false; b.click(); return true })()`)
+      R.bootOfflineClicked = third
+      if (third) {
+        setDevices(['emulator-5554          offline transport_id:9'])
+        R.bootOfflineTimeoutShown = await until(`(document.querySelector('[data-testid="device-pane-action-error"]')?.innerText ?? '').includes('秒内就绪')`, 75000, 500)
+        await sleep(500)
+        R.bootOfflineTimeout = await info()
+        R.bootOfflineStillStarting = await ev(`(document.querySelector('[data-testid="device-pane"]')?.innerText ?? '').includes('模拟器正在启动')`)
+        R.bootOfflineStuck = await ev(`(document.querySelector('[data-testid="device-pane-empty"]')?.innerText ?? '').replace(/\\s+/g, ' ').slice(0, 200)`)
+        check('设备：超时后离线模拟器显示为离线', /emulator-5554/.test(R.bootOfflineStuck ?? '') && /离线/.test(R.bootOfflineStuck ?? ''), R.bootOfflineStuck)
+        check('设备：模拟器一直离线时也会超时，并且不再显示正在启动', R.bootOfflineTimeoutShown && !R.bootOfflineStillStarting, R.bootOfflineTimeout?.error)
+        await variants('device-02d-boot-offline-timeout', { light: false })
+        setDevices([])
+      }
+    }
+  }
+
+  setDevices(['R58N1234ABC          unauthorized usb:1-1 transport_id:2'])
+  R.unauthorizedShown = await waitText('R58N1234ABC')
+  await sleep(500)
+  R.unauthorized = await info()
+  await variants('device-03-unauthorized')
+
+  setDevices(['emulator-5554          offline transport_id:3'])
+  R.startingShown = await waitText('模拟器正在启动')
+  await sleep(500)
+  R.starting = await info()
+  await variants('device-04-starting', { light: false })
+
+  setDevices(['emulator-5554          device product:sdk_gphone64 model:Pixel_8 device:emu64 transport_id:3'])
+  R.connectingShown = await until(`!!document.querySelector('[data-testid="device-pane"] .device-pane__hint')`, 9000, 150)
+  await sleep(500)
+  R.connecting = await info()
+  await variants('device-05-connecting', { light: false })
+  R.frameSlowShown = await until(`!!document.querySelector('[data-testid="device-pane-frame-slow"]')`, 20000, 300)
+  await sleep(400)
+  R.frameSlow = await info()
+  await variants('device-05b-frame-slow', { light: false })
+
+  copyFileSync(fake.screenSource, join(tools, 'screen.h264'))
+  R.liveShown = await until(`(() => { const c = document.querySelector('[data-testid="device-pane"] canvas'); return !!c && !c.hidden })()`, 15000, 150)
+  await sleep(800)
+  R.live = await info()
+  await variants('device-06-live')
+  report.hover.push(['device-06-home-hover', await S.hover('[data-testid="device-pane"] .device-pane__bar--bottom button', 1100, 1)])
+  await S.clip('device-06-home-hover', panel, 0)
+  await S.unhover()
+
+  const typed = await ev(`(() => { const input = document.querySelector('[data-testid="device-pane"] .device-pane__type input'); if (!input) return false; input.focus(); return document.activeElement === input })()`)
+  if (typed) {
+    const enter = async () => {
+      const base = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }
+      await S.cdpCall('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text: '\r', unmodifiedText: '\r' })
+      await S.cdpCall('Input.dispatchKeyEvent', { type: 'keyUp', ...base })
+      await sleep(1200)
+    }
+    await S.typeText('hello', 300)
+    await enter()
+    R.asciiCleared = await ev(`document.querySelector('[data-testid="device-pane"] .device-pane__type input')?.value ?? null`)
+    await S.typeText('你好', 300)
+    await enter()
+    R.textError = await info()
+    await sleep(4000)
+    R.textErrorAfterPoll = await info()
+    check('设备：英文输入后清空，中文输入给出说明且轮询后仍在', R.asciiCleared === '' && !!R.textErrorAfterPoll?.error, { cleared: R.asciiCleared, error: R.textErrorAfterPoll?.error })
+    await variants('device-07-text-error', { light: false })
+    await ev('document.activeElement?.blur?.()')
+  }
+
+  setDevices(['emulator-5554          device product:sdk_gphone64 model:Pixel_8 device:emu64 transport_id:3', 'R58N1234ABC          device product:dm3q model:SM_S9180 device:dm3q transport_id:4'])
+  R.twoShown = await until(`!!document.querySelector('[data-testid="device-pane"] .device-pane__select, ${panel} .device-pane__select')`, 9000, 150)
+  await sleep(4000)
+  R.two = await info()
+  R.select = await ev(`(() => { const s = document.querySelector('.device-pane__select'); if (!s) return null; const r = s.getBoundingClientRect(); const v = s.querySelector('.ui-select__value, [data-slot="value"], button'); return { box: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], text: s.innerText.trim(), clipped: v ? v.scrollWidth > v.clientWidth : null } })()`)
+  await variants('device-08-two-devices', { light: false })
+  if (await S.click('.device-pane__select button', 800)) {
+    await S.shot('device-08-select-open-dark')
+    await S.key('Escape', { waitMs: 400 })
+  }
+
+  const other = width === 360 ? 869 : 360
+  await ev(`(window.__yanRightPanel.getState().setWidth(${other}), true)`)
+  await sleep(1500)
+  R.otherWidth = { width: other, info: await info(), select: await ev(`document.querySelector('.device-pane__select')?.innerText?.trim() ?? null`) }
+  await variants(`device-09-w${other}`, { light: false })
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1000)
+  report.audit.device = await S.audit('[data-testid="device-pane"]')
+
+  setDevices([])
+  await sleep(4000)
+  R.goneAfter = await info()
+}
+
 async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn, box }) {
   report.quota = {}
   const R = report.quota
@@ -1716,6 +2109,13 @@ async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSe
     await load(name)
     R[name] = await paneInfo()
     await variants(shot, { full: name !== 'error' })
+    if (name === 'stale') R.liveStalePatched = await ev(`(() => { const st = window.__yanLiveQuota.getState(); const key = Object.keys(st.entries).find((k) => st.entries[k]?.snapshot?.windows?.length); if (!key) return null; const e = st.entries[key]; window.__yanLiveQuota.setState({ entries: { ...st.entries, [key]: { ...e, snapshot: { ...e.snapshot, staleError: '网络超时' } } } }); return key })()`)
+    if (name === 'stale') {
+      await turn('额度过期刷新', { timeout: 60000 })
+      await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+      R.staleOverviewShown = await until(`!!document.querySelector('[data-testid="wb-ov-quota-stale"][data-error]')`, 15000, 200)
+      check('额度：概览里出现读取失败的过期行', R.staleOverviewShown)
+    }
     if (['none', 'single', 'near', 'exhausted', 'stale'].includes(name)) R[`${name}Bar`] = await barClip(`${shot}-bar`)
     if (name === 'multi') {
       report.hover.push(['quota-03-switch-hover', await S.hover('[data-testid="v3-wb-quota-switch"]', 1200, 0)])
@@ -1918,7 +2318,1091 @@ async function contextTarget({ kit: S, ev, sleep, until, check, log, report, new
   await ev(`window.__yanStore.getState().patchSettings({ autoCompactTokens: ${originalLimit === null ? 'undefined' : originalLimit} })`)
 }
 
-const TARGETS = { branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget,  browserfinal: browserFinalTarget,  browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget }
+async function prsTarget({ kit: S, ev, sleep, until, check, log, report, box }) {
+  report.prs = {}
+  const R = report.prs
+  const demo = box?.demo
+  if (!check('PR：演示仓库就绪（--demo）', !!demo?.stateFile, demo?.stateFile ?? null)) return
+  const stateFile = demo.stateFile
+  const controlFile = `${stateFile}.control.json`
+  const original = readFileSync(stateFile, 'utf8')
+  const control = (value) => writeFileSync(controlFile, JSON.stringify(value ?? {}))
+  const locked = async (fn) => { const lock = `${stateFile}.lock`; const end = Date.now() + 15000; for (;;) { try { mkdirSync(lock); break } catch (error) { if (error.code !== 'EEXIST' || Date.now() > end) throw error; await sleep(30) } } try { fn() } finally { rmSync(lock, { recursive: true, force: true }) } }
+  const editState = (fn) => locked(() => { const s = JSON.parse(readFileSync(stateFile, 'utf8')); fn(s); writeFileSync(stateFile, JSON.stringify(s, null, 2)) })
+  const restoreState = () => locked(() => writeFileSync(stateFile, original))
+  control({})
+  const panel = '[data-testid="rp-column-0"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const variants = async (name, { light = true, full = true } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, panel, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const info = (selector = '[data-testid="v3-wb-pulls"]') => ev(`(() => { const root = document.querySelector(${JSON.stringify(selector)}); if (!root) return null; const r = root.getBoundingClientRect(); const over = [...root.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && (b.right > r.right + 1 || b.left < r.left - 1) }).map((n) => (n.getAttribute('data-testid') || n.className || n.tagName).toString().slice(0, 50)).slice(0, 8); return { text: root.innerText.replace(/\\s+/g, ' ').slice(0, 400), rows: root.querySelectorAll('.gh-pr-row').length, width: Math.round(r.width), overflow: over, ids: [...root.querySelectorAll('[data-testid]')].map((n) => n.getAttribute('data-testid')).filter((id) => !/row-|conflict-|file-/.test(id)).slice(0, 40) } })()`)
+  const refresh = async () => { await S.click('[data-testid="gh-pr-refresh"], [data-testid="gh-pr-hint-refresh"]', 300) }
+  const kbd = async (selector, name, { shift = true } = {}) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    if (shift) await S.key('Tab', { shift: true })
+    const active = await ev(`(() => { const el = document.activeElement; return { id: el?.getAttribute('data-testid') ?? el?.getAttribute('aria-label') ?? el?.tagName, outline: el ? getComputedStyle(el).outlineStyle + ' ' + getComputedStyle(el).outlineWidth : null } })()`)
+    await S.clip(name, panel, 0)
+    return active
+  }
+  const openList = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'pullRequests', kind: 'pullRequests' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="v3-wb-pulls"]')`, 15000, 100)
+  }
+  const openDetail = async (number) => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'pr:${number}', kind: 'pullRequest', number: ${number} }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="gh-pr-detail-${number}"]')`, 15000, 100)
+  }
+  const detailReady = (number) => until(`!!document.querySelector('[data-testid="gh-pr-detail-${number}"] [data-testid="gh-pr-state"]') && !document.querySelector('[data-testid="gh-pr-detail-${number}"] [data-testid="gh-pr-detail-skeleton"]')`, 20000, 100)
+
+  const session = demo.sessions[0]
+  await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(session.file)})`)
+  check('PR：切到演示会话', await until(`s.session?.cwd === ${JSON.stringify(demo.project)}`, 20000, 100), demo.project)
+  await sleep(1500)
+
+  control({ delayMs: 6000, delayOp: 'pr.list' })
+  check('PR：列表面板打开', await openList())
+  R.skeletonSeen = await until(`!!document.querySelector('[data-testid="gh-pr-list-skeleton"]')`, 8000, 50)
+  await sleep(200)
+  R.loading = await info()
+  await variants('prs-00-loading', { light: false })
+  control({})
+  R.listShown = await until(`document.querySelectorAll('.gh-pr-row').length > 0`, 20000, 100)
+  await sleep(800)
+  R.normal = await info()
+  await variants('prs-01-list')
+  R.searchHint = await ev(`document.querySelector('.gh-pr-search .ui-search__box')?.getAttribute('title') ?? null`)
+  check('PR：搜索框悬停说明写出可搜字段', !!R.searchHint && R.searchHint.includes('分支'), R.searchHint)
+  report.hover.push(['prs-01-row-hover', await S.hover('[data-testid="gh-pr-row-102"]', 900)])
+  await S.clip('prs-01-row-hover', panel, 0)
+  await S.unhover()
+  report.focus.push(['prs-01-row-focus', await kbd('[data-testid="gh-pr-row-101"]', 'prs-01-row-focus')])
+  report.focus.push(['prs-01-search-focus', await kbd('.gh-pr-search input', 'prs-01-search-focus', { shift: false })])
+  await ev('document.activeElement?.blur?.()')
+  if (await S.click('[data-testid="gh-pr-filter-open"]', 1200)) {
+    R.filterPanel = await info('[data-testid="gh-pr-filter-panel"]')
+    await S.shot('prs-02-filter-dark')
+    await S.theme('light'); await sleep(400); await S.shot('prs-02-filter-light'); await S.theme('dark'); await sleep(300)
+    await S.key('Escape', { waitMs: 400 })
+  }
+  if (await S.click('[data-testid="gh-pr-sort"] button', 700)) {
+    await S.shot('prs-02-sort-dark')
+    await S.key('Escape', { waitMs: 400 })
+  }
+  await S.click('[data-testid="gh-pr-tab-all"]', 300)
+  await until(`document.querySelectorAll('.gh-pr-row').length >= 9`, 15000, 100)
+  await sleep(600)
+  R.all = await info()
+  await variants('prs-03-all', { light: false })
+  await S.click('[data-testid="gh-pr-tab-open"]', 300)
+  await sleep(800)
+
+  const longTitles = ['修复额度页在窄窗下的换行问题，并补充深浅两套主题下的对照截图与键盘焦点说明', 'Refactor the reconciliation pipeline so that every stage reports structured progress events with retries', '文档：补充离线演示仓库的使用说明', 'chore(deps): bump very-long-dependency-name-for-testing-truncation from 1.2.3 to 1.3.0', '会话分支树：离开时总结开关在窄栏下的排布']
+  await editState((s) => {
+    const base = s.prs.filter((p) => p.state === 'OPEN')
+    for (let i = 0; i < 36; i++) {
+      const from = base[i % base.length]
+      const number = 200 + i
+      s.prs.push({ ...JSON.parse(JSON.stringify(from)), number, title: `${longTitles[i % longTitles.length]} (#${i + 1})`, updatedAt: new Date(Date.now() - (i * 37 + 3) * 60000).toISOString(), url: `${s.repo.url}/pull/${number}` })
+    }
+    s.nextNumber = 300
+  })
+  await refresh()
+  R.manyShown = await until(`document.querySelectorAll('.gh-pr-row').length >= 30`, 20000, 100)
+  await sleep(800)
+  R.many = await info()
+  await variants('prs-04-many')
+  await ev(`(() => { const el = document.querySelector('[data-testid="gh-pr-load-more"]'); el?.scrollIntoView({ block: 'end' }); return !!el })()`)
+  await sleep(500)
+  await S.clip('prs-04-many-bottom', panel, 0)
+  await ev(`(() => { const el = document.querySelector('.gh-pr-pane'); if (el) el.scrollTop = 0; const list = document.querySelector('.gh-pr-list'); if (list) list.scrollTop = 0; return true })()`)
+
+  await S.click('.gh-pr-search input', 300)
+  await S.typeText('zzz-no-such-pr', 600)
+  await sleep(500)
+  R.searchEmpty = await info()
+  await variants('prs-05-search-empty', { light: false })
+  await ev(`(() => { const el = document.querySelector('.gh-pr-search input'); el?.focus(); return true })()`)
+  await S.key('Escape', { waitMs: 400 })
+  await ev('document.activeElement?.blur?.()')
+
+  await editState((s) => { s.prs = s.prs.filter((p) => p.state !== 'OPEN') })
+  await refresh()
+  await until(`document.querySelectorAll('.gh-pr-row').length === 0 && !document.querySelector('[data-testid="gh-pr-list-skeleton"]')`, 15000, 100)
+  await sleep(1200)
+  R.empty = await info()
+  await variants('prs-06-empty')
+  await restoreState()
+
+  control({ failure: 'pr.list:timeout' })
+  await refresh()
+  R.listErrorShown = await until(`!!document.querySelector('[data-testid="gh-pr-list-error"]')`, 15000, 100)
+  await sleep(600)
+  R.listError = await info()
+  await variants('prs-07-list-error')
+
+  control({ failure: 'auth.status:auth' })
+  await refresh()
+  R.signedOutShown = await until(`!!document.querySelector('[data-testid="gh-pr-hint"]')`, 15000, 100)
+  await sleep(600)
+  R.signedOut = await info()
+  await variants('prs-08-signed-out')
+  report.focus.push(['prs-08-refresh-focus', await kbd('[data-testid="gh-pr-hint-refresh"]', 'prs-08-refresh-focus')])
+  await ev('document.activeElement?.blur?.()')
+
+  control({ failure: 'repo.view:norepo' })
+  await refresh()
+  await sleep(2500)
+  R.notRepo = await info()
+  await variants('prs-09-not-repo', { light: false })
+
+  control({ failure: 'api.GET:forbidden' })
+  await refresh()
+  await sleep(2500)
+  R.forbiddenStatus = await info()
+
+  control({})
+  await refresh()
+  await until(`document.querySelectorAll('.gh-pr-row').length > 0`, 20000, 100)
+  await sleep(800)
+
+  control({ delayMs: 6000, delayOp: 'pr.view' })
+  check('PR：详情打开', await openDetail(108))
+  R.detailSkeleton = await until(`!!document.querySelector('[data-testid="gh-pr-detail-skeleton"]')`, 8000, 50)
+  await sleep(200)
+  await variants('prs-10-detail-loading', { light: false })
+  control({})
+  R.detailReady = await detailReady(108)
+  await sleep(1000)
+  R.detail = await info('[data-testid="gh-pr-detail-108"]')
+  await variants('prs-11-detail-summary')
+  report.focus.push(['prs-11-detail-merge-focus', await kbd('[data-testid="gh-pr-merge"]', 'prs-11-detail-merge-focus')])
+  report.hover.push(['prs-11-checks-hover', await S.hover('[data-testid="gh-pr-checks-line"]', 900)])
+  await S.clip('prs-11-checks-hover', panel, 0)
+  await S.unhover()
+  if (await S.click('[data-testid="gh-pr-checks-line"]', 900)) {
+    R.checkStates = await ev(`[...document.querySelectorAll('.gh-pr-check__state')].map((n) => n.textContent + '|' + (n.getAttribute('title') ?? ''))`)
+    check('PR：检查浮层显示中文状态，原词在 title', Array.isArray(R.checkStates) && R.checkStates.length > 0 && R.checkStates.every((s) => !/^[A-Z_]+\|/.test(s)), R.checkStates)
+    await S.shot('prs-11-checks-pop-dark')
+    await S.theme('light'); await sleep(400); await S.shot('prs-11-checks-pop-light'); await S.theme('dark'); await sleep(300)
+    await S.key('Escape', { waitMs: 400 })
+  }
+  if (await S.click('[data-testid="gh-pr-agent"]', 900)) { await S.shot('prs-11-agent-menu-dark'); await S.key('Escape', { waitMs: 400 }) }
+  await ev(`(() => { const el = document.querySelector('[data-testid="gh-pr-detail-108"] .gh-prd__body:not([hidden])'); if (el) el.scrollTop = 600; return !!el })()`)
+  await sleep(900)
+  R.condensed = await ev(`document.querySelector('[data-testid="gh-pr-detail-108"]')?.getAttribute('data-condensed') ?? null`)
+  await S.clip('prs-11-detail-scrolled', panel, 0)
+  await ev(`(() => { const el = document.querySelector('[data-testid="gh-pr-detail-108"] .gh-prd__body:not([hidden])'); if (el) el.scrollTop = 0; return !!el })()`)
+  await sleep(700)
+  await S.click('[data-testid="gh-pr-tab-timeline"]', 900)
+  R.timeline = await info('[data-testid="gh-pr-detail-108"]')
+  await variants('prs-12-detail-timeline', { light: false })
+  await S.click('[data-testid="gh-pr-tab-code"]', 900)
+  await ev(`(() => { const b = document.querySelector('[data-testid^="gh-pr-file-toggle-"]'); b?.click(); return !!b })()`)
+  await sleep(1500)
+  R.code = await info('[data-testid="gh-pr-detail-108"]')
+  await variants('prs-13-detail-code')
+  report.focus.push(['prs-13-file-focus', await kbd('[data-testid^="gh-pr-file-toggle-"]', 'prs-13-file-focus')])
+  await ev('document.activeElement?.blur?.()')
+  await S.click('[data-testid="gh-pr-tab-summary"]', 600)
+
+  check('PR：#109 详情', await openDetail(109))
+  await detailReady(109)
+  await sleep(1200)
+  R.long = await info('[data-testid="gh-pr-detail-109"]')
+  await variants('prs-14-detail-long', { light: false })
+  await S.click('[data-testid="gh-pr-tab-code"]', 1200)
+  R.longCode = await info('[data-testid="gh-pr-detail-109"]')
+  await variants('prs-14-detail-long-code', { light: false })
+  await S.click('[data-testid="gh-pr-tab-summary"]', 600)
+
+  check('PR：#105 冲突', await openDetail(105))
+  await detailReady(105)
+  await sleep(1200)
+  R.conflict = await info('[data-testid="gh-pr-detail-105"]')
+  await variants('prs-15-detail-conflict')
+  R.tabFit = await ev(`(() => { const vp = document.querySelector('[data-testid="rp"] [data-right-panel-tab-list] [data-slot="scroll-area-viewport"]'); const a = vp?.querySelector('[data-tab-id][data-active-tab="true"]'); if (!vp || !a) return { vp: !!vp, a: !!a, chips: document.querySelectorAll('[data-testid="rp"] [data-tab-id]').length, activeAttr: [...document.querySelectorAll('[data-testid="rp"] [data-tab-id]')].map((n) => n.getAttribute('data-active-tab')) }; const v = vp.getBoundingClientRect(); const r = a.getBoundingClientRect(); const kids = [...a.querySelectorAll('*')].map((n) => { const b = n.getBoundingClientRect(); return (String(n.className).slice(0, 30)) + ':' + Math.round(b.left - v.left) + '-' + Math.round(b.right - v.left) }).slice(0, 8); return { id: a.getAttribute('data-tab-id'), vl: Math.round(v.left), vw: Math.round(v.width), cw: vp.clientWidth, sw: vp.scrollWidth, sl: Math.round(vp.scrollLeft), fade: vp.hasAttribute('data-fade'), left: Math.round(r.left - v.left), right: Math.round(r.right - v.left), kids } })()`)
+  check('PR：详情页当前标签完整可见', !!R.tabFit && R.tabFit.right <= R.tabFit.vw + 1 && R.tabFit.left >= -1, R.tabFit)
+  check('PR：#102 检查失败', await openDetail(102))
+  await detailReady(102)
+  await sleep(1200)
+  R.failing = await info('[data-testid="gh-pr-detail-102"]')
+  await variants('prs-16-detail-failing', { light: false })
+  check('PR：#106 已合并', await openDetail(106))
+  await detailReady(106)
+  await sleep(1200)
+  R.merged = await info('[data-testid="gh-pr-detail-106"]')
+  await variants('prs-17-detail-merged', { light: false })
+
+  control({ failure: 'pr.view:forbidden' })
+  check('PR：#104 详情失败', await openDetail(104))
+  await until(`!!document.querySelector('[data-testid="gh-pr-detail-error"]')`, 15000, 100)
+  await sleep(800)
+  R.detailError = await info('[data-testid="gh-pr-detail-104"]')
+  await variants('prs-18-detail-error')
+  control({ failure: 'pr.diff:timeout' })
+  check('PR：#103 diff 失败', await openDetail(103))
+  await detailReady(103)
+  await S.click('[data-testid="gh-pr-tab-code"]', 1200)
+  R.diffError = await info('[data-testid="gh-pr-detail-103"]')
+  await variants('prs-19-diff-error')
+  report.focus.push(['prs-19-diff-retry-focus', await kbd('[data-testid="gh-pr-diff-retry"]', 'prs-19-diff-retry-focus')])
+  control({})
+  R.diffRetryClicked = await S.click('[data-testid="gh-pr-diff-retry"]', 300)
+  R.diffRetryRecovered = await until(`!document.querySelector('[data-testid="gh-pr-diff-error"]') && document.querySelectorAll('[data-testid="gh-pr-detail-103"] .gh-pr-file').length > 0`, 15000, 150)
+  check('PR：diff 失败后只重读 diff 就能恢复', R.diffRetryClicked && R.diffRetryRecovered)
+  await sleep(600)
+  await variants('prs-19b-diff-retried', { light: false })
+  await S.click('[data-testid="gh-pr-tab-summary"]', 600)
+
+  await openList()
+  await sleep(800)
+  if (await S.click('[data-testid="gh-pr-create-open"]', 1500)) {
+    R.create = await info('[data-testid="gh-pr-create"]')
+    await S.shot('prs-20-create-dark')
+    await S.theme('light'); await sleep(400); await S.shot('prs-20-create-light'); await S.theme('dark'); await sleep(300)
+    await S.key('Escape', { waitMs: 500 })
+  }
+
+  const other = width < 600 ? 869 : 360
+  await ev(`(window.__yanRightPanel.getState().setWidth(${other}), true)`)
+  await sleep(1200)
+  R.otherList = await info()
+  await variants(`prs-21-w${other}-list`, { light: false })
+  await openDetail(108)
+  await detailReady(108)
+  await sleep(1000)
+  R.otherDetail = await info('[data-testid="gh-pr-detail-108"]')
+  await variants(`prs-21-w${other}-detail`, { light: false })
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(900)
+  report.audit.prsDetail = await S.audit('[data-testid="gh-pr-detail-108"]')
+  await openList()
+  await sleep(600)
+  report.audit.prs = await S.audit('[data-testid="v3-wb-pulls"]')
+  await restoreState()
+  control({})
+}
+
+async function subagentsTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn }) {
+  report.subagents = {}
+  const R = report.subagents
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-sub-'))
+  writeFileSync(join(dir, 'README.md'), '# subagent fixture\n')
+  const git = (...args) => spawnSync('git', ['-c', 'user.name=Inkstone Debug', '-c', 'user.email=debug@inkstone.invalid', ...args], { cwd: dir, stdio: 'ignore', windowsHide: true })
+  git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'fixture')
+  R.fixture = dir
+  check('子代理：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const panel = '[data-testid="rp-column-0"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const originalMode = await ev('window.__yanStore.getState().settings?.permissionMode ?? null')
+  const variants = async (name, { light = true, full = true } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, panel, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, panel, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const info = () => ev(`(() => { const root = document.querySelector('[data-testid="v3-subagent-pane"], [data-testid="v3-subagent-pane-missing"]'); if (!root) return null; const col = document.querySelector(${JSON.stringify(panel)}); const r = (col || root).getBoundingClientRect(); const over = [...(col || root).querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && b.right > r.right + 1 }).map((n) => (n.getAttribute('data-testid') || String(n.className) || n.tagName).slice(0, 50)).slice(0, 8); const head = col?.querySelector('[data-testid="v3-subagent-pane-head"]'); const clipped = head ? [...head.querySelectorAll('span')].filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.className) : []; const scroll = root.querySelector('.sa-pane-scroll'); return { state: root.getAttribute('data-state'), head: head?.innerText?.replace(/\\s+/g, ' ') ?? null, clipped, text: root.innerText.replace(/\\s+/g, ' ').slice(0, 300), overflow: over, scroll: scroll ? { h: scroll.clientHeight, sh: scroll.scrollHeight, top: Math.round(scroll.scrollTop) } : null, foot: root.querySelector('[data-testid="v3-subagent-pane-foot"]')?.innerText?.replace(/\\s+/g, ' ').slice(0, 160) ?? null, tools: [...(col?.querySelectorAll('button') ?? [])].filter((b) => b.closest('[data-testid="v3-subagent-pane"]') === null && b.getBoundingClientRect().width > 0).map((b) => b.getAttribute('aria-label') || b.innerText.trim()).slice(0, 12) } })()`)
+  const openPane = async (id) => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'subagent:${id}', kind: 'subagent', runId: '${id}' }); rp.setOpen(true); return true })()`)
+    await until(`!!document.querySelector('[data-testid="v3-subagent-pane"], [data-testid="v3-subagent-pane-missing"]')`, 10000, 100)
+    await sleep(900)
+  }
+  const runs = (filter) => ev(`(window.__yanStore.getState().subagents ?? []).filter((a) => ${filter}).map((a) => ({ id: a.id, status: a.status, task: a.task }))`)
+  const kbd = async (selector, name) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName`)
+    await S.clip(name, panel, 0)
+    return active
+  }
+
+  await newSession(dir)
+  await ev(`window.__yanStore.getState().patchSettings({ permissionMode: 'all' })`)
+  await openPane('sub-missing0')
+  R.missing = await info()
+  await variants('sub-00-missing', { light: false })
+
+  await turn('SUBAGENTS2 THENREST 派两个子代理', { timeout: 120000 })
+  R.runningSeen = await until(`(s.subagents ?? []).filter((a) => a.status === 'running').length >= 2`, 60000, 200)
+  check('子代理：两个在运行', R.runningSeen)
+  const first = (await runs(`a.status === 'running'`))[0]
+  R.first = first
+  if (first) {
+    await openPane(first.id)
+    await sleep(2500)
+    R.running = await info()
+    await variants('sub-01-running')
+    report.hover.push(['sub-01-stop-hover', await S.hover('[data-testid="v3-subagent-stop"]', 900)])
+    await S.clip('sub-01-stop-hover', panel, 0)
+    await S.unhover()
+    report.focus.push(['sub-01-stop-focus', await kbd('[data-testid="v3-subagent-stop"]', 'sub-01-stop-focus')])
+    report.focus.push(['sub-01-next-focus', await kbd('[data-testid="v3-subagent-pane-next"]', 'sub-01-next-focus')])
+    await ev('document.activeElement?.blur?.()')
+    const scrollBox = await ev(`(() => { const b = document.querySelector('[data-testid="v3-subagent-pane"] .sa-pane-scroll')?.getBoundingClientRect(); return b ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null })()`)
+    if (scrollBox) await S.cdpCall('Input.dispatchMouseEvent', { type: 'mouseWheel', x: scrollBox.x, y: scrollBox.y, deltaX: 0, deltaY: -1500 })
+    await sleep(2500)
+    R.scrolledUp = await info()
+    await S.clip('sub-01-running-scrolled-up', panel, 0)
+    R.doneSeen = await until(`(s.subagents ?? []).some((a) => a.id === ${JSON.stringify(first.id)} && a.status !== 'running' && a.status !== 'starting')`, 240000, 500)
+    await sleep(1500)
+    await ev(`(() => { const el = document.querySelector('[data-testid="v3-subagent-pane"] .sa-pane-scroll'); if (el) el.scrollTop = el.scrollHeight; return !!el })()`)
+    await sleep(800)
+    R.done = await info()
+    await variants('sub-02-done')
+    await ev(`(() => { const el = document.querySelector('[data-testid="v3-subagent-pane"] .sa-pane-scroll'); if (el) el.scrollTop = 0; return !!el })()`)
+    await sleep(600)
+    await S.clip('sub-02-done-top', panel, 0)
+    report.focus.push(['sub-02-composer-focus', await kbd('[data-testid="v3-subagent-pane-foot"] textarea', 'sub-02-composer-focus')])
+    await ev('document.activeElement?.blur?.()')
+  }
+  await until(`(s.subagents ?? []).every((a) => a.status !== 'running' && a.status !== 'starting')`, 240000, 1000)
+
+  await turn('SUBAGENTS1 SUBBAD THENREST 派一个会失败的子代理', { timeout: 120000 })
+  R.failedSeen = await until(`(s.subagents ?? []).some((a) => a.task.includes('FAILNET') && a.status === 'error')`, 180000, 500)
+  check('子代理：拍到失败', R.failedSeen)
+  const failed = (await runs(`a.task.includes('FAILNET')`))[0]
+  if (failed) {
+    await openPane(failed.id)
+    R.failed = await info()
+    await variants('sub-03-failed')
+    report.hover.push(['sub-03-dismiss-hover', await S.hover('[data-testid="v3-subagent-dismiss"]', 1200)])
+    await S.clip('sub-03-dismiss-hover', panel, 0)
+    await S.unhover()
+  }
+
+  await turn('SUBAGENTS1 SUBLONG THENREST 派一个长记录子代理', { timeout: 120000 })
+  R.longSeen = await until(`(s.subagents ?? []).some((a) => a.task.includes('SUBLONG') && a.status === 'running')`, 60000, 300)
+  const long = (await runs(`a.task.includes('SUBLONG')`))[0]
+  if (long) {
+    await openPane(long.id)
+    await sleep(6000)
+    R.long = await info()
+    await variants('sub-04-long-running', { light: false })
+    const other = width < 600 ? 869 : 360
+    await ev(`(window.__yanRightPanel.getState().setWidth(${other}), true)`)
+    await sleep(1500)
+    R.otherWidth = { width: other, info: await info() }
+    await variants(`sub-05-w${other}-long`, { light: false })
+    if (first) {
+      await openPane(first.id)
+      R.otherDone = await info()
+      await variants(`sub-05-w${other}-done`, { light: false })
+    }
+    await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+    await sleep(900)
+    await openPane(long.id)
+    if (await S.click('[data-testid="v3-subagent-stop"]', 1500)) {
+      await until(`(s.subagents ?? []).some((a) => a.id === ${JSON.stringify(long.id)} && a.status !== 'running')`, 30000, 300)
+      await sleep(1000)
+      R.stopped = await info()
+      await variants('sub-06-stopped', { light: false })
+    }
+  }
+  report.audit.subagents = await S.audit('[data-testid="v3-subagent-pane"]')
+  await ev(`window.__yanStore.getState().patchSettings({ permissionMode: ${JSON.stringify(originalMode)} })`)
+}
+
+async function shellTarget({ kit: S, ev, sleep, until, check, log, report, newSession }) {
+  report.shell = {}
+  const R = report.shell
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-shell-'))
+  writeFileSync(join(dir, 'README.md'), '# shell fixture\n')
+  writeFileSync(join(dir, 'notes-with-a-rather-long-file-name-for-tabs.md'), '# notes\n')
+  writeFileSync(join(dir, 'config.json'), '{"a":1}\n')
+  const rp = '[data-testid="rp"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const variants = async (name, { light = true, full = true, target = rp } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, target, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, target, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const info = () => ev(`(() => { const root = document.querySelector('[data-testid="rp"]'); if (!root) return null; const r = root.getBoundingClientRect(); const tabs = [...root.querySelectorAll('[role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return { text: t.innerText.trim().slice(0, 30), w: Math.round(b.width), visible: b.right <= r.right + 1 && b.left >= r.left - 1 && b.width > 0, selected: t.getAttribute('aria-selected') === 'true' } }); const over = [...root.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && b.right > r.right + 1 && !n.closest('.t3-tab-strip__scroll') }).map((n) => (n.getAttribute('data-testid') || String(n.className) || n.tagName).slice(0, 50)).slice(0, 8); return { box: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], columns: root.querySelectorAll('[data-rp-column]').length, tabs, overflow: over, all: !!root.querySelector('[data-testid="rp-all-tabs"]'), text: root.innerText.replace(/\\s+/g, ' ').slice(0, 240) } })()`)
+  const api = (call) => ev(`(() => { const rp = window.__yanRightPanel.getState(); ${call}; return true })()`)
+  const kbd = async (selector, name, target = rp) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim().slice(0, 30)`)
+    await S.clip(name, target, 0)
+    return active
+  }
+
+  await newSession(dir)
+  await api('rp.closeAll(); rp.setOpen(true)')
+  check('外壳：启动器出现', await until(`!!document.querySelector('.t3-launcher__row')`, 10000, 100))
+  await sleep(600)
+  R.launcher = await info()
+  R.launcherReasons = await ev(`[...document.querySelectorAll('.t3-launcher__reason')].map((n) => n.textContent)`)
+  R.launcherOrder = await ev(`[...document.querySelectorAll('.t3-launcher__row')].map((n) => (n.classList.contains('t3-launcher__row--disabled') ? '-' : '+') + n.textContent.trim())`)
+  await variants('shell-00-launcher')
+  report.hover.push(['shell-00-launcher-hover', await S.hover('.t3-launcher__row', 900, 2)])
+  await S.clip('shell-00-launcher-hover', rp, 0)
+  await S.unhover()
+  report.focus.push(['shell-00-launcher-focus', await kbd('button.t3-launcher__row', 'shell-00-launcher-focus')])
+  await ev('document.activeElement?.blur?.()')
+
+  for (const kind of ['files', 'changes', 'context', 'logs', 'quota', 'branch', 'pullRequests', 'device']) await api(`rp.open({ id: '${kind}', kind: '${kind}' })`)
+  for (const name of ['README.md', 'notes-with-a-rather-long-file-name-for-tabs.md', 'config.json']) {
+    const path = join(dir, name).replaceAll('\\', '/')
+    await api(`rp.open({ id: 'file:${path}', kind: 'file', path: '${path}' })`)
+  }
+  await sleep(1500)
+  R.many = await info()
+  await variants('shell-01-many-tabs')
+  await S.clip('shell-01-many-tabs-strip', '[data-right-panel-tabbar], .t3-rp-frame__tabbar', 0)
+  const activeFit = () => ev(`(() => { const vp = document.querySelector('[data-testid="rp"] [data-right-panel-tab-list] [data-slot="scroll-area-viewport"]'); const a = vp?.querySelector('[data-tab-id][data-active-tab="true"]'); if (!vp || !a) return null; const v = vp.getBoundingClientRect(); const r = a.getBoundingClientRect(); const fade = vp.hasAttribute('data-fade') ? parseFloat(getComputedStyle(vp).scrollPaddingInlineStart) || 0 : 0; const startFade = vp.scrollLeft > 1 ? fade : 0; const endFade = vp.scrollLeft + vp.clientWidth < vp.scrollWidth - 1 ? fade : 0; return { id: a.getAttribute('data-tab-id'), left: Math.round(r.left - v.left), right: Math.round(v.right - r.right), fade, ok: r.left >= v.left + startFade - 1 && r.right <= v.right - endFade + 1 } })()`)
+  const stripShot = async (name, id) => {
+    await api(`rp.activate(${JSON.stringify(id)})`)
+    await sleep(900)
+    await S.unhover()
+    const fit = await activeFit()
+    R[name] = fit
+    check(`外壳：当前标签完整可见（${name}）`, !!fit?.ok, fit)
+    await S.clip(name, '[data-testid="rp-column-0"] .t3-tab-strip', 6)
+  }
+  const ids = await ev(`[...document.querySelectorAll('[data-testid="rp"] [data-tab-id]')].map((n) => n.getAttribute('data-tab-id'))`)
+  R.tabIds = ids
+  if (Array.isArray(ids) && ids.length > 2) {
+    await stripShot('shell-01b-active-middle', ids[Math.floor(ids.length / 2)])
+    await stripShot('shell-01c-active-last', ids[ids.length - 1])
+    await stripShot('shell-01d-active-first', ids[0])
+    await ev(`(window.__yanRightPanel.getState().setWidth(${width < 600 ? 869 : 360}), true)`)
+    await sleep(1200)
+    await stripShot('shell-01e-active-middle-alt', ids[Math.floor(ids.length / 2)])
+    await stripShot('shell-01f-active-last-alt', ids[ids.length - 1])
+    await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+    await sleep(1200)
+  }
+  if (await S.click('[data-testid="rp-all-tabs"]', 900)) {
+    R.allMenu = await ev(`[...document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemradio"]')].map((n) => n.textContent.trim().slice(0, 40)).slice(0, 20)`)
+    await S.shot('shell-02-all-tabs-menu-dark')
+    await S.key('Escape', { waitMs: 400 })
+  }
+  if (await S.click('[data-testid="rp-new-tab"]', 900)) {
+    await S.shot('shell-03-add-menu-dark')
+    await S.theme('light'); await sleep(400); await S.shot('shell-03-add-menu-light'); await S.theme('dark'); await sleep(300)
+    await S.key('Escape', { waitMs: 400 })
+  }
+  R.contextMenu = await ev(`(() => { const a = document.querySelector('[data-testid="rp"] [role="tab"][aria-selected="true"]'); if (!a) return false; const b = a.getBoundingClientRect(); a.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 8, clientY: b.top + 8, button: 2 })); return true })()`)
+  await sleep(700)
+  await S.shot('shell-04-tab-menu-dark')
+  await S.key('Escape', { waitMs: 400 })
+  report.hover.push(['shell-05-tab-hover', await S.hover('[data-testid="rp"] [role="tab"]', 1200, 1)])
+  await S.clip('shell-05-tab-hover', rp, 0)
+  await S.unhover()
+  report.focus.push(['shell-05-tab-focus', await kbd('[data-testid="rp"] [role="tab"][aria-selected="true"]', 'shell-05-tab-focus')])
+  await ev('document.activeElement?.blur?.()')
+
+  await api('rp.setMaximized(true)')
+  await sleep(1200)
+  R.maximized = await info()
+  await variants('shell-06-maximized', { light: false })
+  await api('rp.setMaximized(false)')
+  await sleep(900)
+
+  await api(`rp.activate('logs'); rp.split('logs')`)
+  await sleep(1200)
+  R.split2 = await info()
+  await variants('shell-07-split2', { light: false })
+  await ev(`(window.__yanRightPanel.getState().setWidth(869), true)`)
+  await sleep(1200)
+  R.split2wide = await info()
+  await variants('shell-07-split2-w869')
+  await api(`rp.activate('context'); rp.split('context')`)
+  await sleep(1200)
+  R.split3 = await info()
+  await variants('shell-08-split3-w869', { light: false })
+  report.focus.push(['shell-08-splitter-focus', await kbd('[data-testid="rp-column-splitter-1"]', 'shell-08-splitter-focus')])
+  report.hover.push(['shell-08-close-column-hover', await S.hover('[data-testid="rp-close-column-1"]', 1200)])
+  await S.clip('shell-08-close-column-hover', rp, 0)
+  await S.unhover()
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1200)
+  R.split3narrow = await info()
+  await variants('shell-09-split3-user-width', { light: false })
+  await api('rp.closeGroup(2)')
+  await api('rp.closeGroup(1)')
+  await sleep(900)
+
+  await S.narrow()
+  await sleep(1200)
+  R.drawer = await info()
+  await S.shot('shell-10-narrow-drawer-dark')
+  await S.theme('light'); await sleep(400); await S.shot('shell-10-narrow-drawer-light'); await S.theme('dark'); await sleep(300)
+  await api('rp.closeAll()')
+  await sleep(800)
+  R.drawerEmpty = await info()
+  await S.shot('shell-11-narrow-launcher-dark')
+  await S.wide()
+  await sleep(1200)
+  report.audit.shell = await S.audit('[data-testid="rp"]')
+}
+
+async function overviewTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn }) {
+  report.overview = {}
+  const R = report.overview
+  const bar = '[data-testid="v3-sessionbar"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  R.panelWidth = width
+  const alt = width < 600 ? 869 : 360
+  const branchName = 'feature/ui-polish-overview-branch-with-a-very-long-name'
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-ov-'))
+  writeFileSync(join(dir, 'README.md'), '# overview fixture\n')
+  mkdirSync(join(dir, 'src'), { recursive: true })
+  writeFileSync(join(dir, 'src', 'app.ts'), 'export const value = 1\n')
+  const git = (...args) => spawnSync('git', ['-c', 'user.name=Inkstone Debug', '-c', 'user.email=debug@inkstone.invalid', ...args], { cwd: dir, stdio: 'ignore', windowsHide: true })
+  git('init', '-q', '-b', branchName); git('add', '-A'); git('commit', '-q', '-m', 'fixture')
+  writeFileSync(join(dir, 'README.md'), '# overview fixture\n\nchanged\n')
+  writeFileSync(join(dir, 'src', 'app.ts'), 'export const value = 2\nexport const other = 3\n')
+  git('add', 'src/app.ts')
+  writeFileSync(join(dir, 'TODO.md'), '- untracked\n')
+  const plain = mkdtempSync(join(tmpdir(), 'inkstone-ui-ov-plain-'))
+  writeFileSync(join(plain, 'notes.md'), '# plain\n')
+  R.fixture = dir
+  check('概览：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()) && !plain.toLowerCase().startsWith(process.cwd().toLowerCase()), [dir, plain])
+  const info = () => ev(`(() => { const b = document.querySelector(${JSON.stringify(bar)}); if (!b) return { present: false }; const r = b.getBoundingClientRect(); const over = [...b.querySelectorAll('*')].filter((n) => { const x = n.getBoundingClientRect(); return x.width > 0 && x.right > r.right + 1 && !n.closest('.wb-tile-expand[data-open="false"]') }).map((n) => (n.getAttribute('data-testid') || String(n.className) || n.tagName).slice(0, 50)).slice(0, 8); const clipped = [...b.querySelectorAll('.ui-rail-row__label, .wb-tile-title, .wb-tile-summary, .wb-env-sum-name')].filter((n) => n.getBoundingClientRect().width > 0 && n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.trim().slice(0, 40)); return { present: true, width: Math.round(r.width), height: Math.round(r.height), sections: [...b.querySelectorAll('[data-rail-section]')].map((s) => s.getAttribute('data-rail-section') + ':' + (s.getAttribute('data-folded') === '0' ? 'open' : 'fold')), overflow: over, clipped, text: b.innerText.replace(/\\s+/g, ' ').slice(0, 400) } })()`)
+  const setPanel = async (open, w = width) => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.setWidth(${w}); rp.setOpen(${open}); return true })()`)
+    await sleep(1300)
+  }
+  const barShot = async (name, { light = true, full = true } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    if (await ev(`!!document.querySelector(${JSON.stringify(bar)})`)) await S.clip(`${name}-bar`, bar, 0)
+    if (light) {
+      await S.theme('light'); await sleep(400)
+      if (await ev(`!!document.querySelector(${JSON.stringify(bar)})`)) await S.clip(`${name}-light`, bar, 0)
+      else await S.shot(`${name}-light-full`)
+      await S.theme('dark'); await sleep(300)
+    }
+  }
+  const fold = (open) => ev(`(() => { let n = 0; for (const tile of document.querySelectorAll(${JSON.stringify(bar)} + ' .wb-tile')) { if (!tile.querySelector('.wb-tile-expand')) continue; const isOpen = tile.getAttribute('data-folded') === '0'; if (isOpen !== ${open}) { tile.querySelector('.wb-tile-toggle')?.click(); n++ } } return n })()`)
+  const scrollBar = (where) => ev(`(() => { const b = document.querySelector(${JSON.stringify(bar)}); if (!b) return null; const out = []; for (const n of [b, ...b.querySelectorAll('*')]) { if (n.scrollHeight > n.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowY)) { n.scrollTop = ${where === 'bottom' ? 'n.scrollHeight' : '0'}; out.push(n.className) } } return out })()`)
+  const kbd = async (selector, name) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim().slice(0, 30)`)
+    await S.clip(name, bar, 0)
+    return active
+  }
+
+  await newSession(plain)
+  await turn('你好', { timeout: 60000 })
+  await setPanel(false)
+  R.barPlainShown = await until(`!!document.querySelector(${JSON.stringify(bar)})`, 10000, 150)
+  await sleep(800)
+  R.plain = await info()
+  await barShot('ov-00-plain')
+
+  await newSession(dir)
+  await turn('WRITES 产出文件行', { timeout: 60000 })
+  const jobs = await turn('TERMJOBS 后台任务', { timeout: 120000 })
+  R.jobsRequests = jobs?.requests ?? null
+  await setPanel(false)
+  R.barShown = await until(`!!document.querySelector(${JSON.stringify(bar)}) && !!document.querySelector('[data-testid="wb-rail-branch"], [data-testid="wb-rail-env-summary"]')`, 15000, 150)
+  check('概览：会话栏出现', R.barShown)
+  await sleep(1500)
+  R.defaults = await info()
+  await barShot('ov-01-default')
+  R.expanded = await fold(true)
+  await sleep(1200)
+  R.open = await info()
+  check('概览：展开后没有横向溢出', !!R.open?.present && R.open.overflow.length === 0, R.open?.overflow)
+  await barShot('ov-02-expanded')
+  R.scrolled = await scrollBar('bottom')
+  await sleep(500)
+  await barShot('ov-02-expanded-bottom', { full: false })
+  await scrollBar('top')
+  await sleep(400)
+
+  R.branchRow = await until(`!!document.querySelector('[data-testid="wb-rail-branch"]')`, 6000, 150)
+  check('概览：分支行出现（BR7）', R.branchRow)
+  report.hover.push(['ov-03-branch-hover', await S.hover('[data-testid="wb-rail-branch"]', 900)])
+  await S.clip('ov-03-branch-hover', '[data-testid="wb-rail-environment"]', 6)
+  await S.unhover()
+  report.focus.push(['ov-04-toggle-focus', await kbd('[data-testid="wb-rail-environment"] .wb-tile-toggle', 'ov-04-toggle-focus')])
+  report.focus.push(['ov-04-branch-focus', await kbd('[data-testid="wb-rail-branch"]', 'ov-04-branch-focus')])
+  await ev('document.activeElement?.blur?.()')
+  R.sectionMenu = await ev(`(() => { const h = document.querySelector(${JSON.stringify(bar)} + ' .wb-tile-head'); if (!h) return false; const b = h.getBoundingClientRect(); h.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 20, clientY: b.top + 10, button: 2 })); return true })()`)
+  await sleep(700)
+  await S.shot('ov-05-section-menu-dark')
+  await S.key('Escape', { waitMs: 400 })
+
+  for (const [tag, w] of [['user', width], ['alt', alt]]) {
+    await setPanel(true, w)
+    const shown = await ev(`!!document.querySelector(${JSON.stringify(bar)}) && !!document.querySelector('[data-testid="wb-rail-branch"]')`)
+    R[`br7-${tag}`] = { width: w, shownWithPanel: shown }
+    if (!shown) await setPanel(false, w)
+    R[`br7-${tag}`].info = await info()
+    await S.unhover()
+    await S.shot(`ov-06-br7-${tag}-w${w}-dark`)
+    await S.clip(`ov-06-br7-${tag}-w${w}-env`, '[data-testid="wb-rail-environment"]', 6)
+    if (await S.click('[data-testid="wb-rail-branch-menu"]', 900)) {
+      await S.shot(`ov-06-br7-${tag}-w${w}-menu-dark`)
+      await S.key('Escape', { waitMs: 400 })
+    }
+    if (await S.click('[data-testid="wb-rail-branch"]', 1200)) {
+      await S.shot(`ov-06-br7-${tag}-w${w}-picker-dark`)
+      if (tag === 'user') { await S.theme('light'); await sleep(400); await S.shot(`ov-06-br7-${tag}-w${w}-picker-light`); await S.theme('dark'); await sleep(300) }
+      await S.key('Escape', { waitMs: 500 })
+    }
+  }
+  await setPanel(false, width)
+
+  R.collapsed = await fold(false)
+  await sleep(1000)
+  R.folded = await info()
+  await barShot('ov-07-collapsed')
+  await fold(true)
+  await sleep(800)
+  for (const [tag, keyName] of [['min', 'End'], ['max', 'Home']]) {
+    const ok = await ev(`(() => { const el = document.querySelector('[data-testid="v3-tiles-resizer"] [role="separator"], [data-testid="v3-tiles-resizer"]'); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) continue
+    await S.key(keyName, { waitMs: 900 })
+    R[`tiles-${tag}`] = await info()
+    await barShot(`ov-08-tiles-${tag}`, { light: tag === 'min' })
+  }
+  if (await ev(`(() => { const el = document.querySelector('[data-testid="v3-tiles-resizer"] [role="separator"], [data-testid="v3-tiles-resizer"]'); if (!el) return false; el.focus(); return true })()`)) await S.key('End', { waitMs: 900 })
+  await ev('document.activeElement?.blur?.()')
+  await fold(false)
+  await sleep(800)
+  const homeKey = 'yan:home-background'
+  const savedHome = await ev(`localStorage.getItem(${JSON.stringify(homeKey)})`)
+  const setHome = async (raw) => {
+    await ev(`(() => { const k = ${JSON.stringify(homeKey)}; const v = ${JSON.stringify(raw)}; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); window.dispatchEvent(new StorageEvent('storage', { key: k })); return true })()`)
+    await sleep(1200)
+  }
+  R.sessionBarBg = await ev(`getComputedStyle(document.querySelector(${JSON.stringify(bar)})).backgroundColor`)
+  for (const [tag, raw] of [['bg-on', savedHome ?? JSON.stringify({ mode: 'dither', image: 'builtin:blossom', effect: 'dither', tone: 'dark' })], ['bg-off', JSON.stringify({ mode: 'none' })]]) {
+    await setHome(raw)
+    await S.unhover()
+    await S.shot(`ov-09-${tag}-dark`)
+    await S.theme('light'); await sleep(500)
+    R[`sessionBarBg-${tag}-light`] = await ev(`getComputedStyle(document.querySelector(${JSON.stringify(bar)})).backgroundColor`)
+    await S.shot(`ov-09-${tag}-light`)
+    await S.theme('dark'); await sleep(400)
+  }
+  await setHome(savedHome)
+  await fold(true)
+  await sleep(600)
+  report.audit.overview = await S.audit(bar)
+}
+
+function makePng(width, height) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type, 'ascii'), data]); const sum = Buffer.alloc(4); sum.writeUInt32BE(crc(body)); return Buffer.concat([len, body, sum]) }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 2
+  const raw = Buffer.alloc((width * 3 + 1) * height)
+  for (let y = 0; y < height; y++) { raw[y * (width * 3 + 1)] = 0; for (let x = 0; x < width; x++) { const o = y * (width * 3 + 1) + 1 + x * 3; raw[o] = Math.round(40 + 180 * x / width); raw[o + 1] = Math.round(90 + 100 * y / height); raw[o + 2] = 200 } }
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlibDeflate(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
+function writeLibraryFixtures(root, sessions) {
+  const now = Date.now()
+  let tick = 0
+  const groups = new Map()
+  const add = (sessionKey, spec) => {
+    const dir = join(root, sessionKey)
+    mkdirSync(dir, { recursive: true })
+    const id = `a${String(++tick).padStart(4, '0')}`
+    const path = join(dir, `${id}-${spec.filename}`)
+    if (spec.body != null) writeFileSync(path, spec.body)
+    const bytes = spec.body == null ? 0 : Buffer.byteLength(spec.body)
+    const item = { messageId: `m-${id}`, artifact: { id, sourceId: spec.sourceId ?? id, version: spec.version, filename: spec.filename, path, mediaType: spec.mediaType, kind: spec.kind, bytes, createdAt: now - (spec.ago ?? tick * 3600000), previewable: spec.previewable, description: spec.description } }
+    if (!groups.has(sessionKey)) groups.set(sessionKey, [])
+    groups.get(sessionKey).push(item)
+  }
+  const keyOf = (index) => (sessions[index] ? `s-${sessions[index].id}` : `s-orphan-${index}`)
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" fill="#1f3b5c"/><rect x="24" y="30" width="110" height="60" rx="8" fill="#4f8fd6"/><rect x="186" y="30" width="110" height="60" rx="8" fill="#d6894f"/><rect x="105" y="122" width="110" height="52" rx="8" fill="#5fb37a"/><path d="M79 90 L160 122 M241 90 L160 122" stroke="#e8eef5" stroke-width="3"/></svg>'
+  const html = '<!doctype html><meta charset="utf-8"><title>Dashboard</title><body style="margin:0;font:14px system-ui;background:#f4f6fa;color:#1d2433"><header style="padding:16px 20px;background:#1d2433;color:#fff">Weekly dashboard</header><main style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px"><div style="background:#fff;padding:16px;border-radius:8px">Revenue<br><b style="font-size:24px">$42k</b></div><div style="background:#fff;padding:16px;border-radius:8px">Users<br><b style="font-size:24px">1,284</b></div><div style="background:#fff;padding:16px;border-radius:8px">Churn<br><b style="font-size:24px">2.1%</b></div></main></body>'
+  add(keyOf(0), { filename: 'weekly-dashboard.html', body: html, mediaType: 'text/html', kind: 'document', previewable: true, ago: 60000, description: '每周看板：收入、用户数与流失率三张卡片' })
+  add(keyOf(0), { filename: 'architecture-diagram.svg', body: svg, mediaType: 'image/svg+xml', kind: 'svg', previewable: true, ago: 120000 })
+  add(keyOf(1), { filename: 'gradient-cover.png', body: makePng(480, 300), mediaType: 'image/png', kind: 'image', previewable: true, ago: 180000 })
+  add(keyOf(1), { filename: '季度销售报告-2026年第三季度-最终修订版-给管理层审阅用的超长文件名-附带区域拆分与同比环比分析.md', body: '# 季度销售报告\n\n- 华东 +12%\n- 华南 +8%\n', mediaType: 'text/markdown', kind: 'document', previewable: true, ago: 240000, description: '这是一段很长的说明文字，用来检查列表行里的说明在窄窗口下会不会把操作按钮挤出去，或者和元信息行发生重叠，需要单行省略' })
+  add(keyOf(2), { filename: 'build-script.ts', sourceId: 'build-script', version: 1, body: 'export const v = 1\n', mediaType: 'text/typescript', kind: 'code', previewable: true, ago: 400000 })
+  add(keyOf(2), { filename: 'build-script.ts', sourceId: 'build-script', version: 2, body: 'export const v = 2\nexport const w = 3\n', mediaType: 'text/typescript', kind: 'code', previewable: true, ago: 300000 })
+  add(keyOf(2), { filename: 'dataset-export.zip', body: 'PK\u0003\u0004fixture', mediaType: 'application/zip', kind: 'binary', previewable: false, ago: 500000 })
+  add(keyOf(2), { filename: 'missing-chart.png', body: null, mediaType: 'image/png', kind: 'image', previewable: true, ago: 600000, description: '原文件已被删除' })
+  add('s-orphan-session', { filename: 'orphan-notes.txt', body: 'notes from a deleted session\n', mediaType: 'text/plain', kind: 'document', previewable: true, ago: 700000 })
+  for (let i = 0; i < 24; i++) add(keyOf(i % 3), { filename: `report-${String(i + 1).padStart(2, '0')}.md`, body: `# report ${i + 1}\n`, mediaType: 'text/markdown', kind: 'document', previewable: true, ago: 800000 + i * 3600000 })
+  for (const [key, items] of groups) writeFileSync(join(root, key, 'manifest.json'), JSON.stringify(items, null, 2))
+  return { groups: groups.size, items: tick }
+}
+
+async function libraryTarget({ kit: S, ev, sleep, until, check, log, report, runDir }) {
+  report.library = {}
+  const R = report.library
+  const page = '[data-testid="v3-artifact-library"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  const info = () => ev(`(() => { const p = document.querySelector(${JSON.stringify(page)}); if (!p) return { present: false }; const r = p.getBoundingClientRect(); const over = [...p.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && b.right > r.right + 1 }).map((n) => (n.getAttribute('data-testid') || String(n.className) || n.tagName).slice(0, 50)).slice(0, 8); const clipped = [...p.querySelectorAll('.artifact-library-name, .artifact-library-meta, .artifact-library-desc')].filter((n) => n.getBoundingClientRect().width > 0 && n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.trim().slice(0, 40)).slice(0, 8); return { present: true, box: [Math.round(r.left), Math.round(r.width)], rows: p.querySelectorAll('.artifact-library-row, .artifact-library-card').length, overflow: over, clipped, text: p.innerText.replace(/\\s+/g, ' ').slice(0, 300) } })()`)
+  const go = async (hash) => { await ev(`(window.location.hash = ${JSON.stringify(hash)}, true)`); await sleep(900) }
+  const both = async (name) => { await S.unhover(); await S.shot(`${name}-dark`); await S.theme('light'); await sleep(450); await S.shot(`${name}-light`); await S.theme('dark'); await sleep(300) }
+  const kbd = async (selector, name, index = 0) => {
+    const ok = await ev(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})][${index}]; if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim().slice(0, 40)`)
+    await S.shot(name)
+    return active
+  }
+  await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+  await go('#/')
+  await go('#/artifacts')
+  check('产物库：页面出现', await until(`!!document.querySelector(${JSON.stringify(page)})`, 8000, 100))
+  await until(`!document.querySelector('.artifact-library-note') || document.querySelector('.ui-empty')`, 6000, 100)
+  R.empty = await info()
+  await both('lib-00-empty')
+
+  const sessions = await ev(`window.__yanStore.getState().sessions.slice(0, 3).map((s) => ({ id: s.id, title: s.title }))`)
+  R.fixture = writeLibraryFixtures(join(runDir, 'yan', 'artifacts'), Array.isArray(sessions) ? sessions : [])
+  await go('#/')
+  await go('#/artifacts')
+  check('产物库：夹具出现', await until(`document.querySelectorAll('.artifact-library-row, .artifact-library-card').length >= 20`, 20000, 150))
+  R.userView = await ev(`document.querySelector(${JSON.stringify(page)})?.getAttribute('data-view')`)
+  await S.click('[data-testid="v3-artifact-library-view-list"]', 900)
+  await sleep(800)
+  R.list = await info()
+  check('产物库：列表没有横向溢出', !!R.list?.present && R.list.overflow.length === 0, R.list?.overflow)
+  await both('lib-01-list')
+  await ev(`(() => { const p = document.querySelector(${JSON.stringify(page)}); if (p) p.scrollTop = p.scrollHeight; return true })()`)
+  await sleep(400)
+  await S.shot('lib-01-list-bottom-dark')
+  await ev(`(() => { const p = document.querySelector(${JSON.stringify(page)}); if (p) p.scrollTop = 0; return true })()`)
+  await sleep(300)
+  report.hover.push(['lib-02-row-hover', await S.hover('.artifact-library-row .artifact-library-name', 900, 1)])
+  await S.shot('lib-02-row-hover')
+  report.hover.push(['lib-02-action-hover', await S.hover('.artifact-library-row .artifact-library-actions .ui-icon-btn', 1200, 0)])
+  await S.shot('lib-02-action-hover')
+  await S.unhover()
+  report.focus.push(['lib-03-name-focus', await kbd('.artifact-library-row .artifact-library-name', 'lib-03-name-focus', 1)])
+  report.focus.push(['lib-03-action-focus', await kbd('.artifact-library-row .artifact-library-actions button', 'lib-03-action-focus', 0)])
+  await ev('document.activeElement?.blur?.()')
+  R.pinned = await S.click('.artifact-library-row:nth-child(5) .artifact-library-actions .ui-icon-btn', 700)
+  await S.unhover()
+  await sleep(400)
+  R.afterPin = await info()
+  await S.shot('lib-04-pinned-dark')
+  if (await S.click('.artifact-library-search input', 400)) {
+    await S.typeText('report-1', 700)
+    R.search = await info()
+    await S.shot('lib-05-search-dark')
+    await ev(`(() => { const i = document.querySelector('.artifact-library-search input'); if (!i) return false; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'zzz-no-such-artifact'); i.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+    await sleep(600)
+    R.noMatch = await info()
+    await both('lib-06-no-match')
+    await ev(`(() => { const i = document.querySelector('.artifact-library-search input'); if (!i) return false; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+    await sleep(500)
+  }
+  await ev('document.activeElement?.blur?.()')
+  if (await S.click('[data-testid="v3-artifact-library-view-grid"]', 1500)) {
+    await until(`!!document.querySelector('[data-testid="v3-artifact-library-grid"] img')`, 5000, 150)
+    await sleep(2500)
+    R.grid = await info()
+    check('产物库：网格没有横向溢出', !!R.grid?.present && R.grid.overflow.length === 0, R.grid?.overflow)
+    await both('lib-07-grid')
+    report.hover.push(['lib-08-card-hover', await S.hover('.artifact-library-card', 900, 2)])
+    await S.shot('lib-08-card-hover')
+    await S.unhover()
+    report.focus.push(['lib-08-thumb-focus', await kbd('.artifact-library-thumb-image', 'lib-08-thumb-focus', 0)])
+    await ev('document.activeElement?.blur?.()')
+  }
+  await ev(`(window.__yanRightPanel.getState().setOpen(true), window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1200)
+  R.gridWithPanel = await info()
+  await S.shot(`lib-09-grid-panel-w${width}-dark`)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width < 600 ? 869 : 360}), true)`)
+  await sleep(1200)
+  R.gridWithAlt = await info()
+  await S.shot(`lib-09-grid-panel-w${width < 600 ? 869 : 360}-dark`)
+  await S.click('[data-testid="v3-artifact-library-view-list"]', 900)
+  await sleep(600)
+  R.listWithAlt = await info()
+  check('产物库：右栏打开时列表没有横向溢出', !!R.listWithAlt?.present && R.listWithAlt.overflow.length === 0, R.listWithAlt?.overflow)
+  await S.shot(`lib-10-list-panel-w${width < 600 ? 869 : 360}-dark`)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), window.__yanRightPanel.getState().setOpen(false), true)`)
+  await sleep(900)
+  await S.narrow()
+  await sleep(1200)
+  R.narrowList = await info()
+  check('产物库：窄窗口列表没有横向溢出', !!R.narrowList?.present && R.narrowList.overflow.length === 0, R.narrowList?.overflow)
+  await both('lib-11-narrow-list')
+  await S.click('[data-testid="v3-artifact-library-view-grid"]', 1500)
+  await sleep(1500)
+  R.narrowGrid = await info()
+  await S.shot('lib-12-narrow-grid-dark')
+  await S.click(`[data-testid="v3-artifact-library-view-${R.userView === 'grid' ? 'grid' : 'list'}"]`, 600)
+  await S.wide()
+  await sleep(1200)
+  report.audit.library = await S.audit(page)
+  await go('#/')
+}
+
+async function usageTarget({ kit: S, ev, sleep, until, check, log, report }) {
+  report.usage = {}
+  const R = report.usage
+  const page = '[data-testid="usage-details"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  const info = () => ev(`(() => { const p = document.querySelector(${JSON.stringify(page)}); if (!p) return { present: false }; const r = p.getBoundingClientRect(); const over = [...p.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && b.right > r.right + 1 }).map((n) => (n.getAttribute('data-testid') || String(n.className) || n.tagName).slice(0, 50)).slice(0, 8); const clipped = [...p.querySelectorAll('.usage-page-row-label span, .usage-page-totals dd, .usage-page-legend span')].filter((n) => n.getBoundingClientRect().width > 0 && n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.trim().slice(0, 40)).slice(0, 8); return { present: true, busy: p.getAttribute('aria-busy'), box: [Math.round(r.left), Math.round(r.width)], rows: p.querySelectorAll('.usage-page-row:not([data-head])').length, overflow: over, clipped, text: p.innerText.replace(/\\s+/g, ' ').slice(0, 300) } })()`)
+  const both = async (name) => { await S.unhover(); await S.shot(`${name}-dark`); await S.theme('light'); await sleep(450); await S.shot(`${name}-light`); await S.theme('dark'); await sleep(300) }
+  const scroll = (where) => ev(`(() => { const p = document.querySelector(${JSON.stringify(page)}); if (!p) return false; p.scrollTop = ${where === 'bottom' ? 'p.scrollHeight' : '0'}; return true })()`)
+  const kbd = async (selector, name, index = 0) => {
+    const ok = await ev(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})][${index}]; if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim().slice(0, 40)`)
+    await S.shot(name)
+    return active
+  }
+  await ev(`(window.__yanRightPanel.getState().setOpen(false), true)`)
+  await ev(`(window.location.hash = '#/', true)`)
+  await sleep(600)
+  await ev(`(window.location.hash = '#/usage', true)`)
+  R.loading = await info()
+  await S.shot('usage-00-loading-dark')
+  check('用量页：数据就绪', await until(`document.querySelector(${JSON.stringify(page)})?.getAttribute('aria-busy') === 'false'`, 90000, 100))
+  await sleep(1200)
+  R.all = await info()
+  check('用量页：没有横向溢出', !!R.all?.present && R.all.overflow.length === 0, R.all?.overflow)
+  await both('usage-01-all')
+  await scroll('bottom')
+  await sleep(400)
+  await both('usage-02-all-bottom')
+  await scroll('top')
+  await sleep(300)
+  report.hover.push(['usage-03-row-hover', await S.hover('.usage-page-row:not([data-head])', 900, 1)])
+  await S.shot('usage-03-row-hover')
+  report.hover.push(['usage-03-chart-hover', await S.hover('.usage-page-chart svg, .usage-page-chart .ui-area-chart', 900, 0)])
+  await S.shot('usage-03-chart-hover')
+  await S.unhover()
+  report.focus.push(['usage-04-range-focus', await kbd('.usage-page-head .ui-seg__item input, .usage-page-head .ui-seg__item', 'usage-04-range-focus', 0)])
+  await ev('document.activeElement?.blur?.()')
+  await ev(`(() => { const items = document.querySelectorAll('.usage-page-head .ui-seg__item'); items[0]?.click(); return items.length })()`)
+  await sleep(1500)
+  R.d7 = await info()
+  await both('usage-05-7d')
+  await ev(`(() => { const items = document.querySelectorAll('.usage-page-controls .ui-seg__item'); items[1]?.click(); return items.length })()`)
+  await sleep(900)
+  await scroll('bottom')
+  await sleep(300)
+  R.d7day = await info()
+  await S.shot('usage-06-7d-by-day-dark')
+  await scroll('top')
+  await ev(`(() => { const items = document.querySelectorAll('.usage-page-head .ui-seg__item'); items[2]?.click(); return true })()`)
+  await sleep(1500)
+  await scroll('bottom')
+  await sleep(300)
+  await S.shot('usage-07-all-by-day-dark')
+  await ev(`(() => { const items = document.querySelectorAll('.usage-page-controls .ui-seg__item'); items[0]?.click(); return true })()`)
+  await scroll('top')
+  await sleep(600)
+  await ev(`(window.__yanRightPanel.getState().setOpen(true), window.__yanRightPanel.getState().setWidth(${width}), true)`)
+  await sleep(1200)
+  R.withPanel = await info()
+  await S.shot(`usage-08-panel-w${width}-dark`)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width < 600 ? 869 : 360}), true)`)
+  await sleep(1200)
+  R.withAlt = await info()
+  check('用量页：右栏打开时没有横向溢出', !!R.withAlt?.present && R.withAlt.overflow.length === 0, R.withAlt?.overflow)
+  await S.shot(`usage-08-panel-w${width < 600 ? 869 : 360}-dark`)
+  await ev(`(window.__yanRightPanel.getState().setWidth(${width}), window.__yanRightPanel.getState().setOpen(false), true)`)
+  await sleep(900)
+  await S.narrow()
+  await sleep(1200)
+  R.narrow = await info()
+  check('用量页：窄窗口没有横向溢出', !!R.narrow?.present && R.narrow.overflow.length === 0, R.narrow?.overflow)
+  await both('usage-09-narrow')
+  await scroll('bottom')
+  await sleep(300)
+  await S.shot('usage-09-narrow-bottom-dark')
+  await S.wide()
+  await sleep(1200)
+  report.audit.usage = await S.audit(page)
+  await ev(`(window.location.hash = '#/', true)`)
+}
+
+async function treeTarget({ kit: S, ev, sleep, until, check, log, report, newSession, turn }) {
+  report.tree = {}
+  const R = report.tree
+  const rp = '[data-testid="rp"]'
+  const pane = '[data-testid="v3-wb-branch"]'
+  const width = await ev('window.__yanRightPanel.getState().width')
+  const alt = width < 600 ? 869 : 360
+  R.panelWidth = width
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-tree-'))
+  writeFileSync(join(dir, 'README.md'), '# tree fixture\n')
+  const api = (call) => ev(`(() => { const rp = window.__yanRightPanel.getState(); ${call}; return true })()`)
+  const info = () => ev(`(() => { const p = document.querySelector(${JSON.stringify(pane)}); if (!p) return { present: false }; const r = p.getBoundingClientRect(); const over = [...p.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && b.right > r.right + 1 && !n.closest('svg') }).map((n) => (n.getAttribute('data-testid') || String(n.className) || n.tagName).slice(0, 50)).slice(0, 8); const clipped = [...p.querySelectorAll('.branch-graph__text, .branch-foot__hint, .branch-note, .branch-label')].filter((n) => n.getBoundingClientRect().width > 0 && n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.trim().slice(0, 40)).slice(0, 8); const graph = p.querySelector('.branch-graph__lines'); return { present: true, box: [Math.round(r.left), Math.round(r.width), Math.round(r.height)], state: p.querySelector('[data-testid^="branch-tree"]')?.getAttribute('data-testid'), rows: p.querySelectorAll('[data-entry-id]').length, lanes: graph ? Math.round(graph.getBoundingClientRect().width) : 0, overflow: over, clipped, text: p.innerText.replace(/\\s+/g, ' ').slice(0, 300) } })()`)
+  const variants = async (name, { light = true, full = true } = {}) => {
+    await S.unhover()
+    if (full) await S.shot(`${name}-dark`)
+    await S.clip(`${name}-panel`, rp, 0)
+    if (light) { await S.theme('light'); await sleep(400); await S.clip(`${name}-light`, rp, 0); await S.theme('dark'); await sleep(300) }
+  }
+  const openPane = async () => {
+    await api("rp.setOpen(true); rp.open({ id: 'branch', kind: 'branch' }); rp.activate('branch')")
+    await until(`!!document.querySelector(${JSON.stringify(pane)})`, 8000, 100)
+    await until(`!document.querySelector('[data-testid="branch-tree-loading"]')`, 10000, 100)
+    await sleep(700)
+  }
+  const refresh = async () => { await S.click('[data-testid="branch-refresh"]', 300); await until(`!document.querySelector('[data-testid="branch-tree-loading"]')`, 10000, 100); await sleep(700) }
+  const selectRow = async (kind, index) => {
+    const text = await ev(`(() => { const rows = [...document.querySelectorAll(${JSON.stringify(pane)} + ' .branch-graph__row[data-kind="${kind}"]')]; const row = rows[${index}]; if (!row) return null; row.scrollIntoView({ block: 'nearest' }); return row.textContent.trim().slice(0, 40) })()`)
+    if (text) await S.click(`${pane} .branch-graph__row[data-kind="${kind}"]`, 300, index)
+    await S.unhover()
+    return text
+  }
+  const navigateTo = async (index) => {
+    R[`select-${index}`] = await selectRow('user', index)
+    await sleep(400)
+    await S.click('[data-testid="branch-navigate"]', 300)
+    return until(`!!document.querySelector('[data-testid="branch-notice"], [data-testid="branch-error"]')`, 15000, 100)
+  }
+  const kbd = async (selector, name) => {
+    const ok = await ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return true })()`)
+    if (!ok) { log('找不到焦点目标', selector); return null }
+    await S.key('Tab')
+    await S.key('Tab', { shift: true })
+    const active = await ev(`document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim().slice(0, 30)`)
+    await S.clip(name, rp, 0)
+    return active
+  }
+
+  await newSession(dir)
+  await api('rp.closeAll()')
+  await openPane()
+  R.fresh = await info()
+  await variants('tree-00-new-session')
+
+  await turn('第一轮：帮我列一下这个项目要做的事', { timeout: 60000 })
+  await turn('第二轮：先做登录页，表单要有校验和错误提示', { timeout: 60000 })
+  await turn('第三轮：再加一个忘记密码的入口', { timeout: 60000 })
+  await refresh()
+  R.linear = await info()
+  await variants('tree-01-linear')
+
+  R.nav1 = await navigateTo(0)
+  await sleep(600)
+  R.navigated = await info()
+  await variants('tree-02-navigated', { light: false })
+  await turn('分叉 A：换个思路，先做注册流程，这一句故意写得很长很长，用来看分支行的文字在窄栏里怎么省略', { timeout: 60000 })
+  await refresh()
+  R.nav2 = await navigateTo(1)
+  await sleep(600)
+  await turn('分叉 B：登录页改用第三方登录', { timeout: 60000 })
+  await turn('分叉 B 继续：加上微信和 GitHub', { timeout: 60000 })
+  await refresh()
+  R.forked = await info()
+  check('分支树：出现多条分支', (R.forked?.lanes ?? 0) > 30, R.forked)
+  check('分支树：没有横向溢出', !!R.forked?.present && R.forked.overflow.length === 0, R.forked?.overflow)
+  await variants('tree-03-forked')
+
+  report.hover.push(['tree-04-row-hover', await S.hover(`${pane} .branch-graph__row[data-kind="user"]`, 900, 1)])
+  await S.clip('tree-04-row-hover', rp, 0)
+  await S.unhover()
+  report.focus.push(['tree-05-row-focus', await kbd(`${pane} .branch-graph__row[data-selected]`, 'tree-05-row-focus')])
+  await S.key('ArrowUp', { waitMs: 300 })
+  await S.key('ArrowUp', { waitMs: 300 })
+  await S.clip('tree-05-row-arrow', rp, 0)
+  report.focus.push(['tree-05-switch-focus', await kbd('[data-testid="branch-summarize"] input', 'tree-05-switch-focus')])
+  await ev('document.activeElement?.blur?.()')
+
+  R.bookRow = await selectRow('user', 2)
+  await sleep(400)
+  if (await S.click('[data-testid="branch-bookmark"]', 700)) {
+    await S.typeText('登录方案一', 400)
+    await S.shot('tree-06-bookmark-pop-dark')
+    await S.click('[data-testid="branch-bookmark-save"]', 1200)
+    R.bookmarked = await info()
+    await variants('tree-06-bookmarked', { light: false })
+  }
+
+  await S.click('[data-testid="branch-summarize"]', 500)
+  R.summarizeOn = await ev(`document.querySelector('[data-testid="branch-summarize"] input')?.checked ?? null`)
+  await S.unhover()
+  await variants('tree-07-summarize-on')
+  await S.click('[data-testid="branch-summarize"]', 500)
+
+  await turn('LONGTEXT 运行中看看分支树', { timeout: 90000, during: async () => { await sleep(1200); R.busy = await info(); await variants('tree-08-busy', { light: false }) } })
+  await refresh()
+
+  await api(`rp.setWidth(${alt})`)
+  await sleep(1200)
+  R.alt = await info()
+  await variants(`tree-09-w${alt}`)
+  await api(`rp.setWidth(${width})`)
+  await sleep(1000)
+
+  R.bashStarted = await ev(`(() => { void window.__yanStore.getState().runBash('sleep 12'); return true })()`)
+  R.bashBusy = await until(`!!document.querySelector('[data-testid="branch-navigate"][data-disabled], [data-testid="branch-navigate"]:disabled')`, 6000, 100)
+  await sleep(500)
+  R.bash = await info()
+  check('分支树：输入框命令运行时提前禁用并说明', /命令还在运行/.test(R.bash?.text ?? ''), R.bash?.text)
+  await variants('tree-12-bash-busy')
+  await until(`!document.querySelector('[data-testid="branch-navigate"][data-disabled], [data-testid="branch-navigate"]:disabled')`, 30000, 200)
+  await refresh()
+  R.navFork = await navigateTo(0)
+  await sleep(800)
+  await selectRow('user', 0)
+  if (await S.click('[data-testid="branch-bookmark"]', 700)) {
+    await S.typeText('分叉点书签', 400)
+    await S.click('[data-testid="branch-bookmark-save"]', 1500)
+    R.forkBookmark = await info()
+    R.forkLeafRow = await ev(`(() => { const dots = [...document.querySelectorAll('.branch-graph__dot[data-leaf]')]; const rows = [...document.querySelectorAll('.branch-graph__row')]; return { leafDots: dots.length, rows: rows.length, current: rows.find((row) => /当前|Current/.test(row.textContent))?.textContent.trim().slice(0, 30) ?? null } })()`)
+    check('分支树：分叉点加书签不多出书签行', !/书签 ·/.test(R.forkBookmark?.text ?? '') && R.forkLeafRow?.leafDots === 1 && /第一轮/.test(R.forkLeafRow?.current ?? ''), R.forkLeafRow)
+    await variants('tree-13-bookmark-at-fork', { light: false })
+  }
+
+  R.failInjected = await ev(`(() => { const el = document.querySelector('[data-testid="branch-tree"]'); if (!el) return 'no-tree'; const key = Object.keys(el).find((k) => k.startsWith('__reactFiber$')); let fiber = key ? el[key] : null; while (fiber) { let hook = fiber.memoizedState; while (hook && typeof hook === 'object' && 'next' in hook) { const value = hook.memoizedState; if (value && typeof value === 'object' && value.phase === 'ready' && hook.queue && typeof hook.queue.dispatch === 'function') { hook.queue.dispatch({ phase: 'error', error: '会话已切换，请重新打开操作面板' }); return 'ok' } hook = hook.next } fiber = fiber.return } return 'no-hook' })()`)
+  if (R.failInjected === 'ok') {
+    R.errorShown = await until(`!!document.querySelector('[data-testid="branch-tree-error"]')`, 10000, 100)
+    check('分支树：错误态出现', R.errorShown)
+    R.error = await info()
+    await variants('tree-11-error')
+    report.focus.push(['tree-11-retry-focus', await kbd('[data-testid="branch-retry"]', 'tree-11-retry-focus')])
+    await S.click('[data-testid="branch-retry"]', 300)
+    R.recovered = await until(`!!document.querySelector('[data-testid="branch-tree"]')`, 10000, 100)
+    check('分支树：重试后恢复', R.recovered)
+    await sleep(600)
+  }
+
+  const big = await ev(`(() => { const list = window.__yanStore.getState().sessions.filter((s) => !s.parentSession).sort((a, b) => b.messageCount - a.messageCount); return list[0] ? { path: list[0].path, count: list[0].messageCount } : null })()`)
+  R.big = big
+  if (big) {
+    await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(big.path)})`)
+    await until(`window.__yanStore.getState().session?.sessionFile === ${JSON.stringify(big.path)}`, 20000, 150)
+    await sleep(1500)
+    await openPane()
+    await until(`!!document.querySelector('[data-testid="branch-tree"], [data-testid="branch-tree-error"]')`, 20000, 150)
+    await sleep(1200)
+    R.many = await info()
+    check('分支树：长会话没有横向溢出', !!R.many?.present && R.many.overflow.length === 0, R.many?.overflow)
+    await variants('tree-10-many')
+    await ev(`(() => { const g = document.querySelector(${JSON.stringify(pane)} + ' .branch-graph'); if (g) g.scrollTop = 0; return true })()`)
+    await sleep(400)
+    await S.clip('tree-10-many-top', rp, 0)
+  }
+  report.audit.tree = await S.audit(pane)
+}
+
+const TARGETS = { tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget,  browserfinal: browserFinalTarget,  browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget }
 
 export default async function run(ctx) {
   const { cdp, until, sleep, log, check, report } = ctx
@@ -1952,6 +3436,6 @@ export default async function run(ctx) {
     }
   }
   await kit.theme('dark')
-  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
+  writeFileSync(join(out, 'shots.json'), JSON.stringify({ files: kit.files.map((file) => file.slice(out.length + 1)), focus: report.focus, hover: report.hover, missed: kit.missed, gateJump: report.gateJump, narrowServers: report.narrowServers, proxyFailure: report.proxyFailure, contrast: report.contrast, importWaiting: report.importWaiting, stop: report.stop, collapsedServers: report.collapsedServers, horizontalHover: report.horizontalHover, buttons: report.buttons, rail: report.rail, files: report.files, preview: report.preview, browserFinal: report.browserFinal, changes: report.changes, terminal: report.terminal, context: report.context, quota: report.quota, branches: report.branches, tabgap: report.tabgap, logs: report.logs, device: report.device, prs: report.prs, subagents: report.subagents, shell: report.shell, overview: report.overview, library: report.library, usage: report.usage, tree: report.tree, forcedWidths: report.forcedWidths, fonts: report.fonts, audit: report.audit, layout: report.layout }, null, 2))
   check('截图数量', kit.files.length > 0, kit.files.length)
 }

@@ -130,6 +130,8 @@
     width: var(--size-tiles);
     max-height: 100%;
     min-height: 0;
+    border-radius: var(--r-lg);
+    background: var(--sessionbar-bg);
     animation: v3-sessionbar-open var(--panel-dur, var(--dur-sheet)) ease-in-out;
   }
   .v3-sessionbar[data-closing] {

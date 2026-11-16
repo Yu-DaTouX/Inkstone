@@ -354,6 +354,7 @@ function BranchRow({
   return (
     <RailRow
       label={branch}
+      truncate="middle"
       title={[title, sync?.title].filter(Boolean).join('\n')}
       icon={<GitBranch size={14} aria-hidden />}
       value={sync ? <RailValue value={sync.text} /> : undefined}
@@ -617,8 +618,8 @@ function QuotaDetail({ model, now, mainId, rail }: { model: QuotaTileModel; now:
         </div>
       ) : null}
       {stale && hasData ? (
-        <p className="wb-quota-stale" title={t('quota.staleTip')} data-testid="wb-ov-quota-stale">
-          {[quotaReadAgo(t, model.checkedAt, now), model.staleError ? t('quota.readFailed', { msg: model.staleError }) : ''].filter(Boolean).join(' · ')}
+        <p className="wb-quota-stale" title={t('quota.staleTip')} data-error={model.staleError ? '1' : undefined} data-testid="wb-ov-quota-stale">
+          {(model.staleError ? [t('quota.readFailed', { msg: model.staleError }), quotaReadAgo(t, model.checkedAt, now, true)] : [quotaReadAgo(t, model.checkedAt, now)]).join(' · ')}
         </p>
       ) : null}
       {model.problem ? <Notice tone={model.problem.tone} compact>{model.problem.text}</Notice> : null}
@@ -735,7 +736,7 @@ function StatsGlance({ model, text }: { model: RailStatsModel; text: RailText })
           joined={glance.hit !== null}
           value={metric.value}
           unit={metric.unit}
-          digits={4}
+          digits={metric.bars ? 4 : undefined}
           glyph={metric.bars ? { kind: 'bars', values: metric.bars, pending: metric.pending, slots: GLANCE_BARS + 1 } : undefined}
           glyphEnd
         />
@@ -817,7 +818,13 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       title={[`${rail.local} · ${cwd}`, branch ? `${text.branchLabel} ${branch}` : '', dirtyCount > 0 ? rail.uncommittedFiles(dirtyCount) : '', gitRead.status === 'error' ? rail.gitReadFailed : ''].filter(Boolean).join('\n')}
     >
       {branch ? <GitBranch size={12} aria-hidden className="wb-env-sum-icon" /> : null}
-      <span className="wb-env-sum-name">{branch ?? projectName}</span>
+      {branch ? (
+        <span className="wb-env-sum-name" data-truncate="start">
+          <bdi>{branch}</bdi>
+        </span>
+      ) : (
+        <span className="wb-env-sum-name">{projectName}</span>
+      )}
       {dirtyCount > 0 ? (
         <Badge tone="ask" className="wb-env-dirty">
           {rail.uncommitted(dirtyCount)}

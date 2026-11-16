@@ -245,9 +245,10 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const modelName = session?.model?.name || session?.model?.id || ''
 
   const cells = useMemo(() => (usage.known ? contextCells(parts, usage.windowSize) : []), [usage.known, parts, usage.windowSize])
-  const limitNote = usage.cappedByLimit
-    ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
-    : undefined
+  const limitNote = usage.cappedByLimit ? t('ctx.limitNote', { limit: shortTokens(usage.windowSize) }) : undefined
+  const modelWindowNote = usage.cappedByLimit && usage.modelWindow ? `${t('ctx.modelWindow')} ${shortTokens(usage.modelWindow)}` : undefined
+  const limitTip = [limitNote, modelWindowNote].filter(Boolean).join(' · ') || undefined
+  const windowTitle = usage.cappedByLimit ? t('ctx.autoCompactLimit') : text.windowTitle
   const reserveFrom = usage.known && usage.compactAt !== null && usage.compactAt < usage.windowSize
     ? Math.round((usage.compactAt / usage.windowSize) * CELL_COUNT)
     : null
@@ -309,9 +310,9 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
 
   return (
     <section className="wb-ctx" aria-label={text.title} data-testid="v3-wb-context">
-      <div className="wb-ctxw" role="group" aria-label={text.windowTitle} data-tone={usage.known ? usage.tone : undefined}>
+      <div className="wb-ctxw" role="group" aria-label={windowTitle} data-tone={usage.known ? usage.tone : undefined}>
         <div className="wb-ctxw-head">
-          <span className="wb-ctxw-title">{text.windowTitle}</span>
+          <span className="wb-ctxw-title" data-testid="v3-wb-ctx-window-title">{windowTitle}</span>
           {modelName ? <span className="wb-ctxw-model" title={modelName}>{modelName}</span> : null}
         </div>
         <div className="wb-ctxw-figure">
@@ -330,7 +331,17 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             </span>
           ) : null}
         </div>
-        {limitNote ? <p className="wb-ctxw-note" data-testid="v3-wb-ctx-limit-note">{limitNote}</p> : null}
+        {limitNote ? (
+          <p className="wb-ctxw-note" data-testid="v3-wb-ctx-limit-note">
+            {limitNote}
+            {modelWindowNote ? (
+              <>
+                {' · '}
+                <span className="wb-ctxw-note-keep">{modelWindowNote}</span>
+              </>
+            ) : null}
+          </p>
+        ) : null}
 
         {usage.known ? (
           <>
@@ -372,7 +383,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         )}
 
         <div className="wb-ctxw-tray">
-          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitNote || lineNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
+          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitTip || lineNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
             {compacting
               ? text.compacting
               : usage.afterCompactUnknown

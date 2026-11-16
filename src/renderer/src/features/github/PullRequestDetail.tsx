@@ -33,6 +33,7 @@ import {
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { DiffView } from '../diff'
 import type { PrDetailTab } from '../../state/right-panel'
+import type { GhPrDetailJson } from '../../../../shared/github'
 import {
   ageOf,
   normalizePrDetail,
@@ -107,7 +108,7 @@ function Tip({ label, children }: { label: string; children: ReactElement }): Re
   )
 }
 
-function CopyCommand({ value, label, copiedLabel }: { value: string; label: string; copiedLabel: string }): ReactElement {
+export function CopyCommand({ value, label, copiedLabel, testId = 'gh-pr-checkout' }: { value: string; label: string; copiedLabel: string; testId?: string }): ReactElement {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return undefined
@@ -122,7 +123,7 @@ function CopyCommand({ value, label, copiedLabel }: { value: string; label: stri
         className="gh-prd__checkout"
         aria-label={copied ? copiedLabel : `${label}: ${value}`}
         icon={copied ? <Check size={12} aria-hidden /> : <Copy size={12} aria-hidden />}
-        data-testid="gh-pr-checkout"
+        data-testid={testId}
         onPress={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => undefined)}
       >
         <code>{copied ? copiedLabel : value}</code>
@@ -185,6 +186,8 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
   const [viewed, setViewed] = useState<string[]>(() => parseViewed(readViewedRaw()))
   const [notice, setNotice] = useState('')
   const diffPatch = useRef(remembered.snapshot?.diffPatch ?? '')
+  const rawPr = useRef<{ key: string; pr: GhPrDetailJson; repo: string } | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
   const [commentOpen, setCommentOpen] = useState(remembered.commentOpen === true)
   const action = usePrAction(cwd, (_request, result) => {
     if (result.pr && repo) {
@@ -321,6 +324,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           return
         }
         diffPatch.current = diffRes.ok ? diffRes.patch : ''
+        rawPr.current = { key: memoryKey, pr: detailRes.pr, repo: name }
         const next = normalizePrDetail(detailRes.pr, { repo: name, diff: diffPatch.current })
         setDetail(next)
         onState?.(next.state, next.title)
@@ -335,6 +339,31 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
       alive = false
     }
   }, [cwd, number, reload, t])
+
+  const retryDiff = useCallback(async () => {
+    const github = window.yan?.github
+    const raw = rawPr.current
+    if (!github || !raw || raw.key !== memoryKey) {
+      setReload((value) => value + 1)
+      return
+    }
+    setDiffLoading(true)
+    try {
+      const diffRes = await github.diff(cwd, number)
+      if (rawPr.current !== raw) return
+      if (!diffRes.ok) {
+        setDiffNote({ kind: 'error', message: diffRes.error ?? '' })
+        return
+      }
+      diffPatch.current = diffRes.patch
+      setDetail(normalizePrDetail(raw.pr, { repo: raw.repo, diff: diffRes.patch }))
+      setDiffNote(diffRes.truncated ? { kind: 'truncated' } : null)
+    } catch (cause) {
+      if (rawPr.current === raw) setDiffNote({ kind: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+    } finally {
+      setDiffLoading(false)
+    }
+  }, [cwd, number, memoryKey])
 
   useEffect(() => {
     writeStored(VIEWED_KEY, serializeViewed(viewed))
@@ -503,7 +532,16 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
         {sideNote ? <Notice tone="ask" compact>{actText.review.sideUnknown}</Notice> : null}
         {diffNote?.kind === 'truncated' ? <Notice tone="ask" compact>{t('github.pr.detail.diffTruncated')}</Notice> : null}
         {diffNote?.kind === 'error' ? (
-          <Notice tone="ask" compact data-testid="gh-pr-diff-error">
+          <Notice
+            tone="fail"
+            compact
+            data-testid="gh-pr-diff-error"
+            action={
+              <Button size="xs" variant="ghost" isPending={diffLoading} onPress={() => void retryDiff()} data-testid="gh-pr-diff-retry">
+                {actText.result.retry}
+              </Button>
+            }
+          >
             {t('github.pr.detail.diffFailed', { msg: diffNote.message ?? '' })}
           </Notice>
         ) : null}
@@ -722,7 +760,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           />
         ) : null}
       </header>
-      <nav className="gh-prd__tabs" aria-label={text.tabsLabel}>
+      <nav className="gh-prd__tabs" aria-label={text.tabsLabel} hidden={!detail && !loading}>
         <SegmentedControl<PrDetailTab>
           label={text.tabsLabel}
           value={tab}
@@ -736,9 +774,9 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
               <span>{checksLabel(detail.checks)}</span>
             </Button>
             <Popover variant="panel" placement="bottom end" className="gh-pr-checks-pop">
-              <Dialog aria-label={t('github.pr.detail.checks')} showClose={false} body="flush">
+              <Dialog aria-label={t('github.pr.detail.checks')} showClose={false} body="flush" padding="none">
                 {detail.checkItems.length ? (
-                  <ChecksList items={detail.checkItems} detailsLabel={t('github.pr.checks.details')} onOpen={openExternal} />
+                  <ChecksList items={detail.checkItems} detailsLabel={t('github.pr.checks.details')} stateLabels={{ pass: t('github.pr.checks.pass'), fail: t('github.pr.checks.fail'), pending: t('github.pr.checks.pending') }} onOpen={openExternal} />
                 ) : (
                   <span className="ui-meta-text">{text.noChecks}</span>
                 )}
@@ -752,7 +790,17 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
         <PrActionStatus controller={action} text={actText.result} onRefresh={() => setReload((value) => value + 1)} className="gh-prd__notice" />
       )}
       {error ? (
-        <Notice tone="fail" compact className="gh-prd__notice" data-testid="gh-pr-detail-error">
+        <Notice
+          tone="fail"
+          compact
+          className="gh-prd__notice"
+          data-testid="gh-pr-detail-error"
+          action={
+            <Button size="xs" variant="ghost" isPending={loading} onPress={() => setReload((value) => value + 1)} data-testid="gh-pr-detail-retry">
+              {actText.result.retry}
+            </Button>
+          }
+        >
           {t('github.pr.detail.failed', { msg: error })}
         </Notice>
       ) : null}

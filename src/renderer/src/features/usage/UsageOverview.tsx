@@ -34,19 +34,35 @@ export function prefetchUsageStats(): void {
   void loadUsageStats('all').catch(() => undefined)
 }
 
-export function useUsageStats(range: UsageRange): UsageStatsResult | null {
+export interface UsageStatsState {
+  stats: UsageStatsResult | null
+  failed: boolean
+  retry: () => void
+}
+
+export function useUsageStatsState(range: UsageRange): UsageStatsState {
   const [stats, setStats] = useState<UsageStatsResult | null>(() => usageMemory.get(range) ?? null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let alive = true
     setStats(usageMemory.get(range) ?? null)
+    setFailed(false)
     loadUsageStats(range)
       .then((next) => {
         if (alive) setStats(next)
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (alive) setFailed(true)
+      })
     return () => {
       alive = false
     }
-  }, [range])
-  return stats
+  }, [range, attempt])
+  const retry = useCallback(() => setAttempt((n) => n + 1), [])
+  return { stats, failed, retry }
+}
+
+export function useUsageStats(range: UsageRange): UsageStatsResult | null {
+  return useUsageStatsState(range).stats
 }

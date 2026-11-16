@@ -21,6 +21,12 @@ export function usageModelName(entry: Pick<UsageModelShare, 'key' | 'sources'>, 
   return hit?.name ?? entry.sources?.[0]?.replace(/^.*\//, '') ?? entry.key
 }
 
+export function usageModelFree(entry: Pick<UsageModelShare, 'key' | 'sources'>, models: ReadonlyArray<Pick<ModelInfo, 'provider' | 'id' | 'cost'>>): boolean {
+  const hit = models.find((model) => entry.sources?.includes(`${model.provider}/${model.id}`)) ?? models.find((model) => usageModelId(model.id) === entry.key)
+  const cost = hit?.cost
+  return !!cost && cost.input === 0 && cost.output === 0 && !cost.cacheRead && !cost.cacheWrite
+}
+
 export interface UsageBar {
   key: string
   label: string

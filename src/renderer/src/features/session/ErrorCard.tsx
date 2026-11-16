@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from 'react'
+import { createContext, useContext, useEffect, useState, type JSX } from 'react'
 import { useI18n } from '../../i18n'
 import { pushNotice, useStore } from '../../state/store'
 import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
@@ -43,8 +43,18 @@ function splitErrorBody(body: string): { explanation: string; raw: string } {
   return { explanation: body.slice(0, at).trim(), raw: body.slice(at + RAW_MARK.length).trim() }
 }
 
-function errorHint(raw: string, tt: (key: SessionTextKey, vars?: Record<string, string | number>) => string): string {
+export const ErrorCardRetryContext = createContext(true)
+
+const FOLLOW_UP_HINT: Partial<Record<ModelErrorCause, SessionTextKey>> = {
+  empty: 'errHintEmptyFollowUp',
+  restart: 'errHintRestartFollowUp',
+  stream: 'errHintStreamFollowUp'
+}
+
+function errorHint(raw: string, tt: (key: SessionTextKey, vars?: Record<string, string | number>) => string, canRetry = true): string {
   const cause = raw ? modelErrorCause(raw) : 'empty'
+  const followUp = canRetry ? undefined : FOLLOW_UP_HINT[cause]
+  if (followUp) return tt(followUp)
   const reset = cause === 'quotaUsage' ? modelErrorResetTime(raw) : ''
   return reset ? `${tt(CAUSE_HINT[cause])} · ${tt('errHintQuotaReset', { time: reset })}` : tt(CAUSE_HINT[cause])
 }
@@ -85,6 +95,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
   const quotaResume = useStore((s) => s.quotaResume)
   const provider = session?.model?.provider
   const liveQuota = useLiveQuota((s) => (provider ? s.entries[provider]?.snapshot : undefined))
+  const canRetry = useContext(ErrorCardRetryContext)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -149,7 +160,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
 
   const title = tt(errorTitleKey(model))
   const bodyParts = splitErrorBody(model.body)
-  const hint = windowFull ? tt('errorQuotaWindowFull') : model.kind === 'truncated' ? tt(CAUSE_HINT.truncated) : errorHint(bodyParts.raw, tt)
+  const hint = windowFull ? tt('errorQuotaWindowFull') : model.kind === 'truncated' ? tt(CAUSE_HINT.truncated) : errorHint(bodyParts.raw, tt, canRetry)
   const hintTip = zh && bodyParts.explanation ? bodyParts.explanation : undefined
   const explanation = <p className="v3-errorcard-body" data-testid="v3-error-explanation" title={hintTip}>{hint}</p>
   const rawBlock = bodyParts.raw ? <CardCode tone="fail" className="v3-errorcard-raw" data-testid="v3-error-raw">{bodyParts.raw}</CardCode> : null

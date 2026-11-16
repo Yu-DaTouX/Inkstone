@@ -198,7 +198,8 @@
   }
 
   .sa-pane-missing {
-    height: 100%;
+    justify-content: flex-start;
+    padding-block-start: var(--s-24);
   }
 
   .sa-pane-steps {

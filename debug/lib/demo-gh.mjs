@@ -12,6 +12,9 @@ const fail = message => { throw new Error(message) }
 const inside = (root, path) => { const rel = relative(resolve(root), resolve(path)); return !rel.startsWith('..') && !isAbsolute(rel) }
 let locked = false
 let lock
+const control = (() => { try { return JSON.parse(readFileSync(`${stateFile}.control.json`, 'utf8')) } catch { return {} } })()
+const operationName = args[0] === 'api' ? `api.${flag('--method') ?? 'GET'}` : args.slice(0, 2).join('.')
+if (control.delayMs && (!control.delayOp || control.delayOp === operationName)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(control.delayMs))
 try {
   if (!stateFile || !isAbsolute(stateFile)) fail('demo gh requires an absolute YAN_DEBUG_GH_STATE')
   const dir = dirname(stateFile)
@@ -26,13 +29,14 @@ try {
   }
   const s = JSON.parse(readFileSync(stateFile, 'utf8'))
   if (s.version !== 1 || !isAbsolute(s.repo.origin) || !inside(dir, s.repo.origin) || !inside(dir, s.repo.project)) fail('Invalid demo state or non-local origin')
-  const operation = args[0] === 'api' ? `api.${flag('--method') ?? 'GET'}` : args.slice(0, 2).join('.')
-  const injected = process.env.YAN_DEBUG_GH_FAILURE || ''
+  const operation = operationName
+  const injected = control.failure || process.env.YAN_DEBUG_GH_FAILURE || ''
   const [only, mode] = injected.includes(':') ? injected.split(':') : ['', injected]
   if (!only || operation === only) {
     if (mode === 'auth') fail('HTTP 401: not logged in; gh auth login')
     if (mode === 'forbidden') fail('HTTP 403: permission denied by demo policy')
     if (mode === 'timeout') fail('context deadline exceeded: demo timeout')
+    if (mode === 'norepo') fail('none of the git remotes configured for this repository point to a known GitHub host')
   }
   const now = () => new Date().toISOString()
   const git = (...a) => demoGit(s.repo.origin, a)

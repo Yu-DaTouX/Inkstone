@@ -6,6 +6,7 @@
     min-height: 0;
     height: 100%;
     padding-inline: var(--s-12);
+    container: wb-branch / inline-size;
   }
 
   .wb-branch__head {
@@ -160,20 +161,35 @@
     width: min(260px, calc(100vw - 32px));
   }
 
+  @container wb-branch (min-width: 560px) {
+    .branch-label {
+      max-width: 24ch;
+    }
+  }
+
   .branch-status {
+    text-wrap: pretty;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: var(--s-8);
     min-height: 0;
-    margin: auto;
-    max-width: 32ch;
+    margin: var(--s-24) auto 0;
+    max-width: 40ch;
     padding: var(--s-16);
     text-align: center;
     color: var(--fg3);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
+  }
+
+  .branch-status + .branch-foot {
+    margin-top: auto;
+  }
+
+  .branch-error {
+    margin-block-start: var(--s-24);
   }
 
   .branch-status__title {
@@ -189,12 +205,10 @@
   }
 
   .branch-note {
-    flex: none;
+    flex: 1 0 100%;
     margin: 0;
-    max-width: 40%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
     color: var(--fg3);
     font-size: var(--t-footnote);
   }
@@ -211,7 +225,8 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: var(--s-8);
+    flex-wrap: wrap;
+    gap: var(--s-4) var(--s-8);
     min-width: 0;
     margin-top: var(--s-8);
     padding-top: var(--s-8);
@@ -219,6 +234,7 @@
   }
 
   .branch-foot__hint {
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

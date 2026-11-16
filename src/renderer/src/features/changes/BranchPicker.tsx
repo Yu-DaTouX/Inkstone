@@ -8,6 +8,7 @@ import {
   Menu,
   MenuItem,
   MenuSection,
+  MiddleTruncate,
   Notice,
   Popover,
   SearchField,
@@ -32,6 +33,7 @@ export interface BranchPickerProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   onChanged?: () => void
+  onShowFile?: (path: string) => void
   placement?: PopoverProps['placement']
 }
 
@@ -66,7 +68,7 @@ const NAME_ISSUE: Record<BranchNameIssue, MessageKey> = {
   exists: 'gitflow.name.exists'
 }
 
-export function BranchPicker({ cwd, triggerRef, isOpen, onOpenChange, onChanged, placement = 'bottom start' }: BranchPickerProps): ReactElement {
+export function BranchPicker({ cwd, triggerRef, isOpen, onOpenChange, onChanged, onShowFile, placement = 'bottom start' }: BranchPickerProps): ReactElement {
   const { t } = useI18n()
   return (
     <Popover
@@ -79,13 +81,13 @@ export function BranchPicker({ cwd, triggerRef, isOpen, onOpenChange, onChanged,
       offset={4}
     >
       <Dialog className="gitflow-branch__dialog" aria-label={t('gitflow.branch.dialog')} data-testid="git-branch-picker">
-        {isOpen ? <BranchPickerBody cwd={cwd} onClose={() => onOpenChange(false)} onChanged={onChanged} /> : null}
+        {isOpen ? <BranchPickerBody cwd={cwd} onClose={() => onOpenChange(false)} onChanged={onChanged} onShowFile={onShowFile} /> : null}
       </Dialog>
     </Popover>
   )
 }
 
-function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: () => void; onChanged?: () => void }): ReactElement {
+function BranchPickerBody({ cwd, onClose, onChanged, onShowFile }: { cwd: string; onClose: () => void; onChanged?: () => void; onShowFile?: (path: string) => void }): ReactElement {
   const { t } = useI18n()
   const runners = useStore((s) => s.runners)
   const [snapshot, setSnapshot] = useState<PickerSnapshot | null>(null)
@@ -181,11 +183,20 @@ function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: (
     if (res?.ok) finish(t('gitflow.done.create', { branch }))
   }
 
+  const failedFiles = runner.failure?.view.code === 'dirty-blocks-switch' ? runner.failure.view.files : []
   const failure = runner.failure ? (
     <GitFailureNotice
       className="gitflow-branch__failure"
       view={runner.failure.view}
       busy={!!runner.busy}
+      onShowFiles={
+        onShowFile && failedFiles.length > 0
+          ? () => {
+              onShowFile(failedFiles[0])
+              onClose()
+            }
+          : undefined
+      }
       onRetry={() => {
         const input = runner.failure?.input
         if (input) void runner.run(input)
@@ -275,6 +286,11 @@ function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: (
           className="gitflow-branch__search"
           data-testid="git-branch-search"
         />
+        {empty && trimmed ? (
+          <Notice variant="hint" className="gitflow-branch__note" data-testid="git-branch-empty">
+            {t('gitflow.branch.empty')}
+          </Notice>
+        ) : null}
         <Menu
           aria-label={t('gitflow.branch.dialog')}
           className="gitflow-branch__menu"
@@ -300,7 +316,7 @@ function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: (
                   checked={option.current}
                   disabledReason={reasonOf(option)}
                 >
-                  {option.name}
+                  <MiddleTruncate value={option.name} />
                 </MenuItem>
               ))}
             </MenuSection>
@@ -315,10 +331,10 @@ function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: (
                   textValue={option.ref}
                   icon={<GitBranch size={14} />}
                   checked={false}
-                  description={t('gitflow.branch.tracks', { branch: option.name })}
+                  description={t('gitflow.branch.tracks')}
                   disabledReason={reasonOf(option)}
                 >
-                  {option.ref}
+                  <MiddleTruncate value={option.ref} />
                 </MenuItem>
               ))}
             </MenuSection>
@@ -330,11 +346,6 @@ function BranchPickerBody({ cwd, onClose, onChanged }: { cwd: string; onClose: (
           </MenuSection>
         </Menu>
       </Autocomplete>
-      {empty && trimmed ? (
-        <Notice variant="hint" className="gitflow-branch__note">
-          {t('gitflow.branch.empty')}
-        </Notice>
-      ) : null}
       {snapshot.error ? (
         <Notice tone="fail" compact className="gitflow-branch__note">
           {t('gitflow.branch.loadFailed', { msg: snapshot.error })}

@@ -15,6 +15,7 @@ import {
   type LauncherAction,
   surfaceShortcutActionForKey
 } from './Launcher'
+import { launcherSections } from './model'
 import { SurfaceIcon, TabChip, type TabSurface } from './TabChip'
 import './TabStrip.css'
 
@@ -32,6 +33,15 @@ function chipsOf(root: HTMLDivElement | null): HTMLElement[] {
 function revealActiveChip(viewport: HTMLDivElement | null): void {
   const active = viewport?.querySelector<HTMLElement>('[data-tab-id][data-active-tab="true"]')
   if (!viewport || !active) return
+  const chips = [...viewport.querySelectorAll<HTMLElement>('[data-tab-id]')]
+  if (chips[0] === active) {
+    viewport.scrollLeft = 0
+    return
+  }
+  if (chips[chips.length - 1] === active) {
+    viewport.scrollLeft = viewport.scrollWidth
+    return
+  }
   const style = getComputedStyle(viewport)
   const padStart = parseFloat(style.scrollPaddingInlineStart) || 0
   const padEnd = parseFloat(style.scrollPaddingInlineEnd) || 0
@@ -39,14 +49,20 @@ function revealActiveChip(viewport: HTMLDivElement | null): void {
   const rect = active.getBoundingClientRect()
   const start = rect.left - box.left + viewport.scrollLeft
   const end = start + rect.width
-  const lead = start <= padStart ? 0 : padStart
-  const trail = end + padEnd >= viewport.scrollWidth ? 0 : padEnd
-  if (rect.width + lead + trail > viewport.clientWidth) {
-    viewport.scrollLeft = lead === 0 ? 0 : Math.max(0, start - (viewport.clientWidth - rect.width) / 2)
+  if (rect.width + padStart + padEnd > viewport.clientWidth) {
+    viewport.scrollLeft = Math.max(0, start - (viewport.clientWidth - rect.width) / 2)
     return
   }
-  if (start - lead < viewport.scrollLeft) viewport.scrollLeft = Math.max(0, start - lead)
-  else if (end + trail > viewport.scrollLeft + viewport.clientWidth) viewport.scrollLeft = end + trail - viewport.clientWidth
+  if (start - padStart < viewport.scrollLeft) viewport.scrollLeft = Math.max(0, start - padStart)
+  else if (end + padEnd > viewport.scrollLeft + viewport.clientWidth) viewport.scrollLeft = end + padEnd - viewport.clientWidth
+}
+
+function fadeSizeOf(viewport: HTMLElement): number {
+  const raw = getComputedStyle(viewport).getPropertyValue('--fade-size').trim()
+  const value = parseFloat(raw)
+  if (!Number.isFinite(value)) return 0
+  if (raw.endsWith('rem')) return value * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16)
+  return value
 }
 
 function labelButtonOf(chip: HTMLElement | null | undefined): HTMLButtonElement | null {
@@ -79,21 +95,6 @@ export interface TabStripProps {
 }
 
 const TAB_DRAG_OUT_PX = 12
-
-function addMenuSections(actions: readonly LauncherAction[]): { reason: string | null; actions: LauncherAction[] }[] {
-  const sections: { reason: string | null; actions: LauncherAction[] }[] = [{ reason: null, actions: [] }]
-  for (const action of actions) {
-    if (action.available) {
-      sections[0].actions.push(action)
-      continue
-    }
-    const reason = action.disabledReason ?? ''
-    const section = sections.find((entry) => entry.reason === reason)
-    if (section) section.actions.push(action)
-    else sections.push({ reason, actions: [action] })
-  }
-  return sections.filter((section) => section.actions.length)
-}
 
 function AddSurfaceMenuAction(props: { action: LauncherAction }) {
   const { action } = props
@@ -131,6 +132,9 @@ export function TabStrip(props: TabStripProps) {
     const canScrollRight =
       hasOverflow &&
       viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - TAB_SCROLL_EDGE_TOLERANCE
+    const room = `${Math.max(0, Math.floor(viewport.clientWidth - 2 * fadeSizeOf(viewport)))}px`
+    if (hasOverflow) stripRef.current?.style.setProperty('--t3-tab-room', room)
+    else stripRef.current?.style.removeProperty('--t3-tab-room')
     setScroll((current) =>
       current.hasOverflow === hasOverflow &&
       current.canScrollLeft === canScrollLeft &&
@@ -161,11 +165,8 @@ export function TabStrip(props: TabStripProps) {
       }
 
       const content = viewport.firstElementChild
-      let width = viewport.clientWidth
       const observer = new ResizeObserver(() => {
         update()
-        if (viewport.clientWidth === width) return
-        width = viewport.clientWidth
         revealActiveChip(viewport)
       })
       observer.observe(viewport)
@@ -185,9 +186,11 @@ export function TabStrip(props: TabStripProps) {
   )
 
   useEffect(() => {
+    const viewport = tabScrollViewport(rootRef.current)
+    if (viewport) updateScrollState(viewport)
     if (!props.activeId || !scroll.hasOverflow) return
-    revealActiveChip(tabScrollViewport(rootRef.current))
-  }, [props.activeId, scroll.hasOverflow, props.tabs.length])
+    revealActiveChip(viewport)
+  }, [props.activeId, scroll.hasOverflow, props.tabs.length, updateScrollState])
 
   const focusTabAt = (index: number) => {
     const chips = chipsOf(rootRef.current)
@@ -391,7 +394,7 @@ export function TabStrip(props: TabStripProps) {
           </IconButton>
           <Popover placement="bottom start" offset={6}>
             <Menu autoFocus="first" className="t3-tab-strip__menu" aria-label={props.addLabel ?? t('panel.t3.addSurface')}>
-              {addMenuSections(props.actions).map((section, index) =>
+              {launcherSections(props.actions).map((section, index) =>
                 section.reason === null ? (
                   section.actions.map((action) => <AddSurfaceMenuAction key={action.kind} action={action} />)
                 ) : (

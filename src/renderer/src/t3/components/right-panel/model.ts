@@ -60,3 +60,23 @@ export interface PanelFrameProps {
   sheet?: SheetChrome;
   testId?: string;
 }
+
+export interface LauncherSection {
+  reason: string | null;
+  actions: LauncherAction[];
+}
+
+export function launcherSections(actions: readonly LauncherAction[]): LauncherSection[] {
+  const sections: LauncherSection[] = [{ reason: null, actions: [] }];
+  for (const action of actions) {
+    if (action.available) {
+      sections[0].actions.push(action);
+      continue;
+    }
+    const reason = action.disabledReason ?? "";
+    const section = sections.find((entry) => entry.reason === reason);
+    if (section) section.actions.push(action);
+    else sections.push({ reason, actions: [action] });
+  }
+  return sections.filter((section) => section.actions.length);
+}

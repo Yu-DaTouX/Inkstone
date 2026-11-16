@@ -4,7 +4,7 @@ import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { IconButton, Switch } from '../../ui'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
-import { BranchTree, branchText, type BranchTransport } from '../session/BranchTree'
+import { BranchTree, branchText, type BranchBusyReason, type BranchTransport } from '../session/BranchTree'
 import type { BranchPaneProps } from './types'
 import { PaneTools, usePaneChrome } from './pane-chrome'
 
@@ -13,6 +13,7 @@ interface NativeSessionIpc {
 }
 
 const SUMMARIZE_KEY = 'inkstone.branch.summarizeOnLeave'
+const BASH_SCAN = 200
 
 function readSummarize(): boolean {
   try {
@@ -55,9 +56,17 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
   const [reloadToken, setReloadToken] = useState(0)
   const [summarize, setSummarize] = useState(readSummarize)
 
-  const busy = useStore((s) => {
-    if (!owner.sessionId || s.session?.sessionId !== owner.sessionId) return false
-    return !!(s.session?.isAgentRunning || s.session?.isStreaming || s.session?.isCompacting)
+  const busyReason = useStore((s): BranchBusyReason | null => {
+    const session = s.session
+    if (!owner.sessionId || !session || session.sessionId !== owner.sessionId) return null
+    if (session.isAgentRunning || session.isStreaming || session.isCompacting) return 'run'
+    if (session.pendingMessageCount > 0) return 'queue'
+    if (s.uiRequests.length > 0) return 'ask'
+    for (let i = s.messages.length - 1, seen = 0; i >= 0 && seen < BASH_SCAN; i -= 1, seen += 1) {
+      const message = s.messages[i]
+      if (message.role === 'bash' && message.toolCalls?.some((call) => call.status === 'running')) return 'bash'
+    }
+    return null
   })
 
   const onNavigated = useMemo(
@@ -105,7 +114,8 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
         className="wb-branch__tree"
         owner={owner}
         transport={transport}
-        busy={busy}
+        busy={busyReason !== null}
+        busyReason={busyReason}
         summarize={summarize}
         reloadToken={reloadToken}
         onNavigated={onNavigated}

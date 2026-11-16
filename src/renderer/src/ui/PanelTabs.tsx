@@ -165,6 +165,16 @@ interface Ink {
 }
 
 const USER_INPUT_GRACE_MS = 800
+const TAB_MAX_WIDTH = 168
+
+function capTabs(node: HTMLElement): void {
+  node.style.removeProperty('--ptab-max')
+  const tabs = node.querySelectorAll<HTMLElement>(':scope > .ui-ptab')
+  const width = node.clientWidth
+  if (!tabs.length || width <= 0 || width >= TAB_MAX_WIDTH) return
+  const content = tabs[tabs.length - 1].getBoundingClientRect().right - tabs[0].getBoundingClientRect().left
+  if (content > width + 1) node.style.setProperty('--ptab-max', `${width}px`)
+}
 
 function revealTab(node: HTMLElement, active: HTMLElement | null): number | null {
   if (!active || node.scrollWidth <= node.clientWidth) return null
@@ -205,10 +215,16 @@ function usePanelTabInk(plain: boolean | undefined): { listRef: (node: HTMLDivEl
     const target = revealTab(node, active)
     if (target !== null) programTarget.current = target
   }, [])
+  const tabCount = useRef(-1)
   useLayoutEffect(() => {
-    measure()
     const node = list.current
+    const count = node ? node.childElementCount : -1
     const active = node ? activeTabOf(node) : null
+    if (node && (count !== tabCount.current || active !== shownActive.current)) {
+      tabCount.current = count
+      capTabs(node)
+    }
+    measure()
     if (!node || active === shownActive.current) return
     shownActive.current = active
     userScrolled.current = false
@@ -235,15 +251,13 @@ function usePanelTabInk(plain: boolean | undefined): { listRef: (node: HTMLDivEl
     }
     const inputs: Array<[string, EventListener]> = [
       ['wheel', noteInput],
-      ['pointerdown', noteInput],
       ['pointermove', notePointer as EventListener],
-      ['touchstart', noteInput],
-      ['touchmove', noteInput],
-      ['keydown', noteInput]
+      ['touchmove', noteInput]
     ]
     for (const [type, listener] of inputs) node.addEventListener(type, listener, { passive: true })
     node.addEventListener('scroll', onScroll, { passive: true })
     const resized = new ResizeObserver(() => {
+      capTabs(node)
       measure()
       const active = activeTabOf(node)
       if (!active) return
@@ -255,6 +269,8 @@ function usePanelTabInk(plain: boolean | undefined): { listRef: (node: HTMLDivEl
       reveal(node, active)
     })
     resized.observe(node)
+    const parent = node.parentElement
+    if (parent) for (const box of [parent, ...Array.from(parent.children)]) if (box !== node) resized.observe(box)
     for (const child of Array.from(node.children)) resized.observe(child)
     const children = new MutationObserver((records) => {
       for (const record of records) {
@@ -313,7 +329,7 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
       event.preventDefault()
       const neighbor = tabs[index + 1] ?? tabs[index - 1]
       onCloseFocused(id)
-      requestAnimationFrame(() => neighbor?.focus())
+      requestAnimationFrame(() => neighbor?.focus({ preventScroll: true }))
       return
     } else if (((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') && id && host && onContextMenuFocused) {
       event.preventDefault()
@@ -322,7 +338,7 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
     }
     if (!next) return
     event.preventDefault()
-    next.focus()
+    next.focus({ preventScroll: true })
     next.click()
   }
   return (

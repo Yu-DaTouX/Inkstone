@@ -1,0 +1,26 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const { logLineTone } = await compile('src/renderer/src/features/workbench/log-tone.ts')
+
+  ok(logLineTone('[错误] 扩展加载失败') === 'fail' && logLineTone('[error] extension crashed') === 'fail', '应用自己写的「[错误] / [error]」前缀是错误行')
+  ok(logLineTone('[13:00:01] [error] boom') === 'fail', '时间戳后的 [error] 也是错误行')
+  ok(logLineTone('[13:00:01] 错误：扩展 lint-watch 抛出异常') === 'fail' && logLineTone('error: spawn ENOENT') === 'fail', '「错误：」「error:」前缀是错误行')
+  ok(logLineTone('TypeError: Cannot read properties of undefined') === 'fail' && logLineTone('[pi] SyntaxError: Unexpected token') === 'fail', 'TypeError: / SyntaxError: 这类错误名是错误行')
+  ok(logLineTone('fatal: not a git repository') === 'fail', 'fatal: 是错误行')
+  ok(logLineTone('[13:00:01] info: retry after error: timeout') === undefined, '正文中间出现「 error:」不算错误行')
+  ok(logLineTone('info: tool_result {"isError": false, "error": null}') === undefined, 'JSON 里的 error 字段不算错误行')
+  ok(logLineTone('[13:00:01] warn: 模型响应较慢') === 'warn' && logLineTone('警告：磁盘空间不足') === 'warn', '「warn:」「警告：」前缀是警告行')
+  ok(logLineTone('[13:00:01] [warn] slow response') === 'warn' && logLineTone('[警告] 配置已过期') === 'warn', '方括号的 [warn] / [警告] 是警告行')
+  ok(logLineTone('[13:00:01] info: no warnings: all clear') === undefined, '正文中间的 warnings: 不算警告行')
+  ok(logLineTone('[error] warn: both') === 'fail', '错误优先于警告')
+  ok(logLineTone('(node:1234) UnhandledPromiseRejection error: boom') === undefined && logLineTone('(node:1234) Error: boom') === 'fail', '(node:123) 前缀后的 Error: 是错误行')
+  ok(logLineTone('Error [ERR_MODULE_NOT_FOUND]: Cannot find package') === 'fail' && logLineTone('TypeError [ERR_INVALID_ARG_TYPE]: bad') === 'fail', 'Error [ERR_X]: 是错误行')
+  ok(logLineTone('(node:1234) [DEP0040] DeprecationWarning: The punycode module is deprecated') === 'warn', 'DeprecationWarning 是警告行')
+  ok(logLineTone('npm ERR! code ENOENT') === 'fail', 'npm ERR! 是错误行')
+  ok(logLineTone('13:00:01 error: spawn ENOENT') === 'fail' && logLineTone('2026-11-16T05:00:00.123Z warn: slow') === 'warn' && logLineTone('2026-11-16 05:00:00,123 ERROR: x') === 'fail', '不带方括号的时钟或 ISO 时间后的级别也能识别')
+  ok(logLineTone('✘ [ERROR] Could not resolve "./missing"') === 'fail' && logLineTone('▲ [WARNING] Duplicate key "a" in object literal') === 'warn', 'esbuild / Vite 的 ✘ [ERROR]、▲ [WARNING] 能识别')
+  ok(logLineTone('Traceback (most recent call last):') === 'fail' && logLineTone('npm WARN deprecated inflight@1.0.6') === 'warn', 'Python Traceback 与 npm WARN 能识别')
+  ok(logLineTone('✘ build done with notes') === 'fail' && logLineTone('compiled ✔ 0 warnings') === undefined, '只看行首的 ✘，正文里的 warnings 不算')
+  ok(logLineTone('13:00:01 info: retry after error: timeout') === undefined && logLineTone('npm notice ERR! not at start') === undefined, '无方括号时间戳后正文中间的 error 仍不算')
+})

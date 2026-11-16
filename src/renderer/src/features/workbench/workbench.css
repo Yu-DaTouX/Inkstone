@@ -206,6 +206,10 @@
     font-size: var(--t-footnote);
   }
 
+  .wb-ctxw-note-keep {
+    white-space: nowrap;
+  }
+
   .wb-ctxw-figure-label {
     min-width: 0;
     overflow: hidden;
@@ -629,6 +633,31 @@
     margin: 0;
   }
 
+  .wb-logs-empty.wb-note-block {
+    justify-content: flex-start;
+    margin-block: 0 auto;
+    padding-block-start: var(--s-24);
+  }
+
+  .wb-logs-status li {
+    align-items: baseline;
+  }
+
+  .wb-logs-status li > .wb-logs-status-key {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    overflow-wrap: anywhere;
+  }
+
+  .wb-logs-status-value {
+    min-width: 0;
+    margin-inline-start: auto;
+    color: var(--fg3);
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+
   .wb-logs-count {
     flex: none;
     color: var(--fg3);
@@ -651,6 +680,18 @@
     line-height: var(--t-code-lh);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .wb-logs-line[data-tone='fail'] {
+    color: var(--fail-t);
+  }
+
+  .wb-logs-line[data-tone='warn'] {
+    color: var(--stall-t);
+  }
+
+  .wb-logs-body > .ui-empty {
+    white-space: normal;
   }
 
   .wb-note-block {
@@ -765,6 +806,21 @@
 
   .wb-quota-error[data-tone='ask'] {
     color: var(--ask-t);
+  }
+
+  .wb-quota-expired {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  .wb-quota-expired > span {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .wb-quota-expired > .ui-btn {
+    flex: none;
   }
 
   .wb-quota > .wb-note-block {
@@ -904,6 +960,10 @@
 
   .wb-quota-stale {
     color: var(--fg3);
+  }
+
+  .wb-quota-stale[data-error] {
+    color: var(--ask-t);
   }
 
   .wb-overview {
@@ -1161,6 +1221,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .wb-env-sum-name[data-truncate='start'] {
+    direction: rtl;
+    text-align: left;
   }
 
   .wb-env-dirty {

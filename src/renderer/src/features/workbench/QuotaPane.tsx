@@ -316,9 +316,9 @@ export function QuotaCard({
         <span className="wb-quota-name" title={tip || undefined}>{title}</span>
         {card.plan ? <Badge tone="accent" data-testid="v3-wb-quota-plan">{planLabel(card.plan)}</Badge> : null}
         {card.active ? <Badge tone="ok" data-testid="v3-wb-quota-active">{t('acct.active')}</Badge> : null}
-        {stale && (card.windows.length || card.balance) ? (
+        {stale && !card.staleError && (card.windows.length || card.balance) ? (
           <span title={[t('quota.staleTip'), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(' · ')} data-testid="v3-wb-quota-stale">
-            <Badge>{quotaReadAgo(t, card.checkedAt, now)}</Badge>
+            <Badge>{quotaReadAgo(t, card.checkedAt, now, !!card.staleError)}</Badge>
           </span>
         ) : null}
         {card.status === 'expired' ? <Badge tone="ask">{t('quota.expiredBadge')}</Badge> : null}
@@ -331,8 +331,15 @@ export function QuotaCard({
       </div>
 
       {card.status === 'error' ? <p className="wb-quota-error" data-testid="v3-wb-quota-card-error">{card.error}</p> : null}
-      {card.status === 'expired' ? <p className="wb-quota-error" data-tone="ask" data-testid="v3-wb-quota-expired-hint">{card.hint || t('quota.expiredTip')}</p> : null}
-      {card.staleError && card.status !== 'error' ? <p className="wb-quota-error" data-tone="ask" data-testid="v3-wb-quota-stale-error">{t('quota.stale', { msg: card.staleError })}</p> : null}
+      {card.status === 'expired' ? (
+        <div className="wb-quota-error wb-quota-expired" data-tone="ask">
+          <span data-testid="v3-wb-quota-expired-hint">{card.hint || t('quota.expiredTip')}</span>
+          <Button size="sm" variant="secondary" onPress={() => useStore.getState().openSettings('models')} data-testid="v3-wb-quota-login">
+            {t('quota.login')}
+          </Button>
+        </div>
+      ) : null}
+      {card.staleError && card.status !== 'error' ? <p className="wb-quota-error" data-tone="ask" data-testid="v3-wb-quota-stale-error">{[t('quota.readFailed', { msg: card.staleError }), quotaReadAgo(t, card.checkedAt, now, true)].join(' · ')}</p> : null}
 
       {card.windows.length ? (
         <div className="wb-quota-wins">

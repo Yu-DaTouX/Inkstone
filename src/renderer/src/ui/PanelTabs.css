@@ -45,7 +45,7 @@
     flex: none;
     align-items: center;
     gap: var(--s-2);
-    max-width: min(168px, 100%);
+    max-width: min(168px, var(--ptab-max, 168px));
     height: var(--size-btn-sm);
     padding: 0 var(--s-8) 0 var(--s-4);
     border-radius: var(--r-sm);

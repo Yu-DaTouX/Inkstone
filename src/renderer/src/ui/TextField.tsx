@@ -13,6 +13,7 @@ import {
   type ValidationResult
 } from 'react-aria-components'
 import { Search } from './icons'
+import { CONTROL_ICON_SIZE } from './sizes'
 import { cx } from './cx'
 
 export type FieldErrorContent = ReactNode | ((validation: ValidationResult) => ReactNode)
@@ -93,21 +94,23 @@ export interface SearchFieldProps extends RACSearchFieldProps {
   errorMessage?: FieldErrorContent
   placeholder?: string
   inputClassName?: string
+  size?: 'md' | 'sm'
+  hint?: string
 }
 
 export const SearchField = forwardRef<HTMLDivElement, SearchFieldProps>(function SearchField(
-  { label, description, errorMessage, placeholder, className, inputClassName, ...props },
+  { label, description, errorMessage, placeholder, className, inputClassName, size = 'md', hint, ...props },
   ref
 ) {
   return (
     <RACSearchField
       {...props}
       ref={ref}
-      className={composeRenderProps(className, (cn) => cx('ui-field', 'ui-search', cn))}
+      className={composeRenderProps(className, (cn) => cx('ui-field', 'ui-search', size === 'sm' && 'ui-field--sm ui-search--sm', cn))}
     >
       {label != null ? <Label className="ui-field__label">{label}</Label> : null}
-      <div className="ui-search__box">
-        <Search className="ui-search__icon" size={15} aria-hidden="true" />
+      <div className="ui-search__box" title={hint}>
+        <Search className="ui-search__icon" size={size === 'sm' ? CONTROL_ICON_SIZE.sm : 15} aria-hidden="true" />
         <RACInput className={cx('ui-input', 'ui-search__input', inputClassName)} placeholder={placeholder} />
       </div>
       <FieldFoot description={description} errorMessage={errorMessage} />

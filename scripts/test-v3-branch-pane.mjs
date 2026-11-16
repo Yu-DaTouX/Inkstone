@@ -50,6 +50,7 @@ export const jsxs = jsx
 const UI_STUB = `export function Button() { return null }
 export function IconButton() { return null }
 export function Spinner() { return null }
+export function Notice() { return null }
 export function Badge() { return null }
 export function Dialog() { return null }
 export function DialogTrigger() { return null }
@@ -275,6 +276,7 @@ function walk(node, visit) {
   if (!node || typeof node !== 'object') return
   visit(node)
   for (const k of childrenArray(node.props?.children)) walk(k, visit)
+  for (const slot of ['action', 'title']) if (node.props?.[slot] && typeof node.props[slot] === 'object') walk(node.props[slot], visit)
 }
 function findByTestId(node, id) {
   let hit = null
@@ -476,6 +478,11 @@ async function main() {
     tree = await flush(rt, BranchTree, props)
     ok(navigated === 1, '切换成功后回调宿主 sync（refreshSessions）')
     ok(t.calls.filter((c) => c.action === 'tree').length >= 2, '切换后就地重取树')
+    ok(!!findByTestId(tree, 'branch-notice'), '切换后显示结果说明')
+    tree = await flush(rt, BranchTree, { ...props, busy: true, busyReason: 'bash' })
+    ok(!findByTestId(tree, 'branch-notice'), '会话转为忙时清掉上一次的结果说明')
+    const busyNote = findByTestId(tree, 'branch-busy')
+    ok(busyNote && /命令还在运行/.test(String(busyNote.props.children)), '忙时把原因放在底栏第一行', busyNote?.props?.children)
 
     const before = t.calls.filter((c) => c.action === 'navigate').length
     const rtBusy = makeHookRuntime()
@@ -582,7 +589,7 @@ async function main() {
     const rt = makeHookRuntime()
     globalThis.__V3_HOOKS = rt
 
-    const storeState = { session: { sessionId: 'sess-a', isAgentRunning: false, isStreaming: false, isCompacting: false } }
+    const storeState = { session: { sessionId: 'sess-a', isAgentRunning: false, isStreaming: false, isCompacting: false, pendingMessageCount: 0 }, uiRequests: [], messages: [] }
     let refreshed = 0
     storeState.refreshSessions = async () => {
       refreshed += 1
@@ -660,6 +667,26 @@ async function main() {
     storeState.session.isStreaming = true
     paneTree = rt.render(paneMod.BranchPane, { owner: ownerA })
     ok(findByType(paneTree, paneMod.BranchTree).props.busy === true, '会话流式中 busy=true')
+    ok(findByType(paneTree, paneMod.BranchTree).props.busyReason === 'run', '流式中的忙原因是 run')
+    storeState.session.isStreaming = false
+
+    storeState.messages = [{ id: 'bash-1', role: 'bash', text: 'ls', toolCalls: [{ id: 'bash-1', name: 'bash', args: {}, status: 'running' }] }]
+    paneTree = rt.render(paneMod.BranchPane, { owner: ownerA })
+    ok(findByType(paneTree, paneMod.BranchTree).props.busy === true && findByType(paneTree, paneMod.BranchTree).props.busyReason === 'bash', '输入框的 ! 命令在跑时提前禁用，原因是 bash')
+    storeState.messages = [{ id: 'bash-1', role: 'bash', text: 'ls', toolCalls: [{ id: 'bash-1', name: 'bash', args: {}, status: 'ok' }] }]
+    paneTree = rt.render(paneMod.BranchPane, { owner: ownerA })
+    ok(findByType(paneTree, paneMod.BranchTree).props.busy === false, '命令结束后不再禁用')
+
+    storeState.uiRequests = [{ id: 'q1', method: 'select' }]
+    paneTree = rt.render(paneMod.BranchPane, { owner: ownerA })
+    ok(findByType(paneTree, paneMod.BranchTree).props.busyReason === 'ask', '有提问待答复时原因是 ask')
+    storeState.uiRequests = []
+
+    storeState.session.pendingMessageCount = 2
+    paneTree = rt.render(paneMod.BranchPane, { owner: ownerA })
+    ok(findByType(paneTree, paneMod.BranchTree).props.busyReason === 'queue', '有排队消息时原因是 queue')
+    storeState.session.pendingMessageCount = 0
+    storeState.session.isStreaming = true
 
     paneTree = rt.render(paneMod.BranchPane, { owner: ownerB })
     ok(findByType(paneTree, paneMod.BranchTree).props.busy === false, 'owner 与运行会话不一致时不误判忙')

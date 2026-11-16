@@ -19,6 +19,11 @@
     padding-block: var(--s-16);
   }
 
+  .gh-pr-empty__command {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--s-6);
+  }
   .gh-pr-empty__detail {
     display: block;
     margin-top: var(--s-6);
@@ -166,9 +171,9 @@
   }
 
   .gh-pr-checks {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    gap: var(--s-4) var(--s-8);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -176,9 +181,9 @@
 
   .gh-pr-check {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: center;
-    gap: var(--s-8);
     min-width: 0;
     font-size: var(--t-caption);
   }
@@ -193,7 +198,6 @@
 
   .gh-pr-check__state {
     color: var(--fg3);
-    font-family: var(--font-mono);
   }
 
   .gh-pr-files {

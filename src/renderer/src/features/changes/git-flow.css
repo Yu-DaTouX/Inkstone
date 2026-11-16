@@ -37,7 +37,53 @@
     display: none;
   }
 
+  .changes-pane__short {
+    display: none;
+  }
+
+  .changes-pane__count-icon {
+    display: none;
+  }
+
   @container changes-head (max-width: 340px) {
+    .changes-pane__count {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s-2);
+    }
+
+    .changes-pane__count-icon {
+      display: inline;
+      flex: none;
+    }
+
+    .changes-pane__branch:has(.changes-pane__head-sha) {
+      flex: none;
+    }
+
+    .changes-pane__short.changes-pane__tail {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      direction: rtl;
+      text-align: start;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .changes-pane__tail > span {
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    .changes-pane__long {
+      display: none;
+    }
+
+    .changes-pane__short {
+      display: inline;
+    }
+
     .changes-pane__viewed-head,
     .changes-pane__scope .changes-pane__clip {
       display: none;
@@ -48,16 +94,22 @@
     }
 
     .changes-pane__branch {
-      flex-shrink: 1;
+      flex: 0 1 auto;
     }
 
     .changes-pane__title > .changes-pane__scope {
       flex: none;
     }
 
-    .changes-pane__title > .changes-pane__count {
-      display: none;
+    .changes-pane__count-word {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
+
   }
 
   @container changes-head (max-width: 250px) {
@@ -193,6 +245,11 @@
   .gitflow-branch__create-foot {
     display: flex;
     justify-content: flex-end;
+  }
+
+  .gitflow-branch__menu .ui-menu__item--explained[data-disabled][aria-checked='true'] > :not(.ui-menu__text),
+  .gitflow-branch__menu .ui-menu__item--explained[data-disabled][aria-checked='true'] .ui-menu__label {
+    opacity: 1;
   }
 
   .gitflow-branch__note,

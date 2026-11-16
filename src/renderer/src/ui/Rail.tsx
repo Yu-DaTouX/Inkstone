@@ -1,5 +1,6 @@
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react'
 import { Button } from './Button'
+import { MiddleTruncate } from './MiddleTruncate'
 import { MeterRing } from './Progress'
 import { MiniBars } from './Stat'
 import { SegmentBar } from './SegmentBar'
@@ -29,7 +30,7 @@ export interface RailValueProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'c
 }
 
 function ringPercent(percent: number | null): number {
-  return percent === null || !Number.isFinite(percent) ? 0 : Math.min(100, Math.max(0, percent))
+  return percent === null || !Number.isFinite(percent) ? 0 : Math.min(100, Math.max(0, Math.round(percent)))
 }
 
 function RailGlyphMark({ glyph }: { glyph: RailGlyph }) {
@@ -114,7 +115,7 @@ export interface RailRowButtonProps {
 export interface RailRowProps {
   label: string
   hint?: string
-  truncate?: 'start'
+  truncate?: 'start' | 'middle'
   title?: string
   icon?: ReactNode
   dot?: StatusDotKind
@@ -160,7 +161,7 @@ export function RailRow({
       </span>
       {iconOnly ? null : (
         <span className="ui-rail-row__label">
-          {truncate === 'start' ? <bdi>{label}</bdi> : label}
+          {truncate === 'start' ? <bdi>{label}</bdi> : truncate === 'middle' ? <MiddleTruncate value={label} showTitle={false} /> : label}
           {hint ? <span className="ui-rail-row__hint">{hint}</span> : null}
         </span>
       )}

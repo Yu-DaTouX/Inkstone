@@ -18,7 +18,7 @@ import {
   TextArea
 } from '../../ui'
 import { Markdown } from '../session/Markdown'
-import type { PrCheckItem, PrDetail, PrReviewerState, PrTimelineItem } from './pr-model'
+import type { PrCheckItem, PrCheckState, PrDetail, PrReviewerState, PrTimelineItem } from './pr-model'
 import { commentView } from './pr-actions-model'
 import type { PrActionText } from './pr-action-text'
 import type { PrDetailText } from './pr-detail-text'
@@ -42,14 +42,14 @@ export function checkTone(item: PrCheckItem): 'ok' | 'pending' | 'fail' {
   return 'pending'
 }
 
-export function ChecksList({ items, detailsLabel, onOpen }: { items: PrCheckItem[]; detailsLabel: string; onOpen: (url: string) => void }): ReactElement {
+export function ChecksList({ items, detailsLabel, stateLabels, onOpen }: { items: PrCheckItem[]; detailsLabel: string; stateLabels: Record<PrCheckState, string>; onOpen: (url: string) => void }): ReactElement {
   return (
     <ul className="gh-pr-checks">
       {items.map((item) => (
         <li key={`${item.name}:${item.detail}`} className="gh-pr-check" data-state={checkTone(item)}>
           <StatusDot kind={checkTone(item)} />
           <span className="gh-pr-check__name" title={item.name}>{item.name}</span>
-          <span className="gh-pr-check__state">{item.detail}</span>
+          <span className="gh-pr-check__state" title={item.detail || undefined}>{stateLabels[item.state]}</span>
           {item.url ? (
             <Button size="xs" variant="plain" onPress={() => onOpen(item.url)}>
               {detailsLabel}
@@ -58,6 +58,19 @@ export function ChecksList({ items, detailsLabel, onOpen }: { items: PrCheckItem
         </li>
       ))}
     </ul>
+  )
+}
+
+function withTail(items: ReactElement[], add: ReactElement): ReactNode {
+  const last = items.at(-1)
+  return (
+    <>
+      {items.slice(0, -1)}
+      <span className="gh-pr-meta__tail">
+        {last}
+        {add}
+      </span>
+    </>
   )
 }
 
@@ -196,7 +209,7 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
     <>
       <section className="gh-pr-metas" aria-label={dText.reviewers}>
         <MetaRow icon={<Users size={14} aria-hidden />} label={dText.reviewers}>
-          {detail.reviewers.length ? (
+          {withTail(detail.reviewers.length ? (
             detail.reviewers.map((reviewer) => (
               <span key={reviewer.name} className="gh-pr-meta__chip">
                 <Avatar name={reviewer.name} />
@@ -216,9 +229,7 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
                 ) : null}
               </span>
             ))
-          ) : (
-            <span className="ui-meta-text">{text.summary.none}</span>
-          )}
+          ) : [<span key="none" className="ui-meta-text">{text.summary.none}</span>], (
           <span className="gh-pr-meta__add">
             <CandidatePicker
               cwd={cwd}
@@ -231,27 +242,26 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
               onPick={(name) => void action.run({ kind: 'edit', number, addReviewers: [name] })}
             />
           </span>
+          ))}
         </MetaRow>
         <MetaRow icon={<Tag size={14} aria-hidden />} label={dText.labels}>
-          {detail.labels.length ? (
+          {withTail(detail.labels.length ? (
             detail.labels.map((label) => (
-              <span key={label} className="gh-pr-meta__chip">
-                <Badge>{label}</Badge>
+              <Badge key={label} className="gh-pr-meta__label">
+                {label}
                 <IconButton
-                  size="xs"
+                  size="micro"
                   variant="ghost"
                   aria-label={text.edit.remove(label)}
                   tooltip={text.edit.remove(label)}
                   isDisabled={busy}
                   onPress={() => void action.run({ kind: 'edit', number, removeLabels: [label] })}
                 >
-                  <X size={12} aria-hidden />
+                  <X size={10} aria-hidden />
                 </IconButton>
-              </span>
+              </Badge>
             ))
-          ) : (
-            <span className="ui-meta-text">{text.summary.none}</span>
-          )}
+          ) : [<span key="none" className="ui-meta-text">{text.summary.none}</span>], (
           <span className="gh-pr-meta__add">
             <CandidatePicker
               cwd={cwd}
@@ -264,6 +274,7 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
               onPick={(name) => void action.run({ kind: 'edit', number, addLabels: [name] })}
             />
           </span>
+          ))}
         </MetaRow>
       </section>
       <Collapsible className="gh-prd__section" isExpanded={descriptionOpen} onExpandedChange={setDescriptionOpen}>

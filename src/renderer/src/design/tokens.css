@@ -90,6 +90,7 @@
     --del-bg: light-dark(#FBE9EE, rgba(255,44,86,.12));
     --win-close: #C42B2B;
     --scrim: light-dark(rgba(252,252,251,.55), rgba(0,0,0,.62));
+    --sessionbar-bg: light-dark(rgba(252,252,251,.55), rgba(0,0,0,.62));
     --find: light-dark(#FFD500, #B89A00);
     --find-current: light-dark(#FF9632, #D2722A);
     --on-find: #0B0B0B;

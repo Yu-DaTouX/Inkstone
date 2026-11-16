@@ -162,6 +162,7 @@ export interface PrActionText {
     explainHint: string
     fixChecks: string
     fixChecksHint: string
+    fixChecksNone: string
     respond: string
     respondHint: string
     inserted: string
@@ -373,6 +374,7 @@ const ZH: PrActionText = {
     explainHint: '概括目的、改动和风险',
     fixChecks: '修复失败的检查',
     fixChecksHint: '附上失败检查名与链接',
+    fixChecksNone: '没有失败的检查',
     respond: '回应评审意见',
     respondHint: '附上最近的评审与评论摘要',
     inserted: '提示词已放进输入框，确认后再发送',
@@ -622,6 +624,7 @@ const EN: PrActionText = {
     explainHint: 'Purpose, changes and risks',
     fixChecks: 'Fix failing checks',
     fixChecksHint: 'Includes failing check names and links',
+    fixChecksNone: 'No failing checks',
     respond: 'Address review feedback',
     respondHint: 'Includes a digest of recent reviews and comments',
     inserted: 'Prompt placed in the composer; review it before sending',

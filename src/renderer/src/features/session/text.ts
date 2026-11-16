@@ -76,6 +76,9 @@ export type SessionTextKey =
   | 'errHintTruncated'
   | 'errHintRestart'
   | 'errHintStream'
+  | 'errHintEmptyFollowUp'
+  | 'errHintRestartFollowUp'
+  | 'errHintStreamFollowUp'
   | 'errHintTimeout'
   | 'errHintOverload'
   | 'errHintUnreachable'
@@ -372,6 +375,9 @@ const ZH: Record<SessionTextKey, string> = {
   errHintTruncated: '达到单次输出上限，可让它接着写',
   errHintRestart: '服务重启（1012），可稍后重试',
   errHintStream: '连接或响应流中断，可重试',
+  errHintEmptyFollowUp: '服务商没有返回原因，可在下方继续追问',
+  errHintRestartFollowUp: '服务重启（1012），可在下方继续追问',
+  errHintStreamFollowUp: '连接或响应流中断，可在下方继续追问',
   errHintTimeout: '等待响应超时，检查网络与代理',
   errHintOverload: '服务暂时故障或过载',
   errHintUnreachable: '连不上模型服务，检查网络与代理',
@@ -669,6 +675,9 @@ const EN: Record<SessionTextKey, string> = {
   errHintTruncated: 'Hit the output limit; ask it to continue',
   errHintRestart: 'Service restarted (1012); retry later',
   errHintStream: 'Connection or stream dropped; retry',
+  errHintEmptyFollowUp: 'The provider gave no reason; follow up below',
+  errHintRestartFollowUp: 'Service restarted (1012); follow up below',
+  errHintStreamFollowUp: 'Connection or stream dropped; follow up below',
   errHintTimeout: 'Response timed out; check network and proxy',
   errHintOverload: 'Service down or overloaded',
   errHintUnreachable: 'Cannot reach the service; check network and proxy',

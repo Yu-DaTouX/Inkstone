@@ -10,7 +10,7 @@ import {
 } from '../../../../shared/native-session'
 import { buildBranchLanes, type BranchLaneRow, type BranchLanes } from '../../../../shared/branch-lanes'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
-import { Badge, Button, Dialog, DialogFooter, DialogTrigger, IconButton, ListBox, ListBoxItem, Popover, Spinner, TextField } from '../../ui'
+import { Badge, Button, Dialog, DialogFooter, DialogTrigger, IconButton, ListBox, ListBoxItem, Notice, Popover, Spinner, TextField } from '../../ui'
 import type { WorkspaceOwner } from '../workbench/types'
 import './branch-tree.css'
 
@@ -43,6 +43,9 @@ interface BranchText {
   actionFailed: string
   atLeaf: string
   busyHint: string
+  busyBash: string
+  busyAsk: string
+  busyQueue: string
   leaf: string
   steps: (count: number) => string
   kind: Record<NativeEntryKind, string>
@@ -69,7 +72,7 @@ const ZH: BranchText = {
   loadFailed: '会话树读取失败。',
   bridgeMissing: '宿主尚未提供原生会话桥；此页签暂时无法读取会话树。',
   inactive: '当前会话尚未在 pi 侧激活，无法读取或切换分支。',
-  retry: '重试',
+  retry: '重新读取',
   refresh: '重新读取会话树',
   empty: '这条会话还没有可显示的分支。',
   emptyHint: '对话分叉后，每条分支在这里占一列。',
@@ -78,6 +81,9 @@ const ZH: BranchText = {
   actionFailed: '分支切换失败。',
   atLeaf: '当前叶子已在此条目。',
   busyHint: '会话运行中不能切换分支，请等这一轮结束。',
+  busyBash: '输入框里的命令还在运行，结束后才能切换分支或加书签。',
+  busyAsk: '有提问在等你答复，答复后才能切换分支或加书签。',
+  busyQueue: '还有排队的消息没发完，发完后才能切换分支或加书签。',
   leaf: '当前',
   steps: (count) => `${count} 步`,
   kind: {
@@ -125,7 +131,7 @@ const EN: BranchText = {
   loadFailed: 'Could not load the session tree.',
   bridgeMissing: 'The host has not exposed the native session bridge yet; this tab cannot read the tree.',
   inactive: 'This session is not active in pi yet, so branches cannot be read or switched.',
-  retry: 'Retry',
+  retry: 'Reload',
   refresh: 'Reload session tree',
   empty: 'This session has no branches to show yet.',
   emptyHint: 'Once the conversation forks, each branch gets its own lane here.',
@@ -134,6 +140,9 @@ const EN: BranchText = {
   actionFailed: 'Branch switch failed.',
   atLeaf: 'The current leaf is already this entry.',
   busyHint: 'The session is running; wait for this turn before switching branches.',
+  busyBash: 'A command from the input box is still running; switch branches or bookmark after it finishes.',
+  busyAsk: 'A question is waiting for your answer; switch branches or bookmark after you reply.',
+  busyQueue: 'Queued messages are still being sent; switch branches or bookmark after they go out.',
   leaf: 'Current',
   steps: (count) => `${count} ${count === 1 ? 'step' : 'steps'}`,
   kind: {
@@ -159,6 +168,12 @@ const EN: BranchText = {
     'wrap-up': 'Wrap-up prompt',
     generic: 'Host notice'
   }
+}
+
+export type BranchBusyReason = 'run' | 'bash' | 'ask' | 'queue'
+
+export function branchBusyHint(text: BranchText, reason: BranchBusyReason): string {
+  return reason === 'bash' ? text.busyBash : reason === 'ask' ? text.busyAsk : reason === 'queue' ? text.busyQueue : text.busyHint
 }
 
 export function branchText(lang: Lang): BranchText {
@@ -395,6 +410,7 @@ interface BranchTreeProps {
   owner: WorkspaceOwner
   transport: BranchTransport
   busy?: boolean
+  busyReason?: BranchBusyReason | null
   summarize?: boolean
   reloadToken?: number
   onNavigated?: () => void
@@ -428,6 +444,7 @@ export function BranchTree({
   owner,
   transport,
   busy = false,
+  busyReason = null,
   summarize = false,
   reloadToken = 0,
   onNavigated,
@@ -570,6 +587,10 @@ export function BranchTree({
   const wasBusy = useRef(busy)
   useEffect(() => {
     if (wasBusy.current && !busy && state.phase === 'ready') void refreshInPlace()
+    if (!wasBusy.current && busy) {
+      setNotice('')
+      setActionError('')
+    }
     wasBusy.current = busy
   }, [busy, state.phase, refreshInPlace])
 
@@ -621,6 +642,7 @@ export function BranchTree({
   )
 
   const blocked = busy || pending !== null
+  const busyText = branchBusyHint(text, busyReason ?? 'run')
 
   if (state.phase === 'loading') {
     return (
@@ -636,13 +658,18 @@ export function BranchTree({
   if (state.phase === 'error') {
     return (
       <div className={`branch-tree${className ? ` ${className}` : ''}`} data-testid="branch-tree-error">
-        <div className="branch-status">
-          <p className="branch-status__title" title={state.raw ? state.error : undefined}>{text.loadFailed}</p>
-          {state.raw ? null : <p className="branch-status__detail">{state.error}</p>}
-          <Button size="sm" onPress={() => setRetryToken((value) => value + 1)} data-testid="branch-retry">
-            {text.retry}
-          </Button>
-        </div>
+        <Notice
+          tone="fail"
+          className="branch-error"
+          title={<span title={state.raw ? state.error : undefined}>{text.loadFailed}</span>}
+          action={
+            <Button size="sm" variant="secondary" onPress={() => setRetryToken((value) => value + 1)} data-testid="branch-retry">
+              {text.retry}
+            </Button>
+          }
+        >
+          {state.raw || !state.error || state.error === text.loadFailed ? null : state.error}
+        </Notice>
       </div>
     )
   }
@@ -670,29 +697,33 @@ export function BranchTree({
       )}
 
       <div className="branch-foot">
-        <span className="branch-foot__hint" title={summarize ? text.hintSummarize : text.hint}>{pending && summarize ? text.summarizing : blocked ? text.busyHint : summarize ? text.footHintSummarize : text.footHint}</span>
-        <span className="branch-foot__spacer" />
         {actionError ? (
-          <span className="branch-note branch-note--err" data-testid="branch-error" role="alert">
+          <p className="branch-note branch-note--err" data-testid="branch-error" role="alert">
             {actionError}
-          </span>
+          </p>
+        ) : busy ? (
+          <p className="branch-note" data-testid="branch-busy" role="status">
+            {busyText}
+          </p>
         ) : notice ? (
-          <span className="branch-note branch-note--ok" data-testid="branch-notice" role="status">
+          <p className="branch-note branch-note--ok" data-testid="branch-notice" role="status">
             {notice}
-          </span>
+          </p>
         ) : null}
+        <span className="branch-foot__hint" title={summarize ? text.hintSummarize : text.hint}>{pending && summarize ? text.summarizing : summarize ? text.footHintSummarize : text.footHint}</span>
+        <span className="branch-foot__spacer" />
         {selectedRow && selectedRow.kind !== 'label' ? <BranchBookmark row={selectedRow} text={text} blocked={blocked} onLabel={setLabel} /> : null}
-        <Button
+        {rows.length ? <Button
           size="sm"
           variant="primary"
           icon={<CornerDownRight size={13} aria-hidden="true" />}
           isDisabled={!selected || blocked || selectedIsLeaf}
-          title={selectedIsLeaf ? text.atLeaf : blocked ? text.busyHint : undefined}
+          title={selectedIsLeaf ? text.atLeaf : blocked ? busyText : undefined}
           data-testid="branch-navigate"
           onPress={() => void navigate(selected)}
         >
           {text.navigate}
-        </Button>
+        </Button> : null}
       </div>
     </div>
   )

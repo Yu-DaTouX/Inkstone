@@ -54,13 +54,43 @@ export async function runBranchLaneTests(ok) {
   ])]
   const noisy = buildBranchLanes(renamed, 'u2')
   ok(noisy.rows.length === 2 && noisy.lanes === 1 && !noisy.rows[0].fork && noisy.rows[0].targetId === 'a1', '只含改名记录的旁枝不画，也不算分叉')
-  ok(buildBranchLanes(renamed, 'i1').rows.some((r) => r.entryId === 'i1' && r.leaf), '当前位置落在改名记录上时仍然显示')
+  const onRename = buildBranchLanes(renamed, 'i1')
+  ok(onRename.rows.some((r) => r.entryId === 'u1' && r.targetId === 'i1' && r.leaf) && !onRename.rows.some((r) => r.entryId === 'i1'), '当前位置落在改名记录上时并入所属的行，仍标为当前')
   const renamedSide = [node('u1', null, 'user', 'a', [
     { entry: { id: 'i1', parentId: 'u1', type: 'session_info', name: 'title' }, children: [node('s1', 'i1', 'user', 'side')] },
     node('a1', 'u1', 'assistant', 'b')
   ])]
   const side = buildBranchLanes(renamedSide, 'a1')
   ok(side.rows.map((r) => r.entryId).join() === 'u1,s1,a1', '旁枝开头的改名记录跳过，旁枝从用户消息开始')
+
+  const label = (id, parentId, targetId) => ({ entry: { id, parentId, type: 'label', targetId, label: 'mark' }, children: [] })
+  const markedFork = [node('u1', null, 'user', 'a', [
+    node('a1', 'u1', 'assistant', 'b', [
+      node('u2', 'a1', 'user', 'c', [node('a2', 'u2', 'assistant', 'd')]),
+      node('u3', 'a1', 'user', 'e', [node('a3', 'u3', 'assistant', 'f')]),
+      label('l1', 'a1', 'u1')
+    ])
+  ])]
+  const marked = buildBranchLanes(markedFork, 'l1')
+  const markedRow = marked.rows.find((r) => r.entryId === 'u1')
+  ok(!marked.rows.some((r) => r.entryId === 'l1' || r.kind === 'label'), '当前位置停在分叉点时加的书签记录不单独成行')
+  ok(markedRow?.leaf && markedRow.targetId === 'l1' && markedRow.fork && marked.rows.length === 3, '书签记录并入分叉点所在的行，这一行标为当前且切换目标就是当前位置')
+  ok(marked.rows.filter((r) => r.leaf).length === 1, '只有一行标为当前')
+  const midMark = [node('u1', null, 'user', 'a', [node('a1', 'u1', 'assistant', 'b', [node('u2', 'a1', 'user', 'c', [node('a2', 'u2', 'assistant', 'd')]), label('l2', 'a1', 'u1')])])]
+  const mid = buildBranchLanes(midMark, 'l2')
+  ok(mid.rows.map((r) => r.entryId).join() === 'u1,u2' && mid.rows[0].leaf && mid.rows[0].targetId === 'l2' && !mid.rows[1].active, '书签成为叶子且后面还有对话时，书签并入所在行，后面的对话不算当前分支')
+  const metaLeaf = [node('u1', null, 'user', 'a', [node('a1', 'u1', 'assistant', 'b', [node('u2', 'a1', 'user', 'c'), meta('mx', 'a1')])])]
+  const onMeta = buildBranchLanes(metaLeaf, 'mx')
+  ok(onMeta.rows.length === 2 && onMeta.rows[0].leaf && onMeta.rows[0].targetId === 'mx', '叶子是模型切换等元信息时同样并入所在行')
+  const renamedFork = [node('u1', null, 'user', 'a', [node('a1', 'u1', 'assistant', 'b', [{ entry: { id: 'i9', parentId: 'a1', type: 'session_info', name: 'title' }, children: [
+    node('u2', 'i9', 'user', 'c', [node('a2', 'u2', 'assistant', 'd')]),
+    node('u3', 'i9', 'user', 'e'),
+    label('l9', 'i9', 'u1')
+  ] }])])]
+  const onRenamedFork = buildBranchLanes(renamedFork, 'l9')
+  ok(onRenamedFork.rows.length === 3 && !onRenamedFork.rows.some((r) => r.kind === 'label') && onRenamedFork.rows[0].leaf && onRenamedFork.rows[0].targetId === 'l9' && onRenamedFork.rows.filter((r) => r.leaf).length === 1, '分叉点是改名记录时，书签叶子也并入所在行')
+  const chained = [node('u1', null, 'user', 'a', [node('a1', 'u1', 'assistant', 'b', [node('u2', 'a1', 'user', 'c'), { entry: { id: 'l3', parentId: 'a1', type: 'label', targetId: 'u1', label: 'x' }, children: [label('l4', 'l3', 'u1')] }])])]
+  ok(buildBranchLanes(chained, 'l4').rows.some((r) => r.leaf), '前置类条目连在一起时仍能找到当前位置')
 
   const a = node('a', null, 'user', 'x')
   const b = node('b', 'a', 'assistant', 'y')

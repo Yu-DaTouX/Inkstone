@@ -71,7 +71,9 @@
   }
 
   .device-pane__empty {
-    margin: auto;
+    justify-content: flex-start;
+    margin: 0 auto auto;
+    padding-block-start: var(--s-24);
   }
 
   .device-pane__avds {
@@ -79,5 +81,27 @@
     flex-wrap: wrap;
     gap: var(--s-4);
     justify-content: center;
+  }
+
+  .device-pane__avds > .device-pane__error {
+    flex-basis: 100%;
+    max-width: 36ch;
+    margin: var(--s-8) auto 0;
+    text-align: start;
+  }
+
+  .device-pane__error-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  .device-pane__slow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-8);
+    max-width: 36ch;
+    text-align: center;
   }
 }

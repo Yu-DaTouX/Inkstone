@@ -37,7 +37,7 @@ import {
   type PrSortKey
 } from './pr-actions-model'
 import { prActionText, type PrActionText } from './pr-action-text'
-import { stateTone, checksDot as checkDot } from './PullRequestDetail'
+import { CopyCommand, stateTone, checksDot as checkDot } from './PullRequestDetail'
 import { CreatePullRequestButton } from './CreatePullRequest'
 import { openPanelSurface } from '../workbench/panel-actions'
 import { pullRequestSurface } from '../../state/right-panel'
@@ -50,6 +50,13 @@ const LIST_STATES: readonly { id: GhPrListState; label: MessageKey }[] = [
   { id: 'closed', label: 'github.pr.tab.closed' },
   { id: 'all', label: 'github.pr.tab.all' }
 ]
+
+const EMPTY_TITLES: Record<GhPrListState, MessageKey> = {
+  open: 'github.pr.empty.open',
+  merged: 'github.pr.empty.merged',
+  closed: 'github.pr.empty.closed',
+  all: 'github.pr.empty.all'
+}
 
 const REVIEW_FILTERS: readonly PrReviewFilter[] = ['any', 'required', 'approved', 'changes_requested', 'none']
 const SORT_KEYS: readonly PrSortKey[] = ['updated', 'created', 'comments']
@@ -206,7 +213,8 @@ function remember<T>(map: Map<string, T>, key: string, value: T): void {
 export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement {
   const t = useT()
   const { lang } = useI18n()
-  const actText = prActionText(lang).list
+  const allText = prActionText(lang)
+  const actText = allText.list
   const cwd = owner.cwd
   const [status, setStatus] = useState<GithubStatus | null>(() => statusMemory.get(cwd) ?? null)
   const [statusLoading, setStatusLoading] = useState(() => !statusMemory.has(cwd))
@@ -309,6 +317,12 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
     setPage(1)
   }
   const activeCount = activeFilterCount(filters)
+  const narrowed = activeCount > 0 || !!query.trim()
+  const clearNarrowing = (): void => {
+    setQuery('')
+    if (activeCount) changeFilters({ ...DEFAULT_LIST_FILTERS, state: filters.state, sort: filters.sort, direction: filters.direction })
+  }
+  const emptyTitle = narrowed ? t('github.pr.emptyList') : t(EMPTY_TITLES[listState])
 
   const when = (iso: string): string => {
     const age = ageOf(iso, Date.now())
@@ -352,7 +366,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
 
   const reload = (): void => setReloadToken((value) => value + 1)
 
-  const hint = (title: string, body: string, detail?: string, tip?: string): ReactElement => (
+  const hint = (title: string, body: string, detail?: string, tip?: string, command?: string): ReactElement => (
     <EmptyState
       size="sm"
       className="gh-pr-empty"
@@ -361,6 +375,11 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
       description={
         <>
           <span title={tip}>{body}</span>
+          {command ? (
+            <span className="gh-pr-empty__command">
+              <CopyCommand value={command} label={t('github.pr.copyCommand')} copiedLabel={t('github.pr.commandCopied')} testId="gh-pr-auth-command" />
+            </span>
+          ) : null}
           {detail ? <code className="gh-pr-empty__detail">{detail}</code> : null}
         </>
       }
@@ -375,7 +394,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
   const content = (): ReactElement | null => {
     if (!status) return loadingHint()
     if (!status.installed) return hint(t('github.pr.missingGhTitle'), t('github.pr.missingGhBody'), undefined, t('github.pr.ghPrivacy'))
-    if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'), status.error, t('github.pr.ghPrivacy'))
+    if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'), status.error, t('github.pr.ghPrivacy'), 'gh auth login')
     if (!status.repo) return hint(t('github.pr.notRepoTitle'), t('github.pr.notRepoBody'), status.error)
     return null
   }
@@ -419,8 +438,10 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
           <div className="gh-pr-toolbar gh-pr-toolbar--sub">
             <SearchField
               className="gh-pr-search"
+              size="sm"
               aria-label={t('github.pr.searchPlaceholder')}
-              placeholder={t('github.pr.searchPlaceholder')}
+              hint={t('github.pr.searchPlaceholder')}
+              placeholder={t('github.pr.searchShort')}
               value={query}
               onChange={setQuery}
             />
@@ -451,6 +472,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
               </Popover>
             </DialogTrigger>
             <Select<{ id: PrSortKey }>
+              size="sm"
               aria-label={actText.sort}
               className="gh-pr-sort"
               selectedKey={filters.sort}
@@ -475,7 +497,16 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
             </IconButton>
           </div>
           {listError ? (
-            <Notice tone="fail" compact data-testid="gh-pr-list-error">
+            <Notice
+              tone="fail"
+              compact
+              data-testid="gh-pr-list-error"
+              action={
+                <Button size="xs" variant="ghost" isPending={listLoading} onPress={reload} data-testid="gh-pr-list-retry">
+                  {allText.result.retry}
+                </Button>
+              }
+            >
               {t('github.pr.listFailed', { msg: listError })}
             </Notice>
           ) : null}
@@ -489,8 +520,21 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
               ))}
             </div>
           ) : null}
-          {!listLoading && !shown.length ? (
-            <EmptyState size="sm" className="gh-pr-empty" title={t('github.pr.emptyList')} description={status?.repo?.nameWithOwner} />
+          {!listLoading && !listError && !shown.length ? (
+            <EmptyState
+              size="sm"
+              className="gh-pr-empty"
+              data-testid="gh-pr-empty"
+              title={emptyTitle}
+              description={status?.repo?.nameWithOwner}
+              action={
+                narrowed ? (
+                  <Button size="sm" onPress={clearNarrowing} data-testid="gh-pr-empty-clear">
+                    {actText.reset}
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : null}
           <ul className="gh-pr-list">
             {shown.map((row) => {

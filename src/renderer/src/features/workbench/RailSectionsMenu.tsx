@@ -5,6 +5,7 @@ import {
   canHideRailSection,
   isRailSectionHidden,
   railSectionsAreDefault,
+  resolveRailOrder,
   RAIL_SECTION_IDS,
   useRailSections,
   type RailSectionId
@@ -28,6 +29,7 @@ export function RailSectionsMenu({ anchor, open, onOpenChange, text, empty }: Ra
   const reset = useRailSections((s) => s.reset)
   const shown = HIDEABLE.filter((id) => !isRailSectionHidden({ hidden }, id))
   const atDefault = railSectionsAreDefault({ order, hidden })
+  const listed = resolveRailOrder(order).filter((id) => HIDEABLE.includes(id))
 
   return (
     <Popover triggerRef={anchor} isOpen={open} onOpenChange={onOpenChange} placement="bottom start" offset={4}>
@@ -46,7 +48,7 @@ export function RailSectionsMenu({ anchor, open, onOpenChange, text, empty }: Ra
       >
         <MenuSection aria-label={text.show}>
           <Header>{text.show}</Header>
-          {HIDEABLE.map((id) => {
+          {listed.map((id) => {
             const visible = shown.includes(id)
             return (
               <MenuItem key={id} id={id} textValue={text.sections[id]} aria-checked={visible} shouldCloseOnSelect={false} checked={visible} trailingValue={visible && empty?.has(id) ? text.sectionEmpty : undefined} data-testid={`wb-rail-menu-${id}`}>

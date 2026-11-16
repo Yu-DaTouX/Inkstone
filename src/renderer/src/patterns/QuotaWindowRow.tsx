@@ -29,8 +29,9 @@ export function quotaCountdown(t: TFunc, ms: number): string {
 
 const clock = (at: number): string => new Date(at).toLocaleString(currentLang(), { hour12: false })
 
-export function quotaReadAgo(t: TFunc, checkedAt: number, now: number): string {
-  return now - checkedAt < READ_NOW_MS ? t('quota.readNow') : t('quota.readAgo', { t: quotaCountdown(t, now - checkedAt) })
+export function quotaReadAgo(t: TFunc, checkedAt: number, now: number, failed = false): string {
+  if (now - checkedAt < READ_NOW_MS) return failed ? t('quota.lastDataNow') : t('quota.readNow')
+  return t(failed ? 'quota.lastData' : 'quota.readAgo', { t: quotaCountdown(t, now - checkedAt) })
 }
 
 export function quotaResetLine(t: TFunc, window: QuotaWindow, now: number): { text: string; tip: string } {

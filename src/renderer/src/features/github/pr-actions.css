@@ -363,6 +363,15 @@
     flex: 1 1 auto;
   }
 
+  .gh-prd__branches > .gh-prd__ref:not(.gh-prd__ref--head) {
+    flex: 0 0 auto;
+    max-width: 40%;
+  }
+
+  .gh-prd__tabs[hidden] {
+    display: none;
+  }
+
   .gh-prd__who {
     display: inline-flex;
     flex: none;
@@ -455,8 +464,25 @@
     min-width: 0;
   }
 
+  .gh-pr-meta__chip > .ui-icon-btn:last-child {
+    margin-inline-start: calc(var(--s-2) * -1);
+  }
+
+  .gh-pr-meta__label:has(.ui-icon-btn) {
+    gap: var(--s-2);
+    padding-inline-end: var(--s-2);
+  }
+
+  .gh-pr-meta__tail {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4) var(--s-8);
+    min-width: 0;
+    white-space: nowrap;
+  }
+
   .gh-pr-meta__add {
-    margin-inline-start: auto;
+    display: inline-flex;
   }
 
   .gh-pr-comments__tools {
@@ -573,7 +599,7 @@
   }
 
   .gh-pr-thread__where > .gh-pr-thread__peek {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

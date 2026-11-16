@@ -60,6 +60,7 @@ export interface GitFailureNoticeProps {
   onRetry?: () => void
   onRefresh: () => void
   onNext?: (next: Exclude<FailureNext, null>) => void
+  onShowFiles?: () => void
   onDismiss?: () => void
   className?: string
 }
@@ -77,11 +78,13 @@ export function failureHint(view: FailureView, lang: string, t: (key: MessageKey
   return key ? t(key) : null
 }
 
-export function GitFailureNotice({ view, busy, onRetry, onRefresh, onNext, onDismiss, className }: GitFailureNoticeProps): ReactElement {
+export function GitFailureNotice({ view, busy, onRetry, onRefresh, onNext, onShowFiles, onDismiss, className }: GitFailureNoticeProps): ReactElement {
   const { lang, t } = useI18n()
   const [rawOpen, setRawOpen] = useState(false)
   const hint = failureHint(view, lang, t)
   const canRetry = view.retry === 'retry' && !!onRetry
+  const showFiles = !!onShowFiles && view.files.length > 0
+  const retryVariant = showFiles ? 'ghost' : 'secondary'
   return (
     <Notice
       tone="fail"
@@ -106,17 +109,22 @@ export function GitFailureNotice({ view, busy, onRetry, onRefresh, onNext, onDis
         </CardCode>
       ) : null}
       <div className="gitflow-fail__actions">
+        {showFiles ? (
+          <Button size="xs" variant="secondary" isDisabled={busy} onPress={onShowFiles} data-testid="git-failure-show-files">
+            {t('gitflow.fail.showFiles')}
+          </Button>
+        ) : null}
         {view.next && onNext ? (
           <Button size="xs" variant="secondary" isDisabled={busy} onPress={() => onNext(view.next as Exclude<FailureNext, null>)}>
             {view.next === 'fetch' ? t('gitflow.fetch') : t('gitflow.action.publish')}
           </Button>
         ) : null}
         {canRetry ? (
-          <Button size="xs" variant="secondary" isDisabled={busy} onPress={onRetry} data-testid="git-failure-retry">
+          <Button size="xs" variant={retryVariant} isDisabled={busy} onPress={onRetry} data-testid="git-failure-retry">
             {t('gitflow.fail.retry')}
           </Button>
         ) : (
-          <Button size="xs" variant="secondary" isDisabled={busy} onPress={onRefresh} data-testid="git-failure-refresh">
+          <Button size="xs" variant={retryVariant} isDisabled={busy} onPress={onRefresh} data-testid="git-failure-refresh">
             {t('gitflow.fail.refresh')}
           </Button>
         )}

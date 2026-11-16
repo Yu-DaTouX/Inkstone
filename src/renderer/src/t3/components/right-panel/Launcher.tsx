@@ -1,8 +1,8 @@
-import { type DOMAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useEffectEvent, useState } from 'react'
+import { type DOMAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useEffectEvent, useId, useState } from 'react'
 import { useOptionalT } from '@/i18n'
 import { Focusable, Kbd, Tooltip, TooltipHint, TooltipTrigger } from '../../../ui'
 import { cx } from '@/ui/cx'
-import type { LauncherAction } from './model'
+import { type LauncherAction, launcherSections } from './model'
 import './Launcher.css'
 
 export type { LauncherAction }
@@ -96,6 +96,7 @@ export interface LauncherProps {
 export function Launcher(props: LauncherProps) {
   const t = useOptionalT()
   const [highlight, setHighlight] = useState(-1)
+  const sectionId = useId()
   const availableActions = props.actions.filter((action) => action.available)
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1)
@@ -162,8 +163,9 @@ export function Launcher(props: LauncherProps) {
     >
       <div className="t3-launcher__panel">
         <h3 className="t3-launcher__title">{title}</h3>
-        <div className="t3-launcher__list">
-          {props.actions.map((action) => (
+        {launcherSections(props.actions).map((section, index) => {
+          const headingId = `${sectionId}-${index}`
+          const rows = section.actions.map((action) => (
             <LauncherActionRow
               key={action.kind}
               action={action}
@@ -175,8 +177,15 @@ export function Launcher(props: LauncherProps) {
                 )
               }
             />
-          ))}
-        </div>
+          ))
+          if (section.reason === null) return <div key="on" className="t3-launcher__list">{rows}</div>
+          return (
+            <div key={`off:${index}`} role="group" aria-labelledby={section.reason ? headingId : undefined} className="t3-launcher__list t3-launcher__list--off">
+              {section.reason ? <p id={headingId} className="t3-launcher__reason ui-meta-text">{section.reason}</p> : null}
+              {rows}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

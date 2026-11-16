@@ -45,8 +45,18 @@ export function CompactionMarker(): JSX.Element | null {
       <Icon name="layers" size={13} />
       {model.running ? null : <span className="v3-compaction-title">{tt(failed ? 'compactionFailedTitle' : 'compactionTitle')}</span>}
       {text ? <span className="v3-compaction-text">{text}</span> : null}
-      {elapsed ? <span className="v3-compaction-elapsed" data-testid="v3-compaction-elapsed">{elapsed}</span> : null}
-      {tokens ? <span className="v3-compaction-tokens">{tokens}</span> : null}
+      {elapsed ? (
+        <>
+          {text ? <span className="v3-compaction-sep" aria-hidden="true">·</span> : null}
+          <span className="v3-compaction-elapsed" data-testid="v3-compaction-elapsed">{elapsed}</span>
+        </>
+      ) : null}
+      {tokens ? (
+        <>
+          {text || elapsed ? <span className="v3-compaction-sep" aria-hidden="true">·</span> : null}
+          <span className="v3-compaction-tokens">{tokens}</span>
+        </>
+      ) : null}
     </div>
   )
 }

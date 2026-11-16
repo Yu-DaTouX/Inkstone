@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
-import { compactNumber, shareText, useMoney, useUsageStats } from './UsageOverview'
+import { compactNumber, shareText, useMoney, useUsageStatsState } from './UsageOverview'
 import { tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { providerFavicon } from '../../patterns/provider-favicon'
 import { useStore } from '../../state/store'
-import { AreaChart, PageHeader } from '../../ui'
+import { AreaChart, Button, Notice, PageHeader } from '../../ui'
 import { settingsText } from '../settings/settings-text'
-import { dailyEntries, peakHourText, usageBars, usageModelName, type UsageDimension } from '../settings/usage/usage-model'
+import { dailyEntries, peakHourText, usageBars, usageModelFree, usageModelName, type UsageDimension } from '../settings/usage/usage-model'
 import { UsageCurrency } from './UsageCurrency'
 import './usage-page.css'
 
@@ -36,7 +36,7 @@ export function UsagePage() {
   }, [loadAuthProviders])
   const [range, setRange] = useState<UsageRange>('all')
   const [dimension, setDimension] = useState<UsageDimension>('model')
-  const stats = useUsageStats(range)
+  const { stats, failed, retry } = useUsageStatsState(range)
   const money = useMoney()
   const split = stats ? tokenBreakdownOf(stats) : null
   const costSplit = stats?.costBreakdown ?? null
@@ -74,8 +74,8 @@ export function UsagePage() {
   const rows = !stats
     ? []
     : dimension === 'day'
-      ? usageBars(dailyEntries(stats.heat, range)).reverse().filter((bar) => bar.value > 0).map((bar) => ({ ...bar, cost: null as number | null, title: bar.key, provider: null as string | null }))
-      : usageBars(stats.models.map((item) => ({ key: item.key, label: usageModelName(item, models), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost, title: stats.models[i].sources?.join(' · '), provider: providerOf(stats.models[i].sources) }))
+      ? usageBars(dailyEntries(stats.heat, range)).reverse().filter((bar) => bar.value > 0).map((bar) => ({ ...bar, cost: null as number | null, free: false, title: bar.key, provider: null as string | null }))
+      : usageBars(stats.models.map((item) => ({ key: item.key, label: usageModelName(item, models), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost, free: usageModelFree(stats.models[i], models), title: stats.models[i].sources?.join(' · '), provider: providerOf(stats.models[i].sources) }))
 
   const totals: Array<[string, string]> = [
     [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'],
@@ -85,7 +85,7 @@ export function UsagePage() {
   ]
 
   return (
-    <div className="usage-page" data-testid="usage-details" aria-busy={!stats}>
+    <div className="usage-page" data-testid="usage-details" aria-busy={!stats && !failed}>
       <PageHeader
         className="usage-page-head"
         size="sm"
@@ -93,6 +93,12 @@ export function UsagePage() {
         description={text.usageNote}
         actions={renderUsageToggle({ kind: 'range', value: range, label: t('usage.range'), options: [{ value: '7d', label: t('usage.days', { n: 7 }) }, { value: '30d', label: t('usage.days', { n: 30 }) }, { value: 'all', label: t('usage.all') }], onChange: (value) => setRange(value as UsageRange) })}
       />
+
+      {failed && !stats ? (
+        <Notice className="usage-page-error" tone="fail" action={<Button size="sm" variant="secondary" onPress={retry}>{t('usage.retry')}</Button>} data-testid="usage-page-error">
+          {t('usage.loadFailed')}
+        </Notice>
+      ) : null}
 
       <section className="usage-page-hero">
         <div className="usage-page-total">
@@ -168,12 +174,12 @@ export function UsagePage() {
                   <span className="ui-meta-num" role="cell">{i + 1}</span>
                   <span className="usage-page-row-name" role="cell">
                     <span className="usage-page-row-label">
-                      {icon ? <img src={icon} alt="" aria-hidden="true" /> : null}
+                      {icon ? <img src={icon} alt="" aria-hidden="true" /> : dimension === 'day' ? null : <i className="usage-page-row-icon" aria-hidden="true" />}
                       <span>{row.label}</span>
                     </span>
                     <span className="usage-page-row-bar" style={{ width: `${Math.max(2, row.ratio * 100)}%` }} aria-hidden="true" />
                   </span>
-                  {dimension === 'day' ? null : <span className="ui-num" role="cell">{row.cost != null && row.cost > 0 ? money(row.cost) : ''}</span>}
+                  {dimension === 'day' ? null : <span className="ui-num" role="cell">{row.cost != null && (row.cost > 0 || row.free) ? money(row.cost) : '—'}</span>}
                   <span className="ui-meta-num" role="cell">{row.value > 0 ? shareText(row.share) : ''}</span>
                   <span className="ui-num" role="cell">{compactNumber(row.value)}</span>
                 </li>

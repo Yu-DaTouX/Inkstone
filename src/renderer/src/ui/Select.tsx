@@ -11,6 +11,7 @@ import {
 } from 'react-aria-components'
 import { ChevronDown } from './icons'
 import { cx } from './cx'
+import { CONTROL_ICON_SIZE } from './sizes'
 import { ListBox } from './ListBox'
 import { Popover } from './Popover'
 import type { FieldErrorContent } from './TextField'
@@ -23,6 +24,7 @@ export interface SelectProps<T extends object = object> extends Omit<RACSelectPr
   children: ReactNode | ((item: T) => ReactNode)
   triggerClassName?: string
   listClassName?: string
+  size?: 'md' | 'sm'
 }
 
 export function Select<T extends object = object>({
@@ -33,11 +35,12 @@ export function Select<T extends object = object>({
   className,
   triggerClassName,
   listClassName,
+  size = 'md',
   children,
   ...props
 }: SelectProps<T>) {
   return (
-    <RACSelect {...props} className={composeRenderProps(className, (cn) => cx('ui-field', 'ui-select', cn))}>
+    <RACSelect {...props} className={composeRenderProps(className, (cn) => cx('ui-field', 'ui-select', size === 'sm' && 'ui-field--sm ui-select--sm', cn))}>
       {label != null ? <Label className="ui-field__label">{label}</Label> : null}
       <RACButton className={cx('ui-input', 'ui-select__trigger', triggerClassName)}>
         <SelectValue className="ui-select__value">
@@ -45,7 +48,7 @@ export function Select<T extends object = object>({
             isPlaceholder ? <span className="ui-select__placeholder">{placeholder}</span> : selectedText
           }
         </SelectValue>
-        <ChevronDown className="ui-select__chevron" size={16} aria-hidden="true" />
+        <ChevronDown className="ui-select__chevron" size={CONTROL_ICON_SIZE[size]} aria-hidden="true" />
       </RACButton>
       {description != null ? (
         <Text slot="description" className="ui-field__desc">

@@ -32,6 +32,7 @@ export interface BranchLanes {
 const ANCHOR_KINDS: ReadonlySet<NativeEntryKind> = new Set(['user', 'branch', 'summary'])
 const STEP_KINDS: ReadonlySet<NativeEntryKind> = new Set(['assistant', 'tool', 'custom', 'system'])
 const PREAMBLE_KINDS: ReadonlySet<NativeEntryKind> = new Set(['meta', 'label', 'usage', 'unknown', 'system'])
+const FOLDED_LEAF_KINDS: ReadonlySet<NativeEntryKind> = new Set(['meta', 'label', 'usage', 'unknown'])
 
 function skipPreamble(node: NativeTreeNode, leafId: string | null): NativeTreeNode | null {
   let at = node
@@ -71,6 +72,9 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
     activePath.add(id)
   }
 
+  let leafHost: string | null = null
+  let foldedLeaf: string | null = null
+
   const substantial = new Map<string, boolean>()
   const worthShowing = (node: NativeTreeNode): boolean => {
     const known = substantial.get(node.entry.id)
@@ -82,6 +86,7 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
       const at = pending.pop()!
       if (seen.has(at.entry.id)) continue
       seen.add(at.entry.id)
+      if (at.entry.id === foldedLeaf) continue
       if (at.entry.id === leafId || !PREAMBLE_KINDS.has(describeEntry(at.entry).kind)) found = true
       else pending.push(...(at.children ?? []))
     }
@@ -89,6 +94,16 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
     return found
   }
   const kidsOf = (node: NativeTreeNode): NativeTreeNode[] => (node.children ?? []).filter(worthShowing)
+
+  const leafItem = leafId ? byId.get(leafId) : undefined
+  const host = leafItem?.parent
+  if (host && !leafItem.node.children?.length && FOLDED_LEAF_KINDS.has(describeEntry(leafItem.node.entry).kind)) {
+    const hostShown = !PREAMBLE_KINDS.has(describeEntry(host.entry).kind) || (host.children ?? []).some((child) => child !== leafItem.node && worthShowing(child))
+    if (hostShown) {
+      leafHost = host.entry.id
+      foldedLeaf = leafId
+    }
+  }
 
   const isAnchor = (node: NativeTreeNode, parent: NativeTreeNode | null): boolean => {
     if (!parent) return true
@@ -118,7 +133,7 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
     let leaf = node.entry.id === leafId
     let label = node.label
     visited.add(node.entry.id)
-    while (end.entry.id !== leafId && kidsOf(end).length === 1) {
+    while (end.entry.id !== leafId && end.entry.id !== leafHost && kidsOf(end).length === 1) {
       const next = kidsOf(end)[0]
       if (visited.has(next.entry.id) || isAnchor(next, end)) break
       visited.add(next.entry.id)
@@ -129,10 +144,16 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
     }
     const description = describeEntry(node.entry)
     const kids = kidsOf(end)
+    let targetId = end.entry.id
+    if (foldedLeaf && end.entry.id === leafHost) {
+      visited.add(foldedLeaf)
+      targetId = foldedLeaf
+      leaf = true
+    }
     const index = rows.length
     rows.push({
       entryId: node.entry.id,
-      targetId: end.entry.id,
+      targetId,
       parentRow,
       lane: 0,
       kind: description.kind,

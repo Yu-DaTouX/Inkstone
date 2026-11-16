@@ -30,6 +30,7 @@ import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSub
 import { subagentNeighbor, subagentSessionPeers } from './subagent-list'
 import { turnModelLabel } from './turn-model-label'
 import { TurnView } from './TurnView'
+import { ErrorCardRetryContext } from './ErrorCard'
 import { TurnScopeContext, subagentTurnScope } from './turn-scope'
 import { useSessionText } from './text'
 import './subagent-pane.css'
@@ -149,7 +150,7 @@ function PaneSteps({ run }: { run: SubagentRun }): JSX.Element | null {
 export function SubagentTranscriptPane({ runId }: { runId: string }): JSX.Element {
   const t = useT()
   const run = useStore((s) => s.subagents.find((item) => item.id === runId))
-  if (!run) return <EmptyState className="sa-pane-missing" data-testid="v3-subagent-pane-missing" title={t('delegate.missing')} />
+  if (!run) return <EmptyState className="sa-pane-missing" data-testid="v3-subagent-pane-missing" title={t('delegate.missing')} description={t('delegate.missingHint')} />
   return <PaneBody key={run.id} run={run} />
 }
 
@@ -356,11 +357,13 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
             </div>
           </article>
           <TurnScopeContext.Provider value={turnScope}>
-            {turns.map((turn) => (
-              <div key={turn.id} className="v3-stream-row">
-                <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} tail={turn === turns[turns.length - 1]} readOnly />
-              </div>
-            ))}
+            <ErrorCardRetryContext.Provider value={canRetry || !model.terminal}>
+              {turns.map((turn) => (
+                <div key={turn.id} className="v3-stream-row">
+                  <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} tail={turn === turns[turns.length - 1]} readOnly />
+                </div>
+              ))}
+            </ErrorCardRetryContext.Provider>
           </TurnScopeContext.Provider>
           {turns.length === 0 && model.live ? <p className="sa-pane-wait" role="status"><Spinner size="sm" />{t('sa.waitingMessages')}</p> : null}
           {model.error && !errorInTranscript ? (
