@@ -22,8 +22,9 @@ const waitFor = async (check, ms) => {
 }
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { StdioTreeClientTransport } = await compile('src/main/mcp/stdio-tree-transport.ts', { packages: 'external' })
+  const { StdioTreeClientTransport, killProcessTree } = await compile('src/main/mcp/stdio-tree-transport.ts', { packages: 'external' })
   const dir = mkdtempSync(join(tmpdir(), 'yan-mcp-tree-'))
+  const spawned = []
   const server = (name, exitOnEof) => {
     const file = join(dir, `${name}.cjs`)
     writeFileSync(file, [
@@ -46,7 +47,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await transport.start()
     const pidFile = file.replace(/\.cjs$/, '.pid')
     await waitFor(() => existsSync(pidFile), 10_000)
-    return { transport, pid: Number(readFileSync(pidFile, 'utf8')) }
+    const pid = Number(readFileSync(pidFile, 'utf8'))
+    spawned.push(pid)
+    return { transport, pid }
   }
   try {
     if (process.platform === 'win32') {
@@ -54,6 +57,16 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(alive(stubborn.pid), '包装器下的服务进程已启动')
       await stubborn.transport.close()
       ok(await waitFor(() => !alive(stubborn.pid), 3000), '服务不理 stdin 结束时，关闭会连同包装器下的孙进程一起结束')
+
+      const seen = []
+      const slow = await start(server('slow', false), async (pid) => {
+        seen.push(alive(pid))
+        await new Promise((resolve) => setTimeout(resolve, 2500))
+        await killProcessTree(pid)
+      })
+      await slow.transport.close()
+      ok(seen.length === 1 && seen[0] === true, '进程树结束时包装器仍在运行', `seen=${JSON.stringify(seen)}`)
+      ok(!alive(slow.pid), 'taskkill 再慢，close 返回前孙进程也已结束')
     }
 
     const calls = []
@@ -69,6 +82,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(offCalls.length === 0, '非 Windows 不走 taskkill')
     if (alive(other.pid)) process.kill(other.pid)
   } finally {
+    for (const pid of spawned) if (alive(pid)) process.kill(pid)
     rmSync(dir, { recursive: true, force: true })
   }
 })

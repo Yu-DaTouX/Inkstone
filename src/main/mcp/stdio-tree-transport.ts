@@ -9,6 +9,10 @@ export function killProcessTree(pid: number): Promise<void> {
   })
 }
 
+function running(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null
+}
+
 export class StdioTreeClientTransport extends StdioClientTransport {
   constructor(
     params: StdioServerParameters,
@@ -21,18 +25,20 @@ export class StdioTreeClientTransport extends StdioClientTransport {
 
   override async close(): Promise<void> {
     const child = (this as unknown as { _process?: ChildProcess })._process
-    let timer: ReturnType<typeof setTimeout> | undefined
-    if (this.platform === 'win32' && child?.pid) {
+    if (this.platform === 'win32' && child?.pid && running(child)) {
       const pid = child.pid
-      timer = setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) void this.killTree(pid)
-      }, this.treeKillAfterMs)
-      timer.unref?.()
-    }
-    try {
-      await super.close()
-    } finally {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const exit = new Promise<boolean>((resolve) => child.once('exit', () => resolve(true)))
+      child.stdin?.end()
+      const exited = await Promise.race([
+        exit,
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), this.treeKillAfterMs)
+        })
+      ])
       if (timer) clearTimeout(timer)
+      if (!exited && running(child)) await this.killTree(pid)
     }
+    await super.close()
   }
 }
