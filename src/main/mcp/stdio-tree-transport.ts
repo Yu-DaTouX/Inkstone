@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'node:child_process'
 import { StdioClientTransport, type StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { redactSecretText } from '../../shared/redact-diagnostic'
+import { decodeProcessOutput } from './stderr-decode'
 import { killProcessTree, ProcessTreeWatch, type ListProcesses } from '../process-tree'
 
 export { killProcessTree }
@@ -8,7 +9,7 @@ export { killProcessTree }
 export const STDIO_TREE_KILL_AFTER_MS = 1800
 export const STDIO_STDERR_TAIL_CHARS = 4096
 export const STDIO_TREE_SCAN_CAP_MS = 2500
-const STDERR_RAW_KEEP_CHARS = STDIO_STDERR_TAIL_CHARS * 2
+const STDERR_RAW_KEEP_BYTES = STDIO_STDERR_TAIL_CHARS * 4
 
 export interface StdioTreeOptions {
   listProcesses?: ListProcesses
@@ -23,7 +24,8 @@ function running(child: ChildProcess): boolean {
 
 export class StdioTreeClientTransport extends StdioClientTransport {
   private watch: ProcessTreeWatch | null = null
-  private stderrRaw = ''
+  private stderrRaw: Buffer = Buffer.alloc(0)
+  private stderrTruncated = false
   private readonly listProcesses: ListProcesses | undefined
   private readonly isAlive: ((pid: number) => boolean) | undefined
   private readonly secretValues: string[]
@@ -42,12 +44,18 @@ export class StdioTreeClientTransport extends StdioClientTransport {
     this.scanCapMs = options.scanCapMs ?? STDIO_TREE_SCAN_CAP_MS
     this.secretValues = (options.secretValues ?? []).filter((value) => value.length >= 6)
     this.stderr?.on('data', (chunk: Buffer | string) => {
-      this.stderrRaw = (this.stderrRaw + chunk.toString()).slice(-STDERR_RAW_KEEP_CHARS)
+      const joined = Buffer.concat([this.stderrRaw, typeof chunk === 'string' ? Buffer.from(chunk) : chunk])
+      if (joined.length > STDERR_RAW_KEEP_BYTES) {
+        this.stderrTruncated = true
+        this.stderrRaw = joined.subarray(joined.length - STDERR_RAW_KEEP_BYTES)
+      } else {
+        this.stderrRaw = joined
+      }
     })
   }
 
   stderrTail(): string {
-    let text = this.stderrRaw
+    let text = decodeProcessOutput(this.stderrRaw, this.stderrTruncated)
     for (const secret of this.secretValues) text = text.split(secret).join('[redacted]')
     text = redactSecretText(text)
       .replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
