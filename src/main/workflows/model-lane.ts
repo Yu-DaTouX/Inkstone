@@ -261,7 +261,7 @@ export class WorkflowModelLane {
     const retries = job.options.retries ?? WORKFLOW_LIMITS.defaultModelRetries
     const timeoutMs = (job.options.timeoutMinutes ?? WORKFLOW_LIMITS.defaultModelTimeoutMinutes) * 60_000
     const schema = job.options.schema
-    const prompt = schema ? `${job.prompt}${schemaInstruction(schema)}` : job.prompt
+    const prompt = schema ? `${job.prompt}${schemaInstruction(schema, job.prompt)}` : job.prompt
     const base = this.opts.backoffMs ?? 2000
     let tries = 0
     let bounces = 0

@@ -49,13 +49,13 @@ assert.deepEqual(
   '费用按嵌套结构逐项累加'
 )
 
-function harness(complete, { window = 400_000, previousSummary } = {}) {
+function harness(complete, { window = 400_000, previousSummary, msgs = messages } = {}) {
   const handlers = {}
   const entries = []
   mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: (type, data) => entries.push({ type, data }) })
   const calls = []
   const ctx = { model: { contextWindow: window, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async (model, context, options) => { calls.push({ context, options }); return complete(calls.length, context) } } }
-  const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, previousSummary, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']), written: new Set(), edited: new Set() } }, signal: new AbortController().signal }
+  const event = { preparation: { messagesToSummarize: msgs, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, previousSummary, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']), written: new Set(), edited: new Set() } }, signal: new AbortController().signal }
   return {
     run: () => handlers.session_before_compact(event, ctx),
     compacted: (fromExtension) => handlers.session_compact({ fromExtension }),
@@ -219,11 +219,21 @@ assert.equal(
   const prompt = h.calls[0].context.messages[0].content[0].text
   assert.ok(/priorities, highest first/i.test(prompt) && /\[ruled out\]/.test(prompt) && /Never estimate a line number/.test(prompt) && /\[external\]/.test(prompt), '提示词按优先级保留、区分状态、只照抄观测到的位置、外部内容标来源')
   assert.ok(!/Be exhaustive/.test(prompt), '不再要求穷举')
-  assert.ok(/Write the summary in the language the user writes in/.test(prompt) && /keep the section headings above/.test(prompt), '摘要正文用用户的语言写，标题与代码、路径保持原样')
+  assert.ok(/Write the summary in Chinese, the language of the user's own messages/.test(prompt) && /keep the section headings above/.test(prompt), '代码认出用户语言时，摘要指令直接写明用哪种语言，标题与代码、路径保持原样')
   assert.ok(result.compaction.summary.includes('<user-language>\nThe user writes in Chinese. Keep progress lines and replies to the user in Chinese'), '摘要附录注明一次用户语言')
   assert.equal(result.compaction.summary.match(/<user-language>/g).length, 1, '用户语言只注明一次')
   assert.ok(result.compaction.summary.endsWith('</user-messages>\n\n<user-language>\nThe user writes in Chinese. Keep progress lines and replies to the user in Chinese, even though tool outputs and parts of this summary are in English; code, commands, paths and identifiers stay as they are.\n</user-language>'), '摘要末尾是用户原话，再是语言注明')
   assert.ok(/under about 16000 tokens/.test(prompt), '给出篇幅目标（输出上限的一半）')
+}
+{
+  const english = [{ role: 'user', content: 'please fix the build' }, { role: 'assistant', content: [{ type: 'text', text: 'Fixed the build script.' }] }]
+  const h = harness(() => ok('## Goal\nfix'), { msgs: english })
+  await h.run()
+  const prompt = h.calls[0].context.messages[0].content[0].text
+  assert.ok(/Write the summary in the language the user writes in/.test(prompt) && !/Write the summary in Chinese/.test(prompt), '认不出具体语言时仍按用户原话的语言写')
+  const update = harness(() => ok('## Goal\n修'), { msgs: english, previousSummary: "旧摘要\n\n<user-messages>\nThe user's own messages from the compacted part, verbatim, oldest first:\n[#1.1] 把构建修好\n[#1.3] 顺便看看测试为什么挂了\n</user-messages>" })
+  await update.run()
+  assert.ok(/Write the summary in Chinese/.test(update.calls[0].context.messages[0].content[0].text), '滚动更新时把上次附的用户原话也算进用户语言')
 }
 {
   const previous = "旧摘要\n\n<user-messages>\nThe user's own messages from the compacted part, verbatim, oldest first:\n[#1.1] 第一条\n多行\n[#1.5] 第二条\n</user-messages>"
@@ -358,6 +368,7 @@ function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, sent
   assert.ok(/^Stop here\. Do not call any tool/.test(instruction) && instruction.includes('最后的回复 ZZ-9'), '指令追加在末尾，并带上请求之后的消息')
   assert.ok(!instruction.includes('钥匙编号'), '请求里已有的最后一条工具结果不再重复附上')
   assert.ok(/source tag naming the tool/.test(instruction) && !/anchor line such as/.test(instruction), '模型看不到锚点行，改用工具和路径做来源标记')
+  assert.ok(/Write the summary in Chinese, the language of the user's own messages/.test(instruction), '快速路径的摘要指令也写明用户语言，不让模型按前面的英文对话自行判断')
   assert.equal(sent.tool_choice, 'none')
   assert.equal(h.calls[0].options.maxTokens, 32_000)
   assert.equal(h.calls[0].options.sessionId, 'S1', '带上会话 ID，路由和主会话一致')

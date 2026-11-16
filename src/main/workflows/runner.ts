@@ -372,7 +372,7 @@ export class WorkflowRunner {
       if (!release) return
       try {
         if (this.finished) return
-        await this.opts.host.send(id, schemaCorrection(errors, schema))
+        await this.opts.host.send(id, schemaCorrection(errors, schema, job.prompt))
       } catch (error) {
         this.settleAgent(job, 'failed', { error: `续接子代理失败：${error instanceof Error ? error.message : String(error)}` })
         return

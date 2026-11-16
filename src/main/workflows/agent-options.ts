@@ -102,7 +102,7 @@ export function subagentStartParams(prompt: string, options: WorkflowAgentOption
   if (options.boundary) brief.boundary = options.boundary
   if (options.timeoutMinutes) brief.timeoutMinutes = options.timeoutMinutes
   return {
-    task: options.schema ? `${prompt}${schemaInstruction(options.schema)}` : prompt,
+    task: options.schema ? `${prompt}${schemaInstruction(options.schema, prompt)}` : prompt,
     ...(options.label ? { title: options.label } : {}),
     ...(options.model ? { model: options.model } : {}),
     ...(options.thinking ? { thinking: options.thinking } : {}),

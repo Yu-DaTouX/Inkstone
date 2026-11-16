@@ -138,21 +138,35 @@ export function extractJson(text: string): { ok: true; value: unknown } | { ok: 
   }
 }
 
-export function schemaInstruction(schema: JsonSchema): string {
+function writtenInChinese(text: string): boolean {
+  const body = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '').replace(/https?:\/\/\S+/g, '')
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(body)) return false
+  const han = body.match(/\p{Script=Han}/gu)?.length ?? 0
+  const latin = (body.match(/[A-Za-z]/g)?.length ?? 0) / 4
+  return han >= 2 && han >= latin
+}
+
+export function schemaInstruction(schema: JsonSchema, prompt = ''): string {
   return [
     '',
     '',
-    'Output format: when you finish, your last message must contain only one ```json code block whose content is JSON matching this JSON Schema, with nothing outside the block:',
+    writtenInChinese(prompt)
+      ? '输出格式：完成时，你的最后一条消息只包含一个 ```json 代码块，内容是符合下面 JSON Schema 的 JSON，代码块外不要有任何文字：'
+      : 'Output format: when you finish, your last message must contain only one ```json code block whose content is JSON matching this JSON Schema, with nothing outside the block:',
     '```json',
     JSON.stringify(schema),
     '```'
   ].join('\n')
 }
 
-export function schemaCorrection(errors: string[], schema: JsonSchema): string {
+export function schemaCorrection(errors: string[], schema: JsonSchema, prompt = ''): string {
+  const problems = errors.join('；').slice(0, 1500)
+  const chinese = writtenInChinese(prompt)
   return [
-    `【工作流】你的最终回复没有通过 JSON 结构校验：${errors.join('；').slice(0, 1500)}。`,
-    'Reply again with only one ```json code block containing JSON that matches this JSON Schema, with nothing outside the block:',
+    chinese ? `【工作流】你的最终回复没有通过 JSON 结构校验：${problems}。` : `[Workflow] Your final reply did not pass JSON validation: ${problems}.`,
+    chinese
+      ? '请重新回复，只给一个 ```json 代码块，内容是符合下面 JSON Schema 的 JSON，代码块外不要有任何文字：'
+      : 'Reply again with only one ```json code block containing JSON that matches this JSON Schema, with nothing outside the block:',
     '```json',
     JSON.stringify(schema),
     '```'

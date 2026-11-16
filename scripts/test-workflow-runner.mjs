@@ -171,6 +171,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(fake.started.length === 1 && fake.sent.length === 2 && fake.sent.every((item) => item.id === 'sub-1'), '续接的是同一个子代理，没有重派')
       ok(/没有 ```json|JSON 代码块/.test(fake.sent[0].message) && /\$\.score 应为 integer/.test(fake.sent[1].message), '续接说明里写了具体错误', fake.sent.map((item) => item.message.split('\n')[0]).join(' | '))
       ok(runner.agents[0].retries === 2, '记录续接次数')
+      ok(/输出格式：/.test(fake.started[0].params.task) && !/Output format/.test(fake.started[0].params.task) && fake.sent.every((item) => /请重新回复/.test(item.message) && !/Reply again/.test(item.message)), '中文任务的格式要求和续接说明用中文，不在任务末尾接英文指令', fake.started[0].params.task)
+    }
+
+    {
+      const answers = ['no block', '```json\n{"score": 3}\n```']
+      const fake = fakeController({ answer: (run) => ({ text: answers[run.sends] }) })
+      const { outcome } = await start({ fake, body: `return await agent('Score the answer from 0 to 3', { schema: { type: 'object', required: ['score'] } })` })
+      await outcome
+      ok(/Output format:/.test(fake.started[0].params.task) && /Reply again/.test(fake.sent[0]?.message ?? '') && !/【工作流】/.test(fake.sent[0]?.message ?? ''), '英文任务的格式要求和续接说明保持英文', fake.sent[0]?.message)
     }
 
     {

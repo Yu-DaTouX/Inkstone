@@ -87,6 +87,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       const steer = await ctrl.send(id, '改查 src/main', 'steer', { parentSessionId: 'parent-a' })
       ok(steer.ok && steer.delivery === 'queued', 'steer 追加送达并标记排队', JSON.stringify(steer))
       ok(queued[0].streamingBehavior === 'steer' && queued[0].message.startsWith('【主会话追加】') && queued[0].message.endsWith('改查 src/main'), '经 prompt 按 steer 排队，并标明来自主会话')
+      ok(!/[A-Za-z]/.test(queued[0].message.split('\n\n')[0]), '追加消息的宗主包装不夹英文句子，不把子代理带离任务语言', queued[0].message)
       ok(ctrl.get(id).latestActivity.includes('当前工具结束后'), '活动摘要说明送达时机', ctrl.get(id).latestActivity)
       const follow = await ctrl.send(id, '做完再列出测试', 'followUp', { parentSessionId: 'parent-a' })
       ok(follow.ok && queued[1].streamingBehavior === 'followUp', 'follow-up 模式按 followUp 排队')

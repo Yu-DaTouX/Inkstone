@@ -2388,7 +2388,7 @@ function forwardedMessage(text: string, mode: SubagentSendMode | 'resume' | 'int
     : mode === 'resume'
     ? '你已经完成过原任务，这是新的消息；在之前的工作基础上继续'
     : mode === 'steer' ? '请在继续之前先考虑这条信息' : '这是在你完成原任务后补充的要求'
-  return `${label}${timing}；Stay within the original task.\n\n${text}`
+  return `${label}${timing}；仍在原任务范围内工作。\n\n${text}`
 }
 
 function addUsage(base: SubagentUsageTotals | undefined, next: SubagentUsageTotals): SubagentUsageTotals {

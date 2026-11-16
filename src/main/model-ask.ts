@@ -100,7 +100,7 @@ export async function runModelAsk(rawParams: Record<string, unknown>, context: M
   try {
     result = await deps.call({
       model,
-      prompt: schema ? `${prompt}${schemaInstruction(schema)}` : prompt,
+      prompt: schema ? `${prompt}${schemaInstruction(schema, prompt)}` : prompt,
       ...(system ? { system } : {}),
       ...(thinking ? { thinking } : {}),
       timeoutMs,
