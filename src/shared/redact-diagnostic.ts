@@ -16,6 +16,22 @@ export function redactDiagnosticText(value: unknown, max = DIAGNOSTIC_TEXT_MAX_C
   return `${out.slice(0, max)}…(共${out.length}字)`
 }
 
+const SECRET_KEY_SHAPES: RegExp[] = [
+  /\bsk-[A-Za-z0-9_-]{6,}/g,
+  /\bAIza[0-9A-Za-z_-]{30,}/g,
+  /\bgh[pousr]_[A-Za-z0-9]{30,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{30,}/g,
+  /\bxai-[A-Za-z0-9]{32,}/g
+]
+
+const SECRET_QUERY_PARAM = /([?&](?:[A-Za-z0-9]+[_.-])*(?:key|token|secret|password|passwd|signature|sig|credential)(?:[_.-][A-Za-z0-9]+)*=)[^&#\s"']+/gi
+
+export function redactSecretText(text: string): string {
+  let out = redactCredentialShapes(text).replace(SECRET_QUERY_PARAM, '$1[redacted]')
+  for (const pattern of SECRET_KEY_SHAPES) out = out.replace(pattern, '[redacted]')
+  return out
+}
+
 export function redactCredentialShapes(text: string): string {
   return text
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi, '$1[redacted]@')

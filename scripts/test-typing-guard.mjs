@@ -6,13 +6,13 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const source = fileURLToPath(new URL('../src/renderer/src/features/session/typing-guard.ts', import.meta.url)).replace(/\\/g, '/')
 
 const bundled = await build({
-  stdin: { contents: `export { shouldDeferCardFocus, isCardFocusKey, isTypingKey, cardFocusKeysText, TYPING_IDLE_MS } from ${JSON.stringify(source)}\n`, resolveDir: root, loader: 'ts' },
+  stdin: { contents: `export { shouldDeferCardFocus, isCardFocusKey, isTypingKey, nextShiftHeld, cardFocusKeysText, TYPING_IDLE_MS } from ${JSON.stringify(source)}\n`, resolveDir: root, loader: 'ts' },
   bundle: true,
   write: false,
   platform: 'node',
   format: 'esm'
 })
-const { shouldDeferCardFocus, isCardFocusKey, isTypingKey, cardFocusKeysText, TYPING_IDLE_MS } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
+const { shouldDeferCardFocus, isCardFocusKey, isTypingKey, nextShiftHeld, cardFocusKeysText, TYPING_IDLE_MS } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
 
 const now = 100_000
 const snap = (extra = {}) => ({ now, lastTypedAt: Number.NEGATIVE_INFINITY, editableFocused: true, editableHasText: false, focusInsideCard: false, ...extra })
@@ -24,6 +24,18 @@ assert.equal(shouldDeferCardFocus(snap({ lastTypedAt: now - 1500 })), false, '�
 assert.equal(shouldDeferCardFocus(snap({ editableHasText: true })), true, '输入框有未发送内容且有焦点时不抢')
 assert.equal(shouldDeferCardFocus(snap({ editableFocused: false, editableHasText: true, lastTypedAt: now })), false, '焦点不在输入框时照常聚焦')
 assert.equal(shouldDeferCardFocus(snap({ focusInsideCard: true, lastTypedAt: now })), false, '焦点已在卡片里')
+assert.equal(shouldDeferCardFocus(snap({ shiftHeld: true })), true, '输入框为空、按住 Shift 准备打大写时不抢')
+assert.equal(shouldDeferCardFocus(snap({ shiftHeld: false })), false, '松开 Shift 后照常聚焦')
+assert.equal(shouldDeferCardFocus(snap({ shiftHeld: true, editableFocused: false })), false, '焦点不在输入框时按住 Shift 不影响')
+
+assert.equal(nextShiftHeld(false, { type: 'keydown', key: 'Shift', shiftKey: true }, true), true, '在输入框里按下 Shift 开始算打字')
+assert.equal(nextShiftHeld(false, { type: 'keydown', key: 'Shift', shiftKey: true }, false), false, '不在输入框里按 Shift 不算')
+assert.equal(nextShiftHeld(true, { type: 'keydown', key: 'Shift', shiftKey: true, repeat: true }, true), true, '长按 Shift 的重复 keydown 仍算')
+assert.equal(nextShiftHeld(true, { type: 'keydown', key: 'A', shiftKey: true }, true), true, '按着 Shift 打字母期间仍算')
+assert.equal(nextShiftHeld(true, { type: 'keyup', key: 'A', shiftKey: true }, true), true, '其他键抬起不影响')
+assert.equal(nextShiftHeld(true, { type: 'keyup', key: 'Shift', shiftKey: false }, true), false, 'Shift keyup 后不再算')
+assert.equal(nextShiftHeld(true, { type: 'blur' }, false), false, '窗口失焦时清掉，避免漏收 keyup 后一直卡住')
+assert.equal(nextShiftHeld(true, { type: 'keydown', key: 'a', shiftKey: false }, true), false, '后续按键不带 Shift 时纠正漏收的 keyup')
 
 const key = (extra = {}) => ({ key: 'Enter', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true, ...extra })
 assert.equal(isCardFocusKey(key()), true, 'Ctrl+Shift+Enter 去处理卡片')

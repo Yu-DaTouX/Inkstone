@@ -208,6 +208,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
 
     {
+      const key = 'AIza' + 'Q'.repeat(35)
+      const model = modelHost(() => ({ error: `401 Incorrect API key provided: ${key} for https://x.test/v1?client_secret=hush123` }))
+      const { outcome } = await start({ model, body: `try { await model('x') } catch (e) { return String(e.message) }` })
+      const result = await outcome
+      const seen = JSON.parse(result.json)
+      ok(result.status === 'done' && /401 Incorrect API key provided/.test(seen) && !seen.includes(key) && !seen.includes('hush123') && seen.includes('[redacted]'), '交给脚本的 model() 错误保留原意、去掉密钥形态', seen)
+    }
+
+    {
       const model = modelHost((req) => ({ text: req.prompt.startsWith('good') ? '说明\n```json\n{"zh":"你好","n":1}\n```' : req.prompt.startsWith('wrong') ? '```json\n{"zh":1}\n```' : '不是 JSON' }))
       const schema = `{ type: 'object', required: ['zh'], properties: { zh: { type: 'string' }, n: { type: 'integer' } } }`
       const { outcome, file } = await start({ model, body: `const S = ${schema}\nreturn await parallel([model('good', { schema: S }), model('wrong', { schema: S }), model('plain', { schema: S })])` })

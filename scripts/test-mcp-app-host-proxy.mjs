@@ -875,17 +875,24 @@ try {
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', (part) => { stderr += part })
     child.stdin.on('error', () => undefined)
-    const exited = new Promise((done) => child.once('exit', (code) => {
-      for (const entry of pending.values()) {
-        clearTimeout(entry.timer)
-        entry.reject(new Error(`pi 已退出（${code}）：${stderr.slice(-800)}`))
+    let gone = null
+    const exited = new Promise((done) => {
+      const finish = (reason) => {
+        if (gone !== null) return
+        gone = reason
+        for (const entry of pending.values()) {
+          clearTimeout(entry.timer)
+          entry.reject(new Error(`pi 已退出（${reason}）：${stderr.slice(-800)}`))
+        }
+        pending.clear()
+        done()
       }
-      pending.clear()
-      done()
-    }))
+      child.once('exit', (code) => finish(String(code)))
+      child.once('error', (error) => finish(`启动失败 ${error.message}`))
+    })
     const command = (type, params = {}, timeoutMs = 30000) =>
       new Promise((resolveCommand, rejectCommand) => {
-        if (child.exitCode !== null || child.signalCode !== null) return rejectCommand(new Error(`pi 已退出（${child.exitCode}）：${stderr.slice(-800)}`))
+        if (gone !== null || child.exitCode !== null || child.signalCode !== null) return rejectCommand(new Error(`pi 已退出（${gone ?? child.exitCode}）：${stderr.slice(-800)}`))
         const id = String(++seq)
         const timer = setTimeout(() => {
           pending.delete(id)

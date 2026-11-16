@@ -8,11 +8,19 @@ export interface TypingSnapshot {
   editableFocused: boolean
   editableHasText: boolean
   focusInsideCard: boolean
+  shiftHeld?: boolean
 }
 
 export function shouldDeferCardFocus(snapshot: TypingSnapshot): boolean {
   if (!snapshot.editableFocused || snapshot.focusInsideCard) return false
-  return snapshot.now - snapshot.lastTypedAt < TYPING_IDLE_MS || snapshot.editableHasText
+  return snapshot.now - snapshot.lastTypedAt < TYPING_IDLE_MS || snapshot.editableHasText || snapshot.shiftHeld === true
+}
+
+export function nextShiftHeld(held: boolean, event: { type: string; key?: string; shiftKey?: boolean }, editable: boolean): boolean {
+  if (event.type === 'blur') return false
+  if (event.key === 'Shift') return event.type === 'keydown' ? editable : false
+  if (event.type === 'keydown' && !event.shiftKey) return false
+  return held
 }
 
 export interface CardFocusKeyEvent {
@@ -43,6 +51,7 @@ export function isTypingKey(event: { key: string; ctrlKey?: boolean; metaKey?: b
 }
 
 let lastTypedAt = Number.NEGATIVE_INFINITY
+let shiftHeld = false
 let tracking = false
 
 function isEditable(element: Element | null): element is HTMLElement {
@@ -63,9 +72,16 @@ function noteTyping(event: Event): void {
   if (isEditable(event.target as Element | null)) lastTypedAt = Date.now()
 }
 
+function noteShift(event: Event): void {
+  shiftHeld = nextShiftHeld(shiftHeld, event as KeyboardEvent, isEditable(event.target as Element | null))
+}
+
 export function startTypingTracker(): void {
   if (tracking || typeof document === 'undefined') return
   tracking = true
+  document.addEventListener('keydown', noteShift, true)
+  document.addEventListener('keyup', noteShift, true)
+  window.addEventListener('blur', noteShift)
   document.addEventListener('keydown', noteTyping, true)
   document.addEventListener('input', noteTyping, true)
   document.addEventListener('compositionupdate', noteTyping, true)
@@ -79,7 +95,8 @@ export function typingSnapshot(card: HTMLElement | null): TypingSnapshot {
     lastTypedAt,
     editableFocused: editable,
     editableHasText: editable ? editableText(active).trim().length > 0 : false,
-    focusInsideCard: !!card && !!active && card.contains(active)
+    focusInsideCard: !!card && !!active && card.contains(active),
+    shiftHeld
   }
 }
 

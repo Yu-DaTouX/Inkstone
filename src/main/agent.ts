@@ -1078,7 +1078,7 @@ export class AgentController extends EventEmitter {
       this.streaming = null
       for (const call of this.items.cancelUnfinishedTools(Date.now())) this.stream.pushTool(call)
       this.items.discardStreaming()
-      this.bash = null
+      this.settleCancelledBash()
       this.backgroundBash.dispose()
       this.agentRunning = false
       this.releaseExecutionAdmission()
@@ -3259,38 +3259,41 @@ export class AgentController extends EventEmitter {
       this.push({ ch: 'msg-update', payload: { id: s.id, patch: msg } })
     }
 
-    if (this.bash) {
-      const b = this.bash
-      this.bash = null
-      void endTreeSnapshot(b.msgId).catch(() => null)
-      const endedAt = Date.now()
-      this.items.settleBash(b.msgId, { bash: { command: b.command, exitCode: null, cancelled: true } }, { status: 'error', output: b.output, endedAt })
-      this.push({
-        ch: 'msg-update',
-        payload: {
-          id: b.msgId,
-          patch: {
-            bash: { command: b.command, exitCode: null, cancelled: true },
-            toolCalls: [
-              {
-                id: b.msgId,
-                name: 'bash',
-                args: { command: b.command },
-                status: 'error',
-                output: b.output,
-                endedAt
-              }
-            ]
-          }
-        }
-      })
-    }
+    this.settleCancelledBash()
 
     this.markStreaming(false)
     this.setAgentRunning(false)
     void this.refreshState()
 
     return cleared
+  }
+
+  private settleCancelledBash(): void {
+    const b = this.bash
+    if (!b) return
+    this.bash = null
+    void endTreeSnapshot(b.msgId).catch(() => null)
+    const endedAt = Date.now()
+    this.items.settleBash(b.msgId, { bash: { command: b.command, exitCode: null, cancelled: true } }, { status: 'error', output: b.output, endedAt })
+    this.push({
+      ch: 'msg-update',
+      payload: {
+        id: b.msgId,
+        patch: {
+          bash: { command: b.command, exitCode: null, cancelled: true },
+          toolCalls: [
+            {
+              id: b.msgId,
+              name: 'bash',
+              args: { command: b.command },
+              status: 'error',
+              output: b.output,
+              endedAt
+            }
+          ]
+        }
+      }
+    })
   }
 
   async runBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
@@ -3377,7 +3380,7 @@ export class AgentController extends EventEmitter {
     fullOutputPath?: string
   ): Promise<void> {
     const failed = cancelled || exitCode === null || exitCode !== 0
-    const changes = await endTreeSnapshot(msgId)
+    const changes = await endTreeSnapshot(msgId).catch(() => null)
     const details: Record<string, unknown> = {}
     if (truncated) {
       details.truncated = truncated

@@ -2,7 +2,7 @@ import { pick } from '../../shared/ui-lang'
 import { isRateLimitError, isQuotaWaitError } from '../../shared/quota-resume'
 import { isTransientModelError } from '../../shared/model-errors'
 import { MODEL_CELL_CODE, WORKFLOW_LIMITS, clipModelText, emptyModelStats, type WorkflowModelCall, type WorkflowModelCellStatus, type WorkflowModelFailure, type WorkflowModelLatest, type WorkflowModelPhaseStat, type WorkflowModelStats } from '../../shared/workflows'
-import { redactCredentialShapes } from '../../shared/redact-diagnostic'
+import { redactSecretText } from '../../shared/redact-diagnostic'
 import type { ModelCallRequest, ModelCallResult } from '../model-call'
 import type { JournalEntry, JournalWriter, ModelReplay } from './journal'
 import { modelPromptHash, type WorkflowModelOptions } from './model-options'
@@ -53,7 +53,6 @@ export const MODEL_QUOTA_WAIT_LIMIT_MS = 30 * 60_000
 const MODEL_QUOTA_BOUNCES = 3
 const MAX_BACKOFF_MS = 60_000
 const STOP_GRACE_MS = 5000
-const CREDENTIAL_KEY = /\bsk-[A-Za-z0-9_-]{6,}/g
 
 function costOf(usage: unknown): number {
   const cost = (usage as { cost?: unknown } | null | undefined)?.cost
@@ -66,7 +65,7 @@ function cutChars(text: string, max: number): string {
 }
 
 export function shownModelError(text: string): string {
-  return cutChars(redactCredentialShapes(text).replace(CREDENTIAL_KEY, '[redacted]'), WORKFLOW_LIMITS.modelErrorChars)
+  return cutChars(redactSecretText(text), WORKFLOW_LIMITS.modelErrorChars)
 }
 
 function pause(ms: number, signal: AbortSignal): Promise<void> {
@@ -213,7 +212,7 @@ export class WorkflowModelLane {
       this.counts.running += 1
       this.move(job, 'queued', 'running')
       const run = this.execute(job)
-        .catch((error: unknown) => this.settle(job, 'failed', { error: messageOf(error) }))
+        .catch((error: unknown) => this.settle(job, 'failed', { error: redactSecretText(messageOf(error)) }))
         .finally(() => {
           this.inflight.delete(job)
           this.pump()
@@ -347,6 +346,7 @@ export class WorkflowModelLane {
       } catch (error) {
         if (signal.aborted || kindOf(error) === 'cancelled') return this.settle(job, 'stopped', { error: pick('已停止', 'Stopped') })
         const message = messageOf(error)
+        const shown = redactSecretText(message)
         if (isQuotaWaitError(message)) {
           const waited = bounces < MODEL_QUOTA_BOUNCES ? await this.waitQuota(job.model) : { ready: false as const, reason: pick(`等额度后又撞上额度上限 ${MODEL_QUOTA_BOUNCES} 次`, `hit the quota limit again ${MODEL_QUOTA_BOUNCES} times after waiting`) }
           if (signal.aborted) return this.settle(job, 'stopped', { error: pick('已停止', 'Stopped') })
@@ -354,7 +354,7 @@ export class WorkflowModelLane {
             bounces += 1
             continue
           }
-          return this.settle(job, 'failed', { error: pick(`${message}（${waited.reason}）`, `${message} (${waited.reason})`) })
+          return this.settle(job, 'failed', { error: pick(`${shown}（${waited.reason}）`, `${shown} (${waited.reason})`) })
         }
         const rate = isRateLimitError(message)
         if (tries < retries && (kindOf(error) === 'timeout' || rate || isTransientModelError(message))) {
@@ -362,7 +362,7 @@ export class WorkflowModelLane {
           await pause(Math.min(MAX_BACKOFF_MS, base * 2 ** (tries - 1) * (rate ? 5 : 1)), signal)
           continue
         }
-        return this.settle(job, 'failed', { error: message })
+        return this.settle(job, 'failed', { error: shown })
       }
       const meta = { ...(result.usage ? { usage: result.usage } : {}), ...(result.stopReason ? { stopReason: result.stopReason } : {}), ...(result.model ? { model: result.model } : {}) }
       if (!schema) return this.settle(job, 'done', { result: result.text, ...meta })
