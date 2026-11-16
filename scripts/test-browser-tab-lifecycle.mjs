@@ -53,6 +53,10 @@ function harness(options = {}) {
     tabs: new Map(),
     popupNoticeAt: new Map(),
     sessionEpochs: new Map(),
+    control: { forget: (id) => { (log.forgotten ??= []).push(id) } },
+    lastDownloads: new Map(),
+    blockedRequests: new Map(),
+    lastAgentSessionId: undefined,
     external: null,
     guardGate: options.guardGate ?? null,
     getWindow: () => null,
@@ -125,6 +129,7 @@ function harness(options = {}) {
   ok(!host.activeBySession.has('A') && host.activeBySession.get('B') === 'B-0', '别的会话的活动标签记录不变')
   ok(log.externalClosed === 0, '关闭非焦点会话不影响当前正在看的会话的外接 Chrome')
   ok(log.scriptsDisposed?.join() === 'A', '关闭会话时只回收该会话的常驻脚本进程', log.scriptsDisposed)
+  ok(log.forgotten?.join() === 'A', '关闭会话时只清掉该会话的接管、自动化归属与下载记录', log.forgotten)
 }
 
 {

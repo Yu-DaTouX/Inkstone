@@ -9,7 +9,7 @@ import { CapabilityCommandError } from './capability-server'
 import { WAIT_POLL_MS, describeWait, parseWaitCondition, sameWaitElement, waitSatisfied, type WaitElement } from '../shared/browser-wait'
 import { YAN_DIR } from './paths'
 import type { BrowserObservation, BrowserNetworkSnapshot, BrowserState } from '../shared/ipc'
-import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
+import { browserLocks } from './browser/browser-locks'
 import { receiptSummary, type BrowserActionOptions } from './browser/receipt'
 import { ALL_ITEM_LIMIT, ITEM_LIMIT, diffObservations, elementLine, filterElements, textMatches, type ObservedPage } from './browser/observation-format'
 
@@ -21,7 +21,6 @@ const LOG_TAIL_LINES = 20
 const LOG_LINE_CHARS = 300
 const TEXT_DEFAULT_CHARS = 4000
 const TEXT_MAX_CHARS = 20_000
-let browserUncertain = false
 
 function flag(value: unknown): boolean {
   return value === true || value === 'true' || value === '' || value === '1'
@@ -65,12 +64,11 @@ export class BrowserCommands {
     const identity = `${opts?.sessionId ?? 'host'}:${opts?.runnerGeneration ?? 0}`
     const owner = `${identity}:${this.owner}`
     try {
-      const resourceId = INTERACTIVE_RESOURCE
-      if (browserUncertain && CONFIRMING_ACTIONS.has(action)) {
-        browserUncertain = false
-        sharedResources.resolveUncertain(resourceId)
+      const external = (): boolean => {
+        const current = this.browserHost().getState()
+        return Boolean(current.external) || current.mode === 'external'
       }
-      return await sharedResources.run(resourceId, owner, async () => {
+      return await browserLocks.run({ sessionId: this.browserSessionId(), owner, external, connecting: action === 'connect-chrome', confirming: CONFIRMING_ACTIONS.has(action) }, async (resourceId) => {
         if (this.identity !== identity) {
           this.refs.clear()
           this.lastObservation = undefined
@@ -101,8 +99,7 @@ export class BrowserCommands {
         catch (error) {
           const timedOut = error instanceof ActionTimeoutError
           if (timedOut || (userMutations.has(action) && !(error instanceof CapabilityCommandError))) {
-            browserUncertain = true
-            sharedResources.markUncertain(resourceId)
+            browserLocks.markUncertain(resourceId)
           }
           if (timedOut) throw new CapabilityCommandError('browser_action_timeout', `${action} ${ACTION_TIMEOUT_MS / 1000} 秒没有完成，结果未确认。先用 observe 或 state 核对页面，再决定下一步；不要直接重放。`)
           throw error
@@ -310,12 +307,18 @@ export class BrowserCommands {
           )
         }
         const closing = action === 'close-tab' ? id ?? host.getState().activeTabId : undefined
-        const state =
-          action === 'new-tab'
-            ? await host.newTab(this.browserText(params, 'url') || this.browserText(params, 'file') ? await this.navigationTarget(action, params) : undefined)
-            : action === 'switch-tab'
-              ? await host.switchTab(id as string)
-              : await host.closeTab(id)
+        let state: BrowserState
+        try {
+          state =
+            action === 'new-tab'
+              ? await host.newTab(this.browserText(params, 'url') || this.browserText(params, 'file') ? await this.navigationTarget(action, params) : undefined)
+              : action === 'switch-tab'
+                ? await host.switchTab(id as string)
+                : await host.closeTab(id)
+        } catch (error) {
+          if (error instanceof Error && (error as { code?: unknown }).code === 'tab_not_found') throw new CapabilityCommandError('tab_not_found', error.message)
+          throw error
+        }
         return { data: state, summary: this.browserSummary(action, state, { ...(closing ? { closed: closing } : {}), activeTabId: state.activeTabId ?? null, refsReset: true, hint: '标签已变，之前的元素 ref 全部失效，先 yan browser observe 再操作' }) }
       }
 

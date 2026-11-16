@@ -67,7 +67,9 @@ function harness({ fetchFails = false, dnsFails = false, fetchGate, spawnError }
     syncExternalTabs: async () => {}, syncExternalHistory: async () => {}, hideOwnedViews() {}, updateState() {},
     pushError: message => calls.push(['error', message]), recordBlockedRequest() {},
     privateDns: { resolves: async () => { if (dnsFails) throw new Error('dns unavailable'); return false } },
-    sessionScope: { run: (_sessionId, work) => work() }
+    sessionScope: { run: (_sessionId, work) => work() },
+    focusSessionId: 'focus',
+    control: { controlled: () => host.userControl }
   })
   return { host, calls, channels, RawCdp }
 }

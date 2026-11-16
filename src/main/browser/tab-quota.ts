@@ -10,6 +10,14 @@ export class TabQuotaError extends Error {
   }
 }
 
+export class TabNotFoundError extends Error {
+  readonly code = 'tab_not_found'
+  constructor() {
+    super(pick('找不到浏览器标签页', 'Browser tab not found'))
+    this.name = 'TabNotFoundError'
+  }
+}
+
 export class SessionClosedError extends Error {
   constructor() {
     super(pick('该会话的浏览器已关闭', 'The browser for this session was closed'))

@@ -18,7 +18,7 @@ import type {
   BrowserLoginImportStatus,
   MainPush
 } from '../shared/ipc'
-import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
+import { sharedResources, INTERACTIVE_RESOURCE, ResourceBusyError } from './interactive-resources'
 import { failureUrl, proxyLoadFailure, shouldSurfaceLoadError } from '../shared/browser-navigation'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
@@ -45,13 +45,15 @@ import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
 import { closeAllLocalFileServers } from './browser/local-file-server'
-import { MAX_TABS_PER_SESSION, POPUP_NOTICE_INTERVAL_MS, SessionClosedError, TabQuotaError } from './browser/tab-quota'
+import { MAX_TABS_PER_SESSION, POPUP_NOTICE_INTERVAL_MS, SessionClosedError, TabNotFoundError, TabQuotaError } from './browser/tab-quota'
 import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
 import { decideRequestBoundary } from './browser/network-boundary'
 import { decideExternalRequest } from './browser/external-boundary'
 import { createStateFlush, ownedViewVisible } from './browser/host-state'
 import { pick } from '../shared/ui-lang'
 import { SessionScope } from './browser/session-scope'
+import { BrowserSessionControl, browserResource } from './browser/session-control'
+import { browserLocks } from './browser/browser-locks'
 import { attachPinnedNetworkGuard, pinnedGuardStatus } from './net/pinned-network'
 import { proxyErrorReason } from './net/pinned-proxy'
 
@@ -59,6 +61,8 @@ type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
 type BrowserActionOutcome = BrowserActionResult & { observation?: BrowserObservation; receipt?: BrowserActionReceipt }
 const INITIAL_URL = 'about:blank'
+const UNATTRIBUTED = '\u0000unattributed'
+const EXTERNAL_KEY = '\u0000external'
 const PROMPT_TOKEN = `yan-prompt-${randomBytes(6).toString('hex')}:`
 const PROMPT_SHIM = `(() => { if (window.__yanPromptShim) return; Object.defineProperty(window, '__yanPromptShim', { value: true }); const log = console.debug.bind(console); window.prompt = function (message) { try { log(${JSON.stringify(PROMPT_TOKEN)} + String(message === undefined ? '' : message)) } catch {} return null } })()`
 export const DOWNLOAD_CONFIRM_BYTES = 100 * 1024 * 1024
@@ -222,32 +226,34 @@ export class BrowserController {
   }
   activateSession(sessionId: string): BrowserState {
     this.viewerSessionId = sessionId
-    if (!this.agentSessionId || this.agentSessionId === sessionId) this.focusSessionId = sessionId
+    if (!this.lastAgentSessionId || this.lastAgentSessionId === sessionId) this.focusSessionId = sessionId
     this.showOnlyOwnedView(this.activeBySession.get(this.focusSessionId) ?? null)
     this.updateState()
     return this.getState(sessionId)
   }
-  private userControl = false
-  private userControlRequest: { reason: string; sessionId: string; at: number } | null = null
-  private lastDownload: BrowserState['lastDownload']
-  private automationOwner?: string
+  private readonly control = new BrowserSessionControl()
+  private readonly lastDownloads = new Map<string, NonNullable<BrowserState['lastDownload']>>()
+  private externalLastDownload: BrowserState['lastDownload']
   private readonly ownedDownloads = new Map<string, NonNullable<BrowserState['lastDownload']>>()
-  setAutomationOwner(owner?: string): void { this.automationOwner = owner }
-  private agentSessionId: string | undefined
+  setAutomationOwner(owner?: string): void { this.control.setOwner(this.focusSessionId, owner) }
+  private lastAgentSessionId: string | undefined
   setAgentSession(sessionId: string): void {
-    if (this.agentSessionId === sessionId) return
-    this.agentSessionId = sessionId
+    const added = this.control.markAgent(sessionId)
+    if (!added && this.lastAgentSessionId === sessionId) return
+    this.lastAgentSessionId = sessionId
     this.updateState()
   }
   getOwnedDownload(owner: string): BrowserState['lastDownload'] { return this.ownedDownloads.get(owner) }
-  private downloadStarted: { name: string; at: number } | null = null
-  private readonly downloadsInProgress = new Map<Electron.DownloadItem, string>()
-  pendingDownloads(): string[] { return [...this.downloadsInProgress.values()] }
+  private readonly downloadsInProgress = new Map<Electron.DownloadItem, { filename: string; sessionId?: string }>()
+  pendingDownloads(): string[] {
+    const sessionId = this.focusSessionId
+    return [...this.downloadsInProgress.values()].filter((item) => !item.sessionId || item.sessionId === sessionId).map((item) => item.filename)
+  }
   private downloadSessionAttached = false
   private permissionHandlersAttached = false
   private requestBoundaryAttached = false
   private permissionLog: BrowserPermissionRecord[] = []
-  private blockedRequests: BrowserBlockedRequest[] = []
+  private readonly blockedRequests = new Map<string, BrowserBlockedRequest[]>()
   private readonly permissionGrants = new Set<string>()
   private readonly privateDns = new PrivateDnsGuard()
   private viewVisibleRequested = false
@@ -353,6 +359,7 @@ export class BrowserController {
     const activeIsExternal = isFocus && this.activeMode === 'external' && Boolean(ext)
     const embeddedTabs = [...this.tabs.values()].filter((tab) => tab.sessionId === sessionId).map((tab) => ({ ...tab.state }))
     const externalTabs = ext ? ext.chromeTabs.map((tab) => ({ ...tab, id: this.externalTabId(tab.id) })) : []
+    const handoff = this.control.handoff(sessionId)
     return {
       sessionId,
       open: Boolean(active) || Boolean(ext),
@@ -363,13 +370,13 @@ export class BrowserController {
       canGoForward: activeIsExternal ? ext?.canGoForward ?? false : active?.state.canGoForward ?? false,
       tabs: [...embeddedTabs, ...externalTabs],
       activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : activeId ?? undefined,
-      userControl: this.userControl,
-      ...(this.userControl && this.userControlRequest ? { userControlRequest: this.userControlRequest } : {}),
-      lastDownload: this.lastDownload,
-      ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}),
+      userControl: Boolean(handoff),
+      ...(handoff ? { userControlRequest: { reason: handoff.reason, sessionId: handoff.sessionId, at: handoff.at } } : {}),
+      lastDownload: activeIsExternal ? this.externalLastDownload : this.lastDownloads.get(sessionId),
+      ...(this.control.isAgent(sessionId) ? { agentSessionId: sessionId } : {}),
       loadError: activeIsExternal ? undefined : active?.state.loadError,
       permissions: this.permissionLog,
-      blockedRequests: this.blockedRequests,
+      blockedRequests: this.blockedRequestsFor(sessionId, Boolean(ext)),
       mode: activeIsExternal ? 'external' : 'embedded',
       external: ext
         ? {
@@ -392,7 +399,7 @@ export class BrowserController {
   }
 
   private updateState(): void {
-    sharedResources.setPaused(INTERACTIVE_RESOURCE, this.userControl)
+    this.control.syncPaused()
     this.publish()
   }
 
@@ -569,9 +576,11 @@ export class BrowserController {
     if (!this.downloadSessionAttached) {
       try {
         view.webContents.session.on('will-download', (_event, item, contents) => {
-          this.downloadStarted = { name: item.getFilename(), at: Date.now() }
-          const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
-          void this.handleDownload(item, owner).catch((error) => {
+          const source = contents ? [...this.tabs.values()].find((candidate) => candidate.view.webContents?.id === contents.id) : undefined
+          const sessionId = source?.sessionId
+          if (sessionId) this.control.noteDownload(sessionId, item.getFilename())
+          const owner = source && sessionId && !this.control.controlled(sessionId) && this.activeMode !== 'external' && this.activeBySession.get(sessionId) === source.id ? this.control.owner(sessionId) : undefined
+          void this.handleDownload(item, sessionId, owner).catch((error) => {
             item.cancel()
             this.pushError(pick(`浏览器下载无法保存：${error instanceof Error ? error.message : String(error)}`, `Browser download cannot be saved: ${error instanceof Error ? error.message : String(error)}`))
           })
@@ -639,13 +648,13 @@ export class BrowserController {
           return
         }
         if (decision === 'block-private') {
-          this.recordBlockedRequest(target.hostname, 'private-host', initiator)
+          this.recordBlockedRequest(target.hostname, 'private-host', initiator, owner?.sessionId)
           callback({ cancel: true })
           return
         }
         void this.resolvesToPrivateTarget(target.hostname)
           .then((privateTarget) => {
-            if (privateTarget) this.recordBlockedRequest(target.hostname, 'dns-rebind', initiator)
+            if (privateTarget) this.recordBlockedRequest(target.hostname, 'dns-rebind', initiator, owner?.sessionId)
             callback(privateTarget ? { cancel: true } : {})
           })
           .catch(() => callback({ cancel: true }))
@@ -689,18 +698,21 @@ export class BrowserController {
   }
 
   async openFromUser(url?: string, sessionId = 'workspace'): Promise<BrowserState> {
+    const key = this.focusSessionId
     const open = async (): Promise<BrowserState> => {
       await this.open(url, false)
-      this.agentSessionId = undefined
+      this.control.clearAgent(key)
+      if (this.lastAgentSessionId === key) this.lastAgentSessionId = undefined
       this.updateState()
       return this.getState()
     }
-    if (this.userControl) {
-      const resource = sharedResources.snapshot().find(item => item.resourceId === INTERACTIVE_RESOURCE)
-      if (resource?.owner || resource?.uncertain) throw new Error(pick('浏览器操作尚未结束，请稍后重试', 'A browser operation is still running; try again shortly'))
+    if (this.control.controlled(key)) {
+      const resourceIds = new Set([INTERACTIVE_RESOURCE, browserResource(key)])
+      const busy = sharedResources.snapshot().some((item) => resourceIds.has(item.resourceId) && (item.owner || item.uncertain) && (item.resourceId !== INTERACTIVE_RESOURCE || Boolean(this.external)))
+      if (busy) throw new Error(pick('浏览器操作尚未结束，请稍后重试', 'A browser operation is still running; try again shortly'))
       return open()
     }
-    return sharedResources.run(INTERACTIVE_RESOURCE, `browser-user:${sessionId}`, open)
+    return browserLocks.run({ sessionId: key, owner: `browser-user:${sessionId}`, external: () => Boolean(this.external) }, open)
   }
 
   async open(url = INITIAL_URL, waitForLoad = true): Promise<BrowserState> {
@@ -812,7 +824,7 @@ export class BrowserController {
       return this.getState()
     }
     const tab = this.tabs.get(id)
-    if (!tab) throw new Error(pick('找不到浏览器标签页', 'Browser tab not found'))
+    if (!tab || tab.sessionId !== this.focusSessionId) throw new TabNotFoundError()
     this.activeMode = 'embedded'
     this.activeBySession.set(tab.sessionId, id)
     this.showOnlyOwnedView(this.activeTabId)
@@ -820,7 +832,7 @@ export class BrowserController {
     return this.getState()
   }
 
-  async closeTab(id = this.activeTabId ?? '', options: { silent?: boolean } = {}): Promise<BrowserState> {
+  async closeTab(id = this.activeTabId ?? '', options: { silent?: boolean; anySession?: boolean } = {}): Promise<BrowserState> {
     const externalTargetId = this.externalTargetId(id)
     if (externalTargetId && this.external) {
       const ext = this.external
@@ -843,6 +855,7 @@ export class BrowserController {
     }
     const tab = this.tabs.get(id)
     if (!tab) return this.getState()
+    if (!options.anySession && tab.sessionId !== this.focusSessionId) throw new TabNotFoundError()
     this.detachViewFromAllWindows(tab.view)
     tab.observer.dispose()
     await tab.cdp.detach().catch(() => undefined)
@@ -864,9 +877,13 @@ export class BrowserController {
     this.sessionEpochs.set(sessionId, this.sessionEpoch(sessionId) + 1)
     disposeScriptRuntimes(sessionId)
     const ids = [...this.tabs.values()].filter((tab) => tab.sessionId === sessionId).map((tab) => tab.id)
-    for (const id of ids) await this.closeTab(id, { silent: true })
+    for (const id of ids) await this.closeTab(id, { silent: true, anySession: true })
     this.activeBySession.delete(sessionId)
     this.popupNoticeAt.delete(sessionId)
+    this.control.forget(sessionId)
+    this.lastDownloads.delete(sessionId)
+    this.blockedRequests.delete(sessionId)
+    if (this.lastAgentSessionId === sessionId) this.lastAgentSessionId = undefined
     if (!options.keepExternal && this.focusSessionId === sessionId) await this.closeExternalChrome()
     this.updateState()
     return this.getState(sessionId)
@@ -874,10 +891,10 @@ export class BrowserController {
 
   async close(): Promise<BrowserState> {
     const ids = [...this.tabs.keys()]
-    for (const id of ids) await this.closeTab(id, { silent: true })
+    for (const id of ids) await this.closeTab(id, { silent: true, anySession: true })
     await this.closeExternalChrome()
-    this.userControl = false
-    this.agentSessionId = undefined
+    this.control.clear()
+    this.lastAgentSessionId = undefined
     this.viewVisibleRequested = false
     this.stateFlush.cancel()
     this.updateState()
@@ -910,10 +927,11 @@ export class BrowserController {
     const url = safeUrl(raw)
     if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
     try {
-      if (this.automationOwner) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
+      const automated = Boolean(this.control.owner(this.focusSessionId))
+      if (automated) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
       if (this.external && this.activeMode === 'external') await this.navigateExternal(url)
       else await this.open(url)
-      if (this.automationOwner) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
+      if (automated) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -984,6 +1002,38 @@ export class BrowserController {
       this.pushError(pick(`无法用系统浏览器打开：${error instanceof Error ? error.message : String(error)}`, `Cannot open in the system browser: ${error instanceof Error ? error.message : String(error)}`))
     })
     return { ok: true }
+  }
+
+  private externalFromUser<T>(work: () => Promise<T>): Promise<T> {
+    const desktop = sharedResources.snapshot().find((item) => item.resourceId === INTERACTIVE_RESOURCE)
+    if (desktop?.paused || desktop?.uncertain) {
+      if (desktop.owner) throw new ResourceBusyError(INTERACTIVE_RESOURCE, desktop.owner)
+      return browserLocks.gate(work)
+    }
+    return browserLocks.run({ sessionId: this.focusSessionId, owner: 'browser-user:external', external: () => true, connecting: true }, () => work())
+  }
+
+  private externalBusyMessage(): string {
+    return pick('浏览器正在执行其他操作，暂时不能接入或断开本机 Chrome，请稍后再试', 'The browser is busy with another operation; try connecting or disconnecting local Chrome again shortly')
+  }
+
+  async openExternalChromeFromUser(rawUrl?: string): Promise<BrowserActionResult> {
+    try {
+      return await this.externalFromUser(() => this.openExternalChrome(rawUrl))
+    } catch (error) {
+      if (error instanceof ResourceBusyError) return { ok: false, code: error.code, error: this.externalBusyMessage() }
+      throw error
+    }
+  }
+
+  async closeExternalChromeFromUser(): Promise<BrowserState> {
+    try {
+      return await this.externalFromUser(() => this.closeExternalChrome())
+    } catch (error) {
+      if (!(error instanceof ResourceBusyError)) throw error
+      this.pushError(this.externalBusyMessage())
+      return this.getState()
+    }
   }
 
   async openExternalChrome(rawUrl?: string): Promise<BrowserActionResult> {
@@ -1060,7 +1110,6 @@ export class BrowserController {
       chrome.once('exit', () => {
         if (this.external?.chrome === chrome) void this.closeExternalChrome()
       })
-      this.userControl = false
       await this.navigateExternal(url)
       await this.syncExternalTabs()
       await this.syncExternalHistory()
@@ -1107,7 +1156,7 @@ export class BrowserController {
       const filename = (begun?.filename ?? `download-${Date.now()}`).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+$/, '') || `download-${Date.now()}`
       this.externalDownloads.delete(guid)
       const size = Number(params.receivedBytes ?? 0)
-      this.lastDownload = {
+      this.externalLastDownload = {
         path: join(directory, filename),
         filename,
         size: Number.isFinite(size) && size > 0 ? size : undefined,
@@ -1173,7 +1222,8 @@ export class BrowserController {
     this.activeMode = 'embedded'
     const active = this.activeTab()
     this.showOnlyOwnedView(active?.id ?? null)
-    this.userControl = false
+    this.control.releaseExternal()
+    browserLocks.clearExternalUncertain()
     this.updateState()
     return this.getState()
   }
@@ -1297,7 +1347,7 @@ export class BrowserController {
       if (blocked) {
         await cdp.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
         try {
-          this.recordBlockedRequest(new URL(url).hostname, 'private-host', pageUrl)
+          this.recordBlockedRequest(new URL(url).hostname, 'private-host', pageUrl, EXTERNAL_KEY)
         } catch {
         }
         return
@@ -1458,7 +1508,7 @@ export class BrowserController {
       persistKey: sessionId,
       withSession: (work) => this.sessionScope.run(sessionId, work),
       beforeAction: () => {
-        if (this.userControl) throw new ScriptError('USER_CONTROL_ACTIVE', 'USER_CONTROL_ACTIVE: 浏览器当前由用户接管，请等待用户交还 Agent 控制。')
+        if (this.control.controlled(sessionId)) throw new ScriptError('USER_CONTROL_ACTIVE', 'USER_CONTROL_ACTIVE: 浏览器当前由用户接管，请等待用户交还 Agent 控制。')
       }
     })
   }
@@ -1485,13 +1535,13 @@ export class BrowserController {
   async observe(options: BrowserObserveOptions = {}): Promise<BrowserObservation> {
     const p = this.openParts()
     const scope = options.scope ? p.registry.resolve(options.scope) : undefined
-    if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
+    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('读取页面', 'Reading page'))
     return this.observeTarget(p, { all: options.all === true, ...(scope ? { scope: { backendNodeId: scope.backendNodeId, sessionId: scope.sessionId } } : {}) })
   }
 
   async text(): Promise<{ text: string; url: string; title: string }> {
     const p = this.openParts()
-    if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
+    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('读取页面', 'Reading page'))
     await this.readyTarget(p)
     return p.observer.readText()
   }
@@ -1605,7 +1655,8 @@ export class BrowserController {
   ): Promise<BrowserActionOutcome & { chosen?: SelectOutcome }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
-    if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
+    const sessionId = this.focusSessionId
+    if (this.control.controlled(sessionId)) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
     const tabsBefore = new Set(this.tabs.keys())
     const startedAt = Date.now()
@@ -1620,9 +1671,10 @@ export class BrowserController {
       const observation = await this.observeTarget(p)
       const receipt: BrowserActionReceipt = { ...workReceipt }
       if (tab?.dialogs.length) receipt.dialogs = [...tab.dialogs]
-      const opened = [...this.tabs.values()].filter((candidate) => !tabsBefore.has(candidate.id))
+      const opened = [...this.tabs.values()].filter((candidate) => candidate.sessionId === sessionId && !tabsBefore.has(candidate.id))
       if (opened.length) receipt.openedTabs = opened.map((candidate) => ({ id: candidate.id, url: candidate.state.url }))
-      if (this.downloadStarted && this.downloadStarted.at >= startedAt) receipt.downloadStarted = this.downloadStarted.name
+      const downloadStarted = this.control.downloadSince(sessionId, startedAt)
+      if (downloadStarted) receipt.downloadStarted = downloadStarted
       return { ok: true, ...(chosen ? { chosen } : {}), observation, receipt }
     } catch (error) {
       return this.actionError(error)
@@ -1660,17 +1712,13 @@ export class BrowserController {
 
   requestUserControl(request: { reason?: string; sessionId?: string } = {}): BrowserState {
     void this.parts()?.input.hideActivity()
-    this.userControl = true
-    this.userControlRequest = { reason: request.reason ?? '', sessionId: request.sessionId ?? '', at: Date.now() }
+    this.control.request(this.focusSessionId, { ...request, external: this.activeMode === 'external' && Boolean(this.external) })
     this.updateState()
     return this.getState()
   }
 
   releaseUserControlFor(sessionId: string): void {
-    if (!this.userControl) return
-    const owner = this.userControlRequest?.sessionId
-    if (owner && owner !== sessionId) return
-    this.setUserControl(false)
+    if (this.control.releaseFor(sessionId)) this.updateState()
   }
 
   async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
@@ -1682,9 +1730,12 @@ export class BrowserController {
   }
 
   setUserControl(value: boolean): BrowserState {
-    if (value) void this.parts()?.input.hideActivity()
-    this.userControl = value
-    if (!value) this.userControlRequest = null
+    if (value) {
+      void this.parts()?.input.hideActivity()
+      this.control.request(this.focusSessionId, { sessionId: this.focusSessionId, external: this.activeMode === 'external' && Boolean(this.external) })
+    } else {
+      this.control.releaseVisible(this.focusSessionId)
+    }
     this.updateState()
     return this.getState()
   }
@@ -1714,7 +1765,8 @@ export class BrowserController {
   private recordBlockedRequest(
     rawHost: string,
     reason: BrowserBlockedRequest['reason'],
-    fromUrl: string
+    fromUrl: string,
+    sessionId: string = UNATTRIBUTED
   ): void {
     const host = rawHost.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
     if (!host) return
@@ -1724,17 +1776,25 @@ export class BrowserController {
     } catch {
       from = ''
     }
-    const index = this.blockedRequests.findIndex((item) => item.host === host && item.reason === reason)
+    const list = this.blockedRequests.get(sessionId) ?? []
+    this.blockedRequests.set(sessionId, list)
+    const index = list.findIndex((item) => item.host === host && item.reason === reason)
     if (index >= 0) {
-      const previous = this.blockedRequests[index]
-      this.blockedRequests[index] = { ...previous, from, at: Date.now(), count: previous.count + 1 }
+      const previous = list[index]
+      list[index] = { ...previous, from, at: Date.now(), count: previous.count + 1 }
     } else {
-      this.blockedRequests.push({ host, reason, from, at: Date.now(), count: 1 })
+      list.push({ host, reason, from, at: Date.now(), count: 1 })
     }
-    if (this.blockedRequests.length > 20) {
-      this.blockedRequests.splice(0, this.blockedRequests.length - 20)
+    if (list.length > 20) {
+      list.splice(0, list.length - 20)
     }
     this.stateFlush.schedule()
+  }
+
+  private blockedRequestsFor(sessionId: string, external: boolean): BrowserBlockedRequest[] {
+    const keys = [sessionId, UNATTRIBUTED, ...(external ? [EXTERNAL_KEY] : [])]
+    const merged = keys.flatMap((key) => this.blockedRequests.get(key) ?? [])
+    return merged.length > 20 ? merged.sort((a, b) => a.at - b.at).slice(-20) : merged
   }
 
   private resolvesToPrivateTarget(hostname: string): Promise<boolean> {
@@ -1757,14 +1817,14 @@ export class BrowserController {
     await new Promise((resolve) => setTimeout(resolve, 120))
   }
 
-  private async handleDownload(item: Electron.DownloadItem, owner?: string): Promise<void> {
+  private async handleDownload(item: Electron.DownloadItem, sessionId?: string, owner?: string): Promise<void> {
     const directory = app.getPath('downloads')
     const filename = item.getFilename().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || `download-${Date.now()}`
     const path = join(directory, `${randomUUID()}-${filename}`)
     const origin = item.getURL()
     mkdirSync(directory, { recursive: true })
     item.setSavePath(path)
-    this.downloadsInProgress.set(item, filename)
+    this.downloadsInProgress.set(item, { filename, ...(sessionId ? { sessionId } : {}) })
     item.once('done', () => this.downloadsInProgress.delete(item))
     let asked = false
     const confirmIfLarge = (bytes: number): void => {
@@ -1787,10 +1847,11 @@ export class BrowserController {
     item.on('updated', () => confirmIfLarge(item.getReceivedBytes()))
     item.once('done', (_event, state) => {
       if (state !== 'completed') return
-      this.lastDownload = { path, filename, size: item.getReceivedBytes(), source: origin }
+      const download = { path, filename, size: item.getReceivedBytes(), source: origin }
+      this.lastDownloads.set(sessionId ?? this.viewerSessionId, download)
       if (owner) {
         this.ownedDownloads.delete(owner)
-        this.ownedDownloads.set(owner, this.lastDownload)
+        this.ownedDownloads.set(owner, download)
         while (this.ownedDownloads.size > 50) this.ownedDownloads.delete(this.ownedDownloads.keys().next().value!)
       }
       this.updateState()
