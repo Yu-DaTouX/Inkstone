@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { readFile, mkdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'

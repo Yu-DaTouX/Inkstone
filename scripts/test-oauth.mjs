@@ -157,4 +157,4 @@ export async function runOAuthTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runOAuthTests(ok)
-}, { isolate: true })
+})

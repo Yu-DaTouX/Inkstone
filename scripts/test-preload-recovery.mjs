@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/test-isolate.mjs'
 // 动态导入失效时的自动恢复：判定 + 限频（vite:preloadError）
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'

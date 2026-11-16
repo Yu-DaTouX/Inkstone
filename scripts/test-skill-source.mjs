@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { createHash } from 'node:crypto'
 import { build } from '../node_modules/esbuild/lib/main.js'
 

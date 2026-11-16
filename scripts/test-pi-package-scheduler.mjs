@@ -8,7 +8,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     AcquisitionService: (await compile('src/main/capabilities/acquisition-service.ts')).AcquisitionService,
     PiPackageActivationScheduler: (await compile('src/main/capabilities/pi-package-scheduler.ts')).PiPackageActivationScheduler
   })
-}, { isolate: true })
+})
 
 export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPackageActivationScheduler }) {
   const root = await mkdtemp(join(tmpdir(), 'yan-pi-package-scheduler-'))

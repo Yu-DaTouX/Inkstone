@@ -2,7 +2,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runRemoteDeviceTests(ok, await compile('src/main/remote-devices.ts'))
-}, { isolate: true })
+})
 
 export async function runRemoteDeviceTests(ok, { RemoteDeviceStore }) {
   const { mkdtemp, mkdir, rename, readFile } = await import('node:fs/promises')

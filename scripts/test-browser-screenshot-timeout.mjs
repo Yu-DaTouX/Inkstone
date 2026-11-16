@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { build } from '../node_modules/esbuild/lib/main.js'

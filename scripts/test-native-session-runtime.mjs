@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'

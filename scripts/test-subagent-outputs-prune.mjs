@@ -120,4 +120,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     console.warn = warn
     await rm(dir, { recursive: true, force: true })
   }
-}, { isolate: true })
+})

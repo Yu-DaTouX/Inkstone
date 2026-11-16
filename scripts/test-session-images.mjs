@@ -270,4 +270,4 @@ export async function runSessionImageTests(ok, { readSessionMessages }) {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runSessionImageTests(ok, await compile('src/main/session-reader.ts'))
-}, { isolate: true })
+})

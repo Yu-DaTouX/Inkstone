@@ -310,4 +310,4 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runCommandCodeQuotaDisplayTests(ok)
-}, { isolate: true })
+})

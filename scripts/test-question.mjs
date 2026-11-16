@@ -52,4 +52,4 @@ async function runWithoutHost(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runQuestionTests(ok)
-}, { isolate: true })
+})

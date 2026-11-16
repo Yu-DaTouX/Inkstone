@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { build } from '../node_modules/esbuild/lib/main.js'
 
 await build({

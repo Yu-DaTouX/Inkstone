@@ -262,4 +262,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     skill: await compile('src/main/capabilities/skill-service.ts'),
     catalog: await compile('src/main/capabilities/catalog.ts')
   })
-}, { isolate: true })
+})

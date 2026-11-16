@@ -249,4 +249,4 @@ export async function runExtensionInventoryTests(ok, { readUserExtensions, exten
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runExtensionInventoryTests(ok, await compile('src/main/extensions-inventory.ts'))
-}, { isolate: true })
+})

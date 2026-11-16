@@ -189,4 +189,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     fake.server.close()
     rmSync(base, { recursive: true, force: true, maxRetries: 3 })
   }
-}, { isolate: true })
+})

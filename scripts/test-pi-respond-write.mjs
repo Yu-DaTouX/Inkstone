@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'

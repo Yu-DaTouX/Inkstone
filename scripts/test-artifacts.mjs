@@ -412,4 +412,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     images: await compile('src/main/image-generation.ts'),
     agent: await compile('src/main/agent.ts', agentTestBuildOptions)
   }, ok)
-}, { isolate: true })
+})

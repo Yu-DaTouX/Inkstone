@@ -406,4 +406,4 @@ export async function runCapabilityResultTests(ok, mod) {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runCapabilityResultTests(ok, await compile('src/main/capability-server.ts'))
-}, { isolate: true })
+})

@@ -159,4 +159,4 @@ export async function runFileEditorTests(ok, { readEditableFile, writeEditableFi
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runFileEditorTests(ok, await compile('src/main/file-editor.ts'))
-}, { isolate: true })
+})

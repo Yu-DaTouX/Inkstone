@@ -991,4 +991,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   await runGitStateTests(ok, modules)
   await runGitActionTests(ok, modules)
   await runGitRepoTests(ok, modules)
-}, { isolate: true })
+})

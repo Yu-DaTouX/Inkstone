@@ -49,4 +49,4 @@ export async function runSessionMoveTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runSessionMoveTests(ok)
-}, { isolate: true })
+})

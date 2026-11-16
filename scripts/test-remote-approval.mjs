@@ -74,4 +74,4 @@ export async function runRemoteApprovalTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runRemoteApprovalTests(ok)
-}, { isolate: true })
+})

@@ -5,7 +5,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runPiPackageSmokeTests(ok, await compile('src/main/capabilities/pi-package-smoke.ts', { external: ['tar'] }))
-}, { isolate: true })
+})
 
 export async function runPiPackageSmokeTests(ok, { resolvePiPackageSmokeResources }) {
   const root = await mkdtemp(join(tmpdir(), 'yan-pi-package-smoke-test-'))

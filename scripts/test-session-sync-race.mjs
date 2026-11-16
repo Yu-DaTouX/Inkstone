@@ -716,4 +716,4 @@ export async function runSessionSyncRaceTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runSessionSyncRaceTests(ok)
-}, { isolate: true })
+})

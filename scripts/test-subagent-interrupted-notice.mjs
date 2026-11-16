@@ -11,7 +11,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   } finally {
     await rm(work, { recursive: true, force: true })
   }
-}, { isolate: true })
+})
 
 async function suite(ok, compile, work) {
   const { createSubagentNotifier, markSubagentResultRead, createSubagentNoticeStore, buildSubagentInterruptedNotice, isSubagentNotice, parseHostNotice } = await compile(undefined, {

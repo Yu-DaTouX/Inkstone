@@ -74,4 +74,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(afterStop === null || afterStop.status >= 400, '能力服务：stop 后端点不再服务')
 
   await rm(opsDir, { recursive: true, force: true })
-}, { isolate: true })
+})

@@ -43,4 +43,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   )
 
   await rm(binDir, { recursive: true, force: true })
-}, { isolate: true })
+})

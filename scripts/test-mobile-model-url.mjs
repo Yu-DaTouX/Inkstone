@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 const built = await build({ entryPoints: ['mobile/src/assistant/model.ts'], bundle: true, platform: 'node', format: 'esm', write: false })

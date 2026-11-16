@@ -117,4 +117,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const limits = await compile('src/shared/context-limits.ts')
   const mod = await import('../resources/pi-extensions/auto-compact.js')
   await runAutoCompactTests(ok, mod, limits)
-}, { isolate: true })
+})

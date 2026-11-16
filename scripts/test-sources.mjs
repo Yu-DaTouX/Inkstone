@@ -6,7 +6,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runSourcesTests(ok, await compile('src/main/sources.ts'))
-}, { isolate: true })
+})
 
 export async function runSourcesTests(ok, sourcesModule) {
   const {

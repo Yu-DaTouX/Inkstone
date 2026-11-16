@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { randomUUID, createHash } from 'node:crypto'

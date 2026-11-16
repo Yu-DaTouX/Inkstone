@@ -147,4 +147,4 @@ export async function runFileContentSearchTests(ok, { searchFileContents, compil
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runFileContentSearchTests(ok, await compile('src/main/file-content-search.ts'))
-}, { isolate: true })
+})

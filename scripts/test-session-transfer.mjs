@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'

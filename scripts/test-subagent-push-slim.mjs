@@ -174,4 +174,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await ctrl.stopAll()
     await rm(scratch, { recursive: true, force: true })
   }
-}, { isolate: true })
+})

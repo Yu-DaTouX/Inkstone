@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { loadApp, createHarness, env, marksSet, sleep } from './mobile-render/host.mjs'
 import { startFakeDesktop } from './mobile-render/fake-desktop.mjs'
 import { edgeFlows } from './mobile-render/flows-edge.mjs'

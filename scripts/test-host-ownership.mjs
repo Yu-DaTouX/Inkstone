@@ -310,4 +310,4 @@ function agentSession(registry, id, sessionId) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runHostOwnershipTests(ok)
-}, { isolate: true })
+})

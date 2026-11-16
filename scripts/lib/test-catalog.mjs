@@ -23,6 +23,21 @@ export const excludedScripts = {
   'test-fake-model-workflow-e2e': 'spawns-pi-runtime-against-local-fake-model'
 }
 
+export const hostEnvScripts = {
+  'test-unit': 'the-harness-itself',
+  'test-live': 'drives-real-electron-with-own-data-dirs',
+  'test-packaged': 'needs-packaged-release',
+  'test-upgrade-read': 'reads-real-user-data-backup-via-YAN_UPGRADE_SOURCE',
+  'test-cc-delegation-live': 'needs-real-claude-login-in-host-home',
+  'test-cc-subagent-live': 'needs-real-claude-login-in-host-home',
+  'test-cc-subscription-live': 'needs-real-claude-login-in-host-home',
+  'test-cross-provider-live': 'needs-real-claude-login-in-host-home',
+  'test-git-runtime-real': 'downloads-real-portablegit',
+  'test-debug-demo': 'launches-debug-electron-instance',
+  'test-browser-frame-network': 'launches-electron-with-host-network',
+  'test-browser-popup-live': 'launches-electron-with-host-network'
+}
+
 export const serialScripts = {
   'test-mcp-stdio-tree': 'wall-clock-upper-bound',
   'test-search-providers': 'wall-clock-upper-bound',
@@ -46,6 +61,10 @@ export const serialScripts = {
 
 export async function discoverTests(directory = 'scripts') {
   const names = (await readdir(directory)).filter((name) => /^test-.*\.mjs$/.test(name)).map((name) => name.slice(0, -4)).sort()
+  for (const name of Object.keys(hostEnvScripts)) {
+    if (!names.includes(name)) throw new Error(`宿主环境名单指向不存在的测试：${name}`)
+    if (!Object.hasOwn(excludedScripts, name)) throw new Error(`需要宿主环境的测试必须在排除名单里：${name}`)
+  }
   for (const name of Object.keys(serialScripts)) {
     if (!names.includes(name)) throw new Error(`串行名单指向不存在的测试：${name}`)
     if (Object.hasOwn(excludedScripts, name)) throw new Error(`测试重复分类：${name}`)

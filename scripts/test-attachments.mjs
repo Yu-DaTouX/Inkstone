@@ -90,4 +90,4 @@ export async function runAttachmentTests(ok, { attachmentStem, attachmentsUsage,
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runAttachmentTests(ok, await compile('src/main/attachments.ts'))
-}, { isolate: true })
+})

@@ -463,4 +463,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const mod = await compile('src/main/snapshots.ts')
   await runWorkspaceChangesTests(ok, mod)
   await runGitWorkspaceChangesTests(ok, mod)
-}, { isolate: true })
+})

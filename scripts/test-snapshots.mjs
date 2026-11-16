@@ -2,7 +2,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runSnapshotTests(ok, await compile('src/main/snapshots.ts'))
-}, { isolate: true })
+})
 
 export async function runSnapshotTests(ok, { snapshotBefore, snapshotAfter, captureSide, clearSnapshots, isWriteTool, writePathOf }) {
   const { mkdtemp, writeFile, rm, unlink } = await import('node:fs/promises')

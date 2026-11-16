@@ -93,4 +93,4 @@ export async function runPromptSkillContractTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runPromptSkillContractTests(ok)
-}, { isolate: true })
+})

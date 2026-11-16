@@ -6,7 +6,7 @@ await runSuite(import.meta.url, async (ok) => {
   const mod = await import('../resources/pi-extensions/danger-guard.js')
   runDangerGuardTests(ok, mod)
   await runApprovalBindingTests(ok, mod)
-}, { isolate: true })
+})
 
 function runDriveRootTests(ok, mod) {
   if (process.platform !== 'win32') return

@@ -105,4 +105,4 @@ await runSuite(import.meta.url, async (ok) => {
   } finally {
     await rm(root, { recursive: true, force: true })
   }
-}, { isolate: true })
+})

@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { allowedCommands, subagentCapabilityGuide } from '../resources/pi-extensions/subagent-guide.js'
 import subagentGuideExtension from '../resources/pi-extensions/subagent-guide.js'

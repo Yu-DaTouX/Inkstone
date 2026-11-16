@@ -1442,4 +1442,4 @@ export async function runSubagentControllerTests(ok, SubagentController) {
 await runSuite(import.meta.url, async (ok, compile) => {
   const { SubagentController } = await compile('src/main/subagents.ts')
   await runSubagentControllerTests(ok, SubagentController)
-}, { isolate: true })
+})

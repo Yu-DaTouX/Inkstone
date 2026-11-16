@@ -136,4 +136,4 @@ export async function runApiKeyPoolTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runApiKeyPoolTests(ok)
-}, { isolate: true })
+})

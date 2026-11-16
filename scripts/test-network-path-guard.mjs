@@ -198,4 +198,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
   const fineCard = parseVisualBlock('yan-cards', JSON.stringify({ items: [{ title: 'x', image: 'C:\\pics\\a.png' }] }))
   ok(fineCard.ok, '可视化卡片的本地图片照常显示', JSON.stringify(fineCard).slice(0, 200))
-}, { isolate: true })
+})

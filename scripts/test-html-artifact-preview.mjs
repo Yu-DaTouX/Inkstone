@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { build } from 'esbuild'
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'

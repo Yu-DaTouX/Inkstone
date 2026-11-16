@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/test-isolate.mjs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 

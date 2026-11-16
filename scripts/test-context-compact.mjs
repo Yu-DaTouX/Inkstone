@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 // context-compact.js：不截断工具结果、放不下才分段、超长单段切片、出错退回 pi 默认压缩并留记录
 import assert from 'node:assert/strict'
 import { fakePiEvents } from './lib/fake-pi-events.mjs'

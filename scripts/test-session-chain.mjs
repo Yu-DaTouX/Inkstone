@@ -6,7 +6,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runSessionChainTests(ok, await compile('src/shared/session-chain.ts', { platform: 'neutral' }), await compile('src/main/session-chain-service.ts'))
-}, { isolate: true })
+})
 
 export async function runSessionChainTests(ok, shared, service) {
   console.log('\n--- 实施-05 S5b 会话链（前端一条会话） ---')

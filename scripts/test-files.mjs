@@ -63,4 +63,4 @@ export async function runFileListingTests(ok, { listDir, searchFiles }) {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runFileListingTests(ok, await compile('src/main/files.ts'))
-}, { isolate: true })
+})

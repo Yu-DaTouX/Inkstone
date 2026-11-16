@@ -309,4 +309,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
-}, { isolate: true })
+})

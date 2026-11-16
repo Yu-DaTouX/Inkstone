@@ -6,7 +6,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runChromeProfileTests(ok, await compile('src/main/chrome-profile.ts'))
-}, { isolate: true })
+})
 
 export async function runChromeProfileTests(ok, {
   chromeUserDataRoot,

@@ -2,7 +2,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runFileRefTests(ok, await compile('src/main/file-refs.ts'))
-}, { isolate: true })
+})
 
 export async function runFileRefTests(ok, { grantFile, grantFiles, readGrantedText, readPreview, statPreview }) {
   const { mkdtemp, writeFile, mkdir, rm, symlink } = await import('node:fs/promises')

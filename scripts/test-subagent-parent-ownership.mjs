@@ -434,4 +434,4 @@ export async function runSubagentParentOwnershipTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runSubagentParentOwnershipTests(ok)
-}, { isolate: true })
+})

@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { win32, posix } from 'node:path'

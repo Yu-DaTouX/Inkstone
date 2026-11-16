@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { createServer } from 'node:http'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

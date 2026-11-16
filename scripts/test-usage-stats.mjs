@@ -117,4 +117,4 @@ export async function runUsageStatsTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runUsageStatsTests(ok)
-}, { isolate: true })
+})

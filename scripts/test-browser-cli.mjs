@@ -95,4 +95,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(noHost.status === 3, 'yan CLI：没有宿主环境变量时走「不可用」退出码 3')
   ok(/宿主能力服务不可用/.test(noHost.stderr ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')
 
-}, { isolate: true })
+})

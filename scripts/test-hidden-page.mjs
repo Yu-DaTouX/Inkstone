@@ -283,4 +283,4 @@ export async function runHiddenPageTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runHiddenPageTests(ok)
-}, { isolate: true })
+})

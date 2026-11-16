@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 export function runRunnerTests(ok, RunnerRegistry) {
   const mkAgent = () => {
     const calls = { start: 0, stop: 0, switchSession: [], newSession: 0, restoredQueues: [] }

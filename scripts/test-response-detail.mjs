@@ -2,7 +2,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok) => {
   await runResponseDetailTests(ok)
-}, { isolate: true })
+})
 
 export async function runResponseDetailTests(ok) {
   const { mkdtemp, writeFile, rm } = await import('node:fs/promises')

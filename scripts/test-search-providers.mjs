@@ -401,4 +401,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
-}, { isolate: true })
+})

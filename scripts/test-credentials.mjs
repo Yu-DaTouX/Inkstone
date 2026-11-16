@@ -6,7 +6,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok) => {
   await runCredentialsTests(ok)
-}, { isolate: true })
+})
 
 export async function runCredentialsTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-cred-'))

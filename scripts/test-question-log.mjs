@@ -8,7 +8,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     shared: await compile('src/shared/question-log.ts', { platform: 'neutral' }),
     store: await compile('src/main/question-log.ts')
   })
-}, { isolate: true })
+})
 
 export async function runQuestionLogTests(ok, modules) {
   const { mergeQuestionLog } = modules.shared

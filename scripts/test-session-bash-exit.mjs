@@ -51,4 +51,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await ctl.stop().catch(() => undefined)
     await rm(dir, { recursive: true, force: true, maxRetries: 3 })
   }
-}, { isolate: true })
+})

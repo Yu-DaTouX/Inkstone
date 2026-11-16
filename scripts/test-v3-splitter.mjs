@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -2,7 +2,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runCustomProviderTests(ok, await compile('src/shared/custom-provider.ts', { platform: 'neutral' }))
-}, { isolate: true })
+})
 
 export async function runCustomProviderTests(ok, mod) {
   const {

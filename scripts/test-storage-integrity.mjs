@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { createRequire, Module } from 'node:module'
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'

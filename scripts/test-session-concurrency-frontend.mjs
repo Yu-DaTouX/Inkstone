@@ -971,4 +971,4 @@ export async function runSessionConcurrencyFinalEdgesTests(ok) {
 await runSuite(import.meta.url, async (ok) => {
   await runSessionConcurrencyFrontendTests(ok)
   await runSessionConcurrencyFinalEdgesTests(ok)
-}, { isolate: true })
+})

@@ -115,4 +115,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
-}, { isolate: true })
+})

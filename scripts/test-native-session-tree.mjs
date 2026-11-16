@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from '../node_modules/esbuild/lib/main.js'

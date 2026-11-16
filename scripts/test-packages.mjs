@@ -10,7 +10,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const piCliPath = join(selectedPiRuntime(join('resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
   if (!existsSync(piCliPath)) throw new Error(`内置 pi CLI 不在（${piCliPath}）：先跑 npm run vendor:pi`)
   await runPackagesTests(ok, await compile('src/main/packages.ts'))
-}, { isolate: true })
+})
 
 export async function runPackagesTests(ok, packagesModule) {
   const {

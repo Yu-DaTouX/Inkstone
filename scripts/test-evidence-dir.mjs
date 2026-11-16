@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { join, resolve } from 'node:path'
 import { evidenceDir, localDay, outputDir } from './lib/evidence-dir.mjs'

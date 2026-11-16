@@ -34,4 +34,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   )
   const noEntry = normalizeMessage(userMsg, 0)
   ok(noEntry?.entryId === undefined, '实时消息（无文件上下文）不带 entryId')
-}, { isolate: true })
+})

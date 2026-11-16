@@ -149,4 +149,4 @@ export async function runSubagentIsolationTests(ok, isolation) {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runSubagentIsolationTests(ok, await compile('src/main/subagent-isolation.ts'))
-}, { isolate: true })
+})

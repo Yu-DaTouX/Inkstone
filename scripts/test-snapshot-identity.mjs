@@ -8,7 +8,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok) => {
   await runSnapshotIdentityTests(ok)
-}, { isolate: true })
+})
 
 export async function runSnapshotIdentityTests(ok) {
   const indexFile = fileURLToPath(new URL('../src/main/index.ts', import.meta.url))

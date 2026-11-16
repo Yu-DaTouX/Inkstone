@@ -237,4 +237,4 @@ export async function runPluginMarketTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runPluginMarketTests(ok)
-}, { isolate: true })
+})

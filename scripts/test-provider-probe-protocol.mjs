@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { build } from 'esbuild'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { rmSync } from 'node:fs'

@@ -53,4 +53,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   await mod.rememberSession({ sessionId: 'layout-1', sessionFile: done, cwd: 'C:/work' })
   const fromLayout = await mod.restorePreviousSession()
   ok(fromLayout?.sessionFile === done && fromLayout.interrupted === false, '没有快照时按最近打开的会话恢复')
-}, { isolate: true })
+})

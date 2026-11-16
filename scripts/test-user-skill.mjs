@@ -9,7 +9,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await compile('src/shared/user-skill.ts', { platform: 'neutral' }),
     await compile('src/main/user-skills.ts', { external: ['electron'] }),
     { mkdtemp, rm })
-}, { isolate: true })
+})
 
 export async function runUserSkillTests(ok, shared, main, fs) {
   const { validateUserSkill, userSkillMarkdown, legacyPlaybookToSkill, legacyPlaybookSkillName } = shared

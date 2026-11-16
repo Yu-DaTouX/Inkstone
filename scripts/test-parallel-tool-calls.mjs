@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { fakePiEvents } from './lib/fake-pi-events.mjs'
 import extension, { PARALLEL_REJECTED_RETRY_HINT, isParallelRejection } from '../resources/pi-extensions/parallel-tool-calls.js'

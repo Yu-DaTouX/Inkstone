@@ -177,4 +177,4 @@ export async function runSessionIsolationTests(ok, isolationModule) {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runSessionIsolationTests(ok, await compile('src/main/session-isolation.ts'))
-}, { isolate: true })
+})

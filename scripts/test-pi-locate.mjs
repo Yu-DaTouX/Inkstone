@@ -29,4 +29,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(typeof piInfoRes.bundledAvailable === 'boolean', 'piInfo.bundledAvailable 是布尔')
 
   await rm(piTmp, { recursive: true, force: true })
-}, { isolate: true })
+})

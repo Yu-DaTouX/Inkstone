@@ -2,7 +2,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok) => {
   await runLanguageExtensionTests(ok, await import('../resources/pi-extensions/language.js'))
-}, { isolate: true })
+})
 
 export async function runLanguageExtensionTests(ok, mod) {
   const { LANGUAGE_RULE, default: extension } = mod

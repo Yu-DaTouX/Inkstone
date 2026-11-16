@@ -15,7 +15,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     packageAuthorizationShared: await compile('src/shared/package-authorization.ts'),
     packageAuthorizationService: await compile('src/main/capabilities/package-authorization-service.ts')
   })
-}, { isolate: true })
+})
 
 export async function runAcquisitionTests(ok, modules) {
   const { shared, service, npmArtifact, npmAcquisition, packageAuthorizationShared, packageAuthorizationService } = modules

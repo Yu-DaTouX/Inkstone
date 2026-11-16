@@ -310,4 +310,4 @@ await runSuite(import.meta.url, async (ok) => {
     if (failed.length > before) console.log(`  ${name} 失败 ${failed.length - before} 项`)
   }
   ok(failed.length === 0, `R04 用例全部通过`, `${failed.length} 项失败`)
-}, { isolate: true })
+})

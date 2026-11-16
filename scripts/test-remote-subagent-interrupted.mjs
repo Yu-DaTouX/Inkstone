@@ -30,4 +30,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(blocked.resumable === false && !JSON.stringify(blocked).includes('工作树已不在'), '不能续接时如实标为 false，不带内部原因', JSON.stringify(blocked))
   const stopped = remoteSubagentRun({ ...base, endReason: 'stopped' })
   ok(stopped.endReason === 'stopped' && !('resumable' in stopped), '没有续接判定的记录不凭空加可续接标记', JSON.stringify(stopped))
-}, { isolate: true })
+})

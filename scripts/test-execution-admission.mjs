@@ -266,4 +266,4 @@ export async function runExecutionAdmissionTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runExecutionAdmissionTests(ok)
-}, { isolate: true })
+})

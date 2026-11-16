@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { createServer, request as httpRequest } from 'node:http'
 import { connect } from 'node:net'

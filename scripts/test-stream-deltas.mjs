@@ -5,7 +5,7 @@ const USAGE = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runStreamDeltasTests(ok, await compile('src/main/agent.ts', agentTestBuildOptions))
-}, { isolate: true })
+})
 
 export async function runStreamDeltasTests(ok, { AgentController }) {
 

@@ -7,7 +7,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     brief: await compile('src/shared/subagent-brief.ts', { platform: 'neutral' }),
     repeatGuard: await import('../resources/pi-extensions/repeat-guard.js')
   })
-}, { isolate: true })
+})
 
 export function runSubagentOutcomeTests(ok, { outcome, notice, brief, repeatGuard }) {
   const { subagentOutcome } = outcome

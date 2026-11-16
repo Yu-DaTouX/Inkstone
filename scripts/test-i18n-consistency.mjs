@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'

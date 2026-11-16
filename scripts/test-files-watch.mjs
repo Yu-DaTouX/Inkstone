@@ -131,4 +131,4 @@ export async function runFilesWatchTests(ok, { FilesWatcher }) {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runFilesWatchTests(ok, await compile('src/main/files-watch.ts'))
-}, { isolate: true })
+})

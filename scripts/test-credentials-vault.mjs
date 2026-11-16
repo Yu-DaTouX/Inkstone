@@ -623,4 +623,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   await storeTests(ok, compile, root)
   await vaultTests(ok, compile, root)
   await retentionTests(ok, compile, root)
-}, { isolate: true })
+})

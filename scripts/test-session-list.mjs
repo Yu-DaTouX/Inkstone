@@ -242,4 +242,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const empty = await listSessions()
   ok(Array.isArray(empty), '目录被删后仍返回数组', `${empty.length} 条`)
   await rm(dataDir, { recursive: true, force: true })
-}, { isolate: true })
+})

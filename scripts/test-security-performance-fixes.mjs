@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { build, transform } from 'esbuild'
 import { mkdtemp, mkdir, writeFile, rm, readFile, stat } from 'node:fs/promises'

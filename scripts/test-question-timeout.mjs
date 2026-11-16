@@ -1,3 +1,4 @@
+import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
 import { mkdtemp, rm } from 'node:fs/promises'

@@ -224,4 +224,4 @@ export async function runSessionStatsIsolationTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runSessionStatsIsolationTests(ok)
-}, { isolate: true })
+})

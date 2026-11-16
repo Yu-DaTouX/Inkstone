@@ -8,7 +8,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     manager: await compile('src/main/mcp/connection-manager.ts', sdk),
     toolService: await compile('src/main/mcp/tool-service.ts', sdk)
   })
-}, { isolate: true })
+})
 
 export async function runMcpTests(ok, modules) {
   const mcp = modules.mcp

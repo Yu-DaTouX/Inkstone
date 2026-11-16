@@ -5,7 +5,7 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok) => {
   await runAppUpdateTests(ok)
-}, { isolate: true })
+})
 
 export async function runAppUpdateTests(ok) {
   const directory = await mkdtemp(join(tmpdir(), 'inkstone-update-test-'))

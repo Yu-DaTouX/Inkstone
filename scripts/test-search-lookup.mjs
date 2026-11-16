@@ -120,4 +120,4 @@ export async function runSearchLookupTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runSearchLookupTests(ok)
-}, { isolate: true })
+})

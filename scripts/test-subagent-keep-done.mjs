@@ -337,4 +337,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     for (const tree of trees) await rm(join(tree, '..'), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {})
     await rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {})
   }
-}, { isolate: true })
+})

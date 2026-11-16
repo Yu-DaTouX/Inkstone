@@ -60,4 +60,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
   )
   const second = handlers.before_agent_start({ systemPrompt: first.systemPrompt }, grammarModel)
   ok(second === undefined, '能力说明：幂等，已注入后不再重复追加')
-}, { isolate: true })
+})

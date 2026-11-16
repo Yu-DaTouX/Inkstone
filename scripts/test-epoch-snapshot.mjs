@@ -73,4 +73,4 @@ export async function runEpochSnapshotTests(ok) {
 
 await runSuite(import.meta.url, async (ok) => {
   await runEpochSnapshotTests(ok)
-}, { isolate: true })
+})
