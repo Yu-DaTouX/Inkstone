@@ -11,7 +11,7 @@ import { disposeGitReadHost } from './git-read-host'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, isAbsolute, resolve } from 'node:path'
 import { release as osRelease } from 'node:os'
-import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
@@ -22,7 +22,7 @@ import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { createRunsHost, type RunsHost } from './runs-host'
-import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
+import { createAttentionService, createTaskbarThrottle, createTrayResources, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TraySelectTarget } from './attention'
 import { createAuxWindows, quickAskSessionTarget, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
 import { createRendererRecovery } from './windows/renderer-recovery'
 import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from './deeplink'
@@ -148,7 +148,7 @@ import { createIsolationView } from './isolation-view'
 import { restorePreviousSession, takeRestoreNotice, writeExitSnapshot } from './exit-snapshot'
 import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
-import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
+import { createControlExecutor, decodeControlCommand, writeControlResponse, type ControlCommand } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { fillNativeMcpDescriptions } from './mcp/native-describe'
@@ -340,7 +340,6 @@ let pendingPinnedGuardNotice: PinnedGuardNotice | null = null
 let primaryRestoring = false
 let primaryRestoreFile: string | null = null
 let trayLanguage: string | undefined
-let trayAssets: ReturnType<typeof createTrayAssetStore> | null = null
 let trayMotionAllowed = false
 let attention: AttentionService | null = null
 let auxWindows: AuxWindows | null = null
@@ -841,6 +840,15 @@ async function askProfileSyncApproval(): Promise<boolean> {
   return answer?.choice === 'once' || answer?.choice === 'remember'
 }
 
+const trayResources = createTrayResources({
+  appPath: () => app.getAppPath(),
+  moduleDir: __dirname_,
+  darkSystem: () => nativeTheme.shouldUseDarkColorsForSystemIntegratedUI,
+  createImage: (path) => nativeImage.createFromPath(path),
+  emptyImage: () => nativeImage.createEmpty(),
+  onWarn: (message) => push({ ch: 'log', payload: { text: `[托盘] ${message}` } })
+})
+
 attention = createAttentionService({
   platform: process.platform,
   snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
@@ -848,9 +856,9 @@ attention = createAttentionService({
     runners?.hasBusy() === true || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal(),
   hostWaiting: () => approvals.list().length > 0 || hasBlockedTerminal(),
   window: () => (win && !win.isDestroyed() ? (win as unknown as AttentionWindowPort) : undefined),
-  trayImage: () => trayImage(),
-  trayAnimationAssets: (state: TrayAnimationState, theme: TrayTheme): TrayFrameSet | undefined => trayAssets?.set(state, theme),
-  trayTheme: () => trayTheme(),
+  trayImage: () => trayResources.image(),
+  trayAnimationAssets: (state, theme) => trayResources.assets(state, theme),
+  trayTheme: () => trayResources.theme(),
   motionAllowed: () => trayMotionAllowed,
   createTray: (image) => {
     const created = new Tray(image as Electron.NativeImage)
@@ -898,23 +906,10 @@ function toElectronMenu(nodes: AttentionMenuNode[]): Electron.MenuItemConstructo
   })
 }
 
-const TASKBAR_REFRESH_MS = 200
-let taskbarTimer: ReturnType<typeof setTimeout> | null = null
-let taskbarAt = 0
+const throttledTaskbar = createTaskbarThrottle((force) => attention?.refreshTaskbar(force))
 
 function refreshTaskbar(force = false): void {
-  const wait = taskbarAt + TASKBAR_REFRESH_MS - Date.now()
-  if (!force && wait > 0) {
-    taskbarTimer ??= setTimeout(() => {
-      taskbarTimer = null
-      refreshTaskbar()
-    }, wait)
-    return
-  }
-  if (taskbarTimer) clearTimeout(taskbarTimer)
-  taskbarTimer = null
-  taskbarAt = Date.now()
-  attention?.refreshTaskbar(force)
+  throttledTaskbar(force)
 }
 
 function refreshTrayMenu(): void {
@@ -936,7 +931,7 @@ function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void
     if (blockedTerminalNotices.get(id)?.ticket !== ticket || !win || win.isDestroyed() || win.isFocused()) return
     if (settings.sound?.enabled !== true || settings.sound.notifications === false || !Notification.isSupported()) return
     const text = terminalNoticeText(noticeLang(settings.lang), status.kind, status.title)
-    attentionNotices.show({ key: `terminal:${id}`, title: text.title, body: text.body, icon: shellIconPath() })
+    attentionNotices.show({ key: `terminal:${id}`, title: text.title, body: text.body, icon: trayResources.iconPath() })
     push({ ch: 'attention-sound', payload: { event: 'question' } })
   }).catch(() => undefined)
 }
@@ -1307,42 +1302,21 @@ app.on('open-url', (event, url) => {
   deepLinkRouter.handleOpenUrl(url)
 })
 
-const CONTROL_KEYS: Readonly<Record<string, string>> = {
-  esc: 'ESC',
-  escape: 'ESC',
-  enter: 'RETURN',
-  return: 'RETURN',
-  tab: 'TAB',
-  backspace: 'BACKSPACE',
-  delete: 'DELETE',
-  up: 'UP',
-  arrowup: 'UP',
-  down: 'DOWN',
-  arrowdown: 'DOWN',
-  left: 'LEFT',
-  arrowleft: 'LEFT',
-  right: 'RIGHT',
-  arrowright: 'RIGHT',
-  space: 'SPACE'
-}
-
-function controlStatus(): Record<string, unknown> {
-  if (!win || win.isDestroyed()) {
-    return { ready: false, agentRunning: ac()?.running === true }
+const executeControlCommand = createControlExecutor({
+  window: () => win,
+  showWindow: showMainWindow,
+  agentRunning: () => ac()?.running === true,
+  inputBlocked: () => approvals.list().length > 0 || pendingUiReplay().length > 0,
+  sendToActive: async (text) => {
+    const active = runners?.activeRunner()
+    if (active) {
+      const guard = runners!.guardExecute(active.id)
+      if (!guard.ok) return { ok: false, error: guard.error }
+    }
+    const result = (active?.id ? await runners?.agentOf(active.id)?.send(text) : undefined) ?? { ok: false, error: piDown() }
+    return result.ok ? { ok: true } : { ok: false, error: result.error ?? piDown() }
   }
-  const [contentWidth, contentHeight] = win.getContentSize()
-  return {
-    ready: true,
-    title: win.getTitle(),
-    visible: win.isVisible(),
-    minimized: win.isMinimized(),
-    focused: win.isFocused(),
-    bounds: win.getBounds(),
-    contentSize: { width: contentWidth, height: contentHeight },
-    agentRunning: ac()?.running === true
-  }
-}
-
+})
 
 const transcribeVoice = voiceTranscriber({ plugins: bundledPlugins, settings: async () => (await getSettings()).voiceInput })
 
@@ -1387,76 +1361,6 @@ async function startRemoteServer(): Promise<void> {
     await remoteAccess.apply((await getSettings()).remoteAccess)
   } catch (error) {
     reportMainError('remote-server', error)
-  }
-}
-
-async function executeControlCommand(command: ControlCommand): Promise<ControlResponse> {
-  try {
-    if (command.action === 'status') {
-      return { ok: true, action: command.action, data: controlStatus() }
-    }
-
-    if (!win || win.isDestroyed()) {
-      return { ok: false, action: command.action, error: pick('砚主窗口尚未就绪', 'Main window is not ready') }
-    }
-
-    if (command.action === 'focus') {
-      showMainWindow()
-      return { ok: true, action: command.action, data: controlStatus() }
-    }
-
-    if ((command.action === 'click' || command.action === 'type' || command.action === 'key') && (approvals.list().length > 0 || pendingUiReplay().length > 0)) {
-      return { ok: false, action: command.action, error: pick('有待处理的审批时不接受遥控输入，请在砚窗口里手动处理审批', 'Remote input is blocked while an approval is pending; handle it in the window') }
-    }
-
-    if (command.action === 'click') {
-      const [width, height] = win.getContentSize()
-      const x = command.x ?? -1
-      const y = command.y ?? -1
-      if (x < 0 || y < 0 || x >= width || y >= height) {
-        return { ok: false, action: command.action, error: pick(`坐标超出内容区域：${width}×${height}`, `Coordinates outside the content area: ${width}×${height}`) }
-      }
-      showMainWindow()
-      win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
-      win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
-      return { ok: true, action: command.action, data: { x, y } }
-    }
-
-    if (command.action === 'type') {
-      showMainWindow()
-      await win.webContents.insertText(command.text ?? '')
-      return { ok: true, action: command.action, data: { length: command.text?.length ?? 0 } }
-    }
-
-    if (command.action === 'key') {
-      const keyCode = CONTROL_KEYS[(command.key ?? '').toLowerCase()]
-      if (!keyCode) return { ok: false, action: command.action, error: pick('只支持受限导航键', 'Only restricted navigation keys are supported') }
-      showMainWindow()
-      win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
-      win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
-      return { ok: true, action: command.action, data: { key: command.key } }
-    }
-
-    if (command.action === 'send') {
-      showMainWindow()
-      const active = runners?.activeRunner()
-      if (active) {
-        const guard = runners!.guardExecute(active.id)
-        if (!guard.ok) return { ok: false, action: command.action, error: guard.error }
-      }
-      const result = (active?.id ? await runners?.agentOf(active.id)?.send(command.text ?? '') : undefined) ?? { ok: false, error: piDown() }
-      return result.ok
-        ? { ok: true, action: command.action, data: { length: command.text?.length ?? 0 } }
-        : { ok: false, action: command.action, error: result.error ?? piDown() }
-    }
-
-    return { ok: false, action: command.action, error: pick('未知控制动作', 'Unknown control action') }
-  } catch (error) {
-    return {
-      ok: false,
-      action: command.action,
-      error: error instanceof Error ? error.message : String(error)
-    }
   }
 }
 
@@ -1521,46 +1425,6 @@ function requestExit(options: { relaunch?: boolean; source?: string } = {}): Pro
     }
   )
   return task
-}
-
-function shellIconPath(): string | undefined {
-  const file = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-  const iconCandidates = [
-    join(app.getAppPath(), 'build', file),
-    join(__dirname_, '..', '..', 'build', file),
-    join(app.getAppPath(), 'build', 'icon.png')
-  ]
-  return iconCandidates.find((candidate) => existsSync(candidate))
-}
-
-function trayTheme(): TrayTheme {
-  return nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? 'on-dark' : 'on-light'
-}
-
-function trayDirs(): string[] {
-  return [join(app.getAppPath(), 'build', 'tray'), join(__dirname_, '..', '..', 'build', 'tray')]
-}
-
-function trayImage(): Electron.NativeImage {
-  const name = trayTheme() === 'on-dark' ? 'tray-on-dark.png' : 'tray-on-light.png'
-  const candidates = trayDirs().map((dir) => join(dir, name))
-  const found = candidates.find((candidate) => existsSync(candidate))
-  if (found) return nativeImage.createFromPath(found)
-  const iconPath = shellIconPath()
-  return iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty()
-}
-
-function ensureTrayAssets(): void {
-  if (!trayAssets) {
-    trayAssets = createTrayAssetStore({
-      dirs: trayDirs(),
-      createImage: (path) => nativeImage.createFromPath(path),
-      readFile: (path) => readFileSync(path, 'utf8'),
-      exists: (path) => existsSync(path),
-      onWarn: (message) => push({ ch: 'log', payload: { text: `[托盘] ${message}` } })
-    })
-  }
-  trayAssets.load()
 }
 
 function projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string | undefined {
@@ -2705,7 +2569,7 @@ function createWindow(): void {
   windowMaterialActive = material !== 'none'
 
   win = new BrowserWindow({
-    icon: shellIconPath(),
+    icon: trayResources.iconPath(),
     width: useW,
     height: useH,
     minWidth: 600,
@@ -3032,7 +2896,7 @@ app.whenReady().then(async () => {
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
   void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json')).catch((error) => reportMainError('mcp-describe', error))
   trayLanguage = (await getSettings()).lang
-  ensureTrayAssets()
+  trayResources.ensureAssets()
   attention?.ensureTray()
   createWindow()
 

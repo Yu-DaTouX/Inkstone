@@ -20,6 +20,9 @@ export type {
   TrayFrameSet as TrayAnimationFrameSet
 } from './tray-animation'
 export { createTrayAssetStore, validateManifest } from './tray-assets'
+export { createTrayResources } from './tray-resources'
+export type { TrayResourceDeps, TrayResources } from './tray-resources'
+export { createTaskbarThrottle } from './taskbar-throttle'
 export type {
   TrayAnimationState,
   TrayAssetDeps,

@@ -44,7 +44,7 @@ const context = vm.createContext({
   terminalNoticeText,
   noticeLang: () => 'zh-CN',
   attentionNotices: { show: (options) => notices.push(options) },
-  shellIconPath: () => 'fake-icon',
+  trayResources: { iconPath: () => 'fake-icon' },
   push: () => {},
   win: fakeWindow(1),
   hasBlockedTerminal: () => false, hasWorkingTerminal: () => false,
