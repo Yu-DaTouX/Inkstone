@@ -43,6 +43,7 @@ export interface MinecraftPluginPaths {
   agentDir: string
   runtime: string
   tempDir: string
+  prepareRuntime?: () => void
 }
 
 export interface MinecraftInstallDeps {
@@ -85,8 +86,9 @@ export async function refreshMinecraftPlugin(paths: MinecraftPluginPaths): Promi
   const { path, document } = await readMcp(paths.agentDir).catch(() => ({ path: join(paths.agentDir, 'mcp.json'), document: undefined as McpDocument | undefined }))
   const entry = document?.mcpServers?.[MINECRAFT_PLUGIN_ID]
   if (!isOurs(entry, paths.pluginDir)) return 'skipped'
-  if ((entry as { command?: unknown }).command === paths.runtime) return 'current'
   try {
+    paths.prepareRuntime?.()
+    if (sameEntry((entry as { command?: unknown }).command, paths.runtime)) return 'current'
     const servers = { ...(document?.mcpServers ?? {}) }
     servers[MINECRAFT_PLUGIN_ID] = { ...(entry as Record<string, unknown>), command: paths.runtime }
     await writeMcp(path, { ...(document ?? {}), mcpServers: servers })
@@ -94,6 +96,13 @@ export async function refreshMinecraftPlugin(paths: MinecraftPluginPaths): Promi
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+function sameEntry(command: unknown, runtime: string): boolean {
+  if (typeof command !== 'string') return false
+  if (process.platform !== 'win32') return command === runtime
+  const normal = (value: string): string => value.replace(/\\/g, '/').toLowerCase()
+  return normal(command) === normal(runtime)
 }
 
 function isOurs(entry: unknown, pluginDir: string): boolean {
@@ -229,6 +238,7 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths, deps: 
     if (!(await skillIsOurs(paths))) {
       return { ok: false, error: pick(`${skillTarget} 里已有同名技能，不是砚装的，未改动`, `${skillTarget} already has a skill with the same name not installed by Inkstone; left unchanged`), status: await minecraftPluginStatus(paths) }
     }
+    paths.prepareRuntime?.()
     work = join(paths.tempDir, `minecraft-plugin-${randomBytes(4).toString('hex')}`)
     await mkdir(work, { recursive: true })
     const pin = deps.pin ?? MINECRAFT_PLUGIN_PIN

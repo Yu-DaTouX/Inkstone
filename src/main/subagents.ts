@@ -26,6 +26,7 @@ import { CapabilityServer, type CapabilityCommandResult } from './capability-ser
 import { BackgroundBashCommands } from './background-bash'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { AUTH_BLIP_RETRY_MS, isAuthBlip, isAuthBlipRecoverable, providerOfModelLabel, providerUsesOAuth, waitAuthBlip } from './auth-blip'
 import { logModelEvent, modelErrorLogFields } from './main-log'
 import { redactCredentialShapes, redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
@@ -282,6 +283,7 @@ export interface SubagentOptions {
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   appendSystemPrompt?: string
   quotaWatch?: SubagentQuotaWatch
+  authBlipDelayMs?: number
   onChange: (run: SubagentRun, patch?: SubagentPatch) => void
   onPatch?: (payload: SubagentPatch) => void
   onRemove?: (id: string) => void
@@ -368,6 +370,7 @@ async function applyPatchExclusive(cwd: string, patchPath: string): ReturnType<t
 
 export class SubagentController {
   private runs = new Map<string, Run>()
+  private authBlipRuns = new Set<string>()
   private pushedTranscript = new Map<string, { length: number; firstId: string; lastId: string; lastText: string; lastThinking: string }>()
   private watched = new Set<string>()
   private preparing = 0
@@ -2198,6 +2201,11 @@ export class SubagentController {
         void this.resumeAfterModelError(run)
         return
       }
+      const authProvider = this.authBlipProvider(run)
+      if (authProvider) {
+        void this.resumeAfterAuthBlip(run, authProvider)
+        return
+      }
       if (this.awaitBackground(run)) return
       this.settle(run)
     }
@@ -2346,6 +2354,36 @@ export class SubagentController {
       run.retryAttempt === undefined && isTransientModelError(run.lastModelErrorText)
   }
 
+  private authBlipProvider(run: Run): string | undefined {
+    if (run.status !== 'running' || run.stopReason !== 'error' || run.wrapUp || run.settled || this.authBlipRuns.has(run.id)) return undefined
+    const provider = providerOfModelLabel(run.model)
+    if (!provider || !isAuthBlip(run.lastModelErrorText, { retried: run.retryAttempt !== undefined, continued: !!run.recovery?.resumed })) return undefined
+    return isAuthBlipRecoverable(run.lastModelErrorText) ? provider : undefined
+  }
+
+  private async resumeAfterAuthBlip(run: Run, provider: string): Promise<void> {
+    this.authBlipRuns.add(run.id)
+    const live = (): boolean => !run.settled && run.status === 'running'
+    try {
+      if (!(await providerUsesOAuth(provider)) || !live()) {
+        if (live()) this.settle(run)
+        return
+      }
+      run.recovery = { ...run.recovery, resumed: true }
+      run.stopReason = undefined
+      run.error = undefined
+      run.latestActivity = pick('登录状态被拒绝，5 秒后在同一会话重试（1/1）…', 'Sign-in was rejected; retrying in the same session in 5 seconds (1/1)…')
+      run.lastProgressAt = Date.now()
+      this.armWatch(run)
+      this.emit(run)
+      await waitAuthBlip(this.opts.authBlipDelayMs ?? AUTH_BLIP_RETRY_MS)
+      if (!live()) return
+      await this.sendModelErrorContinuation(run)
+    } finally {
+      this.authBlipRuns.delete(run.id)
+    }
+  }
+
   private async resumeAfterModelError(run: Run): Promise<void> {
     run.recovery = { ...run.recovery, resumed: true }
     run.stopReason = undefined
@@ -2354,6 +2392,10 @@ export class SubagentController {
     run.lastProgressAt = Date.now()
     this.armWatch(run)
     this.emit(run)
+    await this.sendModelErrorContinuation(run)
+  }
+
+  private async sendModelErrorContinuation(run: Run): Promise<void> {
     const failed = (): void => {
       if (run.settled || run.status !== 'running') return
       run.stopReason = 'error'

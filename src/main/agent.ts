@@ -36,9 +36,9 @@ import { QueueCoordinator } from './queue-coordinator'
 import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
 import { StreamProjection, streamGenerationTiming, streamSpeed, type StreamingState } from './stream-projection'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
-import { apiKeyLooksUnusable, isAuthRejected, isOAuthRefreshFailure, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { apiKeyLooksUnusable, isOAuthRefreshFailure, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { logModelEvent, modelErrorLogFields } from './main-log'
-import { readAuthEntry } from './credentials'
+import { isAuthBlip, providerUsesOAuth, waitAuthBlip } from './auth-blip'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
@@ -162,8 +162,6 @@ import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
 import { readPendingModelSwitch, takePendingModelSwitch, writePendingModelSwitch } from './pending-model-switch'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { ensureLocalModelReady } from './local-model-launch'
-
-const AUTH_BLIP_RETRY_MS = 5000
 
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
@@ -2316,8 +2314,8 @@ export class AgentController extends EventEmitter {
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
           : null
         const failedProvider = this.state?.model?.provider
-        const authBlip = !continuation && !errorContinuation && modelError && !modelError.retried && failedProvider &&
-          this.loopGuardAutoContinueCount < 1 && isAuthRejected(modelError.text) && this.rpc && this.state?.sessionId
+        const authBlip = !continuation && !errorContinuation && modelError && failedProvider &&
+          isAuthBlip(modelError.text, { retried: !!modelError.retried, continued: this.loopGuardAutoContinueCount >= 1 }) && this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
           : null
@@ -2933,8 +2931,7 @@ export class AgentController extends EventEmitter {
   }
 
   private async continueAfterAuthBlip(scope: AutoContinueScope, provider: string, refreshFailed = false): Promise<boolean> {
-    const entry = await readAuthEntry(provider).catch(() => undefined) as { type?: unknown } | undefined
-    if (entry?.type !== 'oauth') return false
+    if (!(await providerUsesOAuth(provider))) return false
     if (refreshFailed) {
       const account = await this.switchSpareAccount?.(provider, { refreshFailed: true }).catch(() => null)
       logModelEvent('account-switch', { provider, reason: 'oauth-refresh', outcome: account ? (account.switched ? 'switched' : 'recent') : 'none', to: account?.label, session: scope.sessionId })
@@ -2944,7 +2941,7 @@ export class AgentController extends EventEmitter {
         return this.continueAfterModelError(scope)
       }
     }
-    await new Promise((done) => setTimeout(done, AUTH_BLIP_RETRY_MS))
+    await waitAuthBlip()
     return this.continueAfterModelError(scope)
   }
 

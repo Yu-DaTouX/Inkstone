@@ -7,6 +7,7 @@ import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
 import { installMinecraftPlugin, MINECRAFT_PLUGIN_PIN, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type FetchLike, type MinecraftPluginPaths } from '../minecraft-plugin'
+import { ensureNodeLauncher, nodeLauncherPath } from '../yan-cli'
 import type { MinecraftPluginStatus } from '../../shared/plugin-market'
 import { app, dialog, net } from 'electron'
 import { join, resolve } from 'node:path'
@@ -21,12 +22,14 @@ export interface PackagesIpcDeps {
 }
 
 async function minecraftPaths(): Promise<MinecraftPluginPaths> {
+  const binDir = join(YAN_DIR, 'bin')
   return {
     pluginDir: join(YAN_DIR, 'plugins', 'inkstone-minecraft'),
     skillsDir: join(YAN_DIR, 'skills'),
     agentDir: PI_AGENT_DIR,
-    runtime: process.execPath,
-    tempDir: join(YAN_DIR, 'tmp')
+    runtime: nodeLauncherPath(binDir),
+    tempDir: join(YAN_DIR, 'tmp'),
+    prepareRuntime: () => void ensureNodeLauncher({ execPath: process.execPath, binDir })
   }
 }
 
@@ -48,7 +51,7 @@ function queueMinecraft<T>(task: () => Promise<T>): Promise<T> {
 export function refreshMinecraftPluginOnStartup(): void {
   void queueMinecraft(async () => {
     const result = await refreshMinecraftPlugin(await minecraftPaths())
-    if (result === 'updated') console.log('[minecraft-plugin] \u5df2\u6309\u5f53\u524d\u8fd0\u884c\u65f6\u8def\u5f84\u6539\u5199 mcp.json')
+    if (result === 'updated') console.log('[minecraft-plugin] mcp.json \u5df2\u6539\u4e3a\u6307\u5411\u7a33\u5b9a\u542f\u52a8\u5165\u53e3')
     else if (typeof result === 'object') console.warn('[minecraft-plugin] \u6539\u5199\u5931\u8d25', result.error)
   }).catch((error) => console.warn('[minecraft-plugin] \u542f\u52a8\u68c0\u67e5\u5931\u8d25', error))
 }

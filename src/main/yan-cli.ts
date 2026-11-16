@@ -33,6 +33,22 @@ function writeIfChanged(path: string, text: string): void {
   }
 }
 
+export function nodeLauncherPath(binDir: string, platform: NodeJS.Platform = process.platform): string {
+  return join(binDir, platform === 'win32' ? 'yan-node.cmd' : 'yan-node')
+}
+
+export function ensureNodeLauncher(opts: { execPath: string; binDir: string }): string {
+  mkdirSync(opts.binDir, { recursive: true })
+  writeIfChanged(join(opts.binDir, 'yan-node.cmd'), ['@echo off', 'set "ELECTRON_RUN_AS_NODE=1"', `"${opts.execPath}" %*`, ''].join('\r\n'))
+  const shPath = join(opts.binDir, 'yan-node')
+  writeIfChanged(shPath, ['#!/bin/sh', `ELECTRON_RUN_AS_NODE=1 exec "${opts.execPath}" "$@"`, ''].join('\n'))
+  try {
+    chmodSync(shPath, 0o755)
+  } catch {
+  }
+  return nodeLauncherPath(opts.binDir)
+}
+
 export function ensureYanLauncher(
   opts: LauncherOptions
 ): { binDir: string; launcher: string; cliPath: string } | null {
@@ -61,6 +77,8 @@ export function ensureYanLauncher(
     chmodSync(shPath, 0o755)
   } catch {
   }
+
+  ensureNodeLauncher(opts)
 
   return { binDir: opts.binDir, launcher: process.platform === 'win32' ? cmdPath : shPath, cliPath }
 }
