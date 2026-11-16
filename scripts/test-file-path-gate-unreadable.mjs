@@ -23,6 +23,10 @@ function allow(path) {
   else try { chmodSync(path, 0o755) } catch {}
 }
 
+function readable(path) {
+  try { readFileSync(path); return true } catch { return false }
+}
+
 await runSuite(import.meta.url, async (ok, compile) => {
   const source = readFileSync(GATE, 'utf8')
   ok(ADDED.every((line) => source.includes(line)), '守卫里只新增了按错误码分出「没权限」的两行')
@@ -82,10 +86,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(missing.reason === 'missing' && missing.creatable === true, '真的不存在仍报 missing，creatable 照旧')
     const rootGone = await now.scopedPath(join(base, 'no-root'), 'a.ts')
     ok(rootGone.reason === 'root_missing', '根目录不存在仍报 root_missing')
-    if (lockedFile) {
+    if (lockedFile && !readable(join(root, 'locked.txt'))) {
       const locked = await now.scopedPath(root, 'locked.txt')
       ok(locked.ok === false && locked.reason === 'unreadable', '没有读权限的文件报 unreadable，不再说不存在', JSON.stringify(locked))
-    } else console.log('  - 跳过：无法去掉文件读权限')
+    } else console.log('  - 跳过：当前环境造不出读不了的文件（提升的权限会绕过拒绝访问）')
     if (process.platform === 'win32' || lockedDir) console.log(`  · 目录去掉列目录权限：${lockedDir ? '已设置' : '未设置'}`)
   } finally {
     allow(join(root, 'locked.txt'))

@@ -30,7 +30,7 @@ await runSuite(import.meta.url, async (ok) => {
   const root = await mkdtemp(join(tmpdir(), 'yan-notice-steer-'))
   try {
     const entry = join(root, 'entry.ts')
-    const outfile = join(root, 'agent.mjs')
+    const outfile = join(process.cwd(), 'out', 'test', 'subagent-notice-steer.mjs')
     const source = fileURLToPath(new URL('../src/main/agent.ts', import.meta.url)).replace(/\\/g, '/')
     await writeFile(entry, `export { AgentController } from '${source}'`)
     await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'], plugins: [electronStub] })

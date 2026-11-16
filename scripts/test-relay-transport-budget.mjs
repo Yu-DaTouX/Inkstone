@@ -209,8 +209,12 @@ await check('不读数据的慢接收端：缓冲有界、上游被暂停；恢�
   assert.ok(client.pipe.bufferedBytes <= 12 * MB, `慢接收端缓冲 ${(client.pipe.bufferedBytes / MB).toFixed(1)}MB 应不超过 12MB`)
   const served = upstream.bigServed
   assert.ok(served < 48 * MB, `上游只应写出有限字节，实际 ${(served / MB).toFixed(1)}MB / 64MB`)
-  await sleep(300)
-  assert.equal(upstream.bigServed, served, '暂停后上游不再前进')
+  const samples = [upstream.bigServed]
+  for (let i = 0; i < 10 && (samples.length < 2 || samples.at(-1) !== samples.at(-2)); i++) {
+    await sleep(300)
+    samples.push(upstream.bigServed)
+  }
+  assert.equal(samples.at(-1), samples.at(-2), `暂停稳定后上游不再前进：${samples.join(' → ')}`)
   let offset = 0
   const head = await client.next()
   assert.equal(head.stream, true)

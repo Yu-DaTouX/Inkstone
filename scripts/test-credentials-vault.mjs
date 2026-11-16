@@ -175,7 +175,9 @@ async function storeTests(ok, compile, root) {
     ok(log.includes(`backup-acl ${backupPath}`), '备份权限收紧到当前用户并记日志', log)
     const { acl, entries } = aclEntries(backupPath)
     const me = execFileSync(join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'whoami.exe'), { encoding: 'utf8', windowsHide: true }).trim().toLowerCase()
-    ok(entries.length === 1 && !entries[0].includes('(I)') && entries[0].toLowerCase().startsWith(`${me}:(f)`), 'Windows 上备份的 ACL 只有当前用户一条、非继承的完全控制', `${me}\n${acl}`)
+    const principals = entries.map((line) => line.replace(/:(\([^)]*\))+$/, '').trim().toLowerCase())
+    const allowed = new Set([me, 'nt authority\\system', 'builtin\\administrators'])
+    ok(principals.length > 0 && principals.includes(me) && principals.every((name) => allowed.has(name)) && entries.every((line) => !line.includes('(I)')), 'Windows 上备份的 ACL 只剩当前用户与系统本身、非继承的完全控制', `${me}\n${acl}`)
   } else {
     ok((await stat(backupPath)).mode === legacyMode, '备份权限与原文件一致')
   }

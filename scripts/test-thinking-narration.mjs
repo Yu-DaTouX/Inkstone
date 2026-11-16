@@ -216,7 +216,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       process.env.YAN_DATA_DIR = join(dir, 'data')
       process.env.YAN_PI_DIR = join(dir, 'pi')
       process.env.YAN_TEST_APP_DIR = join(dir, 'app')
-      const agentFile = join(dir, 'agent.mjs')
+      const agentFile = join(process.cwd(), 'out', 'test', 'thinking-narration-agent.mjs')
       await build({
         entryPoints: ['src/main/agent.ts'], outfile: agentFile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
         external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
