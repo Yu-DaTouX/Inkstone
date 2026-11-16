@@ -35,6 +35,7 @@ function isTransportFailure(
   return client.transport === undefined
 }
 
+const controlHolders = new Set<McpConnectionManager>()
 const MAX_TOOL_LIST_PAGES = 50
 const MAX_TOOL_LIST_ITEMS = 2000
 
@@ -88,7 +89,15 @@ export interface McpCloseOutcome {
 
 export class McpConnectionManager {
   private readonly connections = new Map<string, Connection>()
-  private computerControlHeld = false
+  private heldControl = false
+  private get computerControlHeld(): boolean {
+    return this.heldControl
+  }
+  private set computerControlHeld(value: boolean) {
+    this.heldControl = value
+    if (value) controlHolders.add(this)
+    else controlHolders.delete(this)
+  }
   private activeInputCalls = 0
   private releaseAfterInput = false
   private idleRelease?: NodeJS.Timeout
@@ -520,6 +529,11 @@ export class McpConnectionManager {
       void this.releaseComputerControl()
     }, this.computerIdleReleaseMs)
     this.idleRelease.unref?.()
+  }
+
+  static async releaseHeldComputerControl(except?: McpConnectionManager): Promise<void> {
+    const holders = [...controlHolders].filter((manager) => manager !== except)
+    await Promise.all(holders.map((manager) => manager.releaseComputerControl({ afterInput: true }).catch(() => 'failed' as const)))
   }
 
   async releaseComputerControl(options: { afterInput?: boolean } = {}): Promise<'skipped' | 'deferred' | 'released' | 'failed'> {

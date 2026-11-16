@@ -47,12 +47,28 @@ export interface ModelCost {
   cacheWrite: number
 }
 
-export function cleanModelCost(value: unknown): ModelCost | undefined {
+export function readModelCost(value: unknown): ModelCost | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const raw = value as Record<string, unknown>
   const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
-  const cost = { input: num(raw.input), output: num(raw.output), cacheRead: num(raw.cacheRead), cacheWrite: num(raw.cacheWrite) }
-  return cost.input > 0 || cost.output > 0 ? cost : undefined
+  return { input: num(raw.input), output: num(raw.output), cacheRead: num(raw.cacheRead), cacheWrite: num(raw.cacheWrite) }
+}
+
+export function cleanModelCost(value: unknown): ModelCost | undefined {
+  const cost = readModelCost(value)
+  return cost && (cost.input > 0 || cost.output > 0) ? cost : undefined
+}
+
+export function isFreeModelId(id: string | undefined): boolean {
+  return !!id && /[:/_-]free$/i.test(id.trim())
+}
+
+export function explicitFreeCost(raw: { id?: unknown; cost?: unknown }): ModelCost | undefined {
+  const cost = readModelCost(raw.cost)
+  if (!cost || cost.input > 0 || cost.output > 0) return undefined
+  const id = typeof raw.id === 'string' ? raw.id : undefined
+  if (isFreeModelId(id)) return { ...cost, input: 0, output: 0 }
+  return undefined
 }
 
 const THINKING_LEVEL_KEYS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const

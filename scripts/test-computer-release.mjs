@@ -234,6 +234,37 @@ try {
   })
 
   {
+    const make = (name, env = {}) => {
+      const log = join(root, `${name}.log`)
+      const manager = new McpConnectionManager([{ id: 'windows-mcp', transport: 'stdio', command: process.execPath, args: [fixture], env: { WINDOWS_MCP_FIXTURE_LOG: log, ...env } }])
+      return { manager, calls: async () => (existsSync(log) ? (await readFile(log, 'utf8')).trim().split('\n').filter(Boolean) : []) }
+    }
+    const holderA = make('cross-a')
+    const holderFail = make('cross-fail', { WINDOWS_MCP_FIXTURE_FAIL_RELEASE: '1' })
+    const observer = make('cross-observer')
+    const asker = make('cross-asker')
+    try {
+      await holderA.manager.callTool('windows-mcp', 'Click', {})
+      await holderFail.manager.callTool('windows-mcp', 'Type', { text: 'x' })
+      await observer.manager.callTool('windows-mcp', 'Snapshot', {})
+      await asker.manager.callTool('windows-mcp', 'Snapshot', {})
+      const agent = Object.create(AgentController.prototype)
+      agent.mcp = { current: () => asker.manager }
+      await agent.releaseBeforeAsking()
+      assert.equal((await holderA.calls()).at(-1), 'ControlStatus {"release":true}', '会话 B 弹卡前释放会话 A 占用的控制')
+      assert.equal((await holderFail.calls()).at(-1), 'ControlStatus {"release":true}', '释放失败的实例也被调用且不抛错')
+      assert.deepEqual(await observer.calls(), ['Snapshot {}'], '只读、没占用控制的实例不被调用')
+      assert.deepEqual(await asker.calls(), ['Snapshot {}'], '提问方自己没占用时也不调用')
+      await agent.releaseBeforeAsking()
+      assert.equal((await holderA.calls()).filter((line) => line.startsWith('ControlStatus')).length, 1, '已释放的实例不重复调用')
+    } finally {
+      for (const item of [holderA, holderFail, observer, asker]) await item.manager.close()
+      sharedResources.resolveUncertain?.(INTERACTIVE_RESOURCE)
+    }
+    checks++
+  }
+
+  {
     const released = []
     const agent = new AgentController({ cwd: root, piBin: join(root, 'missing-pi.js'), push: () => {} })
     agent.mcp = { current: () => ({ releaseComputerControl: async () => { released.push('release'); return 'released' } }) }

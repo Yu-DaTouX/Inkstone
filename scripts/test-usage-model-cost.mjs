@@ -17,5 +17,9 @@ assert.equal(usageModelFree({ key: 'claude-opus-5-5', sources: ['anthropic/claud
 assert.equal(usageModelFree({ key: 'llama-local', sources: ['local/llama-local'] }, models), false, '没有报价信息的模型不算免费')
 assert.equal(usageModelFree({ key: 'unknown-model', sources: ['x/unknown-model'] }, models), false, '目录里找不到的模型不算免费')
 assert.equal(usageModelFree({ key: 'claude-opus-5-5', sources: [] }, models), false, '只按 key 匹配时同样读报价')
+assert.equal(usageModelFree({ key: 'foo:free', sources: ['yan-x/foo:free'] }, [{ provider: 'yan-x', id: 'foo:free' }]), true, '没有报价但 id 明示 free 算免费')
+assert.equal(usageModelFree({ key: 'bar-free', sources: ['x/org/bar-free'] }, []), true, '目录里没有也按 id 明示 free 判断')
+assert.equal(usageModelFree({ key: 'carefree', sources: ['x/carefree'] }, []), false, '名字里含 free 但不是后缀标记不算免费')
+assert.equal(usageModelFree({ key: 'paid:free', sources: ['x/paid:free'] }, [{ provider: 'x', id: 'paid:free', cost: { input: 1, output: 2 } }]), false, '有正报价时以报价为准')
 
-console.log('usage-model-cost: 5 passed')
+console.log('usage-model-cost: 9 passed')

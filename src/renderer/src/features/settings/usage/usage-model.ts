@@ -1,5 +1,6 @@
 import { usageModelId, type UsageModelShare, type UsageRange } from '../../../../../shared/usage-stats'
 import type { ModelInfo } from '../../../../../shared/ipc'
+import { isFreeModelId } from '../../../../../shared/custom-provider'
 
 export type UsageDimension = 'day' | 'model'
 
@@ -24,7 +25,8 @@ export function usageModelName(entry: Pick<UsageModelShare, 'key' | 'sources'>, 
 export function usageModelFree(entry: Pick<UsageModelShare, 'key' | 'sources'>, models: ReadonlyArray<Pick<ModelInfo, 'provider' | 'id' | 'cost'>>): boolean {
   const hit = models.find((model) => entry.sources?.includes(`${model.provider}/${model.id}`)) ?? models.find((model) => usageModelId(model.id) === entry.key)
   const cost = hit?.cost
-  return !!cost && cost.input === 0 && cost.output === 0 && !cost.cacheRead && !cost.cacheWrite
+  if (cost) return cost.input === 0 && cost.output === 0 && !cost.cacheRead && !cost.cacheWrite
+  return isFreeModelId(hit?.id ?? entry.sources?.[0]?.replace(/^[^/]*\//, '') ?? entry.key)
 }
 
 export interface UsageBar {

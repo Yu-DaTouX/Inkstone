@@ -1,4 +1,4 @@
-import { cleanModelCost } from '../../shared/custom-provider'
+import { cleanModelCost, explicitFreeCost } from '../../shared/custom-provider'
 
 export interface ModelPrice {
   input: number
@@ -9,7 +9,7 @@ export interface ModelPrice {
 
 export function modelPriceOf(raw: unknown): ModelPrice | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
-  const cost = cleanModelCost((raw as { cost?: unknown }).cost)
+  const cost = cleanModelCost((raw as { cost?: unknown }).cost) ?? explicitFreeCost(raw)
   if (!cost) return undefined
   return { input: cost.input, output: cost.output, cacheRead: cost.cacheRead, cacheWrite: cost.cacheWrite }
 }

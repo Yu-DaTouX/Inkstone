@@ -65,8 +65,35 @@ assert.deepEqual(
 assert.equal(
   modelPriceOf({ cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }),
   undefined,
-  '明确全 0（免费 / 套餐）视为没有报价，不渲染 $0'
+  '没有来源信息的全 0 报价视为没有报价'
 )
+assert.equal(
+  modelPriceOf({ id: 'a', provider: 'yan-acme', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }),
+  undefined,
+  '自定义接口模型缺省 cost（pi 补的全 0）是未配置报价，不算免费'
+)
+assert.equal(
+  modelPriceOf({ id: 'gpt-5.5', provider: 'openai-codex', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }),
+  undefined,
+  '订阅套餐模型报价全 0 不算免费，避免用量页显示 $0.00'
+)
+assert.deepEqual(
+  modelPriceOf({ id: 'qwen/qwen3-coder:free', provider: 'openrouter', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }),
+  { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  '报价全为 0 且 id 明示 free 的目录模型是明确免费'
+)
+assert.deepEqual(
+  modelPriceOf({ id: 'foo:free', provider: 'yan-acme', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }),
+  { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  '自定义模型 id 明示 free 也算免费'
+)
+assert.equal(modelPriceOf({ id: 'foo:free', provider: 'openrouter' }), undefined, '完全没有 cost 字段不算报价')
+assert.deepEqual(
+  attachModelPrice(model({ id: 'x:free', provider: 'openrouter' }), { id: 'x:free', provider: 'openrouter', cost: { input: 0, output: 0 } }).cost,
+  { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  '免费模型把 cost 带到界面，用量页据此显示免费'
+)
+assert.equal(modelCostOf({ id: 'x:free', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }), undefined, '设置页不为免费模型渲染 $0 / $0 价格提示')
 
 const normalized = model({ id: 'claude', provider: 'anthropic', contextWindow: 200_000 })
 const withCost = attachModelPrice(normalized, {

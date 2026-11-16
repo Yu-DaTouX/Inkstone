@@ -63,7 +63,7 @@ async function alignWithoutSystemGit(root, work) {
     const hasBash = await runtime.hasBash()
     let whereHit = ''
     try {
-      whereHit = execFileSync('where.exe', ['bash.exe'], { encoding: 'utf8' }).split(/\r?\n/)[0]
+      whereHit = execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'where.exe'), ['bash.exe'], { encoding: 'utf8' }).split(/\r?\n/)[0]
     } catch {
       whereHit = ''
     }

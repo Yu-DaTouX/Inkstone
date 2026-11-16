@@ -100,6 +100,7 @@ import { TurnTimingTracker } from './turn-timing-tracker'
 import { UiRequests, questionToolCallId, type HostUiResponse, type UiAnswerResult } from './ui-requests'
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
+import { McpConnectionManager } from './mcp/connection-manager'
 import { RunnerMcpConnections } from './mcp/runner-connections'
 import {
   captureNativeStartupWitness,
@@ -3103,6 +3104,7 @@ export class AgentController extends EventEmitter {
     const wanted = parseSubagentNotice(text)
     if (!wanted) return false
     const messages = this.messages
+    if (!messages.some((message) => message.timestamp !== undefined)) return false
     let start = 0
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const at = messages[i].timestamp
@@ -3467,7 +3469,9 @@ export class AgentController extends EventEmitter {
   }
 
   private async releaseBeforeAsking(): Promise<void> {
-    await this.mcp?.current()?.releaseComputerControl({ afterInput: true }).catch(() => undefined)
+    const own = this.mcp?.current()
+    await own?.releaseComputerControl({ afterInput: true }).catch(() => undefined)
+    await McpConnectionManager.releaseHeldComputerControl(own).catch(() => undefined)
   }
 
   private resetSessionScope(): void {

@@ -93,7 +93,9 @@ await runSuite(import.meta.url, async (ok) => {
     ok(viewer.agent.noticeSeen(notice, 1_000), '本次中断之后的用户消息里出现这条通知：已送达')
     const untimed = make()
     untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice }] }
-    ok(untimed.agent.noticeSeen(notice, 1_000), '用户消息没带时间戳：只比对 id 与状态，判为已送达，不在重启后重投')
+    ok(!untimed.agent.noticeSeen(notice, 1_000), '整个会话都没有时间戳：无法划出本次中断的界线，宁可重投，不判为已送达')
+    untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice }, { id: 'm2', role: 'user', text: notice }] }
+    ok(!untimed.agent.noticeSeen(notice, 1_000), '同一子代理两次中断的同文通知都没带时间戳：不因旧通知误判已送达')
     untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice.replace('interrupted', 'done') }] }
     ok(!untimed.agent.noticeSeen(notice, 1_000), '没带时间戳但状态不同：仍判为未送达')
     untimed.agent.items = { uiMessages: () => [{ id: 'm1', role: 'user', text: notice }, { id: 'm2', role: 'assistant', text: 'ok', timestamp: 500 }] }
