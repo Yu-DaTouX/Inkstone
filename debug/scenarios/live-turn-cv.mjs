@@ -136,6 +136,24 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
     await frames(10)
     return prefix
   }
+  const scrollUpRecord = () => ev(`(async () => {
+      const rec = window.__cvRec
+      const el = document.querySelector('.v3-stream')
+      const live = document.querySelector('.v3-stream .v3-spread[data-live]')
+      const stopAt = Math.max(0, el.scrollTop + live.getBoundingClientRect().top - el.getBoundingClientRect().top - 40)
+      rec.frames = []; rec.prev = new Map(); rec.on = true
+      await new Promise((r) => requestAnimationFrame(r))
+      for (let i = 0; i < 400 && el.scrollTop > stopAt; i++) {
+        const before = el.scrollTop
+        el.dispatchEvent(new CustomEvent('yan-scroll-intent', { bubbles: true }))
+        el.scrollTop = Math.max(0, before - 48)
+        rec.expect = before - el.scrollTop
+        await new Promise((r) => requestAnimationFrame(r))
+      }
+      for (let i = 0; i < 20; i++) await new Promise((r) => requestAnimationFrame(r))
+      rec.on = false
+    })()`)
+
   const bottomGap = () => ev(`(() => { const el = document.querySelector('.v3-stream'); return String(Math.round(el.scrollHeight - el.clientHeight - el.scrollTop)) + '/' + document.querySelectorAll('.v3-stream').length })()`).then((v) => (v.endsWith('/1') ? Number(v.split('/')[0]) : v))
   const env = () => ev(`(() => ({ virtual: !document.querySelector('.v3-stream .v3-stream-inner'), skip: !!document.querySelector('.v3-stream .v3-spread[data-skip]'), items: document.querySelectorAll('.v3-stream .v3-spread[data-live] > *').length, cv: [...document.querySelectorAll('.v3-stream .v3-spread[data-live] > *')].filter((el) => getComputedStyle(el).contentVisibility === 'auto').length, cis: [...new Set([...document.querySelectorAll('.v3-stream .v3-spread[data-live] > *')].filter((el) => getComputedStyle(el).contentVisibility === 'auto').map((el) => el.className.split(' ')[0] + ' ' + getComputedStyle(el).containIntrinsicHeight))] }))()`)
 
@@ -158,25 +176,45 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
         })()`)
       }
       await ev(`(() => { const el = document.querySelector('.v3-stream'); el.dispatchEvent(new CustomEvent('yan-scroll-intent', { bubbles: true })) })()`)
-      await ev(`(async () => {
-        const rec = window.__cvRec
-        const el = document.querySelector('.v3-stream')
-        const live = document.querySelector('.v3-stream .v3-spread[data-live]')
-        const stopAt = Math.max(0, el.scrollTop + live.getBoundingClientRect().top - el.getBoundingClientRect().top - 40)
-        rec.frames = []; rec.prev = new Map(); rec.on = true
-        await new Promise((r) => requestAnimationFrame(r))
-        for (let i = 0; i < 400 && el.scrollTop > stopAt; i++) {
-          const before = el.scrollTop
-          el.dispatchEvent(new CustomEvent('yan-scroll-intent', { bubbles: true }))
-          el.scrollTop = Math.max(0, before - 48)
-          rec.expect = before - el.scrollTop
-          await new Promise((r) => requestAnimationFrame(r))
-        }
-        for (let i = 0; i < 20; i++) await new Promise((r) => requestAnimationFrame(r))
-        rec.on = false
-      })()`)
+      await scrollUpRecord()
       out.scrollUp = summarize(await ev('window.__cvRec.frames'))
       log(key, 'scrollUp', out.env, out.scrollUp)
+
+      if (variant === 'build' || variant === 'off') {
+        out.resize = {}
+        for (const [name, from, to] of [['control', 1280, 1280], ['narrower', 1280, 900], ['wider', 900, 1280]]) {
+          await fresh(variant)
+          await cdp.call('Emulation.setDeviceMetricsOverride', { width: from, height: 860, deviceScaleFactor: 1, mobile: false })
+          await sleep(300)
+          await build(mode, `${variant}-rs-${name}`)
+          await ev(`(async () => {
+            const el = document.querySelector('.v3-stream')
+            const live = document.querySelector('.v3-stream .v3-spread[data-live]')
+            el.dispatchEvent(new CustomEvent('yan-scroll-intent', { bubbles: true }))
+            const stopAt = Math.max(0, el.scrollTop + live.getBoundingClientRect().top - el.getBoundingClientRect().top - 40)
+            for (let i = 0; i < 400 && el.scrollTop > stopAt; i++) {
+              el.dispatchEvent(new CustomEvent('yan-scroll-intent', { bubbles: true }))
+              el.scrollTop = Math.max(0, el.scrollTop - 48)
+              await new Promise((r) => requestAnimationFrame(r))
+            }
+            el.dispatchEvent(new CustomEvent('yan-scroll-intent', { bubbles: true }))
+            el.scrollTop = el.scrollHeight
+            for (let i = 0; i < 20; i++) await new Promise((r) => requestAnimationFrame(r))
+          })()`)
+          const gapBefore = await bottomGap()
+          if (to !== from) await cdp.call('Emulation.setDeviceMetricsOverride', { width: to, height: 860, deviceScaleFactor: 1, mobile: false })
+          await sleep(700)
+          await frames(10)
+          const widthNow = await ev(`Math.round(document.querySelector('.v3-stream').clientWidth)`)
+          await ev(`(() => { const el = document.querySelector('.v3-stream'); el.scrollTop = el.scrollHeight })()`)
+          await frames(10)
+          const gapAfter = await bottomGap()
+          await scrollUpRecord()
+          const summary = summarize(await ev('window.__cvRec.frames'))
+          out.resize[name] = { from, to, streamWidth: widthNow, gapBefore, gapAfter, ...summary }
+          log(key, 'resize', name, out.resize[name])
+        }
+      }
 
       await fresh(variant)
       const prefix = await build(mode, `${variant}-tail`, { tallTools: 40 })
@@ -290,6 +328,10 @@ export default async function run({ cdp, waitFor, check, report, sleep, runDir, 
     check(`${key} 查找命中并滚到可见`, out.find.active === 1 && out.find.inView, out.find)
     check(`${key} 键盘焦点落在叙述链接上`, out.focus.onLink && out.focus.focusVisible, out.focus)
     check(`${key} 回合结束后 data-live 去掉且仍贴底`, out.turnEnd.liveGone && out.turnEnd.endGap <= 2, out.turnEnd)
+  }
+  for (const [key, out] of Object.entries(results)) {
+    if (!out.resize) continue
+    log(key, '改宽度后往上滚（观察，不计验收）', Object.fromEntries(Object.entries(out.resize).map(([name, r]) => [name, { maxShiftPx: r.maxShiftPx, over2: r.shiftFramesOver2, sumShiftPx: r.sumShiftPx, shRange: r.shRange }])))
   }
   const table = Object.entries(results).map(([key, out]) => ({ key, virtual: out.env.virtual, upMax: out.scrollUp.maxShiftPx, upOver2: out.scrollUp.shiftFramesOver2, upSum: out.scrollUp.sumShiftPx, appendMaxDown: out.append.maxDownPx, appendMaxUp: out.append.maxUpPx, appendOver2: out.append.shiftFramesOver2, endTaskMs: out.turnEnd.longestTaskMs, endLayoutMs: out.turnEnd.layoutMs, endShift: out.turnEnd.frames.maxShiftPx, find: out.find.active === 1 && out.find.inView }))
   report.table = table

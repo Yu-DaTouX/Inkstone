@@ -85,18 +85,21 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   const topMotion = await phase('navTop', () => jump(3))
   report.navTop = await target(3)
   check('顶部导航到达目标回合', report.navTop.active === '3', report.navTop)
-  const intermediatePositions = motion => {
-    const from = motion.offsets[0], to = motion.scrollTop, distance = Math.abs(to-from);
-    return motion.offsets.filter(offset => Math.abs(offset-from) > distance*.2 && Math.abs(offset-from) < distance*.8).length;
+  const viewport = await cdp.evaluate(`document.querySelector('.v3-stream').clientHeight`)
+  const flightSegments = motion => {
+    const from = Math.abs(motion.offsets[1] - motion.offsets[0]) > viewport ? motion.offsets[1] : motion.offsets[0], to = motion.scrollTop
+    const lead = motion.offsets.filter(offset => Math.abs(offset-from) > .5 && Math.abs(offset-from) <= viewport*.35 + 2).length
+    const land = motion.offsets.filter(offset => Math.abs(to-offset) > .5 && Math.abs(to-offset) <= viewport*.6 + 2).length
+    return { lead, land }
   }
-  check('远跳顶部时经过中间滚动位置', intermediatePositions(topMotion) >= 3, intermediatePositions(topMotion))
+  check('远跳顶部时起飞与落点减速段连续滚动', flightSegments(topMotion).lead >= 3 && flightSegments(topMotion).land >= 3, flightSegments(topMotion))
   check('顶部导航期间保留虚拟化', topMotion.maxMountedRows <= 16, topMotion.maxMountedRows)
   await shot('nav-top')
   const farIndex = Math.floor((report.fixture.navigationItems - 1) * .82)
   const farMotion = await phase('navFar', () => jump(farIndex))
   report.navFar = await target(farIndex)
   check('远距离导航到达目标回合', report.navFar.active === String(farIndex), report.navFar)
-  check('远距离导航保留全程滚动过程', intermediatePositions(farMotion) >= 3, intermediatePositions(farMotion))
+  check('远距离导航起飞与落点减速段连续滚动', flightSegments(farMotion).lead >= 3 && flightSegments(farMotion).land >= 3, flightSegments(farMotion))
   check('远距离导航期间保留虚拟化', farMotion.maxMountedRows <= 24, farMotion.maxMountedRows)
   await phase('longScroll', async () => {
     const point = await cdp.evaluate(`(() => { const r = document.querySelector('.v3-stream').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
@@ -114,7 +117,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   check('重复导航仍到达目标回合', (await target(3)).active === '3')
   check('离开底部后显示回到最新', await cdp.evaluate(`!!document.querySelector('[data-testid="v3-jump"]')`))
   const latestMotion = await phase('jumpLatest', () => cdp.evaluate(`document.querySelector('[data-testid="v3-jump"]').click()`), 2000)
-  check('回到最新经过中间滚动位置', intermediatePositions(latestMotion) >= 3, intermediatePositions(latestMotion))
+  check('回到最新起飞与落点减速段连续滚动', flightSegments(latestMotion).lead >= 3 && flightSegments(latestMotion).land >= 3, flightSegments(latestMotion))
   check('回到最新期间保留虚拟化', latestMotion.maxMountedRows <= 16, latestMotion.maxMountedRows)
   check('回到最新停在底部并隐藏按钮', await cdp.evaluate(`(() => { const el = document.querySelector('.v3-stream'); return el.scrollHeight - el.clientHeight - el.scrollTop <= 2 && !document.querySelector('[data-testid="v3-jump"]') })()`))
   const railPoint = await cdp.evaluate(`(() => { const r = document.querySelector('.v3-rail-track').getBoundingClientRect(); return { x: r.left+r.width/2, y: r.top+r.height/2 } })()`)

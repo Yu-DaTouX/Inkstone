@@ -193,6 +193,7 @@ export default async function run({ cdp, newSession, check, sleep, shot, report,
   const answerAfter = flow.answer.filter((a) => a.t <= done + 1500).at(-1)?.y ?? null
   const nearThinkEnd = flow.shifts.filter((s) => !s.input && thinkEnds.some((t) => s.t >= t - 50 && s.t <= t + 400))
   const midRun = flow.shifts.filter((s) => !s.input && s.t > send + 1500 && s.t < done - 100)
+  report.labelTrace = flow.labels
   report.motion = {
     all: summarize(flow),
     send: summarize(flow, send, send + 1500),

@@ -34,10 +34,10 @@ export default async function run(ctx) {
     })()`)
     await sleep(200)
   }
-  const title = () => ev(`document.querySelector('[data-testid="wb-rail-usage"] .wb-tile-title')?.textContent ?? ''`)
+  const title = () => ev(`(() => { const root = document.querySelector('[data-testid="wb-rail-usage"]'); return [root?.querySelector('.wb-tile-title')?.textContent, root?.querySelector('[data-testid="wb-rail-usage-peak"]')?.textContent].filter(Boolean).join(' ') })()`)
   try {
     await setCase('2026-11-11T01:00:00Z')
-    await waitFor(`document.querySelector('[data-testid="wb-rail-usage"] .wb-tile-title')?.textContent === '用量 峰价'`)
+    await waitFor(`(() => { const root = document.querySelector('[data-testid="wb-rail-usage"]'); return [root?.querySelector('.wb-tile-title')?.textContent, root?.querySelector('[data-testid="wb-rail-usage-peak"]')?.textContent].filter(Boolean).join(' ') })() === '用量 峰价'`)
     await ev(`document.querySelector('[data-testid="wb-rail-usage"][data-folded="0"] .wb-tile-toggle')?.click()`)
     await sleep(150)
     check('DeepSeek 放在其他供应商下也只显示简短峰价', (await title()) === '用量 峰价')
@@ -84,7 +84,7 @@ export default async function run(ctx) {
     const header = await ev(`(() => {const el=document.querySelector('[data-testid="wb-rail-usage"] .wb-tile-head'),r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`)
     await cdp.call('Input.dispatchMouseEvent', {type:'mouseMoved',...header})
     await sleep(200)
-    const narrow = await ev(`(() => {const root=document.querySelector('[data-testid="wb-rail-usage"]'),title=root.querySelector('.wb-tile-title'),value=root.querySelector('.ui-rail-value__num');return {width:document.querySelector('.v3-sessionbar').getBoundingClientRect().width,title:title.textContent,titleFits:title.scrollWidth<=title.clientWidth+1,value:value.textContent,valueFits:value.scrollWidth<=value.clientWidth+1}})()`)
+    const narrow = await ev(`(() => {const root=document.querySelector('[data-testid="wb-rail-usage"]'),title=root.querySelector('.wb-tile-title'),badge=root.querySelector('[data-testid="wb-rail-usage-peak"]'),toggle=root.querySelector('.wb-tile-toggle'),value=root.querySelector('.ui-rail-value__num');return {width:document.querySelector('.v3-sessionbar').getBoundingClientRect().width,title:[title.textContent,badge?.textContent].filter(Boolean).join(' '),titleFits:title.scrollWidth<=title.clientWidth+1&&!!badge&&badge.getBoundingClientRect().right<=toggle.getBoundingClientRect().right+1,value:value.textContent,valueFits:value.scrollWidth<=value.clientWidth+1}})()`)
     check('最窄260px用量栏在悬停时也完整显示峰价与用量', Math.abs(narrow.width-260)<1&&narrow.title==='用量 峰价'&&narrow.titleFits&&narrow.value.includes('56%')&&narrow.valueFits, narrow)
     await shot('deepseek-peak-narrow')
   } finally {

@@ -56,9 +56,10 @@
     ok(await until(() => !!runningTool('bash', 'echo probe')), '运行中的过程行带真实工具与命令', runningTool('bash', 'echo probe')?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true }, { thinking: '再想想', thinkingLive: true })
-    ok(await until(() => !!quiet() && !working()), '再次思考且有实时文字时工作行转为安静状态（不再显示思考阶段）', quiet()?.textContent ?? '')
-    ok(await until(() => (quiet()?.textContent ?? '').includes('进行中')), '安静状态写「进行中」而非具体阶段', quiet()?.textContent ?? '')
-    ok(await until(() => /\d/.test(quiet()?.textContent ?? '')), '安静状态仍带用时', quiet()?.textContent ?? '')
+    const thinkingText = () => q('[data-testid="v3-thinking"]')?.textContent ?? ''
+    ok(await until(() => !quiet() && !working()), '再次思考且有过程段时工作行隐藏（过程行已在显示思考，不重复占位）', quiet()?.textContent ?? '')
+    ok(await until(() => thinkingText().includes('思考中')), '过程行写「思考中」', thinkingText())
+    ok(await until(() => /\d+s/.test(thinkingText())), '过程行仍带用时', thinkingText())
     ok(await until(() => (q('[data-testid="v3-thinking"]')?.textContent ?? '').includes('再想想')), '思考内容在消息里仍可见', q('[data-testid="v3-thinking"]')?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true, retry: { attempt: 1, maxAttempts: 3, at: Date.now(), delayMs: 30000, error: 'probe' } }, { text: '' })
