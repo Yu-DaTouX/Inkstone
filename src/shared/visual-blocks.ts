@@ -253,7 +253,7 @@ function parseCards(data: Record<string, unknown>): CardsBlock {
       icon: optStr(item.icon, `items[${i}].icon`, 32),
       badge: optStr(item.badge, `items[${i}].badge`, 24),
       recommended: item.recommended === true ? true : undefined,
-      description: optStr(item.description ?? item.desc ?? item.caption, `items[${i}].description`, LIMIT.long),
+      description: optStr(item.description ?? item.desc ?? item.caption ?? item.body ?? item.text ?? item.detail, `items[${i}].description`, LIMIT.long),
       meta: optStr(item.meta ?? item.value, `items[${i}].meta`),
       image: image(item.image, `items[${i}].image`),
       links: links(item.links, `items[${i}].links`)
@@ -302,7 +302,8 @@ export function parseVisualBlock(lang: VisualDataLang, text: string): VisualPars
   let data: unknown
   try { data = JSON.parse(text) } catch { return { ok: false, error: 'JSON 不完整或格式有误' } }
   try {
-    const root = obj(data, '整体')
+    const listKey = lang === 'yan-record' ? 'fields' : lang === 'yan-flow' || lang === 'yan-steps' ? 'steps' : lang === 'yan-chart' ? undefined : 'items'
+    const root = Array.isArray(data) && listKey ? { [listKey]: data } : obj(data, '整体')
     const block = lang === 'yan-chart' ? parseChart(root)
       : lang === 'yan-stats' ? parseStats(root)
       : lang === 'yan-cards' ? parseCards(root)
