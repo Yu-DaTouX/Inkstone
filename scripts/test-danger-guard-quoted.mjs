@@ -357,6 +357,177 @@ const SEARCH_CONSERVATIVE = [
   ['powershell', "sls x -Path src/*.ts; Write-Output 'git push --force origin main'"]
 ]
 
+const HEREDOC_TEXT_ONLY = [
+  'cat > notes/guard.json <<\'EOF\'\n{"note": "守卫会拦 Format-Volume、mkfs、diskpart 这类擦盘命令", "also": "git push --force"}\nEOF',
+  'mkdir -p notes && cat > notes/a.json <<"EOF"\n{"rule": "format C: 会被拦"}\nEOF',
+  'cat <<\'EOF\' > notes/b.md\n先写清楚 git reset --hard 的后果\nEOF\necho done',
+  'tee notes/c.txt <<-\'EOF\'\n\tnpm publish 之前先跑测试\n\tEOF',
+  'cat > notes/d.md <<\'EOF\'\nmkfs.ext4 /dev/sdb 只是举例\nEOF\nls notes && echo "写好了"',
+  'cat > docs/gitlab-notes.md <<\'EOF\'\n不要 git push --force\nEOF'
+]
+
+const HEREDOC_EXECUTES = [
+  'bash <<\'EOF\'\ngit push --force origin main\nEOF',
+  'sh <<\'EOF\'\ngit push --force origin main\nEOF',
+  'python <<\'EOF\'\nimport os; os.system("git push --force origin main")\nEOF',
+  'cat <<\'EOF\' | bash\ngit push --force origin main\nEOF',
+  'cat > x.sh <<\'EOF\'\ngit push --force origin main\nEOF\nbash x.sh',
+  'cat > x.sh <<\'EOF\'\ngit push --force origin main\nEOF\nchmod +x x.sh && ./x.sh',
+  'cat > x.sh <<\'EOF\'\ngit push --force origin main\nEOF\n. ./x.sh',
+  'cat > x.sh <<\'EOF\'\ngit push --force origin main\nEOF\ncat x.sh | bash',
+  'cat > .git/hooks/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF\ngit commit -m x',
+  'cat > x.ps1 <<\'EOF\'\ngit push --force origin main\nEOF\npwsh -File x.ps1',
+  'cat > x.json <<EOF\n$(git push --force origin main)\nEOF',
+  'cat > x <<\'EOF\'; bash -c true\ngit push --force origin main\nEOF',
+  'cat(){ bash; }; cat > x <<\'EOF\'\ngit push --force origin main\nEOF',
+  'alias cat=bash\ncat > x <<\'EOF\'\ngit push --force origin main\nEOF',
+  'exec 3<&0; cat > x <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > x <<\'EOF\'\ngit push --force origin main',
+  'cat x.sh - > y.sh <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > x.sh <<\'EOF\' && source x.sh\ngit push --force origin main\nEOF',
+  'cat <<\'E\'1>notes.txt\nx\nE1\ngit push --force origin main\nE',
+  'tee n <<\'EOF\'x\nEOFx\ngit push --force origin main\nEOF',
+  'cat > n <<\'E\'"OF"\nEOF\ngit push --force origin main\nE"OF"',
+  'cat > n <<\\EOF\ngit push --force origin main\nEOF',
+  'cat > n <<\'EOF\'\ngit push --force origin main\n EOF',
+  'cat > n <<\'EOF\'\ngit push --force origin main\nEOF\r',
+  'cat > .git/hooks/post-checkout <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat >> .git/config <<\'EOF\'\n[core]\n\tpager = git push --force origin main\nEOF',
+  'cat > .husky/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > .githooks/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF\ngit commit -m x',
+  'cat > .envrc <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > .vscode/tasks.json <<\'EOF\'\n{"command": "git push --force origin main"}\nEOF',
+  'cat >> ~/.bashrc <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > profile.ps1 <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > .g"it"/hooks/pre-push <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > wf.js <<\'EOF\'\ngit push --force origin main\nEOF\nyan workflow run --file wf.js',
+  'cat > .hus??/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF\ngit add -A && git commit -m x',
+  'cat > .gi?/hoo??/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF\ngit commit -m x',
+  'cat > .gi*/hooks/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat >> [.]git/config <<\'EOF\'\n[core]\n\tfsmonitor = git push --force origin main\nEOF\ngit status',
+  'cat <<\'EOF\' > .hus?y/pre-commit\ngit push --force origin main\nEOF',
+  'cat > notes/d.md <<\'EOF\'\ngit push --force origin main\nEOF\ngit add notes/d.md && git commit -m "记录"',
+  'cat > githooks/pre-push <<\'EOF\'\ngit push --force origin main\nEOF\ngit push',
+  'cat > tools/fsmonitor.sh <<\'EOF\'\ngit push --force origin main\nEOF\ngit status',
+  'cat > n.txt <<\'EOF\'\ngit push --force origin main\nEOF\ngit.exe add n.txt',
+  'cat > .gitattributes <<\'EOF\'\n* filter=x\ngit push --force origin main\nEOF',
+  'cat > .gitmodules <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > .github/workflows/ci.yml <<\'EOF\'\nrun: git push --force origin main\nEOF',
+  'tee -a .gitconfig <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cd .git/hooks && cat > pre-commit <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cd .git && cat >> config <<\'EOF\'\n[core]\n\tfsmonitor = git push --force origin main\nEOF',
+  'cd .hus?? && cat > pre-commit <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cd notes; tee a.txt <<\'EOF\'\ngit push --force origin main\nEOF',
+  'CD .git; cat > config <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat >> GIT~1/config <<\'EOF\'\n[core]\n\tfsmonitor = git push --force origin main\nEOF',
+  'cat > HUSKY~1/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF',
+  'tee VSCODE~1/tasks.json <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat <<\'EOF\' > ./GIT~2/config\ngit push --force origin main\nEOF',
+  'cat > .g"it"hub/workflows/ci.yml <<\'EOF\'\nrun: git push --force origin main\nEOF'
+]
+
+const HEREDOC_CRITICAL = [
+  'bash <<\'EOF\'\nmkfs.ext4 /dev/sdb\nEOF',
+  'cat <<\'E\'1>notes.txt\nx\nE1\nmkfs.ext4 /dev/sdb\nE',
+  'tee n <<\'EOF\'x\nEOFx\nmkfs.ext4 /dev/sdb\nEOF',
+  'cat > .hus??/pre-commit <<\'EOF\'\nmkfs.ext4 /dev/sdb\nEOF\ngit add -A && git commit -m x',
+  'rg -n x src > hits.txt\ncat > notes/a.md <<\'EOF\'\nmkfs.ext4 /dev/sdb\nEOF',
+  'cat > notes/a.md <<\'EOF\'\nmkfs.ext4 /dev/sdb\nEOF\nrg -n x notes | head -5'
+]
+
+const HEREDOC_SEARCH_TEXT_ONLY = [
+  'cat > notes/a.md <<\'EOF\'\n不要 git push --force\nEOF\nls notes; pwd',
+  'mkdir -p notes\ncat > notes/b.md <<\'EOF\'\n记一下 git reset --hard\nEOF\necho "好了"'
+]
+
+const HEREDOC_SEARCH_EXECUTES = [
+  'rg -n x src > hits.txt\ncat > notes/a.md <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > notes/a.md <<\'EOF\'\ngit push --force origin main\nEOF\nrg -n x src > hits.txt',
+  'cat > notes/a.md <<\'EOF\'\n笔记\nEOF\nrg -o \'git push --force origin main\' f > hits.txt',
+  'rg -o \'git push --force origin main\' f > hits.txt && cat > notes/a.md <<\'EOF\'\n笔记\nEOF',
+  'rg -n \'git push --force origin main\' src; cat > notes/a.md <<\'EOF\'\n笔记\nEOF',
+  'cat > notes/a.md <<\'EOF\'\ngit push --force origin main\nEOF\nrg -n x notes | head -5',
+  'cat > notes/a.md <<\'EOF\'\ngit push --force origin main\nEOF\nrg -n x notes 2>/dev/null',
+  'cat > p.txt <<\'EOF\'\ngit push --force origin main\nEOF\nrg -f p.txt src',
+  'cat > p.txt <<\'EOF\'\n#!/bin/sh\ngit push --force origin main\nEOF\nrg -N \'\' p.txt > .git/hooks/pre-commit && git commit -m x',
+  'cat > p.txt <<\'EOF\'\ngit push --force origin main\nEOF\nrg -N \'\' p.txt | sort -o .git/hooks/pre-commit',
+  'cat > p.txt <<\'EOF\'\ngit push --force origin main\nEOF\nrg -N \'\' p.txt > .git/hooks/pre-commit',
+  'cat > notes/a.md <<\'EOF\'\ngit push --force origin main\nEOF\ngit grep -n x',
+  'cat > .ackrc <<\'EOF\'\n--pager=git push --force origin main\nEOF\nack x',
+  'cat > notes/a.md <<\'EOF\' && rg -n x src\ngit push --force origin main\nEOF',
+  'rg -f - src <<\'EOF\'\ngit push --force origin main\nEOF',
+  'grep -F -f /dev/stdin src <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > x.sh <<\'EOF\'\ngit push --force origin main\nEOF\nhead x.sh',
+  'cat > x.sh <<\'EOF\'\ngit push --force origin main\nEOF\nsort -o .git/hooks/pre-commit x.sh',
+  'cat > notes/x.md <<\'EOF\'\ngit push --force origin main\nEOF\ngit status',
+  'cat > notes/x.md <<\'EOF\'\ngit push --force origin main\nEOF\ngit -C . log -1',
+  'cat > notes/x.md <<\'EOF\'\ngit push --force origin main\nEOF\nGIT diff',
+  'cat > notes/x.md <<\'EOF\'\ngit push --force origin main\nEOF\nyan subagent start --task x',
+  'cat > ~/notes.md <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat <<\'EOF\' > ~/.config/git/config\n[core]\n\tpager = git push --force origin main\nEOF',
+  'cat >> ~/.ssh/config <<\'EOF\'\nProxyCommand git push --force origin main\nEOF',
+  'cat > src/hooks/x.ts <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > "notes/a.md" <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > \'notes/a.md\' <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > .GIT/config <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > .gi\\t/config <<\'EOF\'\ngit push --force origin main\nEOF',
+  'tee .husky/pre-commit <<\'EOF\'\ngit push --force origin main\nEOF',
+  'cat > editor.json <<\'EOF\'\ngit push --force origin main\nEOF',
+  "rg -o 'git push --force origin main' f > .gitattributes",
+  "rg -o 'git push --force origin main' f > .githooks/pre-commit",
+  "rg -o 'git push --force origin main' f > .gitmodules",
+  "rg -o 'git push --force origin main' f > .gitconfig",
+  "rg -o 'git push --force origin main' f > ~/notes.md",
+  "rg -o 'git push --force origin main' f > .ackrc",
+  "rg -o 'git push --force origin main' f > src/hooks/x.ts",
+  "rg -o 'git push --force origin main' f > VSCODE~1/tasks.json",
+  "rg -o 'git push --force origin main' f > ./GIT~2/config",
+  "rg -o 'git push --force origin main' f > .G\"it\"Hub/workflows/ci.yml",
+  "rg -o 'git push --force origin main' f > editor.json"
+]
+
+const ABSOLUTE_TARGET_TEXT_ONLY = [
+  ['bash', 'cat > /c/Users/u/notes/a.md <<\'EOF\'\n不要 git push --force\nEOF'],
+  ['bash', 'cat > C:/work/notes/config.md <<\'EOF\'\n不要 git push --force\nEOF'],
+  ['bash', 'cat <<\'EOF\' > /tmp/notes.txt\n不要 git push --force\nEOF'],
+  ['bash', 'cat > notes/git-config.md <<\'EOF\'\n不要 git push --force\nEOF'],
+  ['bash', 'cat > docs/ssh.md <<\'EOF\'\n不要 git push --force\nEOF'],
+  ['bash', 'cat > notes/my_src.txt <<\'EOF\'\n不要 git push --force\nEOF'],
+  ['bash', "rg -n 'git push --force' src > /c/work/hits.txt"],
+  ['bash', "rg -n 'git push --force' src > C:/work/notes/config.txt"],
+  ['powershell', "sls 'git push --force' -Path src/a.ts > C:\\work\\hits.txt"]
+]
+
+const ABSOLUTE_TARGET_EXECUTES = [
+  ['bash', 'cat >> /c/Users/u/.ssh/config <<\'EOF\'\nProxyCommand git push --force origin main\nEOF'],
+  ['bash', 'cat > C:/Users/u/.ssh/config <<\'EOF\'\nProxyCommand git push --force origin main\nEOF'],
+  ['bash', 'cat > /c/Users/u/.config/git/config <<\'EOF\'\n[core]\n\tpager = git push --force origin main\nEOF'],
+  ['bash', 'cat <<\'EOF\' > C:/Users/u/.config/git/ignore\ngit push --force origin main\nEOF'],
+  ['bash', 'cat > /c/Users/u/AppData/x/git/config <<\'EOF\'\n[core]\n\tpager = git push --force origin main\nEOF'],
+  ['bash', 'tee -a /etc/gitconfig <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat > /c/Users/u/_ackrc <<\'EOF\'\n--pager=git push --force origin main\nEOF'],
+  ['bash', 'cat > _ackrc <<\'EOF\'\n--pager=git push --force origin main\nEOF'],
+  ['bash', 'cat > /c/Users/u/.lesskey <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat > /c/Users/u/_lesskey <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat >> /c/Users/u/.bash_login <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat >> /c/Users/u/.bash_logout <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat >> /c/Users/u/.zshenv <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat >> /c/Users/u/.zlogin <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat >> /c/Users/u/.inputrc <<\'EOF\'\ngit push --force origin main\nEOF'],
+  ['bash', 'cat >> /c/Users/u/.s\\sh/config <<\'EOF\'\nProxyCommand git push --force origin main\nEOF'],
+  ['bash', "rg -o 'git push --force origin main' f > /c/Users/u/.ssh/config"],
+  ['bash', "rg -o 'git push --force origin main' f > /c/Users/u/.config/git/config"],
+  ['bash', "rg -o 'git push --force origin main' f > /c/Users/u/_ackrc"],
+  ['bash', "rg -o 'git push --force origin main' f > /c/Users/u/.lesskey"],
+  ['bash', "rg -o 'git push --force origin main' f >> /c/Users/u/.zshenv"],
+  ['bash', "rg -o 'git push --force origin main' f >> /c/Users/u/.bash_login"],
+  ['bash', "rg -o 'git push --force origin main' f >> /c/Users/u/.zlogin"],
+  ['powershell', "sls 'git push --force origin main' f > C:\\Users\\u\\.config\\git\\config"],
+  ['powershell', "sls 'git push --force origin main' f > C:\\Users\\u\\AppData\\x\\git\\config"],
+  ['powershell', "sls 'git push --force origin main' f > C:\\Users\\u\\.ssh\\config"],
+  ['powershell', "sls 'git push --force origin main' f > C:\\Users\\u\\_ackrc"]
+]
+
 const POWERSHELL_INNER = [
   "Write-Output 'x' (Invoke-Expression 'git push --force origin main' )",
   'Write-Output "a\\" (git push --force origin main) \\"b"',
@@ -400,6 +571,34 @@ await runSuite(import.meta.url, async (ok) => {
   }
   const searchWipe = guard.criticalDanger('powershell', { command: 'sls x (Format-Volume -DriveLetter D -Force)' }, PROJECT)
   ok(searchWipe.length > 0, '「不受限制」档：搜索段括号里的擦盘仍拦', JSON.stringify(searchWipe))
+  for (const command of HEREDOC_TEXT_ONLY) {
+    const reasons = [...guard.detectDanger('bash', { command }, PROJECT), ...guard.criticalDanger('bash', { command }, PROJECT)]
+    ok(reasons.length === 0, `引号定界的 heredoc 只写文件，不拦：${command}`, JSON.stringify(reasons))
+  }
+  for (const command of HEREDOC_EXECUTES) {
+    const reasons = guard.detectDanger('bash', { command }, PROJECT)
+    ok(reasons.length > 0, `heredoc 会被执行或写进自动执行的位置，仍要拦：${command}`, JSON.stringify(reasons))
+  }
+  for (const command of HEREDOC_SEARCH_TEXT_ONLY) {
+    const reasons = [...guard.detectDanger('bash', { command }, PROJECT), ...guard.criticalDanger('bash', { command }, PROJECT)]
+    ok(reasons.length === 0, `heredoc 旁边只有 ls、pwd、mkdir、echo，不拦：${command}`, JSON.stringify(reasons))
+  }
+  for (const command of HEREDOC_SEARCH_EXECUTES) {
+    const reasons = guard.detectDanger('bash', { command }, PROJECT)
+    ok(reasons.length > 0, `heredoc 与搜索段、显示命令或 git 同在一条命令，或写入目标不安全，按原文检查：${command}`, JSON.stringify(reasons))
+  }
+  for (const [tool, command] of ABSOLUTE_TARGET_TEXT_ONLY) {
+    const reasons = guard.detectDanger(tool, { command }, PROJECT)
+    ok(reasons.length === 0, `绝对路径写普通文件仍放宽：${command}`, JSON.stringify(reasons))
+  }
+  for (const [tool, command] of ABSOLUTE_TARGET_EXECUTES) {
+    const reasons = guard.detectDanger(tool, { command }, PROJECT)
+    ok(reasons.length > 0, `绝对路径写 ssh、git、ack、less、shell 启动配置，按原文检查：${command}`, JSON.stringify(reasons))
+  }
+  for (const command of HEREDOC_CRITICAL) {
+    const reasons = guard.criticalDanger('bash', { command }, PROJECT)
+    ok(reasons.length > 0, `「不受限制」档仍拦：${command}`, JSON.stringify(reasons))
+  }
   for (const body of POWERSHELL_INNER) {
     ok(/git push --force/.test(guard.ruleText(body, 'powershell')), `PowerShell 方言照原文检查：${body}`, guard.ruleText(body, 'powershell'))
   }

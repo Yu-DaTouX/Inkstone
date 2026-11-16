@@ -997,11 +997,17 @@ const GIT_GREP_PAGER = /(?:^|\s)(?:-[a-zA-Z]*O|--op)/
 const POWERSHELL_SEARCH_UNSAFE = /[$@(){}`\u2018-\u201e]/
 
 const SEARCH_FILE_REDIRECT = /(^|\s)\d?>>?\s*([^\s|;&<>()$`"'{}@]+)(?=\s|$)/g
-const SEARCH_TARGET_UNSAFE = /[*?[\]~]|\.git|\.husky|hooks|\.vscode|\.envrc|profile|\.\w*rc\b/i
+const WRITE_TARGET_UNSAFE = /[*?[\]~]|\.git|gitconfig|\.husky|hooks|\.vscode|\.envrc|profile|\.\w*rc\b|(?<![\w.-])_\w*rc\b|\.ssh|\.config\/+git(?:\/|$|\s)|(?:^|[\s/])git\/+config|lesskey|\.bash_log(?:in|out)|\.zshenv|\.zlog(?:in|out)/i
+
+function unsafeWriteTarget(text) {
+  const flat = bare(text)
+  const slashed = String(text ?? '').replace(/["']/g, '').replace(/\\/g, '/')
+  return WRITE_TARGET_UNSAFE.test(flat) || WRITE_TARGET_UNSAFE.test(slashed) || RELAX_KEYWORDS.test(flat)
+}
 
 function plainWords(text, dialect, files = false) {
   let rest = text.replace(SEARCH_REDIRECT, ' ')
-  if (files) rest = rest.replace(SEARCH_FILE_REDIRECT, (all, lead, target) => (SEARCH_TARGET_UNSAFE.test(bare(target)) || RELAX_KEYWORDS.test(bare(target)) ? all : lead))
+  if (files) rest = rest.replace(SEARCH_FILE_REDIRECT, (all, lead, target) => (unsafeWriteTarget(target) ? all : lead))
   if (unquotedSpecial(rest, dialect)) return null
   const words = shellWords(text)
   return words.length && /^[A-Za-z][\w.-]*$/.test(words[0]) ? words : null
@@ -1058,9 +1064,43 @@ function searchedSegments(segments, command, dialect) {
   return found ? out : null
 }
 
+const HEREDOC_OPERATOR = /(^|\s)<<(-?)(['"])([A-Za-z_][\w-]*)\3(?=[\s<>]|$)/
+const HEREDOC_REDIRECT = /(^|\s)1?>>?\s*[^\s|;&<>()$`"'{}@*?[\]]+(?=\s|$)/g
+
+function heredocLine(text) {
+  const start = text.search(/\S/)
+  const nl = text.indexOf('\n', start)
+  if (start < 0 || nl < 0) return null
+  const line = text.slice(0, nl)
+  const op = HEREDOC_OPERATOR.exec(line)
+  if (!op || (line.match(/<</g) ?? []).length !== 1 || line.includes('<<<')) return null
+  const rest = line.replace(op[0], ' ').replace(HEREDOC_REDIRECT, ' ')
+  const words = shellWords(rest)
+  if (unquotedSpecial(rest, 'posix') || (words[0] !== 'cat' && words[0] !== 'tee')) return null
+  if (words.slice(1).some((word) => words[0] === 'cat' || (word !== '-a' && !/^[\w.][\w./-]*$/.test(word)))) return null
+  if (unsafeWriteTarget(line)) return null
+  const last = text.slice(nl + 1).split('\n').at(-1)
+  return (op[2] ? last.replace(/^\t+/, '') : last) === op[4] ? line : null
+}
+
+function heredocSegments(segments, dialect) {
+  if (dialect !== 'posix') return null
+  const out = []
+  let found = false
+  for (const { text, sep } of segments) {
+    if (!RELAX_SEPS.has(sep)) return null
+    const line = text.trim() ? heredocLine(text) : null
+    if (line !== null) { out.push(line); found = true; continue }
+    const kept = text.trim() ? relaxedSegment(text, dialect) : text
+    if (kept === null || /^\s*(?:yan|git|cd)\b/i.test(kept)) return null
+    out.push(kept)
+  }
+  return found ? out : null
+}
+
 export function ruleText(command, dialect = 'posix') {
   const segments = joinFdCopies(splitSegments(command, dialect))
-  const shown = searchedSegments(segments, command, dialect) ?? relaxedSegments(segments, command, dialect)
+  const shown = heredocSegments(segments, dialect) ?? searchedSegments(segments, command, dialect) ?? relaxedSegments(segments, command, dialect)
   return segments.map(({ text, sep }, i) => (shown ? shown[i] : text) + sep).join('')
 }
 
