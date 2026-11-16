@@ -9,7 +9,9 @@ const lib = await loadApp().catch((error) => {
   const errors = error?.errors ?? []
   const missing = errors.map((item) => /^Could not resolve "([^./][^"]*)"/.exec(item.text)?.[1]).filter(Boolean)
   if (!errors.length || missing.length !== errors.length) throw error
-  reportSkip(`手机端渲染测试：mobile/ 的依赖没有安装（${[...new Set(missing)].join('、')}），先在 mobile/ 运行 npm ci，跳过`)
+  const message = `手机端渲染测试：mobile/ 的依赖没有安装（${[...new Set(missing)].join('、')}），先在 mobile/ 运行 npm ci`
+  if (process.env.CI) throw new Error(message)
+  reportSkip(`${message}，跳过`)
   process.exit(0)
 })
 const failures = []

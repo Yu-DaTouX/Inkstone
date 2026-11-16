@@ -43,6 +43,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
 
       - name: Resolve version and tag
         id: meta
@@ -70,6 +73,9 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - run: npm ci
+
+      - name: Install mobile dependencies (unit tests render mobile/)
+        run: npm ci --prefix mobile --no-audit --no-fund
 
       - name: Bundle pi runtime
         run: |
