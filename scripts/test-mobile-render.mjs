@@ -3,8 +3,15 @@ import { startFakeDesktop } from './mobile-render/fake-desktop.mjs'
 import { edgeFlows } from './mobile-render/flows-edge.mjs'
 import { moreFlows } from './mobile-render/flows-more.mjs'
 import { liveFlows } from './mobile-render/flows-live.mjs'
+import { reportSkip } from './lib/test-skip.mjs'
 
-const lib = await loadApp()
+const lib = await loadApp().catch((error) => {
+  const errors = error?.errors ?? []
+  const missing = errors.map((item) => /^Could not resolve "([^./][^"]*)"/.exec(item.text)?.[1]).filter(Boolean)
+  if (!errors.length || missing.length !== errors.length) throw error
+  reportSkip(`手机端渲染测试：mobile/ 的依赖没有安装（${[...new Set(missing)].join('、')}），先在 mobile/ 运行 npm ci，跳过`)
+  process.exit(0)
+})
 const failures = []
 let passed = 0
 const check = (cond, message, detail) => {

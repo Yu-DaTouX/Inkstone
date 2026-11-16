@@ -49,6 +49,15 @@ function createTunnel(mods) {
 
 const fail = (status, error) => ({ ok: false, status, error })
 
+async function fetchRefusesPort(port) {
+  try {
+    await (await fetch(`http://127.0.0.1:${port}/remote/v1/health`)).arrayBuffer()
+    return false
+  } catch (error) {
+    return error?.cause?.message === 'bad port'
+  }
+}
+
 export const defaultSessions = () => [
   { id: 's-1', title: '第一个会话', cwdName: 'repo', projectId: 'p-1', updatedAt: Date.now() - 60_000, messageCount: 2 },
   { id: 's-2', title: '要删除的会话', cwdName: 'repo', projectId: 'p-1', updatedAt: Date.now() - 120_000, messageCount: 1 }
@@ -141,7 +150,7 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
   const { direct, state: tunnelState } = createTunnel(mods)
   tunnelState.hostKey = hostPair
   let invite = null
-  const server = new RemoteServer({
+  const createServer = () => new RemoteServer({
     host: '127.0.0.1',
     port: 0,
     devices,
@@ -149,18 +158,25 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
     tunnel: {
       upgrade: (req, socket, head) => direct.upgrade(req, socket, head),
       invite: async () => {
-        if (!invite) {
+        if (!invite || !tunnelState.pairCodes.has(invite.code)) {
           const code = `relay-${Math.random().toString(36).slice(2)}`
           tunnelState.pairCodes.add(code)
           invite = { hostKey: mods.toB64u(hostPair.raw), code }
         }
         return invite
       },
+      inviteActive: (code) => tunnelState.pairCodes.has(code),
       stop: () => direct.stop()
     }
   })
+  let server = createServer()
+  let info = await server.start()
+  for (let attempt = 0; await fetchRefusesPort(info.port) && attempt < 5; attempt++) {
+    await server.stop()
+    server = createServer()
+    info = await server.start()
+  }
   tunnelState.target = () => ({ host: '127.0.0.1', port: server.info.port, relayToken: '' })
-  const info = await server.start()
   const baseUrl = `http://127.0.0.1:${info.port}`
   return {
     server, devices, state, calls, baseUrl,

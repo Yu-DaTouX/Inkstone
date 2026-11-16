@@ -36,7 +36,6 @@ Object.assign(globalThis, {
   HTMLElement: dom.HTMLElement,
   Element: dom.Element,
   Node: dom.Node,
-  Event: dom.Event,
   SVGElement: dom.SVGElement ?? dom.Element,
   IS_REACT_ACT_ENVIRONMENT: true
 })
@@ -151,7 +150,7 @@ export function createHarness(lib) {
       let value
       try { value = predicate() } catch { value = false }
       if (value) return value
-      if (Date.now() > end) throw new Error(`等待超时：${what}`)
+      if (Date.now() > end) throw new Error(`等待超时：${what}（界面末尾：${text().replace(/\s+/g, ' ').slice(-200)}）`)
     }
   }
   const all = (selector) => [...document.querySelectorAll(selector)].filter((n) => !n.closest('[data-hidden]'))

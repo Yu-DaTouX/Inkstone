@@ -155,12 +155,17 @@ await check('popd 一类无法确定的位置变成未知', async () => {
 })
 
 process.stdout.write('\n▌模型在用户手动 cd 后的写入守卫\n')
+await mkdir(join(process.cwd(), '.tmp'), { recursive: true })
 const work = await mkdtemp(join(process.cwd(), '.tmp', 'terminal-guard-'))
+const savedTemp = Object.fromEntries(['TEMP', 'TMP', 'TMPDIR'].map((key) => [key, process.env[key]]))
 try {
   const project = join(work, 'proj')
   const elsewhere = join(work, 'elsewhere')
+  const systemTemp = join(work, 'system-temp')
   await mkdir(project, { recursive: true })
   await mkdir(elsewhere, { recursive: true })
+  await mkdir(systemTemp, { recursive: true })
+  for (const key of Object.keys(savedTemp)) process.env[key] = systemTemp
   const info = { id: 't1', title: 'x', cwd: project, shell: '/bin/bash', owner: 'owner-1', cols: 120, rows: 30, alive: true, exitCode: null }
   const stream = { info, buffer: '', total: 0, lastOutputAt: 0, pid: 1234 }
   const requests = []
@@ -234,6 +239,10 @@ try {
     assert.ok(asked[0].reasons.some((reason) => reason.includes('无法确定写入位置')), JSON.stringify(asked[0].reasons))
   })
 } finally {
+  for (const [key, value] of Object.entries(savedTemp)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
   await rm(work, { recursive: true, force: true }).catch(() => undefined)
 }
 

@@ -7,6 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { build, transform } from 'esbuild'
 import ts from 'typescript'
+import { bundledPiRuntimeForTest } from './lib/pi-runtime-location.mjs'
 
 const RUNTIME_ROOT = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'resources/pi-runtime')
 const ENTRY = 'src/main/terminal-status.ts'
@@ -25,10 +26,8 @@ const eq = (actual, expected, message) => {
   checks += 1
 }
 
-async function findPiChunk() {
-  const manifest = JSON.parse(await readFile(join(RUNTIME_ROOT, 'current.json'), 'utf8'))
-  assert.ok(typeof manifest.generation === 'string', 'current.json 缺少 generation')
-  const chunksDir = join(RUNTIME_ROOT, manifest.generation, 'dist/bundle/chunks')
+async function findPiChunk(runtimeDir) {
+  const chunksDir = join(runtimeDir, 'dist/bundle/chunks')
   const files = (await readdir(chunksDir)).filter((name) => name.endsWith('.js'))
   const matches = []
   for (const name of files) {
@@ -94,8 +93,6 @@ async function loadTerminalEnvironment() {
 const bodyOf = (frame) => frame.slice(2, -2)
 
 export async function runNativeProtocolTests() {
-  const { path: chunkPath, text } = await findPiChunk()
-  const pi = loadPi(extractDeclarations(text, chunkPath))
   const { mod, dir } = await loadModule()
   try {
     const {
@@ -114,6 +111,14 @@ export async function runNativeProtocolTests() {
     const untouched = {}
     environment(untouched, 'win32')
     eq(untouched, {}, '不修改传入环境或全局process.env')
+
+    const runtimeDir = bundledPiRuntimeForTest('terminal-native-protocol 真实 pi 源兼容检查', RUNTIME_ROOT)
+    if (!runtimeDir) {
+      console.log(`terminal-native-protocol: ${checks} 项环境适配检查通过；未做 pi 源兼容检查`)
+      return
+    }
+    const { path: chunkPath, text } = await findPiChunk(runtimeDir)
+    const pi = loadPi(extractDeclarations(text, chunkPath))
 
     eq(pi.PROGRAM_STATUS_QUERY, '\x1b]7501;?\x1b\\', 'pi PROGRAM_STATUS_QUERY 是精确查询')
     eq(pi.MAX_MESSAGE_BYTES, 2048, 'pi MAX_MESSAGE_BYTES = 2048')

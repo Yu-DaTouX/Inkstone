@@ -88,14 +88,25 @@ export function moreFlows({ boot, openSession, check, env }) {
     await h.pressLabel('连接电脑')
     await h.waitFor(() => h.has('没有正在进行的配对') || h.has('配对'), `${tag} 无配对码时报错`)
     check(h.has('电脑上没有正在进行的配对'), `${tag} 无配对时显示原文`, h.text().slice(-300))
-    const pairing = desk.devices.startPairing()
+    const pairingCode = desk.startPairing()
+    const connectWithIdentity = async (answer) => {
+      const before = env.alerts.length
+      await h.pressLabel('连接电脑')
+      await h.waitFor(() => env.alerts.length > before && env.alerts.at(-1).title === '核对电脑身份', `${tag} 手动地址配对先核对电脑身份`)
+      check(/身份指纹/.test(env.alerts.at(-1).message ?? ''), `${tag} 身份核对弹窗写明指纹`, env.alerts.at(-1).message)
+      await h.alertButton(answer)
+    }
     await h.typeInto(h.inputs()[1], '000000')
-    await h.pressLabel('连接电脑')
+    const devicesBefore = (await desk.devices.list()).length
+    await connectWithIdentity('取消')
+    await h.waitFor(() => h.has('没有确认电脑身份'), `${tag} 取消核对就停止配对`)
+    check((await desk.devices.list()).length === devicesBefore, `${tag} 取消核对不登记设备`)
+    await connectWithIdentity('一致，连接')
     await h.waitFor(() => h.has('配对码不正确'), `${tag} 错误配对码显示原文`)
-    await h.typeInto(h.inputs()[1], pairing.code)
-    await h.pressLabel('连接电脑')
+    await h.typeInto(h.inputs()[1], pairingCode)
+    await connectWithIdentity('一致，连接')
     await h.waitFor(() => h.byLabel('打开手机设置').length, `${tag} 配对成功进入首页`)
-    check(h.has('第一个会话'), `${tag} 首页列出会话`)
+    check(await h.waitFor(() => h.has('第一个会话'), `${tag} 首页列出会话`).catch(() => false), `${tag} 首页列出会话`, h.text().slice(-200))
     check(!!globalThis.__keychain.entry, `${tag} 钥匙串保存了新连接`)
     await ctx.close()
   }

@@ -68,7 +68,7 @@ export function liveFlows({ boot, openSession, check, env }) {
   async function flowParity() {
     const tag = '[端差异补齐]'
     const { createHash } = await import('node:crypto')
-    const question = { id: 'approval:11111111-2222-3333-4444-555555555555', sessionId: 's-1', runId: 'approval:11111111-2222-3333-4444-555555555555', method: 'confirm', sensitive: true, title: '运行危险命令', message: JSON.stringify({ kind: 'danger', tool: 'bash', detail: 'rm -rf build' }), deadline: Date.now() + 600_000 }
+    const question = { id: 'approval:11111111-2222-3333-4444-555555555555', sessionId: 's-1', runId: 'approval:11111111-2222-3333-4444-555555555555', method: 'confirm', sensitive: true, title: '运行危险命令', message: JSON.stringify({ kind: 'danger', tool: 'bash', detail: 'rm -rf build', cwd: 'E:/work/repo' }), deadline: Date.now() + 600_000 }
     question.approvalDigest = createHash('sha256').update(JSON.stringify([question.id, question.sessionId, question.runId, question.method, question.sensitive, question.title, question.message, []])).digest('hex')
     const approvals = []
     const ctx = await boot({ desktop: { tweak(handlers, state) {
@@ -104,8 +104,9 @@ export function liveFlows({ boot, openSession, check, env }) {
     check(desk.calls.find((c) => c[0] === 'command' && c[1].text === '顺便看下日志')[1].mode === 'steer', `${tag} 运行中发送按插话送达`)
     desk.state.approvalOpen = true
     desk.server.publish({ ch: 'approval', payload: {}, runtime: { sessionId: 's-1' } })
-    await h.waitFor(() => h.has('本会话内都允许'), `${tag} 审批卡提供「本会话内都允许」`)
-    await h.pressText('本会话内都允许')
+    await h.waitFor(() => h.has('本会话内允许这条命令'), `${tag} 命令审批卡提供「本会话内允许这条命令」`)
+    check(!h.has('本会话内都允许'), `${tag} 命令审批不写成「本会话内都允许」`)
+    await h.pressText('本会话内允许这条命令')
     await h.waitFor(() => approvals.length === 1, `${tag} 审批已发出`)
     check(approvals[0].confirmed === true && approvals[0].scope === 'session', `${tag} 审批带上本会话范围`, JSON.stringify(approvals[0]))
     await ctx.close()

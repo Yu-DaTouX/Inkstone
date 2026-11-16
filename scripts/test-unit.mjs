@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { discoverTests, selectTests, executionPlan } from './lib/test-catalog.mjs'
 import { runTestProcess, runTestPool } from './lib/test-process.mjs'
+import { SKIP_MARKER } from './lib/test-skip.mjs'
 
 try {
   const args = process.argv.slice(2)
@@ -24,7 +25,8 @@ try {
         const result = await runTestProcess({
           script: `scripts/${name}.mjs`, logPath: join(logDir, `${name}.log`), timeoutMs: 120_000
         })
-        console.log(`${result.ok ? '✓' : '✗'} ${name} (${result.elapsed}ms)`)
+        const skipped = (await readFile(result.logPath, 'utf8').catch(() => '')).split(/\r?\n/).filter((line) => line.startsWith(SKIP_MARKER))
+        console.log(`${result.ok ? '✓' : '✗'} ${name} (${result.elapsed}ms)${skipped.length ? `，有跳过：${skipped.map((line) => line.slice(SKIP_MARKER.length).trim()).join('；')}` : ''}`)
         if (!result.ok) console.error(`${result.error ?? (result.timedOut ? 'timeout' : result.signal ?? `exit ${result.code}`)}\n${result.tail}\n完整日志：${result.logPath}`)
         return result
       }

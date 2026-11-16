@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { build } from 'esbuild'
-import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { bundledPiRuntimeForTest } from './lib/pi-runtime-location.mjs'
 import { createAccess, createFakeAppHost, createFakeLegacyManager, managedConfig, piConfig } from './fixtures/mcp-app-settings-boundary-fixture.mjs'
 
 async function isolated(run) {
@@ -771,8 +771,8 @@ try {
     else process.env.YAN_MCP_APP_PROJECT_ID = savedEnv.appProject
   }
 
-  {
-    const runtimeDir = selectedPiRuntime(resolve(process.env.YAN_TEST_PI_RUNTIME_ROOT ?? 'resources/pi-runtime'))
+  const runtimeDir = bundledPiRuntimeForTest('mcp-app-proxy 真实 pi 注册检查')
+  if (runtimeDir) {
     const cli = join(runtimeDir, 'dist/bundle/cli.js')
     const piDir = join(root, 'pi')
     const extDir = join(piDir, 'extensions')
@@ -874,8 +874,18 @@ try {
     })
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', (part) => { stderr += part })
+    child.stdin.on('error', () => undefined)
+    const exited = new Promise((done) => child.once('exit', (code) => {
+      for (const entry of pending.values()) {
+        clearTimeout(entry.timer)
+        entry.reject(new Error(`pi 已退出（${code}）：${stderr.slice(-800)}`))
+      }
+      pending.clear()
+      done()
+    }))
     const command = (type, params = {}, timeoutMs = 30000) =>
       new Promise((resolveCommand, rejectCommand) => {
+        if (child.exitCode !== null || child.signalCode !== null) return rejectCommand(new Error(`pi 已退出（${child.exitCode}）：${stderr.slice(-800)}`))
         const id = String(++seq)
         const timer = setTimeout(() => {
           pending.delete(id)
@@ -926,7 +936,6 @@ try {
       ok(String(typeof searchResult?.content === 'string' ? searchResult.content : JSON.stringify(searchResult?.content)).includes('mcp__app_stdio__read_only_note'), '真实 pi：tool_search 结果里列出加载的工具')
     } finally {
       try { child.stdin.end() } catch { }
-      const exited = new Promise((done) => child.once('exit', done))
       const killTimer = setTimeout(() => child.kill(), 3000)
       await exited
       clearTimeout(killTimer)

@@ -5,7 +5,7 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { bundledPiRuntimeForTest } from './lib/pi-runtime-location.mjs'
 import { GUARD_TOOLS } from './fixtures/mcp-guard-server.mjs'
 
 const SERVER_NAME = 'guardfixture'
@@ -27,6 +27,8 @@ const EXPECTED = [
   { tool: 'safe_local', expectAsk: false, decision: null, expectExecuted: true }
 ]
 const fixtureByName = new Map(GUARD_TOOLS.map((tool) => [tool.name, tool]))
+const runtimeDir = bundledPiRuntimeForTest('原生 MCP 注解审批夹具')
+if (!runtimeDir) process.exit(0)
 
 const ROOT = await mkdtemp(join(tmpdir(), 'inkstone-mcp-guard-'))
 const PI_DIR = join(ROOT, 'pi')
@@ -35,7 +37,6 @@ const SESSIONS_DIR = join(ROOT, 'sessions')
 const EXT_DIR = join(PI_DIR, 'extensions')
 const MARKER = join(ROOT, 'mcp-calls.log')
 const PROBE_LOG = join(ROOT, 'probe.jsonl')
-const runtimeDir = selectedPiRuntime(resolve('resources/pi-runtime'))
 const CLI = join(runtimeDir, 'dist/bundle/cli.js')
 
 const delay = (ms) => new Promise((done) => setTimeout(done, ms))
