@@ -776,6 +776,8 @@
   "term.waitAnswer": "等待回答",
   "term.waitAuth": "等待登录",
   "term.wait": "等待处理",
+  "term.tabBell": "有响铃",
+  "term.tabExited": "已退出",
   "term.error": "出错",
   "term.idle": "空闲",
   "term.unavailable": "交互终端不可用：本机的原生依赖没有加载成功",

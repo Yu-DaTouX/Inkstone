@@ -365,6 +365,10 @@
     font-size: var(--t-footnote);
   }
 
+  .v3-preview-editstate[data-tone='fail'] {
+    color: var(--fail-t);
+  }
+
   .v3-preview-editstate-text {
     display: -webkit-box;
     min-width: 0;

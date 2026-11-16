@@ -687,7 +687,7 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
       )}
       {editing && draft ? (
         <div className="v3-preview-editbar" data-testid="v3-preview-editbar">
-          <span className="v3-preview-editstate" data-testid="v3-preview-editstate" title={!draft.saving && !draft.conflict && draft.failed ? draft.failure?.detail : undefined}>
+          <span className="v3-preview-editstate" data-testid="v3-preview-editstate" data-tone={!draft.saving && (draft.conflict || draft.failed) ? 'fail' : undefined} title={!draft.saving && !draft.conflict && draft.failed ? draft.failure?.detail : undefined}>
             {draft.conflict || draft.failed ? <StatusDot kind="fail" /> : dirty && !draft.saving ? <StatusDot kind="awaiting" /> : null}
             <span className="v3-preview-editstate-text">
               {draft.saving

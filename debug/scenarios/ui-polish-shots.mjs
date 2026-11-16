@@ -2274,7 +2274,7 @@ async function quotaTarget({ kit: S, ev, sleep, until, check, log, report, newSe
       await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`)
     }
     await sleep(400)
-    await until(`!document.querySelector('[data-testid="v3-wb-quota"] .ui-spinner') && !document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.hasAttribute('disabled')`, 15000, 150)
+    await until(`!document.querySelector('[data-testid="v3-wb-quota"] .ui-spinner') && !document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.hasAttribute('disabled') && !document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.hasAttribute('data-pending')`, 15000, 150)
     await sleep(700)
     await S.unhover()
   }
@@ -4852,7 +4852,183 @@ async function editorTarget({ kit: S, ev, sleep, until, check, log, report, newS
   report.audit.editor = await S.audit(panel)
 }
 
-const TARGETS = { editor: editorTarget, tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget, browserfinal: browserFinalTarget, browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget, settings: settingsTarget }
+async function o3TermTarget({ kit: S, ev, sleep, until, check, log, report, newSession }) {
+  report.o3term = {}
+  const R = report.o3term
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-o3term-'))
+  writeFileSync(join(dir, 'README.md'), '# terminal fixture\n')
+  check('终端 o3：夹具不在当前仓库里', !dir.toLowerCase().startsWith(process.cwd().toLowerCase()), dir)
+  const panel = '[data-testid="rp-column-0"]'
+  const bar = `${panel} .term-tabbar`
+  R.width = await ev('window.__yanRightPanel.getState().width')
+  const openTerm = async () => {
+    await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'terminal', kind: 'terminal' }); rp.setOpen(true); return true })()`)
+    return until(`!!document.querySelector('[data-testid="terminal-pane"]')`, 15000, 100)
+  }
+  const ready = async (ms = 1500) => {
+    await until(`!!document.querySelector('[data-testid="terminal-pane"] .xterm') && !document.querySelector('[data-testid="terminal-busy"]')`, 20000, 150)
+    await sleep(ms)
+    await S.unhover()
+  }
+  const tabsInfo = () => ev(`(() => { const list = document.querySelector('[data-testid="terminal-tabs"]'); if (!list) return null; return [...list.querySelectorAll('.ui-ptab')].map((n) => ({ id: n.dataset.panelTab, label: n.innerText.trim(), active: n.getAttribute('data-active') === '1', hidden: n.hasAttribute('data-overflowed'), attention: n.hasAttribute('data-attention'), muted: n.hasAttribute('data-muted') })) })()`)
+  const focusInfo = () => ev(`(() => { const a = document.activeElement; const host = a?.closest?.('[data-panel-tab]'); return { body: !a || a === document.body, tag: a?.tagName ?? null, role: a?.getAttribute('role') ?? null, testid: a?.getAttribute('data-testid') ?? null, tab: host?.dataset.panelTab ?? null, selected: a?.getAttribute('aria-selected') ?? null, focusVisible: a?.hasAttribute('data-focus-visible') ?? null, outline: a ? getComputedStyle(a).outlineStyle + ' ' + getComputedStyle(a).outlineWidth + ' ' + getComputedStyle(a).outlineColor : null, boxShadow: a ? getComputedStyle(a).boxShadow.slice(0, 120) : null, activeTab: document.querySelector('[data-testid="terminal-tabs"] .ui-ptab[data-active="1"]')?.dataset.panelTab ?? null } })()`)
+  const selectTab = async (id) => {
+    await ev(`(document.querySelector('[data-panel-tab="${id}"] .ui-ptab__label')?.click(), true)`)
+    await sleep(900)
+  }
+  const focusTerm = () => ev(`(() => { const host = document.querySelector('[data-testid^="terminal-host-"][data-active="1"]'); const ta = host?.querySelector('textarea'); ta?.focus(); return document.activeElement === ta })()`)
+  const typeLine = async (line) => {
+    if (!(await focusTerm())) return false
+    await S.typeText(line, 200)
+    await S.key('Enter', { waitMs: 600 })
+    return true
+  }
+  const both = async (name, selector, pad = 0) => {
+    await S.theme('dark'); await sleep(300)
+    await S.clip(`${name}-dark`, selector, pad)
+    await S.theme('light'); await sleep(300); await S.clip(`${name}-light`, selector, pad); await S.theme('dark'); await sleep(300)
+  }
+
+  await newSession(dir)
+  check('终端 o3：面板打开', await openTerm())
+  await ready()
+  for (let i = 0; i < 5; i++) {
+    await S.click('[data-testid="terminal-new"]', 600)
+    await ready(900)
+  }
+  await sleep(1500)
+  R.initial = await tabsInfo()
+  const ids = (R.initial ?? []).map((tab) => tab.id)
+  check('终端 o3：开出 6 个标签', ids.length === 6, ids)
+  if (ids.length < 4) return
+
+  await selectTab(ids[0])
+  R.bellTyped = await typeLine('Start-Sleep 6; Write-Host -NoNewline ([char]7)')
+  await selectTab(ids[1])
+  R.exitTyped = await typeLine('Start-Sleep 6; exit 3')
+  await selectTab(ids[ids.length - 1])
+  await S.unhover()
+  R.beforeEvents = await tabsInfo()
+  await sleep(9000)
+  R.afterEvents = await tabsInfo()
+  R.overflowButton = await ev(`(() => { const b = document.querySelector('[data-testid="terminal-tab-overflow"]'); return b ? { label: b.getAttribute('aria-label'), attention: b.hasAttribute('data-attention'), dot: !!b.querySelector('.term-tab-more__dot') } : null })()`)
+  check('终端 o3：隐去的标签响铃后溢出按钮有小点', !!R.overflowButton?.dot, R.overflowButton)
+  await both('o3p3-ta-overflow-dot', bar, 4)
+  await S.clip('o3p3-ta-overflow-dot-panel', panel, 0)
+  if (await S.click('[data-testid="terminal-tab-overflow"]', 900)) {
+    R.menu = await ev(`(() => { const m = document.querySelector('[data-testid="terminal-tab-overflow-menu"]'); if (!m) return null; return [...m.querySelectorAll('[role^="menuitem"]')].map((i) => ({ text: i.innerText.replace(/\\s+/g, ' ').trim(), label: i.getAttribute('aria-label'), attention: i.hasAttribute('data-attention'), exited: i.hasAttribute('data-exited'), dot: i.querySelector('.ui-status__dot')?.getAttribute('data-kind') ?? null })) })()`)
+    check('终端 o3：菜单项带响铃与退出状态点', !!R.menu?.some((item) => item.dot === 'awaiting') && !!R.menu?.some((item) => item.dot === 'idle'), R.menu)
+    await S.shot('o3p3-ta-overflow-menu-dark')
+    await S.theme('light'); await S.shot('o3p3-ta-overflow-menu-light'); await S.theme('dark')
+    await S.key('Escape', { waitMs: 500 })
+  }
+  await S.unhover()
+  await ev('document.activeElement?.blur?.()')
+
+  await ev(`document.querySelector('[data-testid="terminal-tabs"] .ui-ptab[data-active="1"] [role="tab"]')?.focus()`)
+  await S.key('Tab', { waitMs: 400 })
+  R.overflowFocus = await focusInfo()
+  check('终端 o3：键盘 Tab 到溢出按钮且为键盘焦点', R.overflowFocus?.testid === 'terminal-tab-overflow' && R.overflowFocus?.focusVisible === true, R.overflowFocus)
+  await both('o3p3-tc-overflow-keyfocus', bar, 4)
+  await ev('document.activeElement?.blur?.()')
+
+  await selectTab(ids[0])
+  await S.unhover()
+  R.firstSelected = await tabsInfo()
+  R.moves = []
+  await ev(`document.querySelector('[data-testid="terminal-tabs"] .ui-ptab[data-active="1"] [role="tab"]')?.focus()`)
+  for (const [step, key] of [['right', 'ArrowRight'], ['left', 'ArrowLeft'], ['left-wrap', 'ArrowLeft'], ['right-back', 'ArrowRight']]) {
+    await S.key(key, { waitMs: 900 })
+    const info = await focusInfo()
+    R.moves.push({ step, ...info })
+    await S.clip(`o3p3-tb-arrow-${step}`, bar, 4)
+  }
+  check('终端 o3：左右移动后焦点始终在当前标签上', R.moves.every((m) => !m.body && m.role === 'tab' && m.tab === m.activeTab), R.moves)
+
+  const tabs = (await tabsInfo()) ?? []
+  const pick = tabs.findIndex((tab, index) => !tab.hidden && !tab.muted && tabs[index + 1]?.hidden)
+  R.deletePick = pick >= 0 ? { closed: tabs[pick].id, neighbor: tabs[pick + 1].id } : null
+  if (pick >= 0) {
+    await selectTab(tabs[pick].id)
+    await S.unhover()
+    R.beforeDelete = await tabsInfo()
+    R.neighborHiddenBeforeDelete = R.beforeDelete?.find((tab) => tab.id === tabs[pick + 1].id)?.hidden ?? null
+    await ev(`document.querySelector('[data-panel-tab="${tabs[pick].id}"] [role="tab"]')?.focus()`)
+    for (const type of ['keyDown', 'keyUp']) await S.cdpCall('Input.dispatchKeyEvent', { type, key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 })
+    await sleep(2500)
+    if (await ev(`!!document.querySelector('[data-testid="terminal-close-dialog"]')`)) await S.click('[data-testid="terminal-close-confirm"]', 1500)
+    R.afterDelete = await tabsInfo()
+    R.deleteFocus = await focusInfo()
+    check('终端 o3：Delete 关闭后焦点在新的当前标签，不掉到 body', !R.deleteFocus.body && R.deleteFocus.role === 'tab' && R.deleteFocus.tab === R.deleteFocus.activeTab, R.deleteFocus)
+    await both('o3p3-tb-delete-focus', bar, 4)
+    await S.clip('o3p3-tb-delete-focus-panel', panel, 0)
+  } else check('终端 o3：找到右邻被隐去的可见标签', false, tabs)
+  await ev('document.activeElement?.blur?.()')
+}
+
+async function o3QuotaTarget({ kit: S, ev, sleep, until, check, report, newSession, box }) {
+  report.o3quota = {}
+  const R = report.o3quota
+  const file = box.quotaFixture
+  if (!check('额度 o3：实例带假额度文件（--quota）', !!file && existsSync(file), file ?? null)) return
+  const dir = mkdtempSync(join(tmpdir(), 'inkstone-ui-o3quota-'))
+  writeFileSync(join(dir, 'README.md'), '# quota fixture\n')
+  const HOUR = 3_600_000
+  const win = (id, label, used, durationMs, leftMs) => ({ id, label, used, total: 100, durationMs, resetAt: Date.now() + leftMs })
+  writeFileSync(file, JSON.stringify([{ key: 'debug:fake', source: 'yan', provider: 'fake', name: 'Fake', checkedAt: Date.now(), status: 'ok', email: 'demo@example.com', plan: 'max', active: true, windows: [win('five_hour', '5 小时', 46, 5 * HOUR, 3 * HOUR), win('seven_day', '本周', 31, 168 * HOUR, 96 * HOUR)] }]))
+  await newSession(dir)
+  await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'quota', kind: 'quota' }); rp.setOpen(true); return true })()`)
+  check('额度 o3：面板打开', await until(`!!document.querySelector('[data-testid="v3-wb-quota"] .wb-quota-card')`, 20000, 150))
+  await sleep(1200)
+  await S.unhover()
+  R.paused = {}
+  for (const theme of ['dark', 'light']) {
+    await S.theme(theme)
+    const pause = await S.pauseAt('publishAccountQuotaReport(next)', async () => { await ev(`document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.click()`) })
+    R.paused[theme] = pause?.paused ?? false
+    if (pause?.paused) await S.shotPaused(`o3p3-q1-refresh-pending-${theme}`)
+    await pause?.resume()
+    await until(`!document.querySelector('[data-testid="v3-wb-quota-refresh"]')?.hasAttribute('data-pending')`, 15000, 150)
+    await sleep(500)
+  }
+  check('额度 o3：刷新中拍到', R.paused.dark && R.paused.light, R.paused)
+  await S.theme('dark')
+  R.idle = await ev(`(() => { const b = document.querySelector('[data-testid="v3-wb-quota-refresh"]'); return b ? { disabled: b.disabled, pending: b.hasAttribute('data-pending'), opacity: getComputedStyle(b).opacity } : null })()`)
+}
+
+async function o3FetchTipTarget({ kit: S, ev, sleep, until, check, report, newSession }) {
+  report.o3fetch = {}
+  const R = report.o3fetch
+  const fx = makeChangesFixtures(mkdtempSync(join(tmpdir(), 'inkstone-ui-o3fetch-')), process.cwd())
+  await newSession(fx.mixed)
+  await ev(`(() => { const rp = window.__yanRightPanel.getState(); rp.open({ id: 'changes', kind: 'changes' }); rp.setOpen(true); return true })()`)
+  check('改动 o3：面板打开', await until(`!!document.querySelector('[data-testid="changes-fetch"]')`, 20000, 150))
+  await sleep(1500)
+  await S.unhover()
+  R.button = await ev(`(() => { const b = document.querySelector('[data-testid="changes-fetch"]'); return b ? { disabled: b.disabled || b.hasAttribute('data-disabled'), label: b.getAttribute('aria-label'), title: b.title } : null })()`)
+  check('改动 o3：拉取/推送按钮禁用且带原生 title', !!R.button?.disabled && !!R.button?.title, R.button)
+  const tips = () => ev(`[...document.querySelectorAll('[role="tooltip"], .ui-tooltip')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.innerText.slice(0, 80))`)
+  R.samples = []
+  await S.hover('[data-testid="changes-fetch"]', 0, 0)
+  for (let i = 0; i < 8; i++) {
+    await sleep(400)
+    R.samples.push(await tips())
+  }
+  R.hoverTarget = await ev(`(() => { const b = document.querySelector('[data-testid="changes-fetch"]'); const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { hitIsButton: hit === b || b.contains(hit), hovered: b.matches(':hover'), dataHovered: b.hasAttribute('data-hovered') } })()`)
+  check('改动 o3：悬停禁用按钮时没有自绘 tooltip', R.samples.every((list) => list.length === 0), R.samples)
+  await S.clip('o3p3-fetch-disabled-hover', '[data-testid="rp-column-0"]', 0)
+  await S.unhover()
+  await sleep(600)
+  const control = await ev(`(() => { const b = [...document.querySelectorAll('.changes-pane button.ui-icon-btn')].find((n) => !n.disabled && !n.hasAttribute('data-disabled') && n.getBoundingClientRect().width > 0); if (!b) return null; b.setAttribute('data-o3-control', ''); return b.getAttribute('aria-label') })()`)
+  if (control) {
+    await S.hover('[data-o3-control]', 1600, 0)
+    R.control = { label: control, tips: await tips() }
+    check('改动 o3：对照——悬停可用按钮会出现自绘 tooltip（检测有效）', R.control.tips.length > 0, R.control)
+    await S.unhover()
+  }
+}
+
+const TARGETS = { o3term: o3TermTarget, o3quota: o3QuotaTarget, o3fetch: o3FetchTipTarget, editor: editorTarget, tree: treeTarget, library: libraryTarget, usage: usageTarget, overview: overviewTarget, shell: shellTarget, subagents: subagentsTarget, prs: prsTarget, device: deviceTarget, logs: logsTarget, tabgap: tabgapTarget, branches: branchesTarget, quota: quotaTarget, context: contextTarget, terminal: terminalTarget, changes: changesTarget, browserfinal: browserFinalTarget, browser: browserTarget, buttons: buttonsTarget, rail: railTarget, files: filesTarget, preview: previewTarget, settings: settingsTarget }
 
 export default async function run(ctx) {
   const { cdp, until, sleep, log, check, report } = ctx

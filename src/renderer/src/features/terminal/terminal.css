@@ -71,6 +71,16 @@
     flex: none;
   }
 
+  .term-tab-more {
+    position: relative;
+  }
+
+  .term-tab-more__dot {
+    position: absolute;
+    top: var(--s-2);
+    right: var(--s-2);
+  }
+
   .term-tabs > .ui-ptab[data-overflowed] {
     visibility: hidden;
   }

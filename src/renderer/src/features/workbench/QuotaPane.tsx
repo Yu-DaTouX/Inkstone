@@ -156,10 +156,11 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
             aria-label={t('quota.refresh')}
             tooltip={t('quota.refresh')}
             onPress={() => void load()}
-            isDisabled={loading}
+            isDisabled={loading && !report}
+            isPending={loading && !!report}
             data-testid="v3-wb-quota-refresh"
           >
-            {loading && report ? <Spinner size={14} /> : <RefreshCw size={14} />}
+            <RefreshCw size={14} />
           </IconButton>
           <IconButton
             size="sm"

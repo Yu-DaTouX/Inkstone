@@ -776,6 +776,8 @@
   "term.waitAnswer": "Waiting for an answer",
   "term.waitAuth": "Waiting for sign-in",
   "term.wait": "Waiting",
+  "term.tabBell": "Bell rang",
+  "term.tabExited": "Exited",
   "term.error": "Error",
   "term.idle": "Idle",
   "term.unavailable": "Interactive terminal unavailable: the native dependency failed to load",

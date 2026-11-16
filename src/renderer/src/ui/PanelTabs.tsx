@@ -298,7 +298,23 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
   ref
 ) {
   const { listRef, ink } = usePanelTabInk(plain)
+  const own = useRef<HTMLDivElement | null>(null)
+  const closedFocus = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const id = closedFocus.current
+    const node = own.current
+    if (!id || !node || node.querySelector(`[data-panel-tab="${CSS.escape(id)}"]`)) return
+    closedFocus.current = null
+    requestAnimationFrame(() => {
+      const focused = document.activeElement
+      if (!node.isConnected || (focused && focused !== document.body && !node.contains(focused))) return
+      const tabs = tabsOf(node)
+      const target = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') ?? tabs[0]
+      if (target && target !== focused) target.focus({ preventScroll: true })
+    })
+  })
   const attach = (node: HTMLDivElement | null): void => {
+    own.current = node
     listRef(node)
     if (typeof ref === 'function') ref(node)
     else if (ref) ref.current = node
@@ -306,6 +322,7 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     onKeyDownProp?.(event)
     if (event.defaultPrevented) return
+    closedFocus.current = null
     const target = event.target as HTMLElement
     if (target.getAttribute('role') !== 'tab') return
     const tabs = tabsOf(event.currentTarget)
@@ -327,9 +344,8 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
       onCloseFocused
     ) {
       event.preventDefault()
-      const neighbor = tabs[index + 1] ?? tabs[index - 1]
+      closedFocus.current = id
       onCloseFocused(id)
-      requestAnimationFrame(() => neighbor?.focus({ preventScroll: true }))
       return
     } else if (((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') && id && host && onContextMenuFocused) {
       event.preventDefault()

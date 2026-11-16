@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { Bot, ChevronDown, Plus, SquareTerminal } from '../../ui/icons'
-import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover } from '../../ui'
+import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover, StatusDot } from '../../ui'
+import { useT } from '../../i18n'
 import { hiddenTabsAt, tabStripLayout, type TabSpan } from '../preview/preview-tab-strip'
 import { nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'
@@ -57,6 +58,7 @@ export function TerminalTabStrip({
   onCloseOthers,
   onNew
 }: TerminalTabStripProps): JSX.Element {
+  const t = useT()
   const stripRef = useRef<HTMLDivElement | null>(null)
   const menuAnchor = useRef<HTMLElement | null>(null)
   const [menuKey, setMenuKey] = useState<string | null>(null)
@@ -101,6 +103,21 @@ export function TerminalTabStrip({
   useEffect(() => {
     if (!hidden.length) setOverflowOpen(false)
   }, [hidden.length])
+
+  const [missed, setMissed] = useState<readonly string[]>([])
+  const tabKeys = tabs.map((tab) => tab.key).join('\n')
+  useEffect(() => {
+    const keys = tabKeys.split('\n')
+    setMissed((previous) => {
+      let next = previous.filter((key) => key !== active && keys.includes(key))
+      if (bell && bell !== active && hidden.includes(bell) && !next.includes(bell)) next = [...next, bell]
+      return sameIds(previous, next) ? previous : next
+    })
+  }, [bell, hidden, active, tabKeys])
+
+  const flagged = (key: string): boolean => bell === key || missed.includes(key)
+  const hiddenFlagged = hidden.some(flagged)
+  const overflowLabel = hiddenFlagged ? `${text.moreTabs(hidden.length)} · ${t('term.tabBell')}` : text.moreTabs(hidden.length)
 
   const selectTab = (key: string): void => {
     const fromKeyboard = keyboardMove.current
@@ -147,11 +164,11 @@ export function TerminalTabStrip({
               icon={tab.agentOwned ? <Bot aria-hidden /> : <SquareTerminal aria-hidden />}
               description={tab.agentOwned ? text.agentTab : undefined}
               data-agent={tab.agentOwned ? '1' : undefined}
-              data-overflowed={hidden.includes(tab.key) ? '' : undefined}
+              data-overflowed={tab.key !== active && hidden.includes(tab.key) ? '' : undefined}
               active={tab.key === active}
               pending={tab.busy || !!tab.agent}
               muted={tab.exited}
-              attention={bell === tab.key}
+              attention={flagged(tab.key)}
               closeLabel={text.closeTab}
               testId={`terminal-tab-${tab.key}`}
               onSelect={() => selectTab(tab.key)}
@@ -168,13 +185,15 @@ export function TerminalTabStrip({
           ref={overflowRef}
           size="sm"
           className="term-tab-more"
-          aria-label={text.moreTabs(hidden.length)}
-          tooltip={text.moreTabs(hidden.length)}
+          aria-label={overflowLabel}
+          tooltip={overflowLabel}
           aria-haspopup="menu"
           onPress={() => setOverflowOpen(true)}
           data-testid="terminal-tab-overflow"
+          data-attention={hiddenFlagged ? '' : undefined}
         >
           <ChevronDown size={14} aria-hidden />
+          {hiddenFlagged ? <StatusDot kind="awaiting" className="term-tab-more__dot" /> : null}
         </IconButton>
       ) : null}
       {hidden.length && overflowOpen ? (
@@ -203,8 +222,21 @@ export function TerminalTabStrip({
                   key={tab.key}
                   id={tab.key}
                   textValue={tab.label}
-                  aria-label={tab.agentOwned ? `${tab.label} · ${text.agentTab}` : undefined}
+                  aria-label={
+                    [tab.label, tab.agentOwned ? text.agentTab : '', flagged(tab.key) ? t('term.tabBell') : tab.exited ? t('term.tabExited') : '']
+                      .filter(Boolean)
+                      .join(' · ')
+                  }
                   icon={tab.agentOwned ? <Bot size={14} aria-hidden /> : <SquareTerminal size={14} aria-hidden />}
+                  trailingValue={
+                    flagged(tab.key) ? (
+                      <StatusDot kind="awaiting" />
+                    ) : tab.exited ? (
+                      <StatusDot kind="idle" />
+                    ) : undefined
+                  }
+                  data-attention={flagged(tab.key) ? '' : undefined}
+                  data-exited={tab.exited ? '' : undefined}
                 >
                   {tab.label}
                 </MenuItem>
