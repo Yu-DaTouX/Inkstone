@@ -1240,6 +1240,8 @@
   "picker.visual": "可视化回答",
   "picker.visualDesc": "合适时用图表、卡片和小工具回答；下一轮生效。",
   "vb.recommended": "推荐",
+  "vb.better": "较好",
+  "vb.worse": "较差",
   "vb.steps": "步骤",
   "vb.loop": "完成后回到第 1 步",
   "vb.mermaidTooLarge": "图的源码过长",

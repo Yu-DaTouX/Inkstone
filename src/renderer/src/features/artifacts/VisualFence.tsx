@@ -3,6 +3,30 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Meter, Notice, Stat, StatGrid } from '../../ui'
 import {
+  AlertCircle,
+  BarChart3,
+  Bot,
+  Check,
+  CheckCircle2,
+  CircleX,
+  File,
+  Folder,
+  GitBranch,
+  Globe,
+  Info,
+  KeyRound,
+  Layers,
+  List,
+  MessageSquareText,
+  Package,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Terminal,
+  TriangleAlert,
+  type IconComponent
+} from '../../ui/icons'
+import {
   isVisualDataLang,
   parseVisualBlock,
   safeHttpUrl,
@@ -18,21 +42,41 @@ import { fileUrl } from '../../../../shared/file-url'
 import { MessageImage } from '../session/Image'
 import { RemoteImage } from '../session/RemoteImage'
 import { VisualChart } from './VisualChart'
-import { WidgetBlock } from './WidgetBlock'
+import { WidgetBlock, WidgetPending } from './WidgetBlock'
 
-const BLOCK_ICONS: Record<string, ReactNode> = {
-  check: '✓',
-  alert: '!',
-  info: 'i',
-  sparkles: '✦',
-  layers: '▤',
-  file: '▧',
-  chart: '▦'
+const BLOCK_ICONS: Record<string, IconComponent> = {
+  agent: Bot,
+  checklist: List,
+  terminal: Terminal,
+  file: File,
+  folder: Folder,
+  globe: Globe,
+  search: Search,
+  'shield-check': ShieldCheck,
+  'alert-circle': AlertCircle,
+  'check-circle': CheckCircle2,
+  branch: GitBranch,
+  package: Package,
+  key: KeyRound,
+  'message-dots': MessageSquareText,
+  sparkles: Sparkles,
+  check: Check,
+  alert: AlertCircle,
+  info: Info,
+  layers: Layers,
+  chart: BarChart3
 }
 
 function BlockIcon({ name }: { name?: string }): JSX.Element | null {
-  const glyph = name ? BLOCK_ICONS[name] : undefined
-  return glyph ? <span className="v3-visual-icon" aria-hidden>{glyph}</span> : null
+  const Glyph = name && Object.hasOwn(BLOCK_ICONS, name) ? BLOCK_ICONS[name] : undefined
+  return Glyph ? <span className="v3-visual-icon" aria-hidden><Glyph size={14} /></span> : null
+}
+
+const RESULT_MARKS: Record<string, IconComponent> = { ok: CheckCircle2, warn: TriangleAlert, err: CircleX, info: Info }
+
+function ResultMark({ tone }: { tone: string }): JSX.Element {
+  const Glyph = RESULT_MARKS[tone] ?? Info
+  return <span className="v3-visual-result-mark" aria-hidden><Glyph size={14} /></span>
 }
 
 function useOpenLink(): {
@@ -116,13 +160,23 @@ function Stats({ block }: { block: StatsBlock }): JSX.Element {
           const good = item.good ?? 'up'
           const tone: 'ok' | 'err' | '' = !item.trend || item.trend === 'flat' ? '' : item.trend === good ? 'ok' : 'err'
           const arrow = item.trend === 'up' ? '↑' : item.trend === 'down' ? '↓' : item.trend === 'flat' ? '→' : ''
+          const delta = arrow && item.delta ? item.delta.replace(/^[+\-−]\s*/, '') : (item.delta ?? '')
+          const Verdict = tone === 'ok' ? CheckCircle2 : tone === 'err' ? TriangleAlert : null
           const ratio = item.meter ? Math.min(1, item.meter.value / item.meter.max) : 0
           return (
             <Stat
               key={index}
               label={item.label}
               value={item.value}
-              unit={item.delta || arrow ? <span className={`v3-visual-delta ${tone}`}>{`${arrow}${item.delta ?? ''}`}</span> : undefined}
+              unit={
+                item.delta || arrow ? (
+                  <span className={`v3-visual-delta ${tone}`}>
+                    {`${arrow}${delta}`}
+                    {Verdict ? <Verdict size={12} aria-hidden /> : null}
+                    {Verdict ? <span className="sr-only">{t(tone === 'ok' ? 'vb.better' : 'vb.worse')}</span> : null}
+                  </span>
+                ) : undefined
+              }
               aside={item.spark && item.spark.length > 1 ? <Sparkline values={item.spark} tone={tone} /> : undefined}
               footer={
                 item.meter || item.detail ? (
@@ -245,8 +299,10 @@ function Flow({ block }: { block: FlowBlock }): JSX.Element {
             {index > 0 ? <span className="v3-visual-join" aria-hidden>{block.join === 'plus' ? '+' : '→'}</span> : null}
             <div className="v3-visual-step">
               <BlockIcon name={step.icon} />
-              <span className="v3-visual-step-title">{step.title}</span>
-              {step.detail ? <span className="v3-visual-step-detail">{step.detail}</span> : null}
+              <span className="v3-visual-step-text">
+                <span className="v3-visual-step-title">{step.title}</span>
+                {step.detail ? <span className="v3-visual-step-detail">{step.detail}</span> : null}
+              </span>
             </div>
           </div>
         ))}
@@ -254,7 +310,7 @@ function Flow({ block }: { block: FlowBlock }): JSX.Element {
           <div className="v3-visual-step-wrap">
             <span className="v3-visual-join" aria-hidden>{block.join === 'plus' ? '=' : '→'}</span>
             <div className={`v3-visual-result ${block.result.tone}`}>
-              <i className="v3-visual-result-dot" aria-hidden />
+              <ResultMark tone={block.result.tone} />
               <span>{block.result.text}</span>
             </div>
           </div>
@@ -353,7 +409,7 @@ export function VisualFence({ lang, text, live, fallback, blockId }: VisualFence
     </div>
   )
   if (lang === 'yan-widget') {
-    return live ? pending : <WidgetBlock html={text} fallback={fallback} blockId={blockId} />
+    return live ? <WidgetPending /> : <WidgetBlock html={text} fallback={fallback} blockId={blockId} />
   }
   return <DataBlock lang={lang} text={text} live={live} fallback={fallback} pending={pending} />
 }

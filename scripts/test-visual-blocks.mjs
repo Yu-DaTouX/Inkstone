@@ -80,6 +80,15 @@ export async function runVisualBlockTests(ok) {
   ok(answers.side === '甲方' && answers.tags.length === 1 && answers.budget === 5000 && !('extra' in answers), '表单：答案按字段夹取，丢掉多余键')
   ok(form.parseQuestionAnswers(fields, 'not json') === null, '表单：答案无法解析视为未回答')
   ok(form.summarizeAnswers(fields, answers).startsWith('你是哪一方？：甲方 · 关注点：价格'), '表单：一行可读摘要')
+  await build({ entryPoints: ['src/renderer/src/features/artifacts/chart-layout.ts'], outfile: 'out/test/chart-layout.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const { spreadLabels } = await import(pathToFileURL('out/test/chart-layout.mjs').href)
+  ok(spreadLabels([50, 10, 90], 14, 0, 120).join() === '50,10,90', '折线末端标注：不挤时原位不动')
+  {
+    const ends = spreadLabels([60, 61, 59], 14, 0, 120)
+    const sorted = [...ends].sort((a, b) => a - b)
+    ok(sorted[1] - sorted[0] >= 14 && sorted[2] - sorted[1] >= 14 && ends[2] < ends[0] && ends[0] < ends[1], '折线末端标注：挨得近时拉开且保持上下次序')
+  }
+  ok(spreadLabels([118, 119, 120], 14, 0, 120).every((v) => v <= 120) && spreadLabels([118, 119, 120], 14, 0, 120)[0] === 92, '折线末端标注：贴底时整体往上推')
   const pct = niceScale(94.3, '%'), money = niceScale(4.12), tiny = niceScale(0.37)
   ok(pct.max === 100 && pct.ticks.length === 5, '刻度：百分比封顶 100')
   ok(money.max === 5 && money.ticks.join() === '0,1,2,3,4,5', '刻度：4.12 → 0–5')

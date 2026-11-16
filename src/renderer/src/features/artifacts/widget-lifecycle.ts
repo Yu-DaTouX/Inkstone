@@ -368,6 +368,18 @@ export interface NearViewportOptions {
   readonly exitRootMargin?: string
 }
 
+const VERTICAL_SCROLL = new Set(['auto', 'scroll', 'overlay'])
+
+function scrollRootOf(node: Element): Element | null {
+  const stream = node.closest('.v3-stream')
+  if (stream) return stream
+  for (let el = node.parentElement; el; el = el.parentElement) {
+    const style = getComputedStyle(el)
+    if (VERTICAL_SCROLL.has(style.overflowY) && !VERTICAL_SCROLL.has(style.overflowX)) return el
+  }
+  return null
+}
+
 export function useNearViewport<T extends Element>(
   options: NearViewportOptions = {}
 ): [boolean, (node: T | null) => void] {
@@ -380,17 +392,18 @@ export function useNearViewport<T extends Element>(
       setNear(true)
       return undefined
     }
+    const root = scrollRootOf(node)
     const load = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) setNear(true)
       },
-      { rootMargin }
+      { root, rootMargin }
     )
     const keep = new IntersectionObserver(
       (entries) => {
         if (entries.every((entry) => !entry.isIntersecting)) setNear(false)
       },
-      { rootMargin: exitRootMargin }
+      { root, rootMargin: exitRootMargin }
     )
     load.observe(node)
     keep.observe(node)

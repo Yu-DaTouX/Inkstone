@@ -144,7 +144,7 @@ description: 写 yan-chart、yan-stats、yan-cards 等回答块、mermaid 图或
   "result": { "tone": "ok", "text": "约 0.4 秒看到改动" } }
 ```
 
-- `steps` 1–6 个；`result.tone`：`ok` / `warn` / `err` / `info`，只决定结果前小圆点的颜色。
+- `steps` 1–6 个；`result.tone`：`ok` / `warn` / `err` / `info`，只决定结果前的状态图标。
 - `icon` 可选：agent、checklist、terminal、file、folder、globe、search、shield-check、alert-circle、check-circle、branch、package、key、message-dots、sparkles。不认识的名字会被忽略。
 
 ## yan-steps
@@ -175,12 +175,12 @@ description: 写 yan-chart、yan-stats、yan-cards 等回答块、mermaid 图或
 
 写一段 HTML/SVG 片段（不需要 html/head/body），在隔离环境离线运行：不能加载任何外部资源，脚本只能用原生 JS。
 
-- 颜色只用变量：`var(--text)` `var(--text-dim)` `var(--text-mute)` `var(--surface)` `var(--surface-2)` `var(--border)` `var(--border-strong)` `var(--accent)` `var(--ok)` `var(--warn)` `var(--err)`，分类色 `var(--c1)`…`var(--c6)`；字体 `var(--font)` / `var(--mono)`。shadcn 风格的 `--background` `--foreground` `--muted` `--primary` `--chart-1`…也可用。深浅主题自动适配。
+- 颜色只用变量：`var(--text)` `var(--text-dim)` `var(--text-mute)` `var(--surface)` `var(--surface-2)` `var(--border)` `var(--border-strong)` `var(--accent)` `var(--accent-t)`（链接与强调文字） `var(--ok)` `var(--warn)` `var(--err)`，分类色 `var(--c1)`…`var(--c6)`；字体 `var(--font)` / `var(--mono)`。shadcn 风格的 `--background` `--foreground` `--muted` `--primary` `--chart-1`…也可用。深浅主题自动适配。颜色变量都是具体色值，canvas 可直接用 `getComputedStyle(document.documentElement).getPropertyValue('--c1')`；换主题时这些值会变，用 MutationObserver 监听 documentElement 的属性变化后重画（见状态点阵）。
 - 小部件直接铺在正文里，字号与正文相同：最外层不要背景色、卡片边框、横幅标题或左右留白；分隔用 1px `var(--border)` 细线；局部需要底色时用 `var(--surface-2)`、`var(--radius)` 圆角。按钮已有默认样式，直接写 `<button>`。
 - 要矮：整体高度一般 120–260px，图表给固定像素高度；不要用 `vh`，也不要在 html、body 上写 `height:100%`。
 - 需要用户追问时调用 `askInkstone("问题")`：砚会在小部件下方显示这句话，用户确认后才填入输入框。
 - 需要保留状态时，由小部件主动调用 `inkstoneSaveState(可 JSON 序列化的值)`，并监听 `inkstone:restore` 事件，从 `detail` 恢复。状态只缓存在内存，单份上限 64 KB，应用重载后不保证恢复。图表、卡片这类有现成块的内容不要用小部件。
 
-五种可以直接改着用的写法（参数计算器、方案切换、时间轴、机制图、前后对比）在同目录的 `widget-examples.md`，写小部件前读一下。
+六种可以直接改着用的写法（参数计算器、方案切换、时间轴、机制图、前后对比、状态点阵）在同目录的 `widget-examples.md`，写小部件前读一下。
 
 格式写错时砚会按原文显示并提示错误，不会画出图形。

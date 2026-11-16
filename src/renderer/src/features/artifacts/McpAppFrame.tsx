@@ -434,16 +434,7 @@ export function McpAppFrame({
               </IconButton>
             </div>
           </div>
-        ) : (
-          <div className="v3-artifact-frame-tools" data-testid="v3-mcp-app-tools">
-            <IconButton aria-label={labels.fullscreen} tooltip={labels.fullscreen} onPress={() => requestForm('fullscreen')}>
-              <Maximize2 size={14} />
-            </IconButton>
-            <IconButton aria-label={labels.pip} tooltip={labels.pip} onPress={() => requestForm('pip')}>
-              <PictureInPicture2 size={14} />
-            </IconButton>
-          </div>
-        )}
+        ) : null}
 
         {near ? (
           <iframe
@@ -500,6 +491,16 @@ export function McpAppFrame({
           </div>
         ) : null}
       </div>
+      {form === 'inline' ? (
+        <div className="v3-artifact-frame-bar" data-testid="v3-mcp-app-tools">
+          <IconButton size="sm" aria-label={labels.fullscreen} tooltip={labels.fullscreen} onPress={() => requestForm('fullscreen')}>
+            <Maximize2 size={14} />
+          </IconButton>
+          <IconButton size="sm" aria-label={labels.pip} tooltip={labels.pip} onPress={() => requestForm('pip')}>
+            <PictureInPicture2 size={14} />
+          </IconButton>
+        </div>
+      ) : null}
     </>
   )
 }

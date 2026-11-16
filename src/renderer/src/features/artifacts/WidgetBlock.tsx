@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { APPEARANCE_EVENT } from '../../lib/appearance'
+import { appReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
 import { useStore } from '../../state/store'
 import { Button, Notice } from '../../ui'
 import { HTML_ARTIFACT_SANDBOX } from '../../../../shared/html-artifact-preview'
@@ -19,6 +20,7 @@ const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
   ['--text-dim', '--fg2'],
   ['--text-mute', '--fg3'],
   ['--accent', '--accent'],
+  ['--accent-t', '--accent-t'],
   ['--on-accent', '--on-ink'],
   ['--ok', '--ok'],
   ['--warn', '--ask'],
@@ -64,10 +66,25 @@ const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
 
 const BASE_STYLE = `:root{color-scheme:light dark}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;color:var(--text);font:var(--text-size,13px)/var(--text-lh,1.7) var(--font);font-synthesis:none}
-body{padding:2px}svg{max-width:100%;height:auto}a{color: var(--accent-t)}
+body{padding:2px}svg{max-width:100%;height:auto}a{color: var(--accent-t)}input,progress,select{accent-color:var(--accent)}
 button{font:inherit;color:inherit;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:6px;padding:2px 12px;cursor:pointer}
 button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;transition-duration:1ms!important}}`
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;scroll-behavior:auto!important}}`
+
+const REDUCED_STYLE = '*,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;scroll-behavior:auto!important}'
+
+function motionScript(reduced: boolean): string {
+  return `(function(){window.__inkReduced=${reduced};var mm=window.matchMedia.bind(window),qs=[];
+window.matchMedia=function(q){var r=mm(q),s=String(q);if(!/prefers-reduced-motion/i.test(s))return r;var on=s.toLowerCase().replace(/ /g,'').indexOf(':reduce')>=0,ls=[];
+var m={media:r.media,onchange:null,get matches(){return window.__inkReduced?on:r.matches},
+addListener:function(f){m.addEventListener('change',f)},removeListener:function(f){m.removeEventListener('change',f)},
+addEventListener:function(t,f){if(t!=='change'||typeof f!=='function')return;if(ls.indexOf(f)<0)ls.push(f);if(qs.indexOf(m)<0)qs.push(m)},
+removeEventListener:function(t,f){var i=ls.indexOf(f);if(i>=0)ls.splice(i,1)},dispatchEvent:function(){return true},
+fire:function(){var e={type:'change',matches:m.matches,media:m.media};if(typeof m.onchange==='function')m.onchange(e);ls.slice().forEach(function(f){try{f(e)}catch(_){}})}};
+Object.defineProperty(m,'onchange',{get:function(){return m._oc||null},set:function(f){m._oc=f;if(qs.indexOf(m)<0)qs.push(m)}});
+try{r.addEventListener('change',function(){if(!window.__inkReduced)m.fire()})}catch(_){}return m};
+window.__inkSetReduced=function(v){if(v===window.__inkReduced)return;var before=qs.map(function(m){return m.matches});window.__inkReduced=v;qs.forEach(function(m,i){if(m.matches!==before[i])m.fire()})}})();`
+}
 
 function bridgeScript(generation: number): string {
   return `(function(){var p=parent,last=0;window.__inkGen=${generation};
@@ -81,26 +98,69 @@ e.preventDefault();post({method:'ui/open-link',params:{url:u.href}})},true);
 window.askInkstone=function(t){post({method:'ui/message',params:{content:String(t||'').slice(0,2000)}})};window.sendPrompt=window.askInkstone;
 window.inkstoneSaveState=function(v){var s;try{s=JSON.stringify(v)}catch(_){return}if(typeof s==='string')post({method:'x-inkstone/state-save',params:{state:s}});};
 addEventListener('message',function(e){if(e.source!==p)return;var d=e.data;if(!d||typeof d!=='object')return;
-if(d.yanHostContext===1&&d.vars){var st=document.documentElement.style;for(var k in d.vars){if(/^--[a-z0-9-]+\$/i.test(k)&&typeof d.vars[k]==='string')st.setProperty(k,d.vars[k])}var c=d.dark?'dark':'light';st.colorScheme=c;}
+if(d.yanHostContext===1&&d.vars){var st=document.documentElement.style;for(var k in d.vars){if(/^--[a-z0-9-]+\$/i.test(k)&&typeof d.vars[k]==='string')st.setProperty(k,d.vars[k])}var c=d.dark?'dark':'light';st.colorScheme=c;if(typeof d.reduced==='boolean'){if(window.__inkSetReduced)window.__inkSetReduced(d.reduced);else window.__inkReduced=d.reduced;var rs=document.getElementById('ink-reduced');if(rs)rs.media=d.reduced?'all':'not all'}}
 else if(d.yanRestore===1&&d.state){try{window.dispatchEvent(new CustomEvent('inkstone:restore',{detail:JSON.parse(d.state)}))}catch(_){}}});
 post({method:'ui/initialize',params:{version:'0.1'}});})();`
 }
 
-function themeVars(): { vars: Record<string, string>; dark: boolean } {
-  const css = getComputedStyle(document.documentElement)
-  const vars: Record<string, string> = {}
-  for (const [name, source] of THEME_VARS) vars[name] = css.getPropertyValue(source).trim() || 'initial'
+const TEXT_SOURCES = new Set(['--font-ui', '--font-mono', '--t-prose', '--t-prose-lh'])
+
+const RESOLVED_COLORS_MAX = 256
+const resolvedColors = new Map<string, string>()
+let colorProbeNode: HTMLElement | null = null
+
+function colorProbe(): HTMLElement | null {
+  if (colorProbeNode?.isConnected) return colorProbeNode
+  if (!document.body) return null
+  const host = document.createElement('div')
+  host.hidden = true
+  host.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(host)
+  const probe = document.createElement('span')
+  host.attachShadow({ mode: 'closed' }).appendChild(probe)
+  colorProbeNode = probe
+  return probe
+}
+
+function resolveColor(raw: string, dark: boolean): string {
+  const cacheKey = `${dark ? 'd' : 'l'}|${raw}`
+  const hit = resolvedColors.get(cacheKey)
+  if (hit !== undefined) return hit
+  const probe = colorProbe()
+  if (!probe) return raw
+  probe.style.color = ''
+  probe.style.color = raw
+  const value = probe.style.color ? getComputedStyle(probe).color || raw : raw
+  if (resolvedColors.size >= RESOLVED_COLORS_MAX) resolvedColors.clear()
+  resolvedColors.set(cacheKey, value)
+  return value
+}
+
+function themeVars(scope?: Element | null): { vars: Record<string, string>; dark: boolean } {
+  const host = scope?.isConnected ? scope : (document.body ?? document.documentElement)
+  const css = getComputedStyle(host)
   const theme = document.documentElement.getAttribute('data-theme')
   const dark = theme ? theme === 'dark' : typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  const resolved = new Map<string, string>()
+  const vars: Record<string, string> = {}
+  for (const [name, source] of THEME_VARS) {
+    let value = resolved.get(source)
+    if (value === undefined) {
+      const raw = css.getPropertyValue(source).trim()
+      value = !raw ? 'initial' : TEXT_SOURCES.has(source) ? raw : resolveColor(raw, dark)
+      resolved.set(source, value)
+    }
+    vars[name] = value
+  }
   return { vars, dark }
 }
 
-function buildDocument(html: string, generation: number): string {
+function buildDocument(html: string, generation: number, reduced: boolean): string {
   const { vars, dark } = themeVars()
   const inline = Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(';')
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="${dark ? 'dark' : 'light'}">
-<style>:root{${inline};--radius:6px;color-scheme:${dark ? 'dark' : 'light'}}${BASE_STYLE}</style>
-<script>${bridgeScript(generation)}</script></head><body>${html}</body></html>`
+<style>:root{${inline};--radius:6px;color-scheme:${dark ? 'dark' : 'light'}}${BASE_STYLE}</style><style id="ink-reduced" media="${reduced ? 'all' : 'not all'}">${REDUCED_STYLE}</style>
+<script>${motionScript(reduced)}${bridgeScript(generation)}</script></head><body>${html}</body></html>`
 }
 
 function standaloneDocument(html: string): string {
@@ -138,6 +198,23 @@ function rememberWidgetHeight(key: string, height: number): void {
   }
 }
 
+const WIDGET_RESERVE = 160
+
+function reserveHeight(known?: number): string {
+  return `calc(${clampInlineHeight(known ?? WIDGET_RESERVE, window.innerHeight)}px + var(--size-btn-sm) + var(--s-2))`
+}
+
+export function WidgetPending(): JSX.Element {
+  const t = useT()
+  return (
+    <figure className="v3-visual v3-visual-widget">
+      <div className="v3-visual-pending" role="status" style={{ minHeight: reserveHeight() }}>
+        {t('vb.pending')}
+      </div>
+    </figure>
+  )
+}
+
 export interface WidgetBlockProps {
   html: string
   fallback: React.ReactNode
@@ -156,12 +233,16 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
   const tooLarge = html.length > VISUAL_WIDGET_MAX_CHARS
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const heightKey = useMemo(() => shortHash(html), [html])
-  const reserved = clampInlineHeight(widgetHeights.get(heightKey) ?? 160, window.innerHeight)
+  const knownHeight = widgetHeights.get(heightKey)
+  const reserved = reserveHeight(knownHeight)
+  const reduced = useSyncExternalStore(subscribeReducedMotion, appReducedMotion)
+  const reducedRef = useRef(reduced)
+  reducedRef.current = reduced
 
   const build = useMemo(() => {
     if (tooLarge) return null
     const generation = ++widgetGeneration
-    return { doc: buildDocument(html, generation), generation }
+    return { doc: buildDocument(html, generation, appReducedMotion()), generation }
   }, [html, tooLarge])
 
   const key = deriveWidgetIdentityKey({
@@ -173,6 +254,14 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
   })
 
   const [near, nearRef] = useNearViewport<HTMLElement>()
+  const figureRef = useRef<HTMLElement | null>(null)
+  const setFigure = useCallback(
+    (node: HTMLElement | null) => {
+      figureRef.current = node
+      nearRef(node)
+    },
+    [nearRef]
+  )
   const snapshot = usePreviewSnapshot({
     identityKey: key,
     source: build?.doc ?? null,
@@ -188,9 +277,10 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
     const push = (): void => {
       const frame = frameRef.current
       if (!frame) return
-      const { vars, dark } = themeVars()
-      frame.contentWindow?.postMessage({ yanHostContext: 1, generation, vars, dark }, '*')
+      const { vars, dark } = themeVars(figureRef.current)
+      frame.contentWindow?.postMessage({ yanHostContext: 1, generation, vars, dark, reduced: reducedRef.current }, '*')
     }
+    push()
     const themes = new MutationObserver(push)
     themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
     const scheme = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
@@ -201,7 +291,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
       scheme?.removeEventListener('change', push)
       window.removeEventListener(APPEARANCE_EVENT, push)
     }
-  }, [generation])
+  }, [generation, reduced])
 
   if (tooLarge || error) {
     return (
@@ -215,7 +305,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
   }
 
   return (
-    <figure ref={nearRef} className="v3-visual v3-visual-widget" data-testid="v3-visual-widget">
+    <figure ref={setFigure} className="v3-visual v3-visual-widget" data-testid="v3-visual-widget">
       {snapshot.url && build ? (
         <ArtifactFrame
           identity={{ sessionId: markdownIdentity?.sessionId ?? null, messageId: key, partIndex: 0 }}
@@ -229,7 +319,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
             />
           }
           src={snapshot.url}
-          initialHeight={widgetHeights.get(heightKey)}
+          initialHeight={knownHeight ?? WIDGET_RESERVE}
           onHeightChange={(height) => rememberWidgetHeight(heightKey, height)}
           form={form}
           near={near}
@@ -245,8 +335,8 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
           }}
           onFrameReady={(frame) => {
             frameRef.current = frame
-            const { vars, dark } = themeVars()
-            frame.contentWindow?.postMessage({ yanHostContext: 1, generation: build.generation, vars, dark }, '*')
+            const { vars, dark } = themeVars(figureRef.current)
+            frame.contentWindow?.postMessage({ yanHostContext: 1, generation: build.generation, vars, dark, reduced: reducedRef.current }, '*')
             const saved = savedWidgetState.get(key)
             if (saved) frame.contentWindow?.postMessage({ yanRestore: 1, generation: build.generation, state: saved }, '*')
           }}

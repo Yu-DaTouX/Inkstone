@@ -27,7 +27,7 @@ export function isArtifactForm(value: unknown): value is ArtifactForm {
 
 export const INLINE_MAX_HEIGHT = 720
 export const INLINE_MAX_HEIGHT_VH = 0.7
-export const INLINE_MIN_HEIGHT = 120
+export const INLINE_MIN_HEIGHT = 40
 
 export function inlineMaxHeight(viewportHeight: number): number {
   return Math.round(Math.min(viewportHeight * INLINE_MAX_HEIGHT_VH, INLINE_MAX_HEIGHT))
@@ -109,21 +109,49 @@ export function nudgeFrame(
 }
 
 export const MAX_ACTIVE_FRAMES = 4
+export const MAX_TOTAL_FRAMES = 8
 
 export interface FrameSlot {
   readonly key: string
   readonly generation?: number
   readonly visible: boolean
   readonly lastSeenAt: number
+  readonly enteredAt?: number
 }
 
-export function selectFrameEvictions(slots: readonly FrameSlot[], limit = MAX_ACTIVE_FRAMES): string[] {
-  if (slots.length <= limit) return []
-  const ranked = [...slots].sort((a, b) => {
-    if (a.visible !== b.visible) return a.visible ? 1 : -1
-    return a.lastSeenAt - b.lastSeenAt
-  })
-  return ranked.slice(0, slots.length - limit).map((slot) => slot.key)
+export interface FrameRecord {
+  readonly key: string
+  readonly visible: boolean
+  readonly onscreen: boolean
+  readonly lastSeenAt: number
+  readonly enteredAt: number
+}
+
+export function nextFrameRecord(existing: FrameRecord | undefined, key: string, visible: boolean, onscreen: boolean, now: number): FrameRecord | null {
+  if (!existing && !visible) return null
+  const inView = visible && onscreen
+  const wasInView = existing?.onscreen ?? false
+  return {
+    key,
+    visible,
+    onscreen: inView,
+    lastSeenAt: inView || wasInView ? now : (existing?.lastSeenAt ?? 0),
+    enteredAt: inView ? (wasInView && existing ? existing.enteredAt : now) : 0
+  }
+}
+
+export function selectFrameEvictions(slots: readonly FrameSlot[], offscreenLimit = MAX_ACTIVE_FRAMES, totalLimit = MAX_TOTAL_FRAMES): string[] {
+  const onscreen = slots
+    .filter((slot) => slot.visible)
+    .sort((a, b) => (a.enteredAt ?? a.lastSeenAt) - (b.enteredAt ?? b.lastSeenAt))
+    .slice(0, Math.max(0, totalLimit))
+  const room = Math.max(0, Math.min(offscreenLimit, totalLimit - onscreen.length))
+  const offscreen = slots
+    .filter((slot) => !slot.visible)
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+    .slice(0, room)
+  const kept = new Set([...onscreen, ...offscreen].map((slot) => slot.key))
+  return slots.filter((slot) => !kept.has(slot.key)).map((slot) => slot.key)
 }
 
 export interface OwnerLike {

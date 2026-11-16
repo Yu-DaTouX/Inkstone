@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { sleep } from './env.mjs'
+import { galleryMarkdown } from './visual-gallery.mjs'
 
 function lastUserText(input) {
   for (let i = input.length - 1; i >= 0; i--) {
@@ -104,6 +105,7 @@ export const FAKE_TRIGGERS = {
   MDSHOW: '一篇含行内代码、链接、代码块、表格、公式、Mermaid、图片、列表的短文，慢速逐块流出，用来看 markdown 流式渲染（CHUNK<n> 每块字符数，GAP<n> 间隔毫秒）',
   'HOLD<n>': '与其他触发词同用：响应开始后先等 n 毫秒再出字，模拟隐藏思考后上游集中发送',
   LONGTEXT: '约 20KB markdown 长文本，慢速逐块流出',
+  VISUALGALLERY: '一条回复里流出全部可视化块（yan-chart 各形态、stats、cards、record、flow、steps、mermaid、全部小部件范例与点阵动画、一个写错的 JSON），不规则块长（CHUNK<n> 每块最多字符数，GAP<n> 间隔毫秒，VGONLY=<块名,块名> 只流出这几块）',
   REPORTDEMO: '一段三层字色的汇报（主体、*附带说明*、**需要注意**），用来看汇报字色',
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
   BIGOUT: '一次 bash 输出 6000 行，期间分段停顿',
@@ -294,6 +296,7 @@ async function respond(res, text, done, requestNo) {
       else await streamText(longText(), 24, 8)
     } else if (text.includes('MDCODE')) await streamText(mdCode(), -14, 22)
     else if (text.includes('MDREAL')) await streamText(mdReal(), -14, 22)
+    else if (text.includes('VISUALGALLERY')) await streamText(galleryMarkdown(/VGONLY=([\w,-]+)/.exec(text)?.[1].split(',') ?? null), -Number(/CHUNK(\d+)/.exec(text)?.[1] ?? 40), Number(/GAP(\d+)/.exec(text)?.[1] ?? 14))
     else if (text.includes('MDSHOW')) await streamText(mdShow(), Number(/CHUNK(\d+)/.exec(text)?.[1] ?? 6), Number(/GAP(\d+)/.exec(text)?.[1] ?? 20))
     else if (text.includes('LONGTEXT')) await streamText(longText(), 12, 15)
     else if (text.includes('REPORTDEMO')) await streamText(reportDemo(), 40, 10)

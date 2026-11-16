@@ -28,15 +28,52 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
 {
   const slots = (count, visible = true) =>
     Array.from({ length: count }, (_, i) => ({ key: `f${i}`, generation: 1, visible, lastSeenAt: i }))
-  assert.deepEqual(model.selectFrameEvictions(slots(4)), [], '上限内不淘汰')
-  assert.deepEqual(model.selectFrameEvictions(slots(5)), ['f0'], '超过上限先淘汰最久未见')
-  assert.deepEqual(model.selectFrameEvictions(slots(6)), ['f0', 'f1'])
+  assert.deepEqual(model.selectFrameEvictions(slots(4, false)), [], '视口外上限内不淘汰')
+  assert.deepEqual(model.selectFrameEvictions(slots(5, false)), ['f0'], '视口外超过上限先淘汰最久未见')
+  assert.deepEqual(model.selectFrameEvictions(slots(6, false)), ['f0', 'f1'])
+  assert.deepEqual(model.selectFrameEvictions(slots(6)), [], '视口内的不受视口外上限限制')
+  assert.deepEqual(model.selectFrameEvictions(slots(model.MAX_TOTAL_FRAMES + 1)), ['f8'], '视口内超过总上限淘汰最近进入视口的')
+  const entered = slots(model.MAX_TOTAL_FRAMES + 1).map((slot, i) => ({ ...slot, lastSeenAt: 1000, enteredAt: 100 - i }))
+  assert.deepEqual(model.selectFrameEvictions(entered), ['f0'], '按进入视口时间而不是最近一次可见时间排')
+  const crowded = [...slots(6), ...Array.from({ length: 4 }, (_, i) => ({ key: `o${i}`, generation: 1, visible: false, lastSeenAt: 100 + i }))]
+  assert.deepEqual(model.selectFrameEvictions(crowded), ['o0', 'o1'], '视口外只占总上限剩下的名额')
+  const overfull = [...slots(model.MAX_TOTAL_FRAMES + 2), { key: 'off', generation: 1, visible: false, lastSeenAt: 999 }]
+  assert.deepEqual(model.selectFrameEvictions(overfull), ['f8', 'f9', 'off'], '视口内超过总上限时视口外全部淘汰')
+  const tied = Array.from({ length: 6 }, (_, i) => ({ key: `t${i}`, generation: 1, visible: false, lastSeenAt: 5 }))
+  assert.deepEqual(model.selectFrameEvictions(tied), ['t4', 't5'], 'lastSeenAt 并列时保留先登记的')
+  const tiedOn = Array.from({ length: model.MAX_TOTAL_FRAMES + 1 }, (_, i) => ({ key: `v${i}`, generation: 1, visible: true, lastSeenAt: 5, enteredAt: 5 }))
+  assert.deepEqual(model.selectFrameEvictions(tiedOn), [`v${model.MAX_TOTAL_FRAMES}`], '进入时间并列时淘汰后登记的')
+  assert.deepEqual(model.selectFrameEvictions([...slots(2), ...slots(3, false).map((x) => ({ ...x, key: 'o' + x.key }))], 0), ['of0', 'of1', 'of2'], 'offscreenLimit=0 时视口外全部淘汰')
+  assert.deepEqual(model.selectFrameEvictions([...slots(1), ...slots(3, false).map((x) => ({ ...x, key: 'o' + x.key }))], 4, 2), ['of0', 'of1'], 'totalLimit 小于 offscreenLimit 时以总上限为准')
+  assert.deepEqual(model.selectFrameEvictions(slots(3), 4, 0), ['f0', 'f1', 'f2'], 'totalLimit=0 全部淘汰')
 
   const mixed = [
     { key: 'on', generation: 1, visible: true, lastSeenAt: 100 },
     { key: 'off', generation: 1, visible: false, lastSeenAt: 999 }
   ]
-  assert.deepEqual(model.selectFrameEvictions(mixed, 1), ['off'], '离屏优先淘汰')
+  assert.deepEqual(model.selectFrameEvictions(mixed, 1, 1), ['off'], '离屏优先淘汰')
+}
+
+{
+  const next = model.nextFrameRecord
+  assert.equal(next(undefined, 'k', false, false, 10), null, '不在近处的首次登记不建记录')
+  const warm = next(undefined, 'k', true, false, 10)
+  assert.deepEqual(warm, { key: 'k', visible: true, onscreen: false, lastSeenAt: 0, enteredAt: 0 }, '只是预热时 lastSeenAt 为 0')
+  const seen = next(warm, 'k', true, true, 20)
+  assert.equal(seen.lastSeenAt, 20)
+  assert.equal(seen.enteredAt, 20, '进入视口记进入时间')
+  const still = next(seen, 'k', true, true, 30)
+  assert.equal(still.enteredAt, 20, '仍在视口内不改进入时间')
+  const left = next(still, 'k', true, false, 50)
+  assert.deepEqual(left, { key: 'k', visible: true, onscreen: false, lastSeenAt: 50, enteredAt: 0 }, '离开视口时刷新 lastSeenAt')
+  const idle = next(left, 'k', true, false, 90)
+  assert.equal(idle.lastSeenAt, 50, '一直在视口外不刷新')
+  const far = next(idle, 'k', false, false, 120)
+  assert.deepEqual(far, { key: 'k', visible: false, onscreen: false, lastSeenAt: 50, enteredAt: 0 }, '远离后保留上次可见时间')
+  assert.equal(next(undefined, 'k', false, true, 10), null, '不在近处时视口标记无效')
+  const read = next(next(undefined, 'a', true, true, 0), 'a', true, false, 100)
+  const skim = next(next(undefined, 'b', true, true, 60), 'b', true, false, 70)
+  assert.ok(read.lastSeenAt > skim.lastSeenAt, '刚读完离开的比之前掠过的更新')
 }
 
 {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, X } from '../../ui/icons'
 import { useT, type MessageKey } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
@@ -7,6 +7,7 @@ import { HTML_CANVAS_CHANNEL } from '../../../../shared/html-canvas-bridge'
 import {
   BridgeRateLimiter,
   MAX_ACTIVE_FRAMES,
+  MAX_TOTAL_FRAMES,
   PIP_SIZE,
   clampFramePosition,
   clampInlineHeight,
@@ -15,6 +16,7 @@ import {
   identityKey,
   inlineOverflows,
   moveFrame,
+  nextFrameRecord,
   nudgeFrame,
   resizeFrame,
   selectFrameEvictions,
@@ -22,17 +24,12 @@ import {
   type ArtifactIdentity,
   type BridgeAction,
   type BridgeError,
+  type FrameRecord,
   type FrameRect,
   type FrameSize
 } from './model'
 import { useArtifactText } from './text'
 import './artifacts.css'
-
-interface FrameRecord {
-  key: string
-  visible: boolean
-  lastSeenAt: number
-}
 
 const frameRecords = new Map<string, FrameRecord>()
 const frameListeners = new Set<() => void>()
@@ -40,15 +37,15 @@ let frameSnapshot: readonly string[] = []
 
 function publishFrames(): void {
   const active = [...frameRecords.values()].filter((record) => record.visible)
-  const evicted = new Set(selectFrameEvictions(active, MAX_ACTIVE_FRAMES))
+  const evicted = new Set(selectFrameEvictions(active.map((record) => ({ key: record.key, visible: record.onscreen, lastSeenAt: record.lastSeenAt, enteredAt: record.enteredAt })), MAX_ACTIVE_FRAMES, MAX_TOTAL_FRAMES))
   frameSnapshot = active.filter((record) => !evicted.has(record.key)).map((record) => record.key)
   frameListeners.forEach((listener) => listener())
 }
 
-function touchFrame(key: string, visible: boolean): void {
-  const existing = frameRecords.get(key)
-  if (!existing && !visible) return
-  frameRecords.set(key, { key, visible, lastSeenAt: visible ? Date.now() : existing?.lastSeenAt ?? 0 })
+function touchFrame(key: string, visible: boolean, onscreen: boolean): void {
+  const next = nextFrameRecord(frameRecords.get(key), key, visible, onscreen, Date.now())
+  if (!next) return
+  frameRecords.set(key, next)
   publishFrames()
 }
 
@@ -57,7 +54,7 @@ function dropFrame(key: string): void {
   publishFrames()
 }
 
-function useFrameAdmitted(key: string, visible: boolean): boolean {
+function useFrameAdmitted(key: string, visible: boolean, onscreen: boolean): boolean {
   const admitted = useSyncExternalStore(
     (listener) => {
       frameListeners.add(listener)
@@ -66,9 +63,9 @@ function useFrameAdmitted(key: string, visible: boolean): boolean {
     () => frameSnapshot.includes(key)
   )
   useEffect(() => {
-    touchFrame(key, visible)
-    return () => dropFrame(key)
-  }, [key, visible])
+    touchFrame(key, visible, onscreen)
+  }, [key, visible, onscreen])
+  useEffect(() => () => dropFrame(key), [key])
   return admitted
 }
 
@@ -154,6 +151,7 @@ export function ArtifactFrame({
   const interactionRef = useRef<{ mode: 'drag' | 'resize'; pointerId: number; startX: number; startY: number; origin: FrameRect } | null>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const [observedNear, setObservedNear] = useState(false)
+  const [onscreen, setOnscreen] = useState(false)
   const [height, setHeight] = useState(initialHeight ?? 160)
   const onHeightRef = useRef(onHeightChange)
   onHeightRef.current = onHeightChange
@@ -165,7 +163,7 @@ export function ArtifactFrame({
   const trusted = isTrustedArtifactUrl(src)
   const near = nearProp ?? observedNear
 
-  const admitted = useFrameAdmitted(key, near && trusted)
+  const admitted = useFrameAdmitted(key, near && trusted, onscreen)
   const live = near && trusted && admitted
 
   const requestForm = useCallback(
@@ -189,6 +187,19 @@ export function ArtifactFrame({
       else rootRef.current?.focus?.()
     }, 0)
   }, [onClose, onDisplayModeRequest])
+
+  useLayoutEffect(() => {
+    const node = rootRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setOnscreen(true)
+      return undefined
+    }
+    const rect = node.getBoundingClientRect()
+    setOnscreen(rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth)
+    const observer = new IntersectionObserver((entries) => setOnscreen(entries.some((entry) => entry.isIntersecting)))
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [trusted])
 
   useEffect(() => {
     if (nearProp !== undefined) return undefined
@@ -439,27 +450,7 @@ export function ArtifactFrame({
               </IconButton>
             </div>
           </div>
-        ) : (
-          <div className="v3-artifact-frame-tools" data-testid="v3-artifact-frame-tools">
-            {tools}
-            <IconButton
-              aria-label={at('fullscreen')}
-              tooltip={at('fullscreen')}
-              data-testid="v3-artifact-frame-expand"
-              onPress={() => requestForm('fullscreen')}
-            >
-              <Maximize2 size={14} />
-            </IconButton>
-            <IconButton
-              aria-label={at('pip')}
-              tooltip={at('pip')}
-              data-testid="v3-artifact-frame-pip"
-              onPress={() => requestForm('pip')}
-            >
-              <PictureInPicture2 size={14} />
-            </IconButton>
-          </div>
-        )}
+        ) : null}
         {live ? (
           <iframe
             ref={iframeRef}
@@ -514,6 +505,31 @@ export function ArtifactFrame({
           >
             <MoveDiagonal2 size={14} />
           </div>
+        ) : null}
+      </div>
+      <div className="v3-artifact-frame-bar" data-testid="v3-artifact-frame-tools">
+        {tools}
+        {form === 'inline' ? (
+          <>
+            <IconButton
+              size="sm"
+              aria-label={at('fullscreen')}
+              tooltip={at('fullscreen')}
+              data-testid="v3-artifact-frame-expand"
+              onPress={() => requestForm('fullscreen')}
+            >
+              <Maximize2 size={14} />
+            </IconButton>
+            <IconButton
+              size="sm"
+              aria-label={at('pip')}
+              tooltip={at('pip')}
+              data-testid="v3-artifact-frame-pip"
+              onPress={() => requestForm('pip')}
+            >
+              <PictureInPicture2 size={14} />
+            </IconButton>
+          </>
         ) : null}
       </div>
     </>

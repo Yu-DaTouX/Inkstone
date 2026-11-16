@@ -2,12 +2,42 @@ import { useMemo, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { Stat, StatGrid } from '../../ui'
 import { niceScale, type ChartBlock } from '../../../../shared/visual-blocks'
+import { spreadLabels } from './chart-layout'
 
 const SERIES_COLORS = ['var(--data-1)', 'var(--data-2)', 'var(--data-3)', 'var(--data-4)'] as const
+const SERIES_DASH = ['', '6 4', '2 3', '10 3 2 3'] as const
 const LINE_TICKS = 3
+const LINE_END_GAP = 18
 
 function seriesColor(index: number): string {
   return SERIES_COLORS[index % SERIES_COLORS.length]
+}
+
+function seriesDash(index: number): string | undefined {
+  return SERIES_DASH[index % SERIES_DASH.length] || undefined
+}
+
+type SwatchKind = 'box' | 'line' | 'ring' | 'dot'
+
+function SeriesSwatch({ index, kind }: { index: number; kind: SwatchKind }): JSX.Element {
+  if (kind === 'line') {
+    return (
+      <svg className="v3-visual-swatch-line" width="16" height="8" viewBox="0 0 16 8" aria-hidden>
+        <line x1="0" y1="4" x2="16" y2="4" stroke={seriesColor(index)} strokeWidth="2" strokeDasharray={seriesDash(index)} />
+      </svg>
+    )
+  }
+  return <i className={kind === 'box' ? undefined : `v3-visual-swatch-${kind}`} style={{ [kind === 'ring' ? 'borderColor' : 'background']: seriesColor(index) } as CSSProperties} aria-hidden />
+}
+
+function isDumbbell(block: ChartBlock): boolean {
+  return block.type === 'dumbbell' && block.series.length === 2 && block.series.every((s) => s.values.every((v) => v >= 0))
+}
+
+function swatchKind(block: ChartBlock, index: number): SwatchKind {
+  if (block.type === 'line' || block.type === 'area') return 'line'
+  if (isDumbbell(block)) return index === 0 ? 'ring' : 'dot'
+  return 'box'
 }
 
 export function fmtValue(value: number, unit?: string): string {
@@ -70,6 +100,7 @@ function LinePlot({ block }: { block: ChartBlock }): JSX.Element {
   const x = (i: number): number => (n <= 1 ? W / 2 : (i / (n - 1)) * W)
   const y = (v: number): number => H - ((v - domain.lo) / (domain.hi - domain.lo || 1)) * H
   const pct = (v: number): string => `${(1 - (v - domain.lo) / (domain.hi - domain.lo || 1)) * 100}%`
+  const ends = spreadLabels(block.series.map((s) => y(s.values[n - 1])), LINE_END_GAP, 0, H)
   return (
     <div className="v3-visual-line-plot" role="img" aria-label={block.title}>
       <div className="v3-visual-yaxis" aria-hidden>
@@ -94,6 +125,7 @@ function LinePlot({ block }: { block: ChartBlock }): JSX.Element {
                   points={points}
                   fill="none"
                   stroke={seriesColor(i)}
+                  strokeDasharray={seriesDash(i)}
                   strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -105,13 +137,14 @@ function LinePlot({ block }: { block: ChartBlock }): JSX.Element {
           <span
             key={i}
             className="v3-visual-line-end"
-            style={{ top: pct(s.values[n - 1]), color: seriesColor(i) } as CSSProperties}
+            style={{ top: `${ends[i]}px` } as CSSProperties}
           >
+            {block.series.length > 1 ? <SeriesSwatch index={i} kind="line" /> : null}
             {fmtValue(s.values[n - 1], block.unit)}
           </span>
         ))}
         <div className="v3-visual-xaxis" aria-hidden>
-          {block.labels.map((label, i) => (i % labelStep === 0 || i === n - 1 ? (
+          {block.labels.map((label, i) => (i === 0 || i === n - 1 || (i % labelStep === 0 && n - 1 - i >= labelStep) ? (
             <span key={i} style={{ left: `${n <= 1 ? 50 : (i / (n - 1)) * 100}%` } as CSSProperties}>
               {label}
             </span>
@@ -159,8 +192,30 @@ function BarPlot({ block }: { block: ChartBlock }): JSX.Element {
   )
 }
 
+function Dumbbell({ block, index, max }: { block: ChartBlock; index: number; max: number }): JSX.Element {
+  const [a, b] = block.series.map((s) => s.values[index] / max * 100)
+  return (
+    <>
+      <span
+        className={`v3-visual-dumbbell-line${b < a ? ' is-rev' : ''}`}
+        style={{ left: `calc(${Math.min(a, b)}% + 5px)`, width: `max(0px, calc(${Math.abs(a - b)}% - 10px))` } as CSSProperties}
+        aria-hidden
+      />
+      {block.series.map((s, i) => (
+        <span
+          key={i}
+          className={`v3-visual-dumbbell-dot${i ? '' : ' is-before'}`}
+          style={{ left: `${i ? b : a}%`, [i ? 'background' : 'borderColor']: seriesColor(i) } as CSSProperties}
+          title={`${s.name}: ${fmtValue(s.values[index], block.unit)}`}
+        />
+      ))}
+    </>
+  )
+}
+
 function HorizontalPlot({ block }: { block: ChartBlock }): JSX.Element {
   const diverging = block.type === 'diverging'
+  const dumbbell = isDumbbell(block)
   const max = useMemo(() => {
     const peak = Math.max(...block.series.flatMap((s) => s.values.map(Math.abs)))
     return block.max ?? niceScale(peak, block.unit).max
@@ -173,8 +228,10 @@ function HorizontalPlot({ block }: { block: ChartBlock }): JSX.Element {
           <span className="v3-visual-col-label" title={label}>
             {label}
           </span>
-          <span className="v3-visual-track">
-            {diverging ? (
+          <span className={`v3-visual-track${dumbbell ? ' is-dumbbell' : ''}`}>
+            {dumbbell ? (
+              <Dumbbell block={block} index={j} max={max} />
+            ) : diverging ? (
               <>
                 <span className="v3-visual-center" aria-hidden />
                 <span
@@ -200,7 +257,11 @@ function HorizontalPlot({ block }: { block: ChartBlock }): JSX.Element {
               ))
             )}
           </span>
-          <span className="v3-visual-hvalue">{fmtValue(block.series[block.series.length - 1].values[j], block.unit)}</span>
+          <span className="v3-visual-hvalue">
+            {dumbbell ? `${fmtValue(block.series[0].values[j])} → ` : null}
+            {diverging && single.values[j] > 0 ? '+' : null}
+            {fmtValue(block.series[block.series.length - 1].values[j], block.unit)}
+          </span>
         </div>
       ))}
     </div>
@@ -220,7 +281,7 @@ export function VisualChart({ block, sources }: { block: ChartBlock; sources?: R
           <span className="v3-visual-legend">
             {block.series.map((s, i) => (
               <span className="v3-visual-legend-item" key={i}>
-                <i style={{ background: seriesColor(i) } as CSSProperties} aria-hidden />
+                <SeriesSwatch index={i} kind={swatchKind(block, i)} />
                 {s.name}
               </span>
             ))}

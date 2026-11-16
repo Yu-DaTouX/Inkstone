@@ -1,6 +1,6 @@
 # yan-widget 范例
 
-五种写法可以直接改着用，规则见同目录 `SKILL.md` 的 yan-widget 一节。
+六种写法可以直接改着用，规则见同目录 `SKILL.md` 的 yan-widget 一节。
 
 参数计算器：拖动一个量，看另一个量怎么变。
 
@@ -42,4 +42,17 @@
 <style>.sw{display:flex;gap:6px;margin-bottom:8px}.sw button[aria-pressed=true]{background:var(--text);color:var(--bg);border-color:var(--text)}pre{margin:0;padding:12px 16px;border-radius:var(--radius);background:var(--surface-2);font:12px/1.6 var(--mono);white-space:pre-wrap}</style>
 <div class="sw"><button aria-pressed="true" data-k="a">改前</button><button aria-pressed="false" data-k="b">改后</button></div><pre id="c"></pre>
 <script>const T={a:'for (const f of files) {\n  await upload(f)\n}',b:'await Promise.all(files.map(upload))'};const s=document.querySelector('.sw');function show(k){c.textContent=T[k];[...s.children].forEach(b=>b.setAttribute('aria-pressed',b.dataset.k===k))}s.onclick=e=>{if(e.target.dataset.k)show(e.target.dataset.k)};show('a')</script>
+```
+
+状态点阵：几百个任务各占一格，颜色加形状表示状态（空心排队、实心在跑/完成、叉号失败），悬停看是哪一个。
+
+```yan-widget
+<style>canvas{display:block;width:100%;margin-top:8px}.lg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums}.lg i{display:inline-block;box-sizing:border-box;width:8px;height:8px;margin-right:4px;border-radius:2px;font-style:normal;line-height:8px;text-align:center}</style>
+<div class="lg" id="lg"></div><canvas id="cv"></canvas>
+<script>const N=400,S=8,G=2,K=[['排队','--text-mute'],['在跑','--c1'],['完成','--ok'],['失败','--err']],st=Array.from({length:N},(_,i)=>i<250?2:i<262?3:i<290?1:0);let cols=1
+const v=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+lg.innerHTML=K.map(([t,c],k)=>`<span><i style="${k?k<3?'background:var('+c+')':'color:var('+c+')':'border:1px solid var('+c+')'}">${k===3?'×':''}</i>${t} ${st.filter(s=>s===k).length}</span>`).join('')
+function draw(){const w=cv.clientWidth,d=devicePixelRatio||1,c=K.map(k=>v(k[1]));cols=Math.max(1,Math.floor((w+G)/(S+G)));const h=Math.ceil(N/cols)*(S+G);cv.style.height=h+'px';cv.width=w*d;cv.height=h*d;const x=cv.getContext('2d');x.scale(d,d);x.lineWidth=1.5;st.forEach((s,i)=>{const a=i%cols*(S+G),b=Math.floor(i/cols)*(S+G);x.fillStyle=x.strokeStyle=c[s];if(s===0)x.strokeRect(a+.75,b+.75,S-1.5,S-1.5);else if(s===3){x.beginPath();x.moveTo(a+1,b+1);x.lineTo(a+S-1,b+S-1);x.moveTo(a+S-1,b+1);x.lineTo(a+1,b+S-1);x.stroke()}else x.fillRect(a,b,S,S)})}
+cv.onmousemove=e=>{const b=cv.getBoundingClientRect(),c=Math.floor((e.clientX-b.left)/(S+G)),i=Math.floor((e.clientY-b.top)/(S+G))*cols+c;cv.title=c<cols&&i>=0&&i<N?'#'+(i+1)+' '+K[st[i]][0]:''}
+draw();addEventListener('resize',draw);new MutationObserver(draw).observe(document.documentElement,{attributes:true})</script>
 ```
