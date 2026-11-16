@@ -166,6 +166,7 @@ import { cachedTitlesSync, primeCachedTitles } from './title'
 import { sweepCredentialFiles } from './credential-vault'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
+import { createViewResync } from './view-resync'
 import { messageSyncSignature } from '../shared/session-sync'
 import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 
@@ -211,16 +212,15 @@ function pendingUiReplay(): MainPush[] {
   })
 }
 
-async function resyncActiveView(reason: unknown): Promise<{ ok: boolean }> {
-  const id = runners?.activeRunnerId
-  const agent = id ? runners?.agentOf(id) : null
-  if (!id || !agent) return { ok: false }
-  const state = agent.getState()
-  takeSyncBaseline(state?.sessionFile)
-  logMainEvent('视图重同步', `${String(reason ?? '').slice(0, 80)} runner=${id} session=${state?.sessionId ?? ''}`)
-  await pushRunnerSnapshot(id)
-  return { ok: true }
-}
+const resyncActiveView = createViewResync({
+  registry: () => runners && {
+    activeRunnerId: runners.activeRunnerId,
+    runtimeOf: (id) => runners?.runtimeOf(id),
+    hasAgent: (id) => !!runners?.agentOf(id)
+  },
+  pushSnapshot: (id) => pushRunnerSnapshot(id, { resync: true }),
+  log: (text) => logMainEvent('视图重同步', text)
+})
 
 process.on('exit', (code) => {
   try {
@@ -1162,7 +1162,7 @@ async function syncKeepAwake(working: boolean): Promise<void> {
   updateKeepAwake({ working, whileWorking: s?.keepAwakeWhileWorking, onBatteryAllowed: s?.keepAwakeOnBattery })
 }
 
-async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } = {}): Promise<void> {
+async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean; resync?: boolean } = {}): Promise<void> {
   const ag = runners?.agentOf(id)
   if (!ag) return
   const expected = runners?.runtimeOf(id)
@@ -1170,6 +1170,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   const st = ag.getState()
   if (st) pushFrom(id, { ch: 'state', payload: st }, expected)
   try {
+    if (opts.resync) ag.flushLiveOutput()
     let payload = await ag.getMessages({ includeStreaming: true })
     if (runners?.agentOf(id) !== ag || !RuntimeRef.matches(runners?.runtimeOf(id), expected, 'envelope')) return
     if (opts.chainHistory && st?.sessionFile) {
@@ -1177,14 +1178,15 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
       if (runners?.agentOf(id) !== ag || !RuntimeRef.matches(runners?.runtimeOf(id), expected, 'envelope')) return
       if (chain?.messages?.length && chain.messages.length >= payload.length) payload = chain.messages
     }
-    const plan = planSessionSyncAgainst(takeSyncBaseline(st?.sessionFile), payload)
+    const baseline = takeSyncBaseline(st?.sessionFile)
+    const plan = opts.resync ? { kind: 'full' as const } : planSessionSyncAgainst(baseline, payload)
     if (plan.kind === 'delta') {
       pushFrom(id, { ch: 'sync-delta', payload: { anchorId: plan.anchorId, anchorIndex: plan.anchorIndex, anchorSignature: plan.anchorSignature, messages: plan.messages } }, expected)
     } else if (plan.kind === 'none') {
       const anchor = payload[payload.length - 1]
       pushFrom(id, { ch: 'sync-delta', payload: { anchorId: anchor.id, anchorIndex: payload.length - 1, anchorSignature: messageSyncSignature(anchor), messages: [] } }, expected)
     } else {
-      pushFrom(id, { ch: 'sync', payload }, expected)
+      pushFrom(id, { ch: 'sync', payload, ...(opts.resync ? { resync: true } : {}) }, expected)
     }
   } catch {
   }

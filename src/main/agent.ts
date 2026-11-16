@@ -4186,6 +4186,11 @@ export class AgentController extends EventEmitter {
     return [...paths]
   }
 
+  flushLiveOutput(): void {
+    this.stream.flushNow()
+    this.stream.flushTools()
+  }
+
   async getMessages(opts: { includeStreaming?: boolean } = {}): Promise<UIMessage[]> {
     const list = this.messages
     if (!opts.includeStreaming) return list

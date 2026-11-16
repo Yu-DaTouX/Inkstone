@@ -14,7 +14,7 @@ import type {
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
-import { applySyncDelta, mergeSyncHistory } from './session-message-merge'
+import { adoptResyncSnapshot, applySyncDelta, mergeSyncHistory } from './session-message-merge'
 import { noteTextArrival } from './text-arrival'
 
 export interface SessionRuntimeSnapshot {
@@ -161,7 +161,7 @@ export function migrateSessionRuntime(
 }
 
 function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMessage[] {
-  const index = list.findIndex((message) => message.id === id)
+  const index = list.findLastIndex((message) => message.id === id)
   if (index < 0) return list
   const current = list[index]
   const { textDelta, thinkingDelta, ...fields } = patch
@@ -180,7 +180,7 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
 }
 
 export function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
-  const index = list.findIndex((message) => message.id === messageId)
+  const index = list.findLastIndex((message) => message.id === messageId)
   if (index < 0) return list
   const current = list[index]
   if (current.artifacts?.some((item) => item.id === artifact.id)) return list
@@ -190,7 +190,7 @@ export function patchArtifact(list: UIMessage[], messageId: string, artifact: No
 }
 
 function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDelta?: string, sameArgs?: boolean): UIMessage[] {
-  const index = list.findIndex((message) => message.id === msgId)
+  const index = list.findLastIndex((message) => message.id === msgId)
   if (index < 0) return list
   const current = list[index]
   const callIndex = (current.toolCalls ?? []).findIndex((item) => item.id === call.id)
@@ -226,7 +226,10 @@ export function reduceSessionRuntime(
   switch (message.ch) {
     case 'sync': {
       const protectedTailId = previous?.session?.isStreaming ? previous.messages.at(-1)?.id : undefined
-      next = { ...next, messagesLoaded: true, messages: mergeSyncHistory(message.payload, next.messages, protectedTailId) }
+      const messages = message.resync
+        ? adoptResyncSnapshot(message.payload, next.messages)
+        : mergeSyncHistory(message.payload, next.messages, protectedTailId)
+      next = { ...next, messagesLoaded: true, messages }
       break
     }
     case 'sync-delta': {

@@ -63,7 +63,7 @@ export function applySyncDelta(
   delta: SessionSyncDelta,
   protectedTailId?: string
 ): UIMessage[] | null {
-  const at = current.findIndex((message) => message.id === delta.anchorId)
+  const at = current.findLastIndex((message) => message.id === delta.anchorId)
   if (at < 0 || at !== delta.anchorIndex) return null
   if (messageSyncSignature(current[at]) !== delta.anchorSignature) return null
   const seen = new Set<string>()
@@ -87,6 +87,10 @@ export function applySyncDelta(
     out.push(message)
   }
   return out
+}
+
+export function adoptResyncSnapshot(snapshot: UIMessage[], live: UIMessage[]): UIMessage[] {
+  return keepLocalImages(live, snapshot)
 }
 
 export function mergeSyncHistory(

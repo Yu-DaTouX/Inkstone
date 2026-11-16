@@ -36,7 +36,8 @@ import type { CheckpointRecord } from '../../../shared/checkpoints'
 import { attentionForOutcome } from '../../../shared/turn-outcome'
 import { playSound } from '../lib/sound'
 import type { BrowserOpenTarget } from '../features/browser/browser-open'
-import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
+import { adoptResyncSnapshot, applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
+import { createViewResyncScheduler, viewResyncKey, type ViewResyncNeed } from './view-resync'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
 import { cancelClockFrame, requestClockFrame } from '../lib/frame-clock'
 import { SubagentPatchBatch, applySubagentPatches } from './subagent-patch-batch'
@@ -428,8 +429,14 @@ function resyncSubagents(): void {
 }
 
 const VIEW_RESYNC_GAP_MS = 3000
-let viewResyncTimer: ReturnType<typeof setTimeout> | null = null
-let viewResyncAt = 0
+const pendingPatchRuntimes = new Map<string, RuntimeEnvelope | undefined>()
+const viewResync = createViewResyncScheduler({
+  send: (request) => {
+    const sent = window.yan.resyncView(request)
+    if (!request.giveUp) void sent.then(() => restorePendingUiRequests()).catch(() => undefined)
+    else void sent.catch(() => undefined)
+  }
+})
 let uiRestoreAt = 0
 
 function reduceRuntimePushes(map: SessionRuntimeMap, pushes: readonly MainPush[]): SessionRuntimeMap {
@@ -443,9 +450,11 @@ function reduceRuntimePushes(map: SessionRuntimeMap, pushes: readonly MainPush[]
 function flushPendingMessagePatches(): void {
   messagePatchFlush.cancel()
   const drained = pendingMessagePatches.drain()
+  const patchRuntimes = new Map(pendingPatchRuntimes)
+  pendingPatchRuntimes.clear()
   const runtimePushes = pendingRuntimePushes.splice(0)
   if (drained.length === 0 && runtimePushes.length === 0) return
-  let missing = false
+  const missing: ViewResyncNeed[] = []
   useStore.setState((state) => {
     const patch: Partial<Store> = {}
     if (runtimePushes.length) patch.sessionRuntimes = reduceRuntimePushes(state.sessionRuntimes, runtimePushes)
@@ -454,29 +463,34 @@ function flushPendingMessagePatches(): void {
       for (const item of drained) {
         const before = messages
         messages = patchMessage(messages, item.id, item.patch) as typeof state.messages
-        if (messages === before) missing = true
+        if (messages === before) missing.push({ reason: 'patch-target-missing', runtime: patchRuntimes.get(item.id), missing: [{ kind: 'msg-update', messageId: item.id, fields: Object.keys(item.patch) }] })
       }
       patch.messages = messages
     }
     return patch
   })
-  if (missing) requestViewResync('patch-target-missing')
+  for (const need of missing) requestViewResync(need)
 }
 
 export function discardPendingMessagePatches(): void {
   pendingMessagePatches.drain()
+  pendingPatchRuntimes.clear()
+  viewResync.reset()
   messagePatchFlush.cancel()
   const runtimePushes = pendingRuntimePushes.splice(0)
   if (runtimePushes.length) useStore.setState((state) => ({ sessionRuntimes: reduceRuntimePushes(state.sessionRuntimes, runtimePushes) }))
 }
 
-function requestViewResync(reason: string): void {
-  if (viewResyncTimer || bootPushes) return
-  viewResyncTimer = setTimeout(() => {
-    viewResyncTimer = null
-    viewResyncAt = Date.now()
-    void window.yan.resyncView(reason).then(() => restorePendingUiRequests()).catch(() => undefined)
-  }, Math.max(300, viewResyncAt + VIEW_RESYNC_GAP_MS - Date.now()))
+function settleViewResync(runtime: RuntimeEnvelope | undefined, adopted: boolean): void {
+  for (const key of new Set([viewResyncKey(runtime), 'view'])) {
+    if (adopted) viewResync.cancel(key)
+    else viewResync.settle(key)
+  }
+}
+
+function requestViewResync(need: ViewResyncNeed): void {
+  if (bootPushes) return
+  viewResync.request(need)
 }
 
 async function restorePendingUiRequests(): Promise<void> {
@@ -723,6 +737,10 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     if (m.ch === 'subagent' || m.ch === 'subagent-remove') flushPendingSubagentPatches()
     if (m.ch !== 'msg-update') flushPendingMessagePatches()
+    if (m.ch === 'turn-settled' || (m.ch === 'msg-add' && m.payload.role === 'user')) {
+      const settledKey = m.runtime ? viewResyncKey(m.runtime) : m.ch === 'turn-settled' ? m.payload.sessionId : undefined
+      if (settledKey) viewResync.settle(settledKey)
+    }
 
     const s = get()
 
@@ -773,11 +791,12 @@ export const useStore = create<Store>((rawSet, get) => {
         const incoming = m.runtime?.sessionId
         if (!pushBelongsToView(s, incoming)) break
         set({
-          messages: reuseIfSame(s.messages, mergeSyncHistory(m.payload, s.messages, syncProtectedTail(s, m.runtime))) as typeof s.messages,
+          messages: reuseIfSame(s.messages, m.resync ? adoptResyncSnapshot(m.payload, s.messages) : mergeSyncHistory(m.payload, s.messages, syncProtectedTail(s, m.runtime))) as typeof s.messages,
           peekedPath: null,
           peekedSessionId: null,
           peekNote: null
         })
+        settleViewResync(m.runtime, m.resync === true)
         break
       }
       case 'sync-delta': {
@@ -792,6 +811,7 @@ export const useStore = create<Store>((rawSet, get) => {
             peekedSessionId: null,
             peekNote: null
           })
+          settleViewResync(m.runtime, false)
           break
         }
         const requestedFrom = { runnerId: s.activeRunnerId, sessionId: s.session?.sessionId, peeked: s.peekedSessionId }
@@ -883,6 +903,7 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       case 'msg-update':
         pendingMessagePatches.add(m.payload.id, m.payload.patch)
+        pendingPatchRuntimes.set(m.payload.id, m.runtime)
         messagePatchFlush.schedule()
         break
       case 'artifact':
@@ -892,7 +913,7 @@ export const useStore = create<Store>((rawSet, get) => {
         const { msgId, call, outputDelta } = m.payload
         const msg = s.messages.findLast((x) => x.id === msgId)
         if (!msg) {
-          requestViewResync('tool-target-missing')
+          requestViewResync({ reason: 'tool-target-missing', runtime: m.runtime, missing: [{ kind: 'tool-message', messageId: msgId, callId: call.id }] })
           break
         }
         const calls = (msg.toolCalls ?? []).slice()
@@ -903,7 +924,7 @@ export const useStore = create<Store>((rawSet, get) => {
           if (outputDelta) merged.output = (base.output ?? '') + outputDelta
           calls[i] = merged
         } else if (m.payload.sameArgs) {
-          requestViewResync('tool-target-missing')
+          requestViewResync({ reason: 'tool-target-missing', runtime: m.runtime, missing: [{ kind: 'tool-call', messageId: msgId, callId: call.id }] })
           break
         } else {
           calls.push(outputDelta ? { ...call, output: outputDelta } : call)

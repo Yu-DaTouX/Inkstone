@@ -2,6 +2,7 @@ import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type { HtmlEditPatch } from './html-edit-patch'
+import type { ViewResyncRequest } from './view-resync'
 import type { ArtifactLibraryResult, SaveInlineArtifactInput, SaveInlineArtifactResult } from './artifact-library'
 import type { NativeMcpServerListView } from './mcp-native'
 import type { McpSettingsMutation, McpSettingsResult, McpSettingsSnapshot } from './mcp-settings'
@@ -1143,6 +1144,7 @@ export type MainPush = MainPushBody & {
   runtime?: RuntimeEnvelope
   sessionKey?: string
   replay?: boolean
+  resync?: boolean
 }
 
 
@@ -1593,7 +1595,7 @@ export interface YanBridge {
   holdApproval(id: string, identity?: ApprovalAnswerIdentity): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>
   pendingUiRequests(): Promise<MainPush[]>
-  resyncView(reason: string): Promise<{ ok: boolean }>
+  resyncView(request: ViewResyncRequest | string): Promise<{ ok: boolean }>
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 
