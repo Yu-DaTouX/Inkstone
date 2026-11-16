@@ -5,6 +5,7 @@ export type JournalStatus = 'running' | 'done' | 'failed' | 'stopped'
 export interface JournalEntry {
   kind?: 'model'
   seq: number
+  index?: number
   hash: string
   status: JournalStatus
   attempt: number

@@ -28,6 +28,37 @@ export interface WorkflowModelStats {
   queued: number
   waitingQuota?: boolean
   phases?: WorkflowModelPhaseStat[]
+  cells?: string
+  cost?: number
+  since?: number
+  latest?: WorkflowModelLatest
+  failures?: WorkflowModelFailure[]
+}
+
+export type WorkflowModelCellStatus = 'queued' | 'running' | 'done' | 'failed' | 'stopped' | 'cached'
+
+export const MODEL_CELL_CODE: Record<WorkflowModelCellStatus, string> = { queued: 'q', running: 'r', done: 'd', failed: 'f', stopped: 's', cached: 'c' }
+
+export interface WorkflowModelLatest {
+  index: number
+  label?: string
+  text: string
+  at: number
+}
+
+export interface WorkflowModelFailure {
+  index: number
+  label?: string
+  error: string
+}
+
+export interface WorkflowModelCall {
+  index: number
+  label?: string
+  status: WorkflowModelCellStatus
+  startedAt?: number
+  endedAt?: number
+  error?: string
 }
 
 export interface WorkflowModelPhaseStat {
@@ -88,8 +119,59 @@ export const WORKFLOW_LIMITS = {
   maxModelConcurrency: 32,
   defaultModelTimeoutMinutes: 5,
   defaultModelRetries: 1,
-  maxModelPromptChars: 2_000_000
+  maxModelPromptChars: 2_000_000,
+  modelLatestChars: 120,
+  modelFailuresShown: 50,
+  modelErrorChars: 1000
 } as const
+
+export function clipModelText(value: unknown, max: number): string {
+  let text = ''
+  if (typeof value === 'string') text = value
+  else if (value !== undefined && value !== null) {
+    try {
+      text = JSON.stringify(value) ?? ''
+    } catch {
+      text = String(value)
+    }
+  }
+  const flat = text.replace(/\s+/g, ' ').trim()
+  const chars = [...flat]
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : flat
+}
+
+export function modelCellCounts(cells: string): { queued: number; running: number; done: number; failed: number; stopped: number } {
+  const counts = { queued: 0, running: 0, done: 0, failed: 0, stopped: 0 }
+  for (let i = 0; i < cells.length; i++) {
+    const code = cells.charCodeAt(i)
+    if (code === 100 || code === 99) counts.done += 1
+    else if (code === 114) counts.running += 1
+    else if (code === 102) counts.failed += 1
+    else if (code === 115) counts.stopped += 1
+    else counts.queued += 1
+  }
+  return counts
+}
+
+export function modelThroughput(models: Pick<WorkflowModelStats, 'done' | 'running' | 'queued' | 'since'>, now: number): { perMinute: number; etaMs: number | null } {
+  const minutes = typeof models.since === 'number' ? (now - models.since) / 60_000 : 0
+  if (minutes <= 0 || models.done <= 0) return { perMinute: 0, etaMs: null }
+  const perMinute = models.done / minutes
+  const left = models.running + models.queued
+  return { perMinute, etaMs: left > 0 ? (left / perMinute) * 60_000 : null }
+}
+
+export function interruptedModelStats(models: WorkflowModelStats): WorkflowModelStats {
+  return {
+    ...models,
+    stopped: models.stopped + models.running + models.queued,
+    running: 0,
+    queued: 0,
+    waitingQuota: undefined,
+    phases: models.phases?.map((phase) => ({ ...phase, stopped: phase.stopped + phase.running + phase.queued, running: 0, queued: 0 })),
+    ...(models.cells ? { cells: models.cells.replace(/[rq]/g, MODEL_CELL_CODE.stopped) } : {})
+  }
+}
 
 export function emptyModelStats(): WorkflowModelStats {
   return { total: 0, done: 0, cached: 0, failed: 0, stopped: 0, running: 0, queued: 0 }

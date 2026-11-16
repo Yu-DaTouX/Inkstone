@@ -26,7 +26,7 @@ import { CapabilityServer, type CapabilityCommandResult } from './capability-ser
 import { BackgroundBashCommands } from './background-bash'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
-import { redactDiagnosticText } from '../shared/redact-diagnostic'
+import { redactCredentialShapes, redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { confirmRegisteredModel } from './subagents/registered-model'
@@ -103,25 +103,6 @@ const DRAIN_CONCURRENCY = 4
 
 const MAX_STDERR_LINES = 20
 const MAX_STDERR_LINE_CHARS = 400
-
-function redactCredentialShapes(text: string): string {
-  return text
-    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi, '$1[redacted]@')
-    .replace(
-      /([?&])(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|token|key|secret|password|passwd|credential|authorization|auth)=[^&\s"']+/gi,
-      '$1[redacted]'
-    )
-    .replace(
-      /(["']?(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|authorization|auth|token|secret|password|passwd|credential)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*$|'(?:\\.|[^'\\])*$)/gi,
-      '$1[redacted]'
-    )
-    .replace(/\b(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]{6,}/gi, '[redacted]')
-    .replace(/\b(authorization\s*[:=]\s*)[^\s,;"']+/gi, '$1[redacted]')
-    .replace(
-      /(\b(?:x-api-key|api[-_]?key|apikey|access[_-]?token|refresh[_-]?token|id[_-]?token|token|secret|password|passwd|credential)\b\s*[:=]\s*)[^\s,;"'&?]+/gi,
-      '$1[redacted]'
-    )
-}
 
 export function redactLocalDiagnostic(text: string, max = MAX_STDERR_LINE_CHARS): string | undefined {
   return redactDiagnosticText(redactCredentialShapes(text), max) ?? undefined

@@ -285,7 +285,8 @@ const api: YanBridge = {
     list: () => invoke('yan:workflows:list'),
     pause: (id) => invoke('yan:workflows:pause', id),
     resume: (id) => invoke('yan:workflows:resume', id),
-    stop: (id) => invoke('yan:workflows:stop', id)
+    stop: (id) => invoke('yan:workflows:stop', id),
+    modelCall: (id, index) => invoke('yan:workflows:model-call', id, index)
   },
 
   sources: {

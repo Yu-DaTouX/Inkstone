@@ -7,6 +7,7 @@ import { useLiveQuota } from './state/live-quota'
 import { useRightPanel } from './state/right-panel'
 import { useSplitView } from './state/split-view'
 import { useUiV3 } from './state/ui-v3'
+import { useWorkflows } from './state/workflows'
 import { installAudioUnlock, prepareSound } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installFocusModality } from './lib/focusModality'
@@ -30,6 +31,7 @@ declare global {
     __yanSplit: typeof useSplitView
     __yanUiV3: typeof useUiV3
     __yanFrameClock: typeof frameClockStatus
+    __yanWorkflows: typeof useWorkflows
   }
 }
 const probeMode = window.yan.probeMode || (import.meta.env.DEV && new URLSearchParams(window.location.search).get('probe') === '1')
@@ -41,6 +43,7 @@ if (probeMode) {
   window.__yanSplit = useSplitView
   window.__yanUiV3 = useUiV3
   window.__yanFrameClock = frameClockStatus
+  window.__yanWorkflows = useWorkflows
 }
 
 installAudioUnlock()

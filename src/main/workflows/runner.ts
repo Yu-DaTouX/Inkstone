@@ -1,7 +1,7 @@
 import { pick } from '../../shared/ui-lang'
 import { Worker } from 'node:worker_threads'
 import type { SubagentRun } from '../../shared/ipc'
-import { WORKFLOW_LIMITS, emptyModelStats, type WorkflowAgentView, type WorkflowModelStats } from '../../shared/workflows'
+import { WORKFLOW_LIMITS, emptyModelStats, type WorkflowAgentView, type WorkflowModelCall, type WorkflowModelStats } from '../../shared/workflows'
 import { promptHash, subagentStartParams, type WorkflowAgentOptions } from './agent-options'
 import { JournalWriter, ModelReplay, Replay, type JournalEntry } from './journal'
 import { WorkflowModelLane, type WorkflowModelHost } from './model-lane'
@@ -123,6 +123,14 @@ export class WorkflowRunner {
 
   get models(): WorkflowModelStats {
     return this.lane ? this.lane.stats() : emptyModelStats()
+  }
+
+  modelCall(index: number): WorkflowModelCall | null {
+    return this.lane.call(index)
+  }
+
+  modelCalls(): WorkflowModelCall[] {
+    return this.lane.callTable()
   }
 
   get done(): boolean {

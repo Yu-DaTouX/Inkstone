@@ -4,12 +4,16 @@ import { isAbsolute, join, resolve } from 'node:path'
 import type { SubagentRun } from '../../shared/ipc'
 import {
   WORKFLOW_LIMITS,
+  MODEL_CELL_CODE,
+  interruptedModelStats,
   isLiveWorkflow,
   normalizeWorkflowId,
   workflowAnchor,
   workflowIdOfAnchor,
   workflowPhaseStats,
   workflowTotals,
+  type WorkflowModelCall,
+  type WorkflowModelCellStatus,
   type WorkflowRunView,
   type WorkflowStatus
 } from '../../shared/workflows'
@@ -17,7 +21,7 @@ import { pick } from '../../shared/ui-lang'
 import { CapabilityCommandError, type CapabilityCommandResult } from '../capability-server'
 import type { NoticeTarget } from '../subagent-notify'
 import { readJournal, readModelJournal, type JournalEntry } from './journal'
-import type { WorkflowModelHost } from './model-lane'
+import { shownModelError, type WorkflowModelHost } from './model-lane'
 import { buildWorkflowNotice, createWorkflowNotifier, type WorkflowNotifier, type WorkflowWorktree } from './notice'
 import { WorkflowRunner, type WorkflowOutcome } from './runner'
 import { checkWorkflowScript } from './script'
@@ -65,6 +69,7 @@ const RECORD_FILE = 'run.json'
 const SCRIPT_FILE = 'script.js'
 const JOURNAL_FILE = 'journal.jsonl'
 const RESULT_FILE = 'result.json'
+const FINISHED_CALLS_KEPT = 8
 const MAX_ARGS_CHARS = 200_000
 const MAX_LISTED = 200
 const SUMMARY_RESULT_CHARS = 400
@@ -115,6 +120,8 @@ function preview(value: unknown): { text: string; truncated: boolean } {
 export class WorkflowService {
   private readonly records = new Map<string, WorkflowRecord>()
   private readonly runners = new Map<string, WorkflowRunner>()
+  private readonly finishedCalls = new Map<string, (WorkflowModelCall | undefined)[]>()
+  private readonly callLoads = new Map<string, Promise<(WorkflowModelCall | undefined)[] | null>>()
   private readonly waiters = new Map<string, Set<FinishWaiter>>()
   private readonly pushTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly persistQueue = new Map<string, Promise<void>>()
@@ -209,6 +216,56 @@ export class WorkflowService {
   async list(): Promise<WorkflowRunView[]> {
     await this.ensureLoaded()
     return [...this.records.values()].map((record) => this.viewOf(record)).sort((a, b) => a.startedAt - b.startedAt).slice(-MAX_LISTED)
+  }
+
+  async modelCall(id: string, index: number): Promise<WorkflowModelCall | null> {
+    await this.ensureLoaded()
+    const record = this.records.get(id)
+    if (!record || !Number.isInteger(index) || index < 0) return null
+    const runner = this.runners.get(id)
+    if (runner && !runner.done) return runner.modelCall(index)
+    const table = this.finishedCalls.get(id) ?? await this.loadCallTable(record)
+    return table?.[index] ?? null
+  }
+
+  private keepCalls(id: string, table: (WorkflowModelCall | undefined)[]): void {
+    this.finishedCalls.delete(id)
+    this.finishedCalls.set(id, table)
+    for (const key of this.finishedCalls.keys()) {
+      if (this.finishedCalls.size <= FINISHED_CALLS_KEPT) break
+      this.finishedCalls.delete(key)
+    }
+  }
+
+  private loadCallTable(record: WorkflowRecord): Promise<(WorkflowModelCall | undefined)[] | null> {
+    const id = record.view.id
+    const pending = this.callLoads.get(id)
+    if (pending) return pending
+    const attempt = record.view.attempt
+    const load = (async () => {
+      let text: string
+      try {
+        text = await readFile(join(record.view.dir, JOURNAL_FILE), 'utf8')
+      } catch {
+        return null
+      }
+      const cells = record.view.models?.cells ?? ''
+      const table: (WorkflowModelCall | undefined)[] = []
+      for (const entry of readModelJournal(text).values()) {
+        const at = entry.index
+        if (entry.attempt !== attempt || typeof at !== 'number' || !Number.isInteger(at) || at < 0) continue
+        const code = cells[at]
+        const fromCell = (Object.entries(MODEL_CELL_CODE) as [WorkflowModelCellStatus, string][]).find(([, value]) => value === code)?.[0]
+        const status: WorkflowModelCellStatus = fromCell ?? (entry.cached ? 'cached' : entry.status === 'running' ? 'stopped' : entry.status)
+        table[at] = { index: at, ...(entry.label ? { label: entry.label } : {}), status, endedAt: entry.at, ...(entry.error ? { error: shownModelError(entry.error) } : {}) }
+      }
+      const runner = this.runners.get(id)
+      if ((runner && !runner.done) || record.view.attempt !== attempt) return null
+      this.keepCalls(id, table)
+      return table
+    })().finally(() => this.callLoads.delete(id))
+    this.callLoads.set(id, load)
+    return load
   }
 
   async control(id: string, action: 'pause' | 'resume' | 'stop'): Promise<{ ok: boolean; error?: string; run?: WorkflowRunView }> {
@@ -374,7 +431,10 @@ export class WorkflowService {
     if (this.runners.get(record.view.id) !== runner) return
     record.view.agents = runner.agents.filter(Boolean).map((agent) => ({ ...agent }))
     record.view.logs = [...runner.logs]
-    if (runner.models.total) record.view.models = runner.models
+    if (runner.models.total) {
+      record.view.models = runner.models
+      this.keepCalls(record.view.id, runner.modelCalls())
+    }
     record.view.status = outcome.status
     record.view.endedAt = this.now()
     if (outcome.status === 'failed') record.view.error = outcome.error
@@ -489,7 +549,7 @@ export class WorkflowService {
             raw.view.status = 'interrupted'
             raw.view.error = '应用退出时工作流还在运行；没有自动续跑，需要时用 yan workflow resume 续跑'
             raw.view.agents = raw.view.agents.map((agent) => (agent.status === 'running' || agent.status === 'queued' ? { ...agent, status: 'stopped' } : agent))
-            if (raw.view.models) raw.view.models = { ...raw.view.models, stopped: raw.view.models.stopped + raw.view.models.running + raw.view.models.queued, running: 0, queued: 0, waitingQuota: undefined, phases: raw.view.models.phases?.map((phase) => ({ ...phase, stopped: phase.stopped + phase.running + phase.queued, running: 0, queued: 0 })) }
+            if (raw.view.models) raw.view.models = interruptedModelStats(raw.view.models)
             this.records.set(id, raw)
             await this.persist(raw)
           } else this.records.set(id, raw)
@@ -587,6 +647,7 @@ export class WorkflowService {
     record.view.agents = []
     record.view.logs = []
     delete record.view.models
+    this.finishedCalls.delete(record.view.id)
     delete record.view.endedAt
     delete record.view.error
     delete record.notified

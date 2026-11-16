@@ -1,7 +1,8 @@
 import { pick } from '../../shared/ui-lang'
 import { isRateLimitError, isQuotaWaitError } from '../../shared/quota-resume'
 import { isTransientModelError } from '../../shared/model-errors'
-import { WORKFLOW_LIMITS, emptyModelStats, type WorkflowModelPhaseStat, type WorkflowModelStats } from '../../shared/workflows'
+import { MODEL_CELL_CODE, WORKFLOW_LIMITS, clipModelText, emptyModelStats, type WorkflowModelCall, type WorkflowModelCellStatus, type WorkflowModelFailure, type WorkflowModelLatest, type WorkflowModelPhaseStat, type WorkflowModelStats } from '../../shared/workflows'
+import { redactCredentialShapes } from '../../shared/redact-diagnostic'
 import type { ModelCallRequest, ModelCallResult } from '../model-call'
 import type { JournalEntry, JournalWriter, ModelReplay } from './journal'
 import { modelPromptHash, type WorkflowModelOptions } from './model-options'
@@ -38,6 +39,7 @@ export interface WorkflowModelLaneOptions {
 type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'stopped'
 
 interface ModelJob {
+  index: number
   seq: number
   prompt: string
   options: WorkflowModelOptions
@@ -51,6 +53,21 @@ export const MODEL_QUOTA_WAIT_LIMIT_MS = 30 * 60_000
 const MODEL_QUOTA_BOUNCES = 3
 const MAX_BACKOFF_MS = 60_000
 const STOP_GRACE_MS = 5000
+const CREDENTIAL_KEY = /\bsk-[A-Za-z0-9_-]{6,}/g
+
+function costOf(usage: unknown): number {
+  const cost = (usage as { cost?: unknown } | null | undefined)?.cost
+  return typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : 0
+}
+
+function cutChars(text: string, max: number): string {
+  const chars = [...text]
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : text
+}
+
+export function shownModelError(text: string): string {
+  return cutChars(redactCredentialShapes(text).replace(CREDENTIAL_KEY, '[redacted]'), WORKFLOW_LIMITS.modelErrorChars)
+}
 
 function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -87,13 +104,47 @@ export class WorkflowModelLane {
   private readonly holds = new Map<string, number>()
   private readonly phases = new Map<string, WorkflowModelPhaseStat>()
   private waiting = 0
+  private readonly calls: Omit<WorkflowModelCall, 'index'>[] = []
+  private readonly cells: string[] = []
+  private readonly failures: WorkflowModelFailure[] = []
+  private latest: WorkflowModelLatest | undefined
+  private cost = 0
+  private since: number | undefined
 
   constructor(private readonly opts: WorkflowModelLaneOptions) {}
 
   stats(): WorkflowModelStats {
     const { total, done, cached, failed, stopped, running, queued } = this.counts
     const phases = [...this.phases.values()].map((stat) => ({ ...stat }))
-    return { total, done, cached, failed, stopped, running, queued, ...(this.waiting > 0 ? { waitingQuota: true } : {}), ...(phases.length ? { phases } : {}) }
+    return {
+      total, done, cached, failed, stopped, running, queued,
+      ...(this.waiting > 0 ? { waitingQuota: true } : {}),
+      ...(phases.length ? { phases } : {}),
+      ...(this.cells.length ? { cells: this.cells.join('') } : {}),
+      ...(this.cost > 0 ? { cost: this.cost } : {}),
+      ...(this.since !== undefined ? { since: this.since } : {}),
+      ...(this.latest ? { latest: { ...this.latest } } : {}),
+      ...(this.failures.length ? { failures: this.failures.map((item) => ({ ...item })) } : {})
+    }
+  }
+
+  call(index: number): WorkflowModelCall | null {
+    const call = Number.isInteger(index) ? this.calls[index] : undefined
+    return call ? { index, ...call } : null
+  }
+
+  callTable(): WorkflowModelCall[] {
+    return this.calls.map((call, index) => ({ index, ...call }))
+  }
+
+  private mark(index: number, status: WorkflowModelCellStatus): void {
+    const call = this.calls[index]
+    if (!call) return
+    call.status = status
+    this.cells[index] = MODEL_CELL_CODE[status]
+    const now = this.opts.now()
+    if (status === 'running') call.startedAt = now
+    else if (status !== 'queued') call.endedAt = now
   }
 
   private phaseStat(title: string | undefined): WorkflowModelPhaseStat {
@@ -117,17 +168,22 @@ export class WorkflowModelLane {
     const hash = modelPromptHash(prompt, options)
     const phase = this.opts.phase()
     this.counts.total += 1
+    const index = this.calls.length
+    this.calls.push({ ...(options.label ? { label: options.label } : {}), status: 'queued' })
+    this.cells.push(MODEL_CELL_CODE.queued)
+    if (this.since === undefined) this.since = this.opts.now()
     const hit = this.opts.replay.take(seq, hash)
     if (hit) {
+      this.mark(index, 'cached')
       this.counts.cached += 1
       this.move({ phase }, null, 'done')
-      void this.opts.journal.append({ ...hit, kind: 'model', seq, attempt: this.opts.attempt, at: this.opts.now(), cached: true, ...(options.label ? { label: options.label } : {}), ...(phase ? { phase } : {}) })
+      void this.opts.journal.append({ ...hit, kind: 'model', seq, attempt: this.opts.attempt, at: this.opts.now(), cached: true, index, ...(options.label ? { label: options.label } : {}), ...(phase ? { phase } : {}) })
       this.opts.reply(seq, { ok: true, json: JSON.stringify(hit.result ?? null) })
       this.opts.onChange()
       return
     }
     const model = options.model ?? this.opts.defaultModel ?? ''
-    const job: ModelJob = { seq, prompt, options, hash, model, ...(phase ? { phase } : {}), status: 'queued' }
+    const job: ModelJob = { index, seq, prompt, options, hash, model, ...(phase ? { phase } : {}), status: 'queued' }
     this.counts.queued += 1
     this.move(job, null, 'queued')
     if (!this.opts.host) {
@@ -152,6 +208,7 @@ export class WorkflowModelLane {
     while (!this.opts.blocked() && !this.opts.signal.aborted && this.queue.length && this.inflight.size < this.opts.concurrency) {
       const job = this.queue.shift()!
       job.status = 'running'
+      this.mark(job.index, 'running')
       this.counts.queued -= 1
       this.counts.running += 1
       this.move(job, 'queued', 'running')
@@ -169,6 +226,7 @@ export class WorkflowModelLane {
   async stop(): Promise<void> {
     for (const job of this.queue.splice(0)) {
       job.status = 'stopped'
+      this.mark(job.index, 'stopped')
       this.counts.queued -= 1
       this.counts.stopped += 1
       this.move(job, 'queued', 'stopped')
@@ -189,6 +247,7 @@ export class WorkflowModelLane {
     return {
       kind: 'model',
       seq: job.seq,
+      index: job.index,
       hash: job.hash,
       attempt: this.opts.attempt,
       at: this.opts.now(),
@@ -206,12 +265,19 @@ export class WorkflowModelLane {
     this.move(job, job.status === 'running' ? 'running' : 'queued', status)
     job.status = status
     this.counts[status] += 1
+    this.mark(job.index, status)
+    this.cost += costOf(detail.usage)
+    const call = this.calls[job.index]
+    const shown = detail.error ? shownModelError(detail.error) : undefined
+    if (call && shown) call.error = shown
+    if (status === 'done') this.latest = { index: job.index, ...(job.options.label ? { label: job.options.label } : {}), text: clipModelText(detail.result, WORKFLOW_LIMITS.modelLatestChars), at: this.opts.now() }
+    else if (status === 'failed' && this.failures.length < WORKFLOW_LIMITS.modelFailuresShown) this.failures.push({ index: job.index, ...(job.options.label ? { label: job.options.label } : {}), error: shown ?? '' })
     const where = job.options.label ? `"${job.options.label}"` : `#${job.seq}`
     const error = detail.error ? (status === 'failed' ? pick(`model() 调用 ${where} 失败：${detail.error}`, `model() call ${where} failed: ${detail.error}`) : detail.error) : undefined
     void this.opts.journal.append(this.entry(job, {
       status,
       ...(status === 'done' ? { result: detail.result ?? null } : {}),
-      ...(error ? { error } : {}),
+      ...(error ? { error: shownModelError(error) } : {}),
       ...(detail.usage ? { usage: detail.usage } : {}),
       ...(detail.stopReason ? { stopReason: detail.stopReason } : {}),
       ...(detail.model ? { model: detail.model } : {})

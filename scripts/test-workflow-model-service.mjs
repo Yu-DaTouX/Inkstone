@@ -93,6 +93,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(listed.summary.runs[0].models === 3 && listed.summary.runs[0].modelsDone === 2 && listed.summary.runs[0].modelsFailed === 1, 'workflow list 带 model() 计数', JSON.stringify(listed.summary.runs[0]))
     for (let i = 0; i < 100 && !sent.length; i++) await delay(10)
     ok(sent.some((text) => /3 个 model\(\) 调用，完成 2，失败或停止 1/.test(text)), '完成通知写明 model() 计数', sent[0]?.slice(0, 200))
+    const failedAt = view.models.cells?.indexOf('f') ?? -1
+    ok(view.models.cells?.length === 3 && failedAt >= 0 && view.models.cells.replace('f', '') === 'dd', '运行视图带每次调用一格的状态串', view.models.cells)
+    ok(view.models.failures?.length === 1 && view.models.failures[0].index === failedAt && /401 Incorrect API key/.test(view.models.failures[0].error), '失败列表带错误原文', JSON.stringify(view.models.failures))
+    ok(view.models.latest && view.models.latest.text.startsWith('EN 段') && view.models.latest.text.length <= 121, '最近一条完成的抽查', JSON.stringify(view.models.latest))
+    const failedCall = await service.modelCall(id, failedAt)
+    ok(failedCall?.status === 'failed' && /401/.test(failedCall.error ?? '') && typeof failedCall.startedAt === 'number' && typeof failedCall.endedAt === 'number', '结束后按序号查单次调用（内存保留）', JSON.stringify(failedCall))
+    ok(await service.modelCall(id, 3) === null && await service.modelCall('wf-00000000', 0) === null, '越界序号与未知运行返回空')
 
     fail = false
     const before = calls.length
@@ -101,6 +108,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const again = await waitDone(id, 2)
     ok(again.status === 'done' && calls.length - before === 1 && calls.at(-1).prompt === '段2' && again.modelConcurrency === 4, 'resume 只重调失败的 model()，并接受新的 --model-concurrency', JSON.stringify({ n: calls.length - before, models: again.models }))
     ok(again.models.cached === 2 && again.models.done === 1, '续跑后的计数：沿用 2、新完成 1', JSON.stringify(again.models))
+    ok(again.models.cells?.length === 3 && again.models.cells.split('').filter((c) => c === 'c').length === 2 && !again.models.failures, '续跑后状态串：沿用 2 格、无失败', again.models.cells)
+    for (let i = 0; i < 200; i++) {
+      const saved = JSON.parse(await readFile(join(again.dir, 'run.json'), 'utf8').catch(() => '{}'))
+      if (saved.view?.status === 'done' && saved.view.attempt === 2) break
+      await delay(10)
+    }
+    const reloaded = new WorkflowService({ root: join(dir, 'runs'), workerPath, subagentCommand: async () => { throw new Error('不应派子代理') }, getSubagent: async () => undefined, runningSubagents: () => 0, push: () => undefined })
+    const fromJournal = await reloaded.modelCall(id, failedAt)
+    ok(fromJournal?.status === 'done' && typeof fromJournal.endedAt === 'number', '重启后从 journal 查单次调用', JSON.stringify(fromJournal))
     const journal = (await readFile(join(again.dir, 'journal.jsonl'), 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line))
     ok(journal.filter((line) => line.kind === 'io' && line.op === 'write').length === 5, 'journal 记了两次运行的写入（2 + 3）')
 
@@ -138,6 +154,35 @@ await runSuite(import.meta.url, async (ok, compile) => {
     release()
     const tuned = await waitDone(tuneId, 1)
     ok(tuned.status === 'done' && tuned.models.done === 12 && tuned.modelConcurrency === 8, '调并发后跑完，记录新的并发', JSON.stringify({ status: tuned.status, models: tuned.models, mc: tuned.modelConcurrency }))
+
+    const gapRoot = join(dir, 'gap-runs')
+    const gapId = 'wf-0a0b0c0d'
+    const gapDir = join(gapRoot, 's9', gapId)
+    await mkdir(gapDir, { recursive: true })
+    const gapView = { id: gapId, sessionId: 's9', cwd: project, name: 'gap', description: 'gap', declaredPhases: [], status: 'stopped', startedAt: 1, endedAt: 2, attempt: 2, concurrency: 8, agents: [], logs: [], dir: gapDir, models: { total: 6, done: 2, cached: 0, failed: 1, stopped: 3, running: 0, queued: 0, cells: 'dsdsfs' } }
+    await writeFile(join(gapDir, 'run.json'), JSON.stringify({ view: gapView, context: { cwd: project } }), 'utf8')
+    const longError = 'model() 调用 "c4" 失败：401 Bearer abcdefghijklmnop https://api.example.com/v1?key=supersecret123 sk-abcdefghijkl ' + '错'.repeat(3000)
+    const lines = [
+      { kind: 'model', seq: 3, index: 0, hash: 'h0', status: 'done', attempt: 1, at: 50, label: 'old-attempt', result: 'x' },
+      { kind: 'model', seq: 3, index: 0, hash: 'h0', status: 'done', attempt: 2, at: 100, label: 'c0', result: 'x' },
+      { kind: 'model', seq: 7, index: 2, hash: 'h2', status: 'done', attempt: 2, at: 120, label: 'c2', result: 'y' },
+      { kind: 'model', seq: 9, index: 4, hash: 'h4', status: 'failed', attempt: 2, at: 130, label: 'c4', error: longError },
+      { kind: 'model', seq: 11, hash: 'h5', status: 'done', attempt: 2, at: 140, label: 'no-index', result: 'z' }
+    ]
+    await writeFile(join(gapDir, 'journal.jsonl'), lines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf8')
+    const gapService = new WorkflowService({ root: gapRoot, workerPath, subagentCommand: async () => { throw new Error('不应派子代理') }, getSubagent: async () => undefined, runningSubagents: () => 0, push: () => undefined })
+    const c0 = await gapService.modelCall(gapId, 0)
+    const c1 = await gapService.modelCall(gapId, 1)
+    const c2 = await gapService.modelCall(gapId, 2)
+    const c4 = await gapService.modelCall(gapId, 4)
+    const c5 = await gapService.modelCall(gapId, 5)
+    ok(c0?.label === 'c0' && c0.endedAt === 100 && c0.status === 'done', '有缺口的 journal：按 index 取本次 attempt 的记录', JSON.stringify(c0))
+    ok(c1 === null && c5 === null, '缺口处（停止时排队、没写 journal）与没有 index 的旧记录返回空，不错行', JSON.stringify({ c1, c5 }))
+    ok(c2?.label === 'c2' && c4?.label === 'c4' && c4.status === 'failed', '缺口之后的序号仍对得上', JSON.stringify({ c2: c2?.label, c4: c4?.label }))
+    ok([...c4.error].length <= 1001 && !/abcdefghijklmnop|supersecret123|sk-abcdefghijkl/.test(c4.error) && c4.error.includes('[redacted]'), 'journal 里的错误截到 1000 字并脱敏', c4.error.slice(0, 160))
+    await rm(join(gapDir, 'journal.jsonl'))
+    const cachedHit = await gapService.modelCall(gapId, 2)
+    ok(cachedHit?.label === 'c2', '第一次读出后整表缓存，之后不再读 journal')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

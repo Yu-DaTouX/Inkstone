@@ -25,6 +25,7 @@ import { sessionViewIdentity } from './view-state'
 import { subagentAnchorIds, useSubagentGroups } from './subagent-list'
 import { SubagentTile } from './SubagentLine'
 import { useToolExpansion } from './use-tool-run'
+import { WorkflowModelGrid } from './WorkflowModelGrid'
 import './workflows.css'
 
 const STATUS_KEY: Record<WorkflowStatus, MessageKey> = {
@@ -160,24 +161,26 @@ function WorkflowCard({ run }: { run: WorkflowRunView }): JSX.Element {
             <ol className="v3-wf-phases" aria-label={t('wf.phases')} data-testid="v3-workflow-phases">
               {phases.map((phase) => {
                 const title = phase.title || t('wf.phaseUnnamed')
+                const failedOnly = Math.max(0, phase.failed - phase.stopped)
                 const state = phase.total === 0 ? 'idle' : phase.done + phase.failed >= phase.total ? (phase.failed ? 'partial' : 'done') : phase.running ? 'running' : 'waiting'
                 return (
                   <li key={phase.title || '-'} className="v3-wf-phase" data-state={state} data-testid="v3-workflow-phase">
                     <span className="v3-wf-phase-head">
                       <span className="v3-wf-phase-name">{title}</span>
-                      <span className="v3-wf-phase-count">{`${phase.done}/${phase.total}`}</span>
+                      <span className="v3-wf-phase-count">{`${phase.done}/${phase.total}`}{failedOnly ? <span className="v3-wf-phase-fail">{` · ${t('wf.phaseFailed', { n: failedOnly })}`}</span> : null}</span>
                     </span>
                     <ProgressBar
-                      aria-label={t('wf.phaseProgress', { title, done: phase.done, total: phase.total })}
+                      aria-label={failedOnly ? t('wf.phaseProgressFailed', { title, done: phase.done, total: phase.total, failed: failedOnly }) : t('wf.phaseProgress', { title, done: phase.done, total: phase.total })}
                       value={phase.done}
                       maxValue={Math.max(1, phase.total)}
-                      tone={phase.failed > phase.stopped ? 'fail' : phase.stopped ? 'muted' : state === 'done' ? 'ink' : 'run'}
+                      tone={phase.stopped && phase.failed <= phase.stopped ? 'muted' : state === 'done' || state === 'partial' ? 'ink' : 'run'}
                     />
                   </li>
                 )
               })}
             </ol>
           ) : null}
+          {models?.cells ? <WorkflowModelGrid runId={run.id} models={models} live={live} running={run.status === 'running'} open={open} /> : null}
           {latestLog || run.error || actionError ? (
             <p className="v3-wf-note" data-tone={run.error || actionError ? 'fail' : undefined} data-testid="v3-workflow-note">{actionError ?? run.error ?? latestLog}</p>
           ) : null}
@@ -198,7 +201,7 @@ function WorkflowCard({ run }: { run: WorkflowRunView }): JSX.Element {
             </div>
           ) : null}
         </div>
-        {open ? (
+        {open && run.agents.length ? (
           <div className="v3-wf-groups" data-testid="v3-workflow-grid">
             {phases.map((phase) => {
               const agents = run.agents.filter((agent) => (agent.phase ?? '') === phase.title)

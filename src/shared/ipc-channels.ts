@@ -340,6 +340,7 @@ export interface IpcChannelMap {
   'yan:workflows:pause': Contract<B['workflows']['pause']>
   'yan:workflows:resume': Contract<B['workflows']['resume']>
   'yan:workflows:stop': Contract<B['workflows']['stop']>
+  'yan:workflows:model-call': Contract<B['workflows']['modelCall']>
   'yan:searchOps:read': Contract<B['searchOps']['read']>
   'yan:searchOps:siteIcon': Contract<B['searchOps']['siteIcon']>
   'yan:backup': Contract<B['backup']>

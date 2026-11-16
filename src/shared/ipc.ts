@@ -1060,6 +1060,7 @@ export interface WorkflowBridge {
   pause(id: string): Promise<{ ok: boolean; error?: string }>
   resume(id: string): Promise<{ ok: boolean; error?: string }>
   stop(id: string): Promise<{ ok: boolean; error?: string }>
+  modelCall(id: string, index: number): Promise<import('./workflows').WorkflowModelCall | null>
 }
 
 export type BrowserSiteAddResult = 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'
