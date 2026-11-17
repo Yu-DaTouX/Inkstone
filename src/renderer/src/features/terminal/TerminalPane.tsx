@@ -14,6 +14,7 @@ import { selectOwnedTerminals } from './terminal-session'
 import type { TerminalAdopt, TerminalViewState } from './terminal-session'
 import {
   canAddTerminalTab,
+  findTerminalTabKey,
   othersThan,
   pickActiveAfterClose,
   terminalTabNames
@@ -274,7 +275,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   }, [load, owner.active, owner.key, visible])
 
   const handleState = useCallback((key: string, state: TerminalViewState): void => {
-    setStates((previous) => ({ ...previous, [key]: state }))
+    statesRef.current = { ...statesRef.current, [key]: state }
+    setStates(statesRef.current)
   }, [])
 
   const handleBell = useCallback((key: string): void => {
@@ -317,9 +319,10 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     () =>
       onActivateTerminal((key, id) => {
         if (key !== ownerRef.current.key) return
-        if (!tabs.some((tab) => tab.key === id)) return
-        setActive(id)
-        focusTerminal(id)
+        const tabKey = findTerminalTabKey(tabs, statesRef.current, id)
+        if (!tabKey) return
+        setActive(tabKey)
+        focusTerminal(tabKey)
       }),
     [tabs, focusTerminal]
   )
@@ -332,10 +335,16 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
           loadedFor.current = ownerRef.current.key
           void load()
         }
-        if (!tabs.some((tab) => tab.key === request.terminalId)) {
-          if (!canAddTerminalTab(tabs.length)) return
-          setTabs((previous) => [...previous, { key: request.terminalId, adopt: { id: request.terminalId } }])
+        const tabKey = findTerminalTabKey(tabs, statesRef.current, request.terminalId)
+        if (tabKey) {
+          setActive(tabKey)
+          return
         }
+        if (!canAddTerminalTab(tabs.length)) return
+        setTabs((previous) => {
+          if (findTerminalTabKey(previous, statesRef.current, request.terminalId) || !canAddTerminalTab(previous.length)) return previous
+          return [...previous, { key: request.terminalId, adopt: { id: request.terminalId } }]
+        })
         setActive(request.terminalId)
       }),
     [tabs, load]

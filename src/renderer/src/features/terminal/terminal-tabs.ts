@@ -1,3 +1,5 @@
+import type { TerminalAdopt, TerminalViewState } from './terminal-session'
+
 export const MAX_TERMINAL_TABS = 12
 
 export interface TerminalTabNameInput {
@@ -10,6 +12,17 @@ const TAB_COMMAND_CHARS = 32
 
 export function canAddTerminalTab(count: number): boolean {
   return count < MAX_TERMINAL_TABS
+}
+
+export function findTerminalTabKey(
+  tabs: readonly { key: string; adopt: TerminalAdopt }[],
+  states: Readonly<Record<string, Pick<TerminalViewState, 'terminalId'> | undefined>>,
+  terminalId: string
+): string | null {
+  return tabs.find((tab) => {
+    const id = states[tab.key]?.terminalId ?? (typeof tab.adopt === 'object' ? tab.adopt.id : tab.key)
+    return id === terminalId
+  })?.key ?? null
 }
 
 function commandName(command: string): string {

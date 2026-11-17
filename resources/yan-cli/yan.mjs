@@ -534,11 +534,13 @@ GROUP_USAGE.terminal = `yan terminal <动作> [选项]
                                   你自己停掉的不再通知；用户停掉的不会叫醒你，通知随下一回合送达
   read  --id <终端> [--lines 80] [--since <cursor>]
                                   读终端内容；--since 填上次结果里的 cursor，只取之后的新输出
-  write --id <终端> --text "<文本>" [--enter] [--wait <毫秒>]
-                                  原样输入文字（回答提示、REPL）；--enter 末尾回车；默认等 1500ms 收集输出
-  keys  --id <终端> --keys ctrl+c[,enter,...] [--wait <毫秒>]
+  write --id <终端> --text "<文本>" [--enter] [--wait <毫秒>] [--background --until <正则>] [--timeout <秒>]
+                                  原样输入文字（回答提示、REPL）；--enter 末尾回车；默认等 1500ms 收集输出，不会自动登记完成通知
+                                  给 OpenCode 等交互程序派长任务：加 --background --until，完成后会通知并唤醒你；--timeout 最多 24 小时
+                                  --until 必填，用本次任务唯一的独立完成行，例如 ^REVIEW_42_DONE$，不要匹配输入回显或旧回复；按渲染后的屏幕匹配，静默或 shell 提示符不算完成
+  keys  --id <终端> --keys ctrl+c[,enter,...] [--wait <毫秒>] [--background --until <正则>] [--timeout <秒>]
                                   发送按键：enter tab escape backspace delete up down left right home end
-                                  pageup pagedown space ctrl+<字母>，或单个字母数字
+                                  pageup pagedown space ctrl+<字母>，或单个字母数字；后台等待与 write 相同，适合回车后等待回复
   start [--cwd <目录>] [--title <标题>]   新开一个终端（不运行命令）
   stop  --id <终端>               关闭你开的终端（用户开的不能关，用 keys ctrl+c 停程序）
 

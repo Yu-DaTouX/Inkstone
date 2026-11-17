@@ -928,17 +928,18 @@ export class TerminalAgentCommands {
   private async waitFor(
     id: string,
     from: number,
-    options: { mode: 'command' | 'settle'; timeoutMs: number; quietMs: number; idleMs: number; until: RegExp | null },
+    options: { mode: 'command' | 'settle' | 'match'; timeoutMs: number; quietMs: number; idleMs: number; until: RegExp | null },
     signal?: AbortSignal
   ): Promise<WaitState> {
     const started = this.host.now()
     const matcher = options.until ? createUntilMatcher(options.until) : null
-    const needsPlain = matcher !== null || options.mode === 'command'
+    const needsPlain = options.mode === 'command'
     let nextProcessCheck = 0
     let plain = ''
     let plainKey = ''
+    let renderedKey = ''
     while (true) {
-      if (signal?.aborted) return 'cancelled'
+      if (signal?.aborted || (options.mode === 'match' && agentInterrupts.has(id))) return 'cancelled'
       const stream = this.host.stream(id)
       if (!stream || !stream.info.alive) return 'exited'
       const now = this.host.now()
@@ -950,10 +951,16 @@ export class TerminalAgentCommands {
       }
       const quietFor = now - Math.max(stream.lastOutputAt, started)
       const sawOutput = stream.total > from
+      if (options.mode === 'match' && matcher && sawOutput && quietFor >= SETTLE_IDLE_MS && renderedKey !== key) {
+        renderedKey = key
+        const rendered = await this.host.render(stream.buffer, stream.info.cols)
+        if (signal?.aborted || agentInterrupts.has(id)) return 'cancelled'
+        if (matcher(rendered)) return 'matched'
+      }
       if (options.mode === 'settle') {
         if ((sawOutput && quietFor >= options.idleMs) || now - started >= options.timeoutMs) return 'settled'
       } else {
-        if (sawOutput && quietFor >= options.idleMs && looksLikePrompt(lastNonEmptyLine(afterEcho(plain))) && now >= nextProcessCheck) {
+        if (options.mode === 'command' && sawOutput && quietFor >= options.idleMs && looksLikePrompt(lastNonEmptyLine(afterEcho(plain))) && now >= nextProcessCheck) {
           const count = stream.pid ? await this.host.childCount(stream.pid) : 0
           if (count === 0 || count === null) return 'completed'
           nextProcessCheck = this.host.now() + PROCESS_RECHECK_MS
@@ -965,11 +972,11 @@ export class TerminalAgentCommands {
     }
   }
 
-  private async outputSince(id: string, from: number): Promise<{ text: string; truncated: boolean; cursor: number; info: TerminalSessionInfo | null }> {
+  private async outputSince(id: string, from: number, screen = false): Promise<{ text: string; truncated: boolean; cursor: number; info: TerminalSessionInfo | null }> {
     const stream = this.host.stream(id)
     if (!stream) return { text: '', truncated: false, cursor: from, info: null }
     const slice = sliceSince(stream, from)
-    const text = await this.host.render(slice.raw, stream.info.cols, slice.context)
+    const text = screen ? await this.host.render(stream.buffer, stream.info.cols) : await this.host.render(slice.raw, stream.info.cols, slice.context)
     return { text, truncated: slice.truncated, cursor: stream.total, info: stream.info }
   }
 
@@ -1070,7 +1077,7 @@ export class TerminalAgentCommands {
     })
   }
 
-  private watchBackground(job: { id: string; from: number; command: string; until: RegExp | null; timeoutMs: number; timeoutAsked: boolean; owner: string; startedAt: number; cwd: string }): TerminalJob {
+  private watchBackground(job: { id: string; from: number; command: string; until: RegExp | null; timeoutMs: number; timeoutAsked: boolean; owner: string; startedAt: number; cwd: string; matchOnly?: boolean }): TerminalJob {
     const controller = new AbortController()
     backgroundJobs.get(job.id)?.abort()
     backgroundJobs.set(job.id, controller)
@@ -1080,7 +1087,7 @@ export class TerminalAgentCommands {
       if (backgroundJobs.get(job.id) === controller) backgroundJobs.delete(job.id)
     }
     void (async () => {
-      const waited = await this.waitFor(job.id, job.from, { mode: 'command', timeoutMs: job.timeoutMs, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until: job.until }, controller.signal)
+      const waited = await this.waitFor(job.id, job.from, { mode: job.matchOnly ? 'match' : 'command', timeoutMs: job.timeoutMs, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until: job.until }, controller.signal)
       release()
       const stopping = terminalJob(record.id)?.state === 'stopping'
       if (waited !== 'completed' && waited !== 'matched' && waited !== 'exited' && waited !== 'timeout') {
@@ -1093,9 +1100,9 @@ export class TerminalAgentCommands {
       const state: TerminalNoticeState = (stopping || byAgent) && waited !== 'timeout' ? 'stopped' : waited
       const keepWatching = waited === 'timeout' && job.timeoutAsked && !stopping && !controller.signal.aborted
       updateTerminalJob(record.id, keepWatching ? { state } : { state, endedAt: this.host.now(), ...this.exitOf(job.id, state) })
-      if (keepWatching) void this.watchAfterTimeout(job.id, job.from, record.id, controller)
+      if (keepWatching) void this.watchAfterTimeout(job.id, job.from, record.id, controller, job.until, job.matchOnly)
       if (byAgent || (waited === 'timeout' && !job.timeoutAsked)) return
-      const output = await this.outputSince(job.id, job.from)
+      const output = await this.outputSince(job.id, job.from, job.matchOnly)
       const tail = tailText(output.text, BACKGROUND_NOTICE_LINES, BACKGROUND_NOTICE_CHARS)
       const text = buildTerminalNotice({
         id: job.id,
@@ -1105,7 +1112,7 @@ export class TerminalAgentCommands {
         exitCode: output.info?.exitCode ?? null,
         output: tail.text,
         truncated: tail.truncated || output.truncated,
-        since: job.from
+        since: job.matchOnly ? undefined : job.from
       })
       this.ctx.notify?.(text, () => this.ctx.ownerKeys().some((key) => key && this.host.sameOwner(job.owner, key)), state !== 'stopped')
     })().catch((error: unknown) => {
@@ -1120,12 +1127,12 @@ export class TerminalAgentCommands {
     return state === 'exited' ? { exitCode: this.host.stream(id)?.info.exitCode ?? null } : {}
   }
 
-  private async watchAfterTimeout(id: string, from: number, jobId: string, controller: AbortController): Promise<void> {
+  private async watchAfterTimeout(id: string, from: number, jobId: string, controller: AbortController, until: RegExp | null, matchOnly = false): Promise<void> {
     backgroundJobs.set(id, controller)
     try {
-      const waited = await this.waitFor(id, from, { mode: 'command', timeoutMs: TERMINAL_BACKGROUND_TIMEOUT_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until: null }, controller.signal)
+      const waited = await this.waitFor(id, from, { mode: matchOnly ? 'match' : 'command', timeoutMs: TERMINAL_BACKGROUND_TIMEOUT_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until }, controller.signal)
       const stopping = terminalJob(jobId)?.state === 'stopping' || agentInterrupts.has(id)
-      const state: TerminalNoticeState = stopping || (waited !== 'completed' && waited !== 'exited' && waited !== 'timeout') ? 'stopped' : waited
+      const state: TerminalNoticeState = stopping || (waited !== 'completed' && waited !== 'matched' && waited !== 'exited' && waited !== 'timeout') ? 'stopped' : waited
       updateTerminalJob(jobId, { state, endedAt: this.host.now(), ...this.exitOf(id, state) })
     } catch {
       if (terminalJob(jobId)?.endedAt === undefined) updateTerminalJob(jobId, { state: 'stopped', endedAt: this.host.now() })
@@ -1158,15 +1165,27 @@ export class TerminalAgentCommands {
 
   private async send(stream: TerminalStream, data: string, action: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {
     const id = stream.info.id
+    const background = flagParam(params, 'background')
+    const until = background ? untilPattern(params) : null
+    if (background && !until) throw new CapabilityCommandError('terminal_until_required', '交互式后台等待需要 --until，匹配程序真正输出的完成标记；请用整行匹配，避免命中输入回显')
+    if (background && backgroundJobs.has(id)) throw new CapabilityCommandError('terminal_busy', '这个终端已有后台等待；用普通 write / keys 交互，不要重复登记')
     await this.guard(stream, data)
     const waitMs = numberParam(params, 'wait', TERMINAL_WRITE_WAIT_MS, 0, TERMINAL_WRITE_WAIT_MAX_MS)
     return this.withAnnounce(id, action, async () => {
       const from = this.host.stream(id)?.total ?? stream.total
+      if (signal?.aborted) return this.result(action, stream.info, { text: '', truncated: false, cursor: from }, { state: 'cancelled' })
+      if (background) agentInterrupts.delete(id)
+      const startedAt = this.host.now()
       this.writeOrFail(id, data)
       if (data.includes('\x03') && backgroundJobs.has(id)) agentInterrupts.set(id, this.host.now())
-      const state = waitMs > 0 ? await this.waitFor(id, from, { mode: 'settle', timeoutMs: waitMs, quietMs: waitMs, idleMs: WRITE_IDLE_MS, until: null }, signal) : 'settled'
-      const output = await this.outputSince(id, from)
-      return this.result(action, output.info ?? stream.info, output, { state })
+      const state = waitMs > 0 ? await this.waitFor(id, from, { mode: background ? 'match' : 'settle', timeoutMs: waitMs, quietMs: waitMs, idleMs: WRITE_IDLE_MS, until }, signal) : 'settled'
+      const output = await this.outputSince(id, from, background)
+      if (background && !signal?.aborted && state !== 'matched' && state !== 'exited' && state !== 'cancelled') {
+        const timeoutMs = secondsParam(params, 'timeout', 0, TERMINAL_BACKGROUND_TIMEOUT_MAX_MS)
+        const job = this.watchBackground({ id, from, command: action === 'write' ? stringParam(params, 'text') : stringParam(params, 'keys'), until, timeoutMs: timeoutMs || TERMINAL_BACKGROUND_TIMEOUT_MS, timeoutAsked: timeoutMs > 0, owner: this.ownerKey(), startedAt, cwd: stream.info.cwd, matchOnly: true })
+        return this.result(action, output.info ?? stream.info, output, { state: 'background', jobId: job.id, hint: '已登记交互式后台等待；命中 --until、终端退出或指定超时后会通知并唤醒你，不要轮询。停止用 keys ctrl+c；普通 write / keys 不会取消等待' })
+      }
+      return this.result(action, output.info ?? stream.info, output, { state: signal?.aborted ? 'cancelled' : state, ...(!background && data.includes('\r') && !backgroundJobs.has(id) ? { hint: '本次只短暂收集输出，没有登记完成通知；给交互式程序派长任务时加 --background --until <完成标记的整行正则>' } : {}) })
     })
   }
 

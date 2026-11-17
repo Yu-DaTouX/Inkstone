@@ -183,6 +183,7 @@ async function runTerminalSession() {
     h.owners.set('terminal:owned', 'key-A')
     h.controller.setOwner(owner())
     await until(() => h.calls.attach.length === 1)
+    assert.equal(h.controller.getState().terminalId, 'owned', 'attach 尚未返回时就公开终端身份，自动展示不重复挂载')
     h.push({ id: 'owned', kind: 'data', data: 'live4', seq: 4 })
     h.push({ id: 'owned', kind: 'data', data: 'dup2', seq: 2 })
     h.push({ id: 'owned', kind: 'data', data: 'other', seq: 9 })
@@ -795,6 +796,16 @@ async function runTerminalTabs() {
   assert.equal(tabs.MAX_TERMINAL_TABS, 12)
   assert.equal(tabs.canAddTerminalTab(11), true)
   assert.equal(tabs.canAddTerminalTab(12), false)
+
+  const localTabs = [{ key: 'local-1', adopt: 'none' }, { key: 't2', adopt: { id: 't2' } }]
+  const states = { 'local-1': { terminalId: 't1' } }
+  assert.equal(tabs.findTerminalTabKey(localTabs, states, 't1'), 'local-1', '用户手动新建标签按实际终端 ID 复用')
+  assert.equal(tabs.findTerminalTabKey(localTabs, states, 't2'), 't2', '尚未连接的认领标签按 adopt ID 复用')
+  assert.equal(tabs.findTerminalTabKey(localTabs, states, 'other'), null, '不同终端不能误合并')
+  assert.equal(tabs.findTerminalTabKey(localTabs, {}, 't2'), 't2', '连续展示时不依赖异步的 view 状态')
+  const retried = { t2: { terminalId: 'new-t2' } }
+  assert.equal(tabs.findTerminalTabKey(localTabs, retried, 'new-t2'), 't2', '重试后的终端仍复用原标签')
+  assert.equal(tabs.findTerminalTabKey(localTabs, retried, 't2'), null, '重试后的旧 adopt ID 不再误匹配')
 
   const num = (n) => `T${n}`
   assert.deepEqual(tabs.terminalTabNames([{ cwd: 'C:\\work\\proj\\' }, { cwd: 'C:/work/proj' }, { cwd: '', title: '  ' }], num, 'T'), ['proj', 'proj 2', 'T3'])

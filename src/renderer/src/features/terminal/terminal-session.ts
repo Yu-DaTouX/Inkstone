@@ -380,7 +380,7 @@ export class TerminalSession {
     this.terminalId = id
     this.seq = 0
     this.sink?.reset()
-    this.publishCleared({ phase: 'connecting', notice: '' })
+    this.publishCleared({ phase: 'connecting', terminalId: id, notice: '' })
 
     let snapshot: TerminalSnapshot | null
     try {

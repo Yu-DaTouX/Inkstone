@@ -81,6 +81,7 @@ function fakeHost(options = {}) {
     now: () => clock,
     sleep: async (ms) => {
       clock += ms
+      if (options.yieldSleep) await new Promise((done) => setTimeout(done, 1))
     }
   }
   return host
@@ -343,8 +344,8 @@ try {
   })
 
   const { parseHostTextNotice } = await bundle('src/shared/host-notice-text.ts', 'host-notice-text.mjs')
-  const settle = async (notices) => {
-    for (let i = 0; i < 200 && !notices.length; i++) await new Promise((done) => setImmediate(done))
+  const settle = async (notices, delay = 0) => {
+    for (let i = 0; i < 200 && !notices.length; i++) await new Promise((done) => delay ? setTimeout(done, delay) : setImmediate(done))
   }
 
   await check('--background：长命令先返回 background，结束后发宿主通知；期间终端算忙', async () => {
@@ -369,6 +370,94 @@ try {
     assert.match(notices[0].text, /\n````\n/)
     assert.match(notices[0].text, new RegExp(`--id ${started.summary.id} --since \\d+`))
     assert.deepEqual(parseHostTextNotice(notices[0].text), { kind: 'terminal', command: 'npm run build', state: 'completed' })
+  })
+
+  await check('交互式 write 后台等待：静默与伪提示符不算完成，标记命中后只通知一次并唤醒', async () => {
+    resetTerminalJobs()
+    let finish = () => {}
+    const { host, commands, notices } = setup({
+      yieldSleep: true,
+      realRender: true,
+      respond: (_term, _command, emit) => {
+        emit('working\r\nPS C:\\work> ')
+        finish = () => emit('\x1b[2J\x1b[HREVIEW_DONE\x1b[2;1Hwaiting for input')
+      }
+    })
+    host.adopt({ id: 'interactive', owner: 'sid-a' })
+    const started = await commands.run('write', { id: 'interactive', text: 'review repo', enter: true, wait: 0, background: true, until: '^REVIEW_DONE$', timeout: 600 })
+    assert.equal(started.summary.state, 'background')
+    assert.equal(listTerminalJobs()[0].id, started.summary.jobId)
+    await failsWith(commands.run('write', { id: 'interactive', text: 'duplicate', enter: true, background: true, until: '^REVIEW_DONE$' }), 'terminal_busy')
+    assert.deepEqual(host.terms.get('interactive').writes, ['review repo\r'])
+    await commands.run('keys', { id: 'interactive', keys: 'pagedown', wait: 0 })
+    await settle(notices, 1)
+    assert.equal(notices.length, 0)
+    finish()
+    await settle(notices, 1)
+    assert.equal(notices.length, 1, await host.render(host.terms.get('interactive').buffer, 120))
+    assert.equal(notices[0].owned, true)
+    assert.equal(notices[0].wake, true)
+    assert.deepEqual(parseHostTextNotice(notices[0].text), { kind: 'terminal', command: 'review repo', state: 'matched' })
+    assert.match(notices[0].text, /终端屏幕末尾/)
+    assert.match(notices[0].text, /REVIEW_DONE/)
+    assert.ok(!notices[0].text.includes('--since'))
+    await settle([])
+    assert.equal(notices.length, 1)
+    assert.equal(host.terms.get('interactive').info.alive, true)
+  })
+
+  await check('交互式后台等待：先验证完成条件再写入，短回复直接返回，普通 write 明示没有通知', async () => {
+    resetTerminalJobs()
+    const { host, commands, notices } = setup({ respond: (_term, _command, emit) => emit('REVIEW_DONE\r\n') })
+    host.adopt({ id: 'interactive', owner: 'sid-a' })
+    await failsWith(commands.run('write', { id: 'interactive', text: 'review', enter: true, background: true }), 'terminal_until_required')
+    await failsWith(commands.run('write', { id: 'interactive', text: 'review', enter: true, background: true, until: '(' }), 'terminal_bad_until')
+    assert.deepEqual(host.terms.get('interactive').writes, [])
+    const quick = await commands.run('write', { id: 'interactive', text: 'review', enter: true, background: true, until: '^REVIEW_DONE$' })
+    assert.equal(quick.summary.state, 'matched')
+    assert.equal(listTerminalJobs().length, 0)
+    assert.equal(notices.length, 0)
+    const plain = await commands.run('write', { id: 'interactive', text: 'review', enter: true, wait: 0 })
+    assert.equal(plain.summary.state, 'settled')
+    assert.match(plain.summary.hint, /没有登记完成通知/)
+  })
+
+  await check('交互式 keys 后台等待：支持回车提交，取消不写入或强关用户程序，ctrl+c 后不再通知', async () => {
+    resetTerminalJobs()
+    const { host, commands, notices } = setup({ yieldSleep: true, respond: (_term, _command, emit) => emit('waiting\r\n') })
+    host.adopt({ id: 'interactive', owner: 'sid-a' })
+    const abort = new AbortController()
+    abort.abort()
+    const cancelled = await commands.run('keys', { id: 'interactive', keys: 'enter', background: true, until: '^REVIEW_DONE$' }, abort.signal)
+    assert.equal(cancelled.summary.state, 'cancelled')
+    assert.deepEqual(host.terms.get('interactive').writes, [])
+    const started = await commands.run('keys', { id: 'interactive', keys: 'enter', wait: 0, background: true, until: '^REVIEW_DONE$', timeout: 600 })
+    assert.equal(started.summary.state, 'background')
+    await commands.run('keys', { id: 'interactive', keys: 'ctrl+c', wait: 0 })
+    await settle(notices, 1)
+    assert.equal(notices.length, 0)
+    assert.equal(listTerminalJobs().find((job) => job.id === started.summary.jobId).state, 'stopped')
+    assert.equal(host.terms.get('interactive').info.alive, true)
+  })
+
+  await check('交互式等待超时后只提醒超时，继续跟踪同一完成标记而非 shell 提示符', async () => {
+    resetTerminalJobs()
+    let finish = () => {}
+    const { host, commands, notices } = setup({ yieldSleep: true, respond: (_term, _command, emit) => {
+      emit('working\r\nPS C:\\work> ')
+      finish = () => emit('\r\nREVIEW_DONE\r\n')
+    } })
+    host.adopt({ id: 'interactive', owner: 'sid-a' })
+    const started = await commands.run('write', { id: 'interactive', text: 'review', enter: true, wait: 0, background: true, until: '^REVIEW_DONE$', timeout: 1 })
+    await settle(notices, 1)
+    assert.equal(parseHostTextNotice(notices[0].text).state, 'timeout')
+    const record = () => listTerminalJobs().find((job) => job.id === started.summary.jobId)
+    assert.equal(record().endedAt, undefined)
+    finish()
+    for (let i = 0; i < 200 && record().endedAt === undefined; i++) await new Promise((done) => setTimeout(done, 1))
+    assert.equal(record().state, 'matched')
+    assert.notEqual(record().endedAt, undefined)
+    assert.equal(notices.length, 1)
   })
 
   await check('--background：短命令直接返回结果不发通知；超时发 timeout 通知；stop 后不再通知', async () => {

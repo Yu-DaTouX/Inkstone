@@ -15,6 +15,27 @@ import { ImageViewer } from '../composer/image-viewer'
 import { previewFormatOf } from '../preview/preview-format'
 
 const CODE_PREVIEW_LINES = 12
+const TEXT_CACHE_LIMIT = 32
+const TEXT_CACHE_CHARS = 2_000_000
+const textCache = new Map<string, string>()
+let textCacheChars = 0
+
+function artifactTextKey(artifact: AssistantArtifact): string {
+  return JSON.stringify([artifact.path, artifact.sha256, artifact.createdAt, artifact.bytes])
+}
+
+function cacheArtifactText(key: string, text: string): void {
+  if (text.length > TEXT_CACHE_CHARS) return
+  textCacheChars -= textCache.get(key)?.length ?? 0
+  textCache.delete(key)
+  textCache.set(key, text)
+  textCacheChars += text.length
+  while (textCache.size > TEXT_CACHE_LIMIT || textCacheChars > TEXT_CACHE_CHARS) {
+    const oldest = textCache.keys().next().value!
+    textCacheChars -= textCache.get(oldest)!.length
+    textCache.delete(oldest)
+  }
+}
 
 const HTML_ERROR_KEYS: Record<HtmlArtifactPreviewError, MessageKey> = {
   outside: 'artifact.htmlOutside',
@@ -118,7 +139,8 @@ function ArtifactCardView({
   const previewFile = useStore((s) => s.previewFile)
   const [showSource, setShowSource] = useState(false)
   const [viewerOpen, setViewerOpen] = useState(false)
-  const [text, setText] = useState<string | null>(null)
+  const textKey = artifactTextKey(artifact)
+  const [text, setText] = useState<string | null>(() => artifact.unavailable || artifact.bytes <= 0 ? null : textCache.get(textKey) ?? null)
   const [readError, setReadError] = useState(false)
   const [codeOpen, setCodeOpen] = useState(false)
 
@@ -147,14 +169,18 @@ function ArtifactCardView({
       setReadError(false)
       return undefined
     }
-    let alive = true
+    const cached = textCache.get(textKey)
+    setText(cached ?? null)
     setReadError(false)
+    if (cached !== undefined) return undefined
+    let alive = true
     void window.yan
       .readPreview(artifact.path)
       .then((result) => {
-        if (!alive) return
-        if (result.ok && typeof result.text === 'string') setText(result.text)
-        else setReadError(true)
+        if (result.ok && typeof result.text === 'string') {
+          cacheArtifactText(textKey, result.text)
+          if (alive) setText(result.text)
+        } else if (alive) setReadError(true)
       })
       .catch(() => {
         if (alive) setReadError(true)
@@ -162,7 +188,7 @@ function ArtifactCardView({
     return () => {
       alive = false
     }
-  }, [artifact.path, isCode, isHtml, showSource, unavailable])
+  }, [artifact.path, textKey, isCode, isHtml, showSource, unavailable])
 
   const reveal = (): void => {
     void window.yan.revealPath(openTarget).then((result) => {
