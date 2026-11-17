@@ -60,6 +60,11 @@ try {
   await failed
   assert.equal(quota.useLiveQuota.getState().entries['openai-codex'].snapshot.windows[0].used, 42)
   assert.equal(quota.useLiveQuota.getState().entries['openai-codex'].snapshot.staleError, undefined, '旧请求失败也不能污染换号后的读数')
+  assert.equal(quota.liveQuotaSupported('opencode-go'), true, 'Go 原生窗口参与用量实时刷新')
+  assert.equal(quota.liveQuotaSupported('opencode'), false, 'Zen 没有余额 API，不触发无效轮询')
+  const goReport = { cards: [{ key: 'go-fixture', source: 'yan', provider: 'opencode-go', name: 'OpenCode Go', status: 'ok', windows: [{ id: 'rolling', label: '五小时', used: 37, total: 100 }], checkedAt: now }], checkedAt: now }
+  quota.publishAccountQuotaReport(goReport)
+  assert.equal(quota.useLiveQuota.getState().entries['opencode-go'].snapshot.windows[0].used, 37, 'Go 用量卡读数同步到实时用量状态')
   console.log('live-quota-refresh: passed; synthetic IPC only')
 } finally {
   Date.now = originalNow

@@ -331,6 +331,15 @@ export function QuotaCard({
         ) : null}
       </div>
 
+      {card.hint && card.status === 'ok' ? (
+        <div className="wb-quota-hint">
+          <Notice variant="hint" compact data-testid="v3-wb-quota-hint" action={card.provider === 'opencode' ? (
+            <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal('https://opencode.ai/console')} data-testid="v3-wb-quota-console">
+              {t('quota.openConsole')}
+            </Button>
+          ) : undefined}>{card.hint}</Notice>
+        </div>
+      ) : null}
       {card.status === 'error' ? <p className="wb-quota-error" data-testid="v3-wb-quota-card-error">{card.error}</p> : null}
       {card.status === 'expired' ? (
         <div className="wb-quota-error wb-quota-expired" data-tone="ask">

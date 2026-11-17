@@ -56,6 +56,8 @@ const PROVIDER_HINT: Record<string, MessageKey> = {
   'github-copilot': 'auth.hint.copilot',
   openrouter: 'auth.hint.openrouter',
   commandcode: 'auth.hint.commandcode',
+  opencode: 'auth.hint.opencode',
+  'opencode-go': 'auth.hint.opencodeGo',
   'xai-api': 'auth.hint.xaiApi'
 }
 

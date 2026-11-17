@@ -822,6 +822,10 @@
     color: var(--fg3);
   }
 
+  .wb-quota-hint {
+    padding: var(--s-8) var(--s-16);
+  }
+
   .wb-quota-error {
     margin: 0;
     padding: var(--s-8) var(--s-16);

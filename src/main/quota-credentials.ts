@@ -16,14 +16,18 @@ const OFFICIAL_ENDPOINTS: Readonly<Record<string, OfficialQuotaEndpoint>> = {
   commandcode: { hosts: ['api.commandcode.ai'] },
   deepseek: { hosts: ['api.deepseek.com'], nativeDefaultBaseUrl: 'https://api.deepseek.com' },
   openrouter: { hosts: ['openrouter.ai'], nativeDefaultBaseUrl: 'https://openrouter.ai/api/v1' },
-  openai: { hosts: ['api.openai.com'], nativeDefaultBaseUrl: 'https://api.openai.com/v1' }
+  openai: { hosts: ['api.openai.com'], nativeDefaultBaseUrl: 'https://api.openai.com/v1' },
+  opencode: { hosts: ['opencode.ai'], nativeDefaultBaseUrl: 'https://opencode.ai/zen/v1' },
+  'opencode-go': { hosts: ['opencode.ai'], nativeDefaultBaseUrl: 'https://opencode.ai/zen/go/v1' }
 }
 
 const NATIVE_ENV_NAMES: Readonly<Record<string, string>> = {
   commandcode: 'COMMANDCODE_API_KEY',
   deepseek: 'DEEPSEEK_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
-  openai: 'OPENAI_API_KEY'
+  openai: 'OPENAI_API_KEY',
+  opencode: 'OPENCODE_API_KEY',
+  'opencode-go': 'OPENCODE_API_KEY'
 }
 
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/

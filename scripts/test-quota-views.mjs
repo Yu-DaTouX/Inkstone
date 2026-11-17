@@ -270,6 +270,9 @@ async function runQuotaCardTests() {
     ok(html.includes('Fable 重置卡 <span class="ui-num">×1</span>') && html.includes('普通重置卡 <span class="ui-num">×2</span>'), '两类重置卡各自显示名称和次数，等宽数字只包次数')
     ok(html.includes('暂不可用') && html.includes('disabled'), '未提供使用目标的卡仍可见但按钮禁用')
     ok(html.includes('99%') && html.includes('Fable'), '右栏保留 Fable 用量百分比')
+    const zen = renderToStaticMarkup(createElement(mod.I18nProvider, null, createElement(mod.QuotaCard, { card: { ...card, provider: 'opencode', name: 'OpenCode Zen', hint: 'Zen 余额请在 OpenCode Console 查看', windows: [], resetCredits: undefined }, busy: false, locked: false, onSwitch() {}, async onRedeem() {} })))
+    ok(zen.includes('OpenCode Zen') && zen.includes('Zen 余额请在 OpenCode Console 查看') && zen.includes('v3-wb-quota-console'), 'Zen 无余额 API 时显示说明和官方控制台入口')
+    ok(!zen.includes('v3-wb-quota-card-error') && !zen.includes('wb-quota-balance-value'), 'Zen 不伪造余额、不显示鉴权错误')
     console.log(`\nv3-quota-card: ${checks} checks passed`)
   } finally {
     await rm(dir, { recursive: true, force: true })

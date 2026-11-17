@@ -28,7 +28,9 @@ const http = net.fetch.bind(net)
 const KEY_PROVIDERS: Array<{ id: string; name: string }> = [
   { id: 'commandcode', name: 'Command Code' },
   { id: 'deepseek', name: 'DeepSeek' },
-  { id: 'openrouter', name: 'OpenRouter' }
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'opencode', name: 'OpenCode Zen' },
+  { id: 'opencode-go', name: 'OpenCode Go' }
 ]
 
 async function getJson(url: string, init: RequestInit): Promise<unknown> {
@@ -55,7 +57,7 @@ async function settle(base: CardBase, run: () => Promise<Partial<AccountQuotaCar
   }
 }
 
-const limitedIf = (windows: AccountQuotaCard['windows']): 'limited' | 'ok' => (windows.some((w) => !w.informational && w.total > 0 && w.used >= w.total) ? 'limited' : 'ok')
+const limitedIf = (windows: AccountQuotaCard['windows']): 'limited' | 'ok' => (windows.some((w) => !w.informational && (w.exceeded === true || (w.total > 0 && w.used >= w.total))) ? 'limited' : 'ok')
 
 function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   const base: CardBase = { key: t.key, source: 'yan', provider: 'openai-codex', name: 'ChatGPT', email: t.email, plan: t.plan, active: t.active, switchable: true }
@@ -100,6 +102,7 @@ async function yanKeyCard(provider: { id: string; name: string; quotaProvider?: 
   return settle({ key: `yan:${provider.id}:${identity}`, source: 'yan', provider: provider.id, name: provider.name }, async () => {
     const q = await providerQuota(provider.quotaProvider ?? provider.id, undefined, secret)
     const windows = q.windows ?? []
+    if (q.supported === false) return { hint: q.error }
     const hasData = windows.length > 0 || q.remaining !== undefined
     if (q.error && !hasData) return { status: 'error', error: q.error }
     const balance = !windows.length && q.remaining !== undefined ? { label: pick('余额', 'Balance'), amount: q.remaining, currency: q.currency ?? 'USD' } : undefined

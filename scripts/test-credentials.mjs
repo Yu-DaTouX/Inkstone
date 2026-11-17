@@ -121,6 +121,39 @@ export async function runCredentialsTests(ok) {
   )
 
   {
+    const savedEnv = process.env.OPENCODE_API_KEY
+    delete process.env.OPENCODE_API_KEY
+    try {
+      const ids = ['opencode', 'opencode-go']
+      const unconfigured = await listAuthProviders(pi)
+      for (const id of ids) {
+        const entry = unconfigured.find((item) => item.id === id)
+        ok(entry?.kind === 'api_key' && entry.authKey === id && entry.envVar === 'OPENCODE_API_KEY', `${id} 有独立的 API key 设置入口，环境变量沿用 pi 原生约定`)
+        ok(entry?.status === 'missing' && !entry.inAppLogin, `${id} 未配置时不误报已登录，也不提供 OAuth 登录`)
+      }
+      process.env.OPENCODE_API_KEY = 'ONLY_SYNTHETIC_ENV_FIXTURE'
+      const envProviders = await listAuthProviders(pi)
+      ok(ids.every((id) => envProviders.find((item) => item.id === id)?.source === 'env'), 'OPENCODE_API_KEY 同时支持 Zen 和 Go')
+      ok((await setApiKey('opencode', 'ONLY_SYNTHETIC_ZEN_FIXTURE')).ok, 'Zen key 可保存')
+      const mixed = await listAuthProviders(pi)
+      ok(mixed.find((item) => item.id === 'opencode')?.envShadowed === true, 'Zen 应用内 key 优先于环境变量')
+      ok(mixed.find((item) => item.id === 'opencode-go')?.source === 'env', '保存 Zen key 不覆盖 Go 的环境变量来源')
+      delete process.env.OPENCODE_API_KEY
+      const zenOnly = await listAuthProviders(pi)
+      ok(zenOnly.find((item) => item.id === 'opencode-go')?.status === 'missing', '仅保存 Zen key 不会误启用 Go')
+      ok((await setApiKey('opencode-go', 'ONLY_SYNTHETIC_GO_FIXTURE')).ok, 'Go key 可独立保存')
+      const configured = await listAuthProviders(pi)
+      ok(ids.every((id) => configured.filter((item) => item.id === id && item.status === 'ready' && item.source === 'auth.json').length === 1), '两个 key 保存后各显示一个已配置条目，不再重复成未知服务商')
+      const stored = JSON.parse(await readFile(authPath, 'utf8'))
+      ok(stored.opencode.key === 'ONLY_SYNTHETIC_ZEN_FIXTURE' && stored['opencode-go'].key === 'ONLY_SYNTHETIC_GO_FIXTURE', 'Zen / Go 使用 pi 原生凭证 ID，互不覆盖')
+      ok(Boolean(stored['openai-codex'] && stored.commandcode), '添加 OpenCode 不影响既有服务商凭证')
+    } finally {
+      if (savedEnv === undefined) delete process.env.OPENCODE_API_KEY
+      else process.env.OPENCODE_API_KEY = savedEnv
+    }
+  }
+
+  {
     const writes = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
         mergeAuthEntry(`fixture-provider-${i}`, { type: 'api_key', key: 'ONLY_SYNTHETIC_FIXTURE' })

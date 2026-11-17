@@ -222,6 +222,27 @@ async function runMainReportScenarios(check, main, piDir) {
     r = await main.accountQuotaReport()
     check(r.cards.length === 1 && r.cards[0].key === 'or-account' && r.cards[0].balance.amount === 15, 'OpenRouter：订阅登录与通用 key 卡片不会重复展示当前凭证')
 
+    setScenario({
+      authEntry: { opencode: { type: 'api_key', key: 'zen-fixture' }, 'opencode-go': { type: 'api_key', key: 'go-fixture' } },
+      quota: async (provider, _budget, secret) => {
+        check(secret === (provider === 'opencode' ? 'zen-fixture' : 'go-fixture'), `${provider} 用量查询使用各自凭证`)
+        return provider === 'opencode'
+          ? { provider, supported: false, error: 'Zen 余额请在 Console 查看', checkedAt: Date.now() }
+          : { provider, supported: true, windows: [{ id: 'rolling', label: '五小时', used: 99, total: 100, exceeded: true }, { id: 'weekly', label: '本周', used: 30, total: 100 }], checkedAt: Date.now() }
+      }
+    })
+    r = await main.accountQuotaReport()
+    const zen = r.cards.find((card) => card.provider === 'opencode')
+    const go = r.cards.find((card) => card.provider === 'opencode-go')
+    check(zen?.name === 'OpenCode Zen' && zen.status === 'ok' && zen.hint?.includes('Console') && !zen.balance && !zen.windows.length, 'Zen 显示已配置卡和查询限制，不消失、不伪造余额、不误报凭证失效')
+    check(go?.name === 'OpenCode Go' && go.windows.length === 2 && go.status === 'limited', 'Go 用量卡出现，百分比未到 100 时仍尊重服务端 rate-limited')
+    setScenario({ authEntry: { 'opencode-go': { type: 'api_key', key: 'go-fixture' } }, quota: async () => { throw new Error('HTTP 503') } })
+    r = await main.accountQuotaReport()
+    check(r.cards.find((card) => card.provider === 'opencode-go')?.staleError === 'HTTP 503', 'Go 查询失败保留同 Key 上次成功读数并提示过期')
+    setScenario({ authEntry: { 'opencode-go': { type: 'api_key', key: 'different-go-fixture' } }, quota: async () => { throw new Error('HTTP 401') } })
+    r = await main.accountQuotaReport()
+    check(r.cards.find((card) => card.provider === 'opencode-go')?.status === 'error' && !r.cards.find((card) => card.provider === 'opencode-go')?.windows.length, 'Go 换 Key 后不套用旧账号额度；鉴权失败卡片仍可见')
+
     const soon = new Date(Date.now() + 86_400_000).toISOString()
     const later = new Date(Date.now() + 5 * 86_400_000).toISOString()
     const posts = []
@@ -303,7 +324,7 @@ export async function runAccountQuotaPaneTests(ok) {
   const iso = await mkdtemp(join(tmpdir(), 'yan-acct-pane-'))
   const priorData = process.env.YAN_DATA_DIR
   const priorPi = process.env.YAN_PI_DIR
-  const quotaEnv = ['COMMANDCODE_API_KEY', 'DEEPSEEK_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY']
+  const quotaEnv = ['COMMANDCODE_API_KEY', 'DEEPSEEK_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'OPENCODE_API_KEY']
   const priorQuotaEnv = new Map(quotaEnv.map((name) => [name, process.env[name]]))
   for (const name of quotaEnv) delete process.env[name]
   process.env.YAN_DATA_DIR = iso

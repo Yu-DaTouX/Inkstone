@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { ProviderQuota } from '../../../shared/ipc'
 import type { AccountQuotaReport } from '../../../shared/account-quota'
 
-export const LIVE_QUOTA_PROVIDERS: ReadonlySet<string> = new Set(['claude-bridge', 'anthropic', 'openai-codex', 'commandcode'])
+export const LIVE_QUOTA_PROVIDERS: ReadonlySet<string> = new Set(['claude-bridge', 'anthropic', 'openai-codex', 'commandcode', 'opencode-go'])
 export const LIVE_QUOTA_MIN_GAP_MS = 15_000
 export const LIVE_QUOTA_POLL_MS = 30_000
 export const LIVE_QUOTA_LAST_GOOD_MS = 24 * 60 * 60_000

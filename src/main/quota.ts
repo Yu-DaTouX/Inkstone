@@ -1,5 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { net } from 'electron'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +8,7 @@ import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
 import { readAuthEntry, resolveCodexAccountId } from './credentials'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
+import { openCodeGoWindows } from './quota-opencode'
 import { hostImageCredentials } from './image-credentials'
 import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 import { quotaSamples } from './quota-samples'
@@ -74,9 +76,25 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
   const openai = provider === 'openai'
   const codexCredential = isCodex ? await hostImageCredentials.codex() : null
   const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveQuotaProviderSecret(provider)) : (resolvedSecret ?? await resolveQuotaProviderSecret(provider))
-  const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || isCodex || openai
+  const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || provider === 'opencode-go' || isCodex || openai
   if (!key) return { provider, supported: known, error: openai ? pick('请设置 OPENAI_ADMIN_KEY 以查询组织费用', 'Set OPENAI_ADMIN_KEY to query organization costs') : pick('未找到该供应商的 API Key', 'No API key found for this provider'), checkedAt }
+  if (provider === 'opencode') return { provider, supported: false, error: pick('Zen 余额暂不支持 API 查询，请在 OpenCode Console 查看。', 'Zen balance is not available through the API. Check OpenCode Console.'), checkedAt }
   try {
+    if (provider === 'opencode-go') {
+      const response = await http('https://opencode.ai/zen/go/v1/usage', {
+        headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(10_000), redirect: 'error'
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const windows = openCodeGoWindows(await response.json())
+      if (!windows.length) throw new Error(pick('OpenCode Go 未返回有效额度窗口', 'OpenCode Go returned no valid quota windows'))
+      const binding = [...windows].sort((a, b) => b.used / b.total - a.used / a.total)[0]
+      return {
+        provider, supported: true, windows, checkedAt,
+        used: binding.used, total: binding.total, remaining: Math.max(0, binding.total - binding.used),
+        currency: 'PERCENT', label: 'OpenCode Go'
+      }
+    }
     if (isCodex) {
       const accountId = codexCredential?.accountId ?? await resolveCodexAccountId()
       if (!accountId) return { provider, supported: true, error: pick('凭证缺少 chatgpt-account-id，请重新登录 ChatGPT', 'Credential is missing chatgpt-account-id. Sign in to ChatGPT again'), checkedAt }
@@ -183,7 +201,8 @@ function hasQuotaData(q: ProviderQuota): boolean {
   return !!q.windows?.length || q.remaining !== undefined || q.used !== undefined
 }
 
-async function lastGoodKey(provider: string, monthlyBudget?: number): Promise<string> {
+async function lastGoodKey(provider: string, monthlyBudget?: number, resolvedSecret?: string): Promise<string> {
+  if (provider === 'opencode-go') return `${provider}|${createHash('sha256').update(resolvedSecret ?? '').digest('hex')}`
   if (provider === 'openai-codex') {
     const entry = await readAuthEntry(provider).catch(() => undefined) as { access?: unknown; accountId?: unknown } | undefined
     const accountId = typeof entry?.accountId === 'string' ? entry.accountId : undefined
@@ -194,8 +213,9 @@ async function lastGoodKey(provider: string, monthlyBudget?: number): Promise<st
 
 export async function providerQuotaWithFallback(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
   const provider = rawProvider.trim().toLowerCase()
-  const fresh = await providerQuota(rawProvider, monthlyBudget)
-  const key = await lastGoodKey(provider, monthlyBudget)
+  const secret = provider === 'opencode-go' ? await resolveQuotaProviderSecret(provider) : undefined
+  const fresh = await providerQuota(rawProvider, monthlyBudget, secret)
+  const key = await lastGoodKey(provider, monthlyBudget, secret)
   if (fresh.windows?.length) fresh.windows = await quotaSamples.withForecasts(`provider|${key}`, fresh.windows, fresh.checkedAt)
   if (hasQuotaData(fresh)) {
     lastGood.set(key, fresh)

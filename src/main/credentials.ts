@@ -65,6 +65,8 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     envVar: 'COMMANDCODE_API_KEY',
     authKey: 'commandcode'
   },
+  { id: 'opencode', name: 'OpenCode Zen', kind: 'api_key', envVar: 'OPENCODE_API_KEY', authKey: 'opencode' },
+  { id: 'opencode-go', name: 'OpenCode Go', kind: 'api_key', envVar: 'OPENCODE_API_KEY', authKey: 'opencode-go' },
   { id: 'deepseek', name: 'DeepSeek', kind: 'api_key', envVar: 'DEEPSEEK_API_KEY', authKey: 'deepseek' },
   { id: 'openai', name: 'OpenAI', kind: 'api_key', envVar: 'OPENAI_API_KEY', authKey: 'openai' },
   { id: 'google', name: 'Google Gemini', kind: 'api_key', envVar: 'GEMINI_API_KEY', authKey: 'google' },
