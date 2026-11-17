@@ -154,6 +154,49 @@ export async function runCredentialsTests(ok) {
   }
 
   {
+    const expected = {
+      'ant-ling': 'ANT_LING_API_KEY',
+      baseten: 'BASETEN_API_KEY',
+      cerebras: 'CEREBRAS_API_KEY',
+      huggingface: 'HF_TOKEN',
+      meta: 'META_API_KEY',
+      minimax: 'MINIMAX_API_KEY',
+      moonshotai: 'MOONSHOT_API_KEY',
+      'moonshotai-cn': 'MOONSHOT_API_KEY',
+      'qwen-token-plan': 'QWEN_TOKEN_PLAN_API_KEY',
+      'qwen-token-plan-individual': 'QWEN_TOKEN_PLAN_API_KEY',
+      'qwen-token-plan-individual-cn': 'QWEN_TOKEN_PLAN_CN_API_KEY',
+      'vercel-ai-gateway': 'AI_GATEWAY_API_KEY',
+      xiaomi: 'XIAOMI_API_KEY',
+      'xiaomi-token-plan-ams': 'XIAOMI_TOKEN_PLAN_AMS_API_KEY',
+      'xiaomi-token-plan-cn': 'XIAOMI_TOKEN_PLAN_CN_API_KEY',
+      'xiaomi-token-plan-sgp': 'XIAOMI_TOKEN_PLAN_SGP_API_KEY',
+      zai: 'ZAI_API_KEY'
+    }
+    const savedEnv = process.env.CEREBRAS_API_KEY
+    delete process.env.CEREBRAS_API_KEY
+    try {
+      const listed = await listAuthProviders(pi)
+      for (const [id, envVar] of Object.entries(expected)) {
+        const entry = listed.find((item) => item.id === id)
+        ok(entry?.kind === 'api_key' && entry.authKey === id && entry.envVar === envVar && entry.status === 'missing', `${id} 有 API key 入口且环境变量与 pi 原生一致`)
+      }
+      ok((await setApiKey('cerebras', 'ONLY_SYNTHETIC_CEREBRAS_FIXTURE')).ok, '新增服务商的 key 可保存')
+      process.env.CEREBRAS_API_KEY = 'ONLY_SYNTHETIC_ENV_FIXTURE'
+      const listedWithEnv = await listAuthProviders(pi)
+      ok(listedWithEnv.find((item) => item.id === 'cerebras')?.envShadowed === true, '应用内 key 优先于同名的环境变量')
+      delete process.env.CEREBRAS_API_KEY
+      const stored = JSON.parse(await readFile(authPath, 'utf8'))
+      ok(stored.cerebras?.key === 'ONLY_SYNTHETIC_CEREBRAS_FIXTURE' && Boolean(stored['openai-codex']), '新服务商用 pi 原生凭证 ID 写入，不影响既有凭证')
+      const afterSave = await listAuthProviders(pi)
+      ok(afterSave.filter((item) => item.id === 'cerebras').length === 1, '保存后只出现一条 cerebras，不再重复成未知服务商')
+    } finally {
+      if (savedEnv === undefined) delete process.env.CEREBRAS_API_KEY
+      else process.env.CEREBRAS_API_KEY = savedEnv
+    }
+  }
+
+  {
     const writes = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
         mergeAuthEntry(`fixture-provider-${i}`, { type: 'api_key', key: 'ONLY_SYNTHETIC_FIXTURE' })
