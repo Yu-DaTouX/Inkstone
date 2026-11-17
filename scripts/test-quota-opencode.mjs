@@ -1,7 +1,7 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runSuite } from './lib/test-suite.mjs'
 
 const RESET = '2026-11-18T04:29:48.000Z'
 const PAYLOAD = { usage: {
