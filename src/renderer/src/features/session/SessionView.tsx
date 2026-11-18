@@ -385,8 +385,10 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const [remountKey, setRemountKey] = useState(0)
   const measurementCache = useMemo(() => {
     if (!virtual) return undefined
-    const width = hostRef.current?.querySelector<HTMLElement>('.v3-stream')?.clientWidth ?? hostRef.current?.clientWidth ?? 0
-    return readVirtualCache(identity, measurementRun.items.map((item) => item.id), width)
+    return readVirtualCache(identity, () => ({
+      ids: measurementRun.items.map((item) => item.id),
+      width: hostRef.current?.querySelector<HTMLElement>('.v3-stream')?.clientWidth ?? hostRef.current?.clientWidth ?? 0
+    }))
   }, [identity, virtual, remountKey])
   useLayoutEffect(() => {
     const handle = vlistRef.current

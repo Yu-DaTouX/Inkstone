@@ -13,9 +13,11 @@ interface Measurements {
 }
 const measurements = new Map<string, Measurements>()
 
-export function readVirtualCache(identity: string, ids: readonly string[], width: number): CacheSnapshot | undefined {
+export function readVirtualCache(identity: string, readLayout: () => { ids: readonly string[]; width: number }): CacheSnapshot | undefined {
   const saved = measurements.get(identity)
-  if (!saved || Math.abs(saved.width - width) > 1 || saved.ids.length !== ids.length || saved.ids.some((id, index) => id !== ids[index])) return undefined
+  if (!saved) return undefined
+  const { ids, width } = readLayout()
+  if (Math.abs(saved.width - width) > 1 || saved.ids.length !== ids.length || saved.ids.some((id, index) => id !== ids[index])) return undefined
   return saved.cache
 }
 

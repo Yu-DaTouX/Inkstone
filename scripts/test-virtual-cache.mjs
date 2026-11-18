@@ -15,26 +15,30 @@ try {
   const { readVirtualCache, saveVirtualCache, virtualizeSession } = await import(pathToFileURL(outfile).href)
   const ids = ['a', 'b', 'c']
   const cache = [[100, 240, 300], 240]
+  const read = (identity, ids, width) => readVirtualCache(identity, () => ({ ids, width }))
+  check('没有缓存时不读取布局', () => {
+    assert.equal(readVirtualCache('not-cached', () => assert.fail('首次打开无需测量缓存输入')), undefined)
+  })
   check('相同会话、行序列和宽度复用测量', () => {
     saveVirtualCache('session', ids, 800, cache)
-    assert.equal(readVirtualCache('session', [...ids], 800), cache)
+    assert.equal(read('session', [...ids], 800), cache)
   })
   check('宽度变化或行身份变化时不复用旧尺寸', () => {
-    assert.equal(readVirtualCache('session', ids, 600), undefined)
-    assert.equal(readVirtualCache('session', ['a', 'b'], 800), undefined)
-    assert.equal(readVirtualCache('session', ['a', 'x', 'c'], 800), undefined)
-    assert.equal(readVirtualCache('other', ids, 800), undefined)
+    assert.equal(read('session', ids, 600), undefined)
+    assert.equal(read('session', ['a', 'b'], 800), undefined)
+    assert.equal(read('session', ['a', 'x', 'c'], 800), undefined)
+    assert.equal(read('other', ids, 800), undefined)
   })
   check('拒绝空列表和长度不一致的快照', () => {
     saveVirtualCache('empty', [], 800, [[], 240])
     saveVirtualCache('wrong', ids, 800, [[100], 240])
-    assert.equal(readVirtualCache('empty', [], 800), undefined)
-    assert.equal(readVirtualCache('wrong', ids, 800), undefined)
+    assert.equal(read('empty', [], 800), undefined)
+    assert.equal(read('wrong', ids, 800), undefined)
   })
   check('测量快照数量有界', () => {
     for (let i = 0; i < 17; i++) saveVirtualCache(`bounded-${i}`, ids, 800, cache)
-    assert.equal(readVirtualCache('bounded-0', ids, 800), undefined)
-    assert.equal(readVirtualCache('bounded-16', ids, 800), cache)
+    assert.equal(read('bounded-0', ids, 800), undefined)
+    assert.equal(read('bounded-16', ids, 800), cache)
   })
   check('虚拟列表进入阈值不变，退出留出滞回区间', () => {
     assert.equal(virtualizeSession(false, 80, 200), false)
