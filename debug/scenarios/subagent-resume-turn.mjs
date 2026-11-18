@@ -4,7 +4,7 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
   const ev = (expr) => cdp.evaluate(expr)
   await waitFor('s.conn === "ready"')
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
-  await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', permissionMode: 'all' })`)
+  await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN' })`)
   await ev(`window.__yanStore.getState().send('SUBAGENTS1 THENREST 先派一个子代理')`)
   await waitFor(`(s.subagents ?? []).length >= 1`, 60000)
   const id = await ev(`window.__yanStore.getState().subagents[0].id`)
