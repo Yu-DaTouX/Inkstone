@@ -77,10 +77,15 @@ export default async function run({ cdp, newSession, sleep, check, shot, report,
   const queueText = Array.from({length:8},(_,i)=>'待发长文字第'+i+'行。').join('\n')+'\n\n（附图按添加顺序编号：图1、图2、图3）'
   await inject([user,{id:'compact-long',role:'assistant',text:long}],false,{queue:{steering:[{id:'compact-steer',text:queueText}],followUp:[{id:'compact-follow',text:queueText}]}})
   await sleep(600)
-  const queueMetrics = await ev(`(()=>{const q=document.querySelector('[data-testid="queue-stack"]'),p=q.querySelector('.t3-queue__text');return {text:p.textContent,height:p.getBoundingClientRect().height,line:parseFloat(getComputedStyle(p).lineHeight),actions:[...q.querySelectorAll('.t3-queue__actions')].map(e=>getComputedStyle(e).opacity)}})()`)
-  check('插话和排队卡正文最多三行', queueMetrics.height<=queueMetrics.line*3+2, queueMetrics)
-  check('待发卡不显示附图编号括号说明', !queueMetrics.text.includes('附图按添加顺序编号'))
-  check('插话排队卡按钮常显', queueMetrics.actions.every(v=>Number(v)===1))
+  const queueMetrics = await ev(`[...document.querySelectorAll('[data-testid="queue-stack"] [data-testid="queue-row"]')].map(row => {
+    const p = row.querySelector('.t3-queue__text');
+    const actions = row.querySelector('.t3-queue__actions');
+    return {kind:row.dataset.kind,text:p?.textContent,height:p?.getBoundingClientRect().height??0,line:p?parseFloat(getComputedStyle(p).lineHeight):0,actions:actions?.querySelectorAll('button').length??0,opacity:actions?Number(getComputedStyle(actions).opacity):0};
+  })`)
+  const bothCards = queueMetrics.length === 2 && queueMetrics.some(row => row.kind === 'steering') && queueMetrics.some(row => row.kind === 'followUp')
+  check('插话和排队卡正文最多三行', bothCards && queueMetrics.every(row => row.height > 0 && row.height <= row.line * 3 + 2), queueMetrics)
+  check('待发卡不显示附图编号括号说明', bothCards && queueMetrics.every(row => row.text?.includes('待发长文字') && !row.text.includes('附图按添加顺序编号')))
+  check('插话排队卡按钮常显', bothCards && queueMetrics.every(row => row.actions > 0 && row.opacity === 1))
   const wheelAt = async (point) => {
     await ev(`(()=>{const s=document.querySelector('.v3-stream');s.dispatchEvent(new WheelEvent('wheel',{deltaY:-1,bubbles:true}));s.scrollTop=Math.min(300,s.scrollHeight-s.clientHeight)})()`)
     await sleep(180)
