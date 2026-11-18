@@ -2,7 +2,7 @@ import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, rm, truncate, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -118,6 +118,25 @@ try {
     assert.equal(exported.ok, false)
     assert.match(exported.error, /过大|too large/i)
     assert.equal(existsSync(`${target}.inkstone-session.json`), false)
+  })
+
+  await check('会话包编码后超过导入上限时不覆盖已有文件', async () => {
+    const source = join(root, 'sessions-src', 'escaped.jsonl')
+    const target = join(root, 'export', 'escaped.json')
+    const line = JSON.stringify({ type: 'message', message: { role: 'user', content: '"'.repeat(1024 * 1024) } }) + '\n'
+    const file = await open(source, 'wx')
+    try {
+      await file.writeFile('{"type":"session","id":"sess-escaped"}\n')
+      for (let i = 0; i < 65; i++) await file.writeFile(line)
+    } finally {
+      await file.close()
+    }
+    assert.ok((await stat(source)).size < SESSION_TRANSFER_MAX_BYTES)
+    await writeFile(target, '保留原文件')
+    const exported = await exportSession(source, target)
+    assert.equal(exported.ok, false)
+    assert.match(exported.error, /过大|too large/i)
+    assert.equal(await readFile(target, 'utf8'), '保留原文件')
   })
 
   section('会话头改写')

@@ -59,7 +59,9 @@ export async function exportSession(
   }
   const file = targetPath.toLowerCase().endsWith('.json') ? targetPath : `${targetPath}.inkstone-session.json`
   try {
-    await atomicWriteFile(file, JSON.stringify(bundle, null, 2))
+    const serialized = JSON.stringify(bundle, null, 2)
+    if (Buffer.byteLength(serialized, 'utf8') > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: sessionTooLargeError() }
+    await atomicWriteFile(file, serialized)
   } catch (error) {
     return { ok: false, error: pick(`写出会话包失败：${describe(error)}`, `Failed to write session bundle: ${describe(error)}`) }
   }
