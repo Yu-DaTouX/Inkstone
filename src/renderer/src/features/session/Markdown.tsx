@@ -678,6 +678,7 @@ export const Markdown = memo(function Markdown({
   const wasLive = useRef(false)
   if (running) wasLive.current = true
   const settling = !running && wasLive.current
+  const keepLiveBlocks = settling && !CROSS_BLOCK_REFERENCE.test(renderedText)
   const [highlightReady, setHighlightReady] = useState(false)
   useEffect(() => {
     if (!settling) {
@@ -689,7 +690,7 @@ export const Markdown = memo(function Markdown({
 
   const mathPending = math.needed && !math.plugins
   const cacheKey = markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
-  const cached = running || mathPending ? undefined : mdCache.get(cacheKey)
+  const cached = running || keepLiveBlocks || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
     mdCache.delete(cacheKey)
     mdCache.set(cacheKey, cached)
@@ -717,7 +718,7 @@ export const Markdown = memo(function Markdown({
     )
   }
 
-  if (settling && !CROSS_BLOCK_REFERENCE.test(renderedText)) {
+  if (keepLiveBlocks) {
     return (
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
