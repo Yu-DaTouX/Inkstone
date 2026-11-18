@@ -216,6 +216,16 @@ check('流式预处理：区分转义后的字面文本与真正的半成品链�
   assert.equal(prepareStreamingMarkdown(String.raw`看 \\![图](路径`, true), String.raw`看 \\`)
 })
 
+check('流式预处理：保留链接标签里的转义方括号', () => {
+  const link = String.raw`看[甲\[乙\]](docs/draft`
+  const image = String.raw`看 ![甲\[乙\]](fig/draft`
+  assert.equal(prepareStreamingMarkdown(link, true), String.raw`看甲\[乙\]`)
+  assert.equal(prepareStreamingMarkdown(image, true), '看 ')
+  assert.equal(prepareStreamingMarkdown(`${link})`, true), `${link})`)
+  assert.equal(prepareStreamingMarkdown(`${image})`, true), `${image})`)
+  assert.equal(prepareStreamingMarkdown('看 ![标签' + '\\', true), '看 ')
+})
+
 check('流式预处理：转义右括号不提前结束链接或图片地址', () => {
   const link = String.raw`看[文档](docs\)draft`
   const image = String.raw`看 ![图](fig\)draft`

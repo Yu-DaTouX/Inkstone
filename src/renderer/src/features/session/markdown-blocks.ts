@@ -110,8 +110,8 @@ function scanTail(text: string): TailScan {
 
 const DISPLAY_MATH_OPEN = /^ {0,3}\$\$/
 const BARE_MARKER = /^ {0,3}(?:[-*+]|>|#{1,6}|-{2}|\d{1,9}[.)]?)$/
-const PARTIAL_IMAGE = /(?<!\\)((?:\\\\)*)!\[[^\[\]\n]*(?:\](?:\((?:\\[^\n]|[^\\)\n])*\\?)?)?$/
-const PARTIAL_LINK = /(?<!\\)((?:\\\\)*)\[([^\[\]\n]*)\]\((?:\\[^\n]|[^\\)\n])*\\?$/
+const PARTIAL_IMAGE = /(?<!\\)((?:\\\\)*)!\[(?:\\[^\n]|[^\\[\]\n])*(?:\\|\](?:\((?:\\[^\n]|[^\\)\n])*\\?)?)?$/
+const PARTIAL_LINK = /(?<!\\)((?:\\\\)*)\[((?:\\[^\n]|[^\\[\]\n])*)\]\((?:\\[^\n]|[^\\)\n])*\\?$/
 const TABLE_ROW_START = /^ {0,3}\|/
 const DELIMITER_CELL = /^:?-+:?$/
 
