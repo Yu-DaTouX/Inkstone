@@ -97,8 +97,9 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   const viewport = await cdp.evaluate(`document.querySelector('.v3-stream').clientHeight`)
   const flightSegments = motion => {
     const { offsets, flightOffsets } = motion
-    const from = Math.abs(offsets[1] - offsets[0]) > viewport ? offsets[1] : offsets[0]
     const jumps = offsets.flatMap((offset, index) => index > 0 && Math.abs(offset - offsets[index - 1]) > viewport ? [index] : [])
+    const preflight = jumps.length > 1 && jumps[0] <= 2 ? jumps[0] : jumps[0] === 1 ? 1 : 0
+    const from = offsets[preflight]
     const to = flightOffsets.length > 1 ? flightOffsets.at(-1) : jumps.length > 1 ? offsets[jumps.at(-1) - 1] : motion.scrollTop
     const lead = offsets.filter(offset => Math.abs(offset-from) > .5 && Math.abs(offset-from) <= viewport*.35 + 2).length
     const land = offsets.filter(offset => Math.abs(to-offset) > .5 && Math.abs(to-offset) <= viewport*.6 + 2).length
