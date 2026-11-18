@@ -192,6 +192,26 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   await sleep(1100)
   check('虚拟列表回到最新后尾部完整可见', (await bottom()) <= 2 && await cdp.evaluate(`document.querySelector('[data-turn-id="stream-live"]')?.textContent.includes('第 ${chunks + 4} 段输出')`), await bottom())
   await shot('message-stream-virtual-final')
+  if (rounds === 640) {
+    const rail = '[data-testid="v3-outline-rail"]'
+    const point = await cdp.evaluate(`(() => {
+      const r = document.querySelector('.v3-rail-ticks').getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: Math.floor(r.top + r.height / 2) + 0.875 };
+    })()`)
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
+    await waitFor(`!!document.querySelector('${rail} [data-near="0"]')`, 5000)
+    const preview = await cdp.evaluate(`Number(document.querySelector('${rail} [data-near="0"]').dataset.index)`)
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point })
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point })
+    await sleep(1300)
+    const landed = await cdp.evaluate(`(() => {
+      const stream = document.querySelector('.v3-stream');
+      const row = stream.querySelector('[data-turn-id="virtual-user-${preview}"]');
+      const offset = row ? row.getBoundingClientRect().top - stream.getBoundingClientRect().top : null;
+      return { index: document.querySelector('${rail} [data-current]')?.dataset.index, offset };
+    })()`)
+    check('密集小地图点击落在对应的悬停回合', landed.index === String(preview) && landed.offset !== null && landed.offset >= 0 && landed.offset <= 40, { preview, ...landed })
+  }
   report.resizeWarnings = await cdp.evaluate('window.__streamResizeWarnings')
   check('ResizeObserver 无循环告警', report.resizeWarnings.length === 0, report.resizeWarnings.length)
 }

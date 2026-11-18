@@ -220,7 +220,7 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
     const total = turnsRef.current.length
     if (!box || total === 0) return -1
     const rect = box.getBoundingClientRect()
-    return minimapIndexAt(clientY - rect.top, rect.height, total)
+    return minimapIndexAt(Math.floor(clientY) - rect.top, rect.height, total)
   }, [])
 
   const show = useCallback((index: number) => {
