@@ -5,14 +5,13 @@ import { memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
 
 export const meta = { observation: true, description: '内存增长：三个会话各跑 FLOW/MANYTOOLS/LONGTEXT，之后循环 N 轮（YAN_MEM_ROUNDS，默认 25）切换会话、开关分屏与文件预览、再发一轮流式，每轮强制 GC 后记录 JS 堆、DOM 节点、事件监听器，输出曲线与首尾增量；YAN_MEM_SNAPSHOT=1 在第 3 轮与最后一轮存堆快照', }
 
-export default async function run({ cdp, box, runDir, check, report, sleep, log, autoApprove, newSession, state, turn, waitFor }) {
+export default async function run({ cdp, box, runDir, report, sleep, log, newSession, state, turn, waitFor }) {
   const ev = (expr) => cdp.evaluate(expr)
   const rounds = Number(process.env.YAN_MEM_ROUNDS ?? 25)
   const imagesOn = process.env.YAN_MEM_IMAGES === '1'
   const marker = box.userData
   const snapshotOn = process.env.YAN_MEM_SNAPSHOT === '1'
   report.viewport = await useRealWindow(cdp, sleep, { maximize: true })
-  await autoApprove()
   await cdp.call('Performance.enable')
   await cdp.call('HeapProfiler.enable')
 
@@ -31,13 +30,27 @@ export default async function run({ cdp, box, runDir, check, report, sleep, log,
     writeFileSync(join(runDir, name + '.heapsnapshot'), chunks.join(''))
   }
 
+  const complete = async (prompt, ending, options) => {
+    const { requests } = await turn(prompt, options)
+    const finished = await state(`(() => {
+      const from = s.messages.findLastIndex(message => message.role === 'user');
+      return s.messages[from]?.text === ${JSON.stringify(prompt)} &&
+        s.messages.slice(from + 1).findLast(message => message.role === 'assistant')?.text?.trimEnd().endsWith(${JSON.stringify(ending)});
+    })()`)
+    if (!requests || !finished) throw new Error(`${prompt}：未收到完整的假模型回复（${requests} 次请求）`)
+  }
+  const previewPath = join(box.project, 'memory-preview.json')
+  const previewText = 'memory-preview-fixture'
+  writeFileSync(previewPath, JSON.stringify({ name: previewText }, null, 2), { flag: 'wx' })
+  const preview = `document.querySelector('[data-testid="v3-preview"] [data-testid="v3-code-view"]')`
+  const tiles = `document.querySelectorAll('[data-tile-key]').length`
   const sessions = []
   for (const [index, project] of [0, 1, 2].map((i) => [i, box.projects[i] ?? box.projects[0] ?? box.project])) {
     await newSession(project)
     const tag = 'ABC'[index]
-    await turn(`FLOW SHORT ${tag}1 先看看项目`, images ? { images } : {})
-    await turn(`MANYTOOLS ${tag}2 跑四十步`, { timeout: 180000 })
-    await turn(`LONGTEXT ${tag}3 长文`)
+    await complete(`FLOW SHORT ${tag}1 先看看项目`, '最终答案结束。', images ? { images } : {})
+    await complete(`MANYTOOLS ${tag}2 跑四十步`, '四十步都完成了。', { timeout: 180000 })
+    await complete(`LONGTEXT ${tag}3 长文`, '结束。')
     sessions.push({ sessionId: await state('s.session.sessionId'), path: await state('s.session.sessionFile'), project })
   }
   const curve = []
@@ -49,13 +62,14 @@ export default async function run({ cdp, box, runDir, check, report, sleep, log,
       await sleep(250)
     }
     await ev(`window.__yanSplit.getState().apply({ tiles: ${JSON.stringify(sessions.map(({ sessionId, path }) => ({ sessionId, path })))}, live: 1 })`)
-    await sleep(900)
+    await waitFor(`${tiles} === ${sessions.length}`)
     await ev(`window.__yanSplit.getState().close()`)
-    await sleep(400)
-    await ev(`window.__yanStore.getState().previewFile('package.json', 1, ${JSON.stringify(sessions[0].project)})`)
-    await sleep(500)
-    await ev(`window.__yanStore.setState({ filePreview: null })`)
-    if (process.env.YAN_MEM_TURN !== '0') await turn(`FLOW SHORT R${round} 再看一眼`, images ? { images } : {})
+    await waitFor(`${tiles} === 0`)
+    await ev(`window.__yanStore.getState().previewFile(${JSON.stringify(previewPath)}, 1, ${JSON.stringify(box.project)})`)
+    await waitFor(`${preview}?.textContent.includes(${JSON.stringify(previewText)}) && ${preview}.getClientRects().length > 0`)
+    await ev(`window.__yanRightPanel.getState().setOpen(false)`)
+    await waitFor(`!${preview}?.getClientRects().length`)
+    if (process.env.YAN_MEM_TURN !== '0') await complete(`FLOW SHORT R${round} 再看一眼`, '最终答案结束。', images ? { images } : {})
     const row = { round, ...(await measure()) }
     curve.push(row)
     log('round', row)
