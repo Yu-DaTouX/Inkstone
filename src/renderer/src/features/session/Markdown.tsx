@@ -627,7 +627,7 @@ function whenIdle(callback: () => void): () => void {
 }
 
 function parseMarkdown(text: string, math: MathPlugins | null, allowHtml: boolean, footnotes: NonNullable<Options['remarkRehypeOptions']>): React.ReactElement {
-  const plugins = pluginsFor(!hasUnclosedFence(text), math, allowHtml)
+  const plugins = pluginsFor(true, math, allowHtml)
   return <div className="v3-prose">{ReactMarkdown({ remarkPlugins: plugins.remark, rehypePlugins: plugins.rehype, components: MD_COMPONENTS, remarkRehypeOptions: footnotes, children: text })}</div>
 }
 
