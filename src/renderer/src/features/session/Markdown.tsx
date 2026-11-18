@@ -608,7 +608,7 @@ function LiveMarkdown({ text, settled = false, math = null, caret = false, throt
           key={block.offset}
           text={block.text}
           offset={block.offset}
-          highlight={FENCE_LINE.test(block.text) && !hasUnclosedFence(block.text) && (settled || block.text.length <= CLOSED_HIGHLIGHT_CHARS)}
+          highlight={(settled || block.text.length <= CLOSED_HIGHLIGHT_CHARS) && FENCE_LINE.test(block.text) && !hasUnclosedFence(block.text)}
           math={math}
           caret={caret && index === blocks.length - 1}
         />

@@ -75,4 +75,21 @@ export default async function run({ cdp, newSession, waitFor, sleep, check }) {
   await waitFor(`!!${paragraph} && !${paragraph}.querySelector('.v3-caret')`, 8000)
   const finishedFont = await font()
   check('已写完的纯加粗标题保留标题样式', parseFloat(finishedFont.paragraph) > parseFloat(finishedFont.prose), finishedFont)
+
+  const longCode = '```ts\n' + 'const streamFixture = "long code block"\n'.repeat(140) + '// 末行标记\n```\n'
+  await cdp.evaluate(`(() => {
+    const now = Date.now()
+    window.__yanStore.setState(s => ({ messages: [...s.messages,
+      {id:'long-user',role:'user',text:'长代码',timestamp:now},
+      {id:'long-answer',role:'assistant',text:${JSON.stringify(longCode)},timestamp:now}],
+      session: {...s.session,isStreaming:true,isAgentRunning:true},runTail:null
+    }))
+  })()`)
+  const longPre = `${prose('long-answer')}?.querySelector('pre')`
+  const longTokens = `${longPre}?.querySelector('[class^="hljs-"]')`
+  await waitFor(`${longPre}?.textContent.includes('// 末行标记') && !!${prose('long-answer')}?.lastElementChild?.querySelector('.v3-code-head')`, 16000)
+  check('长代码在流式回合内不提前着色', await cdp.evaluate(`!${longTokens}`))
+  await cdp.evaluate(`window.__yanStore.setState(s => ({ session: {...s.session,isStreaming:false,isAgentRunning:false} }))`)
+  await waitFor(`!!${longTokens}`, 8000)
+  check('长代码收尾后按原限制正常着色', await cdp.evaluate(`!!${longTokens}`))
 }
