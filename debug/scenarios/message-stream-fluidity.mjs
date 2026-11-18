@@ -260,6 +260,46 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     })()`)
     check('远距离回到最新的减速段顶部有真实消息', bottomLanding.samples >= 3 && bottomLanding.maxTopGap <= 48, bottomLanding)
     check('短尾部的远距离跳转仍停在底部', (await bottom()) <= 2, await bottom())
+    const slider = `document.querySelector('${rail} [role="slider"]')`
+    const press = async (key, windowsVirtualKeyCode) => {
+      await cdp.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code: key, windowsVirtualKeyCode })
+      await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode })
+    }
+    await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    try {
+      await cdp.evaluate(`${slider}.focus({ preventScroll: true })`)
+      await press('Home', 36)
+      await waitFor(`${slider}.getAttribute('aria-valuenow') === '1'`, 5000)
+      await press('PageDown', 34)
+      await waitFor(`Number(${slider}.getAttribute('aria-valuenow')) > 1`, 5000)
+      const target = await cdp.evaluate(`Number(${slider}.getAttribute('aria-valuenow')) - 1`)
+      await press('Enter', 13)
+      const reached = await waitFor(`(() => {
+        const stream = document.querySelector('.v3-stream');
+        const row = stream.querySelector('[data-turn-id="virtual-user-${target}"]');
+        const offset = row ? row.getBoundingClientRect().top - stream.getBoundingClientRect().top : null;
+        return offset !== null && offset >= 0 && offset <= 40;
+      })()`, 5000).then(() => true, () => false)
+      check('减少动效时键盘确认跳到选中的回合并保留焦点', reached && await cdp.evaluate(`document.activeElement === ${slider}`), { target, ...await landing(target) })
+      const reading = `(() => {
+        const stream = document.querySelector('.v3-stream');
+        const box = stream.getBoundingClientRect();
+        const line = box.top + Math.min(box.height / 4, 120);
+        const rows = [...stream.querySelectorAll('.v3-msg[data-turn-id^="virtual-user-"]')];
+        const row = rows.findLast(row => row.getBoundingClientRect().top <= line);
+        return {
+          expected: row?.dataset.turnId.slice('virtual-user-'.length),
+          index: document.querySelector('${rail} [data-current]')?.dataset.index
+        };
+      })()`
+      const synced = await waitFor(`(() => {
+        const { expected, index } = ${reading};
+        return expected !== undefined && index === expected;
+      })()`, 5000).then(() => true, () => false)
+      check('减少动效跳转后阅读刻度跟上视口', reached && synced, await cdp.evaluate(reading))
+    } finally {
+      await cdp.call('Emulation.setEmulatedMedia', { features: [] })
+    }
   }
   report.resizeWarnings = await cdp.evaluate('window.__streamResizeWarnings')
   check('ResizeObserver 无循环告警', report.resizeWarnings.length === 0, report.resizeWarnings.length)
