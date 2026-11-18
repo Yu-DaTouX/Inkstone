@@ -40,7 +40,11 @@ function blocksOf(message: UIMessage): { speaker: string; parts: string[] } | nu
   if (message.role === 'bash') {
     if (!message.bash) return null
     const output = message.text.trimEnd()
-    parts.push(`\`\`\`\n$ ${message.bash.command}${output ? `\n${output}` : ''}\n\`\`\``)
+    const body = `$ ${message.bash.command}${output ? `\n${output}` : ''}`
+    let fenceLength = 3
+    for (const [run] of body.matchAll(/`{3,}/g)) fenceLength = Math.max(fenceLength, run.length + 1)
+    const fence = '`'.repeat(fenceLength)
+    parts.push(`${fence}\n${body}\n${fence}`)
     return { speaker: pick('用户', 'User'), parts }
   }
   if (message.role === 'user') {

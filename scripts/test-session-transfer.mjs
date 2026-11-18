@@ -340,14 +340,25 @@ try {
     assert.equal(empty.ok, false)
     assert.equal(asked, 0)
   })
+  const { sessionHtmlDocument } = await bundle('src/renderer/src/features/sidebar/session-export-html.ts', 'export-html', { banner: { js: "import { createRequire as __createRequire } from 'node:module'\nconst require = __createRequire(import.meta.url)" } })
   await check('HTML 页面：Markdown 渲染成标签，原始 HTML 与图片不进页面，标题转义', async () => {
-    const { sessionHtmlDocument } = await bundle('src/renderer/src/features/sidebar/session-export-html.ts', 'export-html', { banner: { js: "import { createRequire as __createRequire } from 'node:module'\nconst require = __createRequire(import.meta.url)" } })
     const page = await sessionHtmlDocument('# 标题\n\n## 用户\n\n**粗体** <script>alert(1)</script> ![x](https://example.com/a.png)\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```js\nlet a = 1 < 2\n```\n', '标题 <b>', 'zh-CN')
     assert.ok(page.startsWith('<!doctype html>\n<html lang="zh-CN">'))
     assert.ok(page.includes('<title>标题 &lt;b&gt;</title>'))
     assert.ok(page.includes('<h1>标题</h1>') && page.includes('<h2>用户</h2>') && page.includes('<strong>粗体</strong>'))
     assert.ok(page.includes('<table>') && page.includes('<pre><code class="language-js">let a = 1 &lt; 2'))
     assert.ok(!page.includes('<script') && !page.includes('<img'), page)
+  })
+  await check('Markdown 和 HTML 导出：终端输出里的围栏保留为代码，不吞掉后续回复', async () => {
+    const output = '```\n**这是输出，不是加粗**\n  `````\n输出结束'
+    const markdown = sessionMarkdown([
+      { id: 'b1', role: 'bash', text: output + '\n', bash: { command: 'show notes', exitCode: 0, cancelled: false } },
+      { id: 'a1', role: 'assistant', text: '## 后续回复' }
+    ], { exportedAt: 1 })
+    const page = await sessionHtmlDocument(markdown, '标题', 'zh-CN')
+    assert.ok(page.includes(`<pre><code>$ show notes\n${output}\n</code></pre>`), page.split('<main>')[1])
+    assert.ok(page.includes('<h2>后续回复</h2>'))
+    assert.ok(markdown.includes('``````\n$ show notes\n' + output + '\n``````'))
   })
   await check('读不到会话或格式不认识时不写文件；不认识的格式按会话包导出', async () => {
     const missing = await register({ readMessages: async () => null }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'markdown', title: 'none' })
