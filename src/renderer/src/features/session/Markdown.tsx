@@ -20,7 +20,7 @@ import { Icon } from './Icon'
 import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
-import { prepareStreamingMarkdown, splitMarkdownBlocks } from './markdown-blocks'
+import { hasUnclosedFence, prepareStreamingMarkdown, splitMarkdownBlocks } from './markdown-blocks'
 import { markdownCacheKey } from './markdown-cache-key'
 import { MarkdownTable } from './MarkdownTable'
 import { throttleTail, type TailHold } from './markdown-tail-throttle'
@@ -562,14 +562,6 @@ function MarkdownBody({ remark, rehype, text }: { remark: NonNullable<Options['r
       {text}
     </ReactMarkdown>
   )
-}
-
-function hasUnclosedFence(text: string): boolean {
-  let n = 0
-  for (const line of text.split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) n++
-  }
-  return n % 2 === 1
 }
 
 const FENCE_LINE = /^\s*(```|~~~)/m

@@ -22,6 +22,27 @@ function closeLeadingEmphasis(text: string): string {
   return stars % 2 === 1 ? `${text.trimEnd()}*` : text
 }
 
+export function hasUnclosedFence(text: string): boolean {
+  if (!text.includes('```') && !text.includes('~~~')) return false
+  let fence = ''
+  const lines = text.split('\n')
+  for (const line of lines) {
+    const match = FENCE_OPEN.exec(line)
+    if (!match) {
+      if (!fence && /^[ \t]+(?:```|~~~)/.test(line)) return lines.filter((item) => /^\s*(?:```|~~~)/.test(item)).length % 2 === 1
+      continue
+    }
+    const marker = match[1]
+    const rest = line.slice(match[0].length)
+    if (fence) {
+      if (marker[0] === fence[0] && marker.length >= fence.length && /^[ \t\r]*$/.test(rest)) fence = ''
+    } else if (marker[0] !== '`' || !rest.includes('`')) {
+      fence = marker
+    }
+  }
+  return fence !== ''
+}
+
 export function prepareStreamingMarkdown(text: string, live: boolean): string {
   if (!live) return text
   const scan = scanTail(text)

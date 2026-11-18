@@ -37,4 +37,20 @@ export default async function run({ cdp, newSession, waitFor, sleep, check }) {
     selection: getSelection()?.toString(), last: ${prose('live-answer')}?.lastElementChild?.textContent })`)
   check('历史缓存不替换已渲染的首段正文', result.same, result)
   check('结束后选区与完整末段仍在', result.selection === '这是已显示的首段。' && result.last === '这是准备收尾的末段。', result)
+
+  const open = '````ts\nconst value = 1\n```\nconst next = 2\n'
+  await cdp.evaluate(`(() => {
+    const now = Date.now()
+    window.__yanStore.setState(s => ({ messages: [...s.messages,
+      {id:'fence-user',role:'user',text:'代码',timestamp:now},
+      {id:'fence-answer',role:'assistant',text:${JSON.stringify(open)},timestamp:now}],
+      session: {...s.session,isStreaming:true,isAgentRunning:true},runTail:null
+    }))
+  })()`)
+  const pre = `${prose('fence-answer')}?.querySelector('pre')`
+  await waitFor(`${pre}?.textContent.includes('const next = 2')`, 8000)
+  check('内层短围栏不提前触发高亮', await cdp.evaluate(`!${pre}?.querySelector('[class^="hljs-"]')`))
+  await cdp.evaluate(`window.__yanStore.setState(s => ({ messages: [...s.messages.slice(0,-1), {...s.messages.at(-1),text:${JSON.stringify(open + '````\n')}}] }))`)
+  await waitFor(`!!${pre}?.querySelector('[class^="hljs-"]')`, 8000)
+  check('同类等长围栏闭合后恢复高亮', await cdp.evaluate(`!!${pre}?.querySelector('[class^="hljs-"]')`))
 }

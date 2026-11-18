@@ -17,7 +17,7 @@ const outfile = join(dir, 'markdown-blocks.mjs')
 const kbdOutfile = join(dir, 'markdown-kbd.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-blocks.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-kbd.ts')], bundle: true, platform: 'node', format: 'esm', outfile: kbdOutfile, logLevel: 'error' })
-const { splitMarkdownBlocks, prepareStreamingMarkdown } = await import(pathToFileURL(outfile).href)
+const { hasUnclosedFence, splitMarkdownBlocks, prepareStreamingMarkdown } = await import(pathToFileURL(outfile).href)
 const { rehypeKbd } = await import(pathToFileURL(kbdOutfile).href)
 await rm(dir, { recursive: true, force: true })
 
@@ -57,6 +57,16 @@ check('任意前缀下已闭合块与最终分块一致（流式缓存可命中�
       assert.ok(same && same.text === closed.text, `prefix ${n} offset ${closed.offset}`)
     }
   }
+})
+
+check('顶层围栏只被同类型且足够长的空围栏行关闭', () => {
+  const open = '````ts\nconst a = 1\n'
+  for (const line of ['```', '~~~~', '````ts', '    ````']) assert.equal(hasUnclosedFence(`${open}${line}\n`), true, line)
+  for (const line of ['````', '`````\t', '   ````\r']) assert.equal(hasUnclosedFence(`${open}${line}\n`), false, line)
+  assert.equal(hasUnclosedFence('~~~~md\n```\n~~~~'), false)
+  assert.equal(hasUnclosedFence('```bad`info\n不是代码'), false)
+  assert.equal(hasUnclosedFence('- 列表\n\n    ```js\n    const a = 1'), true)
+  assert.equal(hasUnclosedFence('- 列表\n\n    ```js\n    const a = 1\n    ```'), false)
 })
 
 check('代码块内的空行不切分', () => {
