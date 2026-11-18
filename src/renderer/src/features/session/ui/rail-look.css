@@ -42,6 +42,7 @@
     opacity: .5;
   }
   .v3-rail[data-dense] .v3-rail-tick { --base: 0; }
+  .v3-rail[data-dense] .v3-rail-tick:not([data-failed], [data-current], [data-near]) { display: none; }
   .v3-rail[data-dense] .v3-rail-tick[data-in-view]:not([data-current], [data-near]) { --lit: 0; }
   .v3-rail-tick[data-failed]::before,
   .v3-rail-tick[data-failed]::after { background: var(--fail); }

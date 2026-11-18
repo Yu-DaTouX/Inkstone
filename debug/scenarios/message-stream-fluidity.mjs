@@ -142,6 +142,15 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   })()`)
   await sleep(900)
   check('长历史启用虚拟列表且尾部可见', await cdp.evaluate(`!document.querySelector('.v3-stream-inner') && document.querySelectorAll('.v3-msg[data-turn-id]').length < ${rounds * 2 + 2} && !!document.querySelector('[data-turn-id="stream-live"]')`))
+  if (rounds === 640) {
+    const rail = await cdp.evaluate(`(() => {
+      const root = document.querySelector('[data-testid="v3-outline-rail"][data-dense]');
+      const ticks = [...(root?.querySelectorAll('[data-testid="v3-outline-tick"]') ?? [])];
+      const current = ticks.find(tick => tick.hasAttribute('data-current'));
+      return { count: ticks.length, max: root?.querySelector('[role="slider"]')?.getAttribute('aria-valuemax'), hidden: ticks.filter(tick => getComputedStyle(tick).display === 'none').length, currentVisible: !!current?.getBoundingClientRect().width };
+    })()`)
+    check('密集小地图跳过无状态刻度的绘制，保留导航索引与当前刻度', rail.count === rounds + 1 && rail.max === String(rail.count) && rail.hidden >= rounds - 4 && rail.currentVisible, rail)
+  }
   await measure('virtualStream', async () => {
     for (let i = 0; i < chunks; i++) { await append(i); await sleep(chunks === 75 ? 8 : 30) }
   })

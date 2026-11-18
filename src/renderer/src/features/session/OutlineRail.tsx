@@ -463,6 +463,7 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, readR
       ref={rootRef}
       className={`v3-rail ${className ?? ''}`.trim()}
       data-testid="v3-outline-rail"
+      data-dense={(count - 1) * DENSE_SPACING_PX > window.innerHeight ? '' : undefined}
       data-preview={preview.open ? '' : undefined}
     >
       <div className="v3-rail-dock" style={{ '--n': count } as CSSProperties}>
