@@ -88,6 +88,7 @@ interface FlightRequest {
   destination: () => number
   exact?: () => number | null
   landing?: () => number[]
+  renderLanding?: boolean
   instant?: boolean
   arrive?: () => void
 }
@@ -977,8 +978,10 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       if (Math.abs(drift) > 0.5) origin += drift
       if (virtual && flightPhase(plan, elapsed) === 'cruise') elapsed = skipCruise(plan, elapsed, request.exact?.() != null)
       const phase = flightPhase(plan, elapsed)
-      if (phase !== 'lead' && plan.far && landing.length && !flight.skim) {
-        flight.skim = true
+      const skim = phase !== 'lead' && plan.far && landing.length > 0 && !(request.renderLanding && phase !== 'cruise')
+      if (skim !== flight.skim) {
+        flight.skim = skim
+        if (!skim) paintSkim(box, false)
         setKeepMounted([...landing])
       }
       if (phase === 'done') {
@@ -1106,10 +1109,16 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     const landing = virtual
       ? (): number[] => {
           const count = renderTurnsRef.current.length
-          return landingIndices(count - 1, [count - 2, count - 3], count)
+          const handle = vlistRef.current
+          const destination = bottom()
+          const plan = planFlight(Math.abs(destination - box.scrollTop), box.clientHeight)
+          const from = handle?.findItemIndex(Math.max(0, destination - plan.land)) ?? count - 3
+          const around: number[] = []
+          for (let index = Math.max(0, from - 1); index < count; index += 1) around.push(index)
+          return landingIndices(count - 1, around, count)
         }
       : undefined
-    fly({ destination: bottom, exact: bottom, landing, arrive: () => pinBottom(box) })
+    fly({ destination: bottom, exact: bottom, landing, renderLanding: true, arrive: () => pinBottom(box) })
   }, [setStickNow, scrollBox, fly, virtual])
 
   const narrowBuffer = flying || (stick && tailRunning)

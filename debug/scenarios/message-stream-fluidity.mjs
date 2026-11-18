@@ -225,6 +225,41 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     await clickRail()
     const wheelLanding = await landing(selected)
     check('密集小地图点击优先跳到滚轮选中的回合', nearTop(wheelLanding), { selected, ...wheelLanding })
+    await cdp.evaluate(`document.querySelector('[data-testid="v3-jump"]').click()`)
+    await sleep(650)
+    await cdp.evaluate(`window.__yanStore.setState(s => ({ messages: [...s.messages.slice(0, -1), { ...s.messages.at(-1), text: '短尾部。' }] }))`)
+    await waitFor(`document.querySelector('[data-turn-id="stream-live"] .v3-prose')?.textContent === '短尾部。'`, 5000)
+    await cdp.evaluate(`(() => {
+      const stream = document.querySelector('.v3-stream');
+      stream.dispatchEvent(new WheelEvent('wheel', { deltaY: -500, bubbles: true }));
+      stream.scrollTop = Math.round(stream.scrollHeight * 0.6);
+    })()`)
+    await waitFor(`!!document.querySelector('[data-testid="v3-jump"]')`, 5000)
+    await cdp.evaluate(`(() => {
+      const stream = document.querySelector('.v3-stream');
+      const start = stream.scrollTop;
+      const stats = window.__bottomLanding = { samples: 0, maxTopGap: 0, frame: 0 };
+      const tick = () => {
+        const remaining = stream.scrollHeight - stream.clientHeight - stream.scrollTop;
+        if (stream.scrollTop - start > stream.clientHeight && remaining > 1 && remaining <= stream.clientHeight * 0.6) {
+          const view = stream.getBoundingClientRect();
+          const first = [...stream.querySelectorAll('.v3-msg')].find(row => row.getBoundingClientRect().bottom > view.top);
+          stats.samples++;
+          stats.maxTopGap = Math.max(stats.maxTopGap, first ? first.getBoundingClientRect().top - view.top : view.height);
+        }
+        stats.frame = requestAnimationFrame(tick);
+      };
+      stats.frame = requestAnimationFrame(tick);
+      document.querySelector('[data-testid="v3-jump"]').click();
+    })()`)
+    await sleep(1100)
+    const bottomLanding = await cdp.evaluate(`(() => {
+      const { samples, maxTopGap, frame } = window.__bottomLanding;
+      cancelAnimationFrame(frame);
+      return { samples, maxTopGap };
+    })()`)
+    check('远距离回到最新的减速段顶部有真实消息', bottomLanding.samples >= 3 && bottomLanding.maxTopGap <= 48, bottomLanding)
+    check('短尾部的远距离跳转仍停在底部', (await bottom()) <= 2, await bottom())
   }
   report.resizeWarnings = await cdp.evaluate('window.__streamResizeWarnings')
   check('ResizeObserver 无循环告警', report.resizeWarnings.length === 0, report.resizeWarnings.length)
