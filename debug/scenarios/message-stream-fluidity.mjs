@@ -92,6 +92,10 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   report.timings.streamSettleMs = await settle('第 29 段输出')
   check('流式输出在 2.5 秒内收住', report.timings.streamSettleMs !== null && report.timings.streamSettleMs <= 2500, report.timings.streamSettleMs)
   check('流式输出时保持贴底', (await bottom()) <= 2, await bottom())
+  await sleep(350)
+  await append(30)
+  const resumed = await settle('第 30 段输出')
+  check('流式暂停后重新出字，不依赖结束信号', resumed !== null && await cdp.evaluate('window.__yanStore.getState().session.isStreaming'), resumed)
   await cdp.evaluate(`(() => {
     const el = document.querySelector('.v3-stream');
     el.dispatchEvent(new WheelEvent('wheel', { deltaY: -600, bubbles: true }));
@@ -104,7 +108,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     return { id: row.dataset.turnId, y: row.getBoundingClientRect().top - base };
   })()`)
   await measure('streamWhileReading', async () => {
-    for (let i = 30; i < 45; i++) { await append(i); await sleep(30) }
+    for (let i = 31; i < 45; i++) { await append(i); await sleep(30) }
   })
   const shift = await cdp.evaluate(`(() => {
     const box = document.querySelector('.v3-stream'); const row = box.querySelector('[data-turn-id="${anchor.id}"]');

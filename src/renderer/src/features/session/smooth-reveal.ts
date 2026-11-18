@@ -191,11 +191,13 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
     baseRef.current = text.length
   }
 
+  const length = text.length
   useEffect(() => {
     if (!animate) {
       stateRef.current = null
       return undefined
     }
+    if (shownRef.current >= length && (!stateRef.current || stateRef.current.seen === length)) return undefined
     let raf = 0
     const tick = (now: number): void => {
       const current = textRef.current
@@ -209,11 +211,11 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
         remember(id, current, next)
         setShown(next)
       }
-      raf = requestClockFrame(tick)
+      if (next < current.length) raf = requestClockFrame(tick)
     }
     raf = requestClockFrame(tick)
     return () => cancelClockFrame(raf)
-  }, [animate, id])
+  }, [animate, id, length])
 
   if (!animate) {
     shownRef.current = text.length
