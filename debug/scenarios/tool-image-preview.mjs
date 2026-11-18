@@ -28,9 +28,9 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
   await shot('tool-image-preview-open')
   const thumb = `document.querySelector('.v3-step-images img')`
   const viewer = `document.querySelector('[role="dialog"] .imgv-image')`
-  const press = async (key, code, windowsVirtualKeyCode) => {
-    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode })
-    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode })
+  const press = async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode, modifiers })
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode, modifiers })
   }
   await press('Escape', 'Escape', 27)
   await waitFor(`!${viewer}`, 5000)
@@ -44,4 +44,13 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
     await waitFor(`!${viewer}`, 5000)
     check(`${code} 打开后按 Esc 关闭并回焦缩略图`, await waitFor(`document.activeElement === ${thumb}`, 2000).then(() => true, () => false))
   }
+  const menu = `document.querySelector('[data-testid="v3-message-menu"]')`
+  await ev(`${thumb}.focus()`)
+  await press('F10', 'F10', 121, 8)
+  await waitFor(`${menu}?.contains(document.activeElement)`, 5000)
+  const items = await ev(`[...${menu}.querySelectorAll('[role="menuitem"]')].map(el => el.textContent.trim())`)
+  check('Shift+F10 打开图片菜单并聚焦复制与另存为菜单', items.length === 2 && items.includes('复制图片') && items.includes('另存为'), items)
+  await press('Escape', 'Escape', 27)
+  await waitFor(`!${menu}`, 5000)
+  check('关闭图片菜单后回焦缩略图', await waitFor(`document.activeElement === ${thumb}`, 2000).then(() => true, () => false))
 }
