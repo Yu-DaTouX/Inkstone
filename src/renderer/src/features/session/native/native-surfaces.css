@@ -134,6 +134,11 @@
     min-width: 0;
   }
 
+  .native-session-info dd {
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
   .native-trust__path {
     display: block;
     overflow: hidden;

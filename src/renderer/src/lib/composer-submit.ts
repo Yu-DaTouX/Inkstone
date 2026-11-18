@@ -18,14 +18,10 @@ interface ComposerImage {
 }
 
 interface ComposerSessionInfo {
-  sessionName?: string
-  sessionId?: string
-  messageCount?: number
-  sessionFile?: string
   thinkingLevel?: string
 }
 
-type ComposerCommandResult = { ok: boolean; error?: string } | void
+type ComposerCommandResult = { ok: boolean; error?: string; cancelled?: boolean } | void
 
 export type NativeSessionAction =
   | 'tree'
@@ -51,6 +47,7 @@ export interface ComposerSendActions {
   setThinking(level: string): void | Promise<void>
   nativeSession?(action: NativeSessionAction, args?: string): Promise<ComposerCommandResult>
   askSideQuestion?(question: string): Promise<ComposerCommandResult>
+  openSessionInfo?(): void
   notify(level: 'info' | 'error', text: string): void
 }
 
@@ -186,7 +183,7 @@ const NATIVE_SESSION_ACTIONS: Record<string, NativeSessionAction> = {
   share: 'share'
 }
 
-function isCommandFailure(result: ComposerCommandResult): result is { ok: false; error?: string } {
+function isCommandFailure(result: ComposerCommandResult): result is { ok: false; error?: string; cancelled?: boolean } {
   return !!result && typeof result === 'object' && result.ok === false
 }
 
@@ -262,7 +259,7 @@ async function runResultCommand(
   if (isCommandFailure(result)) {
     port.restoreText(raw)
     if (attachments.length) port.restoreAttachments(attachments)
-    port.actions.notify('error', result.error || port.t('composer.cmdFailed', { name }))
+    if (!result.cancelled) port.actions.notify('error', result.error || port.t('composer.cmdFailed', { name }))
     port.focusComposer()
     return 'handled'
   }
@@ -299,13 +296,5 @@ async function runYanBuiltin(port: ComposerSubmitPort, name: string, args: strin
     if (!level) a.notify('info', t('composer.thinkingCurrent', { level: port.session?.thinkingLevel ?? 'off', levels: levels.join(' / ') || t('composer.thinkingUnsupported') }))
     else if (levels.includes(level)) await a.setThinking(level)
     else a.notify('error', t('composer.thinkingMissing', { level: args, levels: levels.join(' / ') || t('composer.none') }))
-  } else if (name === 'session') {
-    const info = port.session
-    const lines = [
-      info?.sessionName || info?.sessionId || t('composer.sessionNotStarted'),
-      info ? t('composer.messageCount', { n: info.messageCount ?? 0 }) : '',
-      info?.sessionFile ?? ''
-    ].filter(Boolean)
-    a.notify('info', lines.join(' · '))
-  }
+  } else if (name === 'session') a.openSessionInfo?.()
 }

@@ -335,8 +335,9 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.cloneFailed')) })
       return
     }
-    set({ queue: EMPTY_QUEUE, notices: pushNotice(get().notices, 'info', uiText('state.clone.done')) })
     await get().refreshSessions()
+    if (res.path && target?.current()) await get().switchSession(res.path)
+    get().notify('info', uiText('state.clone.done'))
   },
   exportHtml: async (outputPath) => {
     const target = await sessionActionTarget(get)

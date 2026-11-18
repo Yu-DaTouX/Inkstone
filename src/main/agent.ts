@@ -3712,7 +3712,7 @@ export class AgentController extends EventEmitter {
     }))
   }
 
-  async clone(): Promise<{ ok: boolean; error?: string }> {
+  async clone(): Promise<{ ok: boolean; error?: string; path?: string }> {
     if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     return this.withOperation('fork', undefined, () => this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ cancelled?: boolean }>('clone')
@@ -3722,7 +3722,7 @@ export class AgentController extends EventEmitter {
       this.resetSessionScope()
       this.ui.cancelPending()
       await this.hydrate()
-      return { ok: true }
+      return { ok: true, path: this.state?.sessionFile }
     }))
   }
 
@@ -3810,12 +3810,12 @@ export class AgentController extends EventEmitter {
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
-  async confirmNativeOperation(prompt: { title: string; message: string; acceptLabel: string }): Promise<boolean> {
+  async confirmNativeOperation(prompt: { title: string; message: string; acceptLabel: string; surface?: 'trust' }): Promise<boolean> {
     const response = await this.ui.requestHostUi({
       method: 'select', purpose: 'approval', sensitive: true, title: prompt.title, message: prompt.message,
-      options: [prompt.acceptLabel, pick('取消', 'Cancel')], timeout: 180_000
+      nativeConfirmation: prompt.surface ?? 'inline', options: [prompt.acceptLabel, pick('取消', 'Cancel')], timeout: 180_000
     })
-    return !response.cancelled && response.value === prompt.acceptLabel
+    return !response.cancelled && response.confirmed === true
   }
 
   async nativeNavigate(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {

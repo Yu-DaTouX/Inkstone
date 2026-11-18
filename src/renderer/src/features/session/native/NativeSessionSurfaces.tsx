@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { AlertCircle, ArrowLeft, RotateCw } from '../../../ui/icons'
-import { useI18n } from '../../../i18n'
+import { useI18n, useT } from '../../../i18n'
+import { QuestionCard } from '../QuestionCard'
 import { useStore } from '../../../state/store'
 import { viewIdentityOf } from '../../../state/view-identity'
 import { Badge, Button, Checkbox, CheckboxGroup, Dialog, DialogFooter, EmptyState, Modal, ModalOverlay, Notice, Spinner } from '../../../ui'
@@ -631,6 +632,7 @@ function nativeSurfaceDialog({
 
 export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps): JSX.Element | null {
   const { lang } = useI18n()
+  const t = useT()
   const text = useMemo(() => nativeSurfaceText(lang), [lang])
   const panel = useStore((state) => state.nativeSessionPanel)
   const close = useStore((state) => state.closeNativeSessionPanel)
@@ -639,6 +641,9 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
   const peekedPath = useStore((state) => state.peekedPath)
   const session = useStore((state) => state.session)
   const [showEntries, setShowEntries] = useState(false)
+  const trustConfirmation = useStore((state) => state.uiRequests.find((request) => request.nativeConfirmation === 'trust'))
+  const summary = useStore((state) => panel?.mode === 'info' ? state.sessions.find((item) => item.id === panel.sessionId || item.path === state.peekedPath) : undefined)
+  const manualTitle = useStore((state) => panel?.mode === 'info' ? state.manualTitles[panel.sessionId] : undefined)
   const bridge = useMemo<NativeSurfaceTransport>(
     () => transport ?? { request: (request: NativeSessionHostRequest) => window.yan.nativeSession(request) },
     [transport]
@@ -663,7 +668,7 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
           }
         : null
     })
-    if (identity.sessionId !== panel.sessionId) close()
+    if ((identity.sessionId ?? '') !== panel.sessionId) close()
   }, [panel, peekedSessionId, peekedPath, session, close])
 
   const onSaved = useCallback((): void => {
@@ -672,6 +677,33 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
 
   if (!panel) return null
   if (panel.mode === 'tree') return null
+
+  if (panel.mode === 'info') {
+    const current = session?.sessionId === panel.sessionId ? session : undefined
+    const id = current?.sessionId ?? summary?.id ?? panel.sessionId
+    const rows = [
+      [t('composer.sessionInfo.name'), manualTitle || summary?.title || current?.sessionName],
+      [t('composer.sessionInfo.id'), id],
+      [t('composer.sessionInfo.messages'), current?.messageCount ?? summary?.messageCount],
+      [t('composer.sessionInfo.model'), current?.model ? `${current.model.provider}/${current.model.id}` : summary?.model],
+      [t('composer.sessionInfo.thinking'), current?.thinkingLevel],
+      [t('composer.sessionInfo.cwd'), current?.cwd || summary?.cwd],
+      [t('composer.sessionInfo.file'), peekedPath || current?.sessionFile || summary?.path]
+    ] as const
+    return nativeSurfaceDialog({
+      title: t('composer.sessionInfo.title'), closeLabel: text.close, testId: 'native-session-info', onClose: close,
+      children: id ? (
+        <dl className="native-trust__fields native-session-info">
+          {rows.map(([label, value]) => (
+            <div className="native-trust__field" key={label}>
+              <dt className="native-trust__name">{label}</dt>
+              <dd className="native-trust__value">{value || value === 0 ? value : '—'}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : <p className="native-surface__note">{t('composer.sessionNotStarted')}</p>
+    })
+  }
 
   if (!isNativeSurfaceMode(panel.mode)) {
     const unknown = String(panel.mode)
@@ -702,7 +734,11 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
     title,
     closeLabel: text.close,
     testId: `native-surface-${mode}`,
-    onClose: close,
+    onClose: () => {
+      if (mode === 'trust' && trustConfirmation) {
+        void useStore.getState().answerUi({ id: trustConfirmation.id, cancelled: true })
+      } else close()
+    },
     children: (
       <div className="native-surface__body" data-owner={panel.sessionId}>
         {mode === 'scoped-models' ? (
@@ -715,13 +751,16 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
             onShowEntries={panel.mode === 'scoped-models' ? () => setShowEntries(true) : undefined}
           />
         ) : mode === 'trust' ? (
-          <TrustSurface
-            transport={bridge}
-            sessionId={panel.sessionId}
-            text={text}
-            onSaved={onSaved}
-            onShowEntries={panel.mode === 'trust' ? () => setShowEntries(true) : undefined}
-          />
+          <>
+            <TrustSurface
+              transport={bridge}
+              sessionId={panel.sessionId}
+              text={text}
+              onSaved={onSaved}
+              onShowEntries={trustConfirmation ? undefined : () => setShowEntries(true)}
+            />
+            {trustConfirmation ? <QuestionCard requestId={trustConfirmation.id} /> : null}
+          </>
         ) : (
           <EntriesSurface
             transport={bridge}

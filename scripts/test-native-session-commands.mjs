@@ -140,6 +140,14 @@ async function main() {
       ok(!r.calls.some((c) => c[0] === 'send'), `${text} 不发给模型`)
     }
 
+    const info = recordingPort({
+      text: '/session',
+      commands: [YAN('session')],
+      actions: { openSessionInfo: () => info.calls.push(['openSessionInfo']) }
+    })
+    eq(await S.submitComposerInput(info.port), 'handled', '/session 是本地命令')
+    eq(info.calls, [['clearAll'], ['openSessionInfo']], '/session 打开详情而非通知')
+
     let r = recordingPort({ text: '/export C:\\tmp\\a.jsonl', commands })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'nativeSession' && c[1] === 'export-jsonl' && c[2] === 'C:\\tmp\\a.jsonl'), '/export *.jsonl 路由 JSONL')

@@ -152,6 +152,9 @@ function normalizeRuntimeCommand(raw: RuntimeCommand): CommandDescriptor | null 
   const description = text(raw.description)
   const usage = text(raw.usage)
   const availability = text(raw.availability)
+  if (name === 'llama' && source === 'extension' && !module) {
+    return { name, source: 'compatibility', executable: false, hiddenInMenu: true, availability: pick('模型路由管理仅在 pi 终端的交互界面可用。', 'Model router management is available only in the interactive Pi terminal.') }
+  }
   return {
     name,
     ...(description ? { description } : {}),

@@ -42,9 +42,7 @@ import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
 import { cancelClockFrame, requestClockFrame } from '../lib/frame-clock'
 import { SubagentPatchBatch, applySubagentPatches } from './subagent-patch-batch'
 import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
-import {
-  type ComposerSubmitIdentity
-} from './composer-recovery'
+import { composerSubmitIdentity, sameComposerView, type ComposerSubmitIdentity } from './composer-recovery'
 import type { QueueOp } from '../features/composer/queue-plan'
 import { reuseIfSame } from './same-messages'
 import { keepRef } from './stable-ref'
@@ -137,9 +135,10 @@ export interface Store {
   settings: AppSettings | null
   settingsOpen: boolean
   nativeSessionPanel: {
-    mode: import('../../../shared/native-session').NativeSessionMode | 'entries'
+    mode: import('../../../shared/native-session').NativeSessionMode | 'entries' | 'info'
     sessionId: string
   } | null
+  openSessionInfo: () => void
   closeNativeSessionPanel: () => void
   nativeSession: (action: import('../lib/composer-submit').NativeSessionAction, args?: string) => Promise<import('../../../shared/native-session-host').NativeSessionHostResult>
   settingsTab: string
@@ -557,6 +556,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   ...createSettingsSlice(sliceCtx),
   nativeSessionPanel: null,
+  openSessionInfo: () => set({ nativeSessionPanel: { mode: 'info', sessionId: viewIdentityOf(get()).sessionId ?? '' } }),
   closeNativeSessionPanel: () => set({ nativeSessionPanel: null }),
   nativeSession: async (action, args) => {
     if (!(await get().ensureActivated())) return { ok: false, error: uiText('state.error.sessionNotActivated') }
@@ -566,9 +566,14 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ nativeSessionPanel: { mode: action, sessionId } })
       return { ok: true }
     }
+    const gate = nav.gate
+    const source = composerSubmitIdentity(get())
     const result = await piCall(() => window.yan.nativeSession({ action, args, expectedSessionId: sessionId }))
     if (result.ok) {
       await get().refreshSessions()
+      if (action === 'import' && result.path && gate === nav.gate && sameComposerView(get(), source)) {
+        await get().switchSession(result.path)
+      }
       if (action === 'reload') await Promise.all([get().reloadModels(), get().reloadCommands()])
       const message = result.url
         ? uiText('state.native.shareLink', { url: result.url })

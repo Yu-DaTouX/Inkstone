@@ -10,13 +10,12 @@ import type { IpcRegistrar } from './registrar'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../shared/native-session-host'
 import { validateNativeSessionRequest } from '../native-session-guard'
 import { exportSessionJsonl, importSessionJsonl, shareViaGist } from '../native-session-io'
-import { selectSessionWithHost } from './session-ipc'
 import { pick } from '../../shared/ui-lang'
 
 interface NativeSessionPorts {
   win(): BrowserWindow | null
   runtime(agent: AgentController, request: NativeSessionHostRequest): Promise<NativeSessionHostResult>
-  confirm(agent: AgentController, prompt: { title: string; message: string; acceptLabel: string }): Promise<boolean>
+  confirm(agent: AgentController, prompt: { title: string; message: string; acceptLabel: string; surface?: 'trust' }): Promise<boolean>
 }
 
 function argumentPath(raw: string | undefined, cwd: string): string | undefined {
@@ -64,8 +63,6 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
         if (stale) return stale
         const imported = await importSessionJsonl({ sourcePath: path, cwd, ...(sourceFile ? { sessionDir: dirname(sourceFile) } : {}), freshSessionId: true })
         if (!imported.ok) return imported
-        const switched = await selectSessionWithHost(host, { sessionFile: imported.destinationPath, cwd, scope: 'global' })
-        if (!switched.ok) return { ok: false, error: switched.error ?? pick('会话已导入，但未能切换；原会话保持不变', 'Session imported but could not switch; the original session is unchanged') }
         return { ok: true, path: imported.destinationPath }
       }
       if (request.action === 'export-jsonl') {
@@ -112,6 +109,7 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
       }
       if (request.action === 'set-trust') {
         const accepted = await ports.confirm(agent, {
+          surface: 'trust',
           title: request.trusted ? pick('信任当前项目？', 'Trust this project?') : pick('取消当前项目信任？', 'Revoke trust for this project?'),
           message: `${cwd}\n${request.trusted ? pick('信任后，pi 可以加载该项目及已信任根下的项目级扩展、技能、模板和设置。它们可能执行代码。只信任你了解的项目。', 'After trust, pi can load project-level extensions, skills, templates and settings from this project and trusted roots. They may execute code. Only trust projects you know.') : pick('保存不信任决定后，将重新创建当前空闲 pi 运行实例，使项目级资源退出；会话文件保留。', 'After saving the untrusted decision, the idle pi runtime is recreated so project-level resources are unloaded; session files are kept.')}`,
           acceptLabel: request.trusted ? pick('信任并应用', 'Trust and apply') : pick('取消信任并应用', 'Revoke trust and apply')

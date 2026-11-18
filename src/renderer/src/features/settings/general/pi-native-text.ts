@@ -84,7 +84,7 @@ const ZH: PiNativeText = {
   trustAlways: '总是信任',
   trustNever: '从不信任',
   share: '会话分享',
-  shareDesc: '「分享」上传会话的位置；自动时优先 Radius，否则 Gist。',
+  shareDesc: '仅用于 pi 终端：自动时优先 Radius，否则用 Gist。砚桌面 /share 固定使用 GitHub Gist，上传前会询问。',
   shareAuto: '自动',
   shareGist: 'GitHub Gist',
   shareRadius: 'Radius'
@@ -129,7 +129,7 @@ const EN: PiNativeText = {
   trustAlways: 'Always trust',
   trustNever: 'Never trust',
   share: 'Session sharing',
-  shareDesc: 'Where Share uploads; Auto prefers Radius, else Gist.',
+  shareDesc: 'Pi terminal only: Auto prefers Radius, then Gist. Inkstone desktop /share uses GitHub Gist and asks before uploading.',
   shareAuto: 'Auto',
   shareGist: 'GitHub Gist',
   shareRadius: 'Radius'

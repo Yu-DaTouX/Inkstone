@@ -126,8 +126,8 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   }, [reqId, viaComposer])
 
   const digitOptions = useMemo(
-    () => (!req.form?.length && (req.method === 'select' || req.method === 'input') ? req.options ?? [] : []),
-    [req.form, req.method, req.options]
+    () => (!req.nativeConfirmation && !req.form?.length && (req.method === 'select' || req.method === 'input') ? req.options ?? [] : []),
+    [req.nativeConfirmation, req.form, req.method, req.options]
   )
   const pickDigit = useRef<(value: string) => void>(() => undefined)
   useEffect(() => {
@@ -165,6 +165,9 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
       answered.current = false
       setBusy(false)
     })
+  }
+  const selectOption = (index: number, value: string): void => {
+    answer(req.nativeConfirmation ? { confirmed: index === 0 } : { value })
   }
   pickDigit.current = (value) => answer({ value })
 
@@ -277,15 +280,15 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           {!req.form?.length && (req.method === 'select' || req.method === 'input') && req.options?.length ? (
             <div className="v3-qoptions-list">
               {req.options.map((o, i) => (
-                <button key={`${i}:${o}`} className="v3-qoption-row" disabled={busy} onClick={() => answer({ value: o })} data-testid={`v3-question-option-${i}`}>
+                <button key={`${i}:${o}`} className="v3-qoption-row" disabled={busy} onClick={() => selectOption(i, o)} data-testid={`v3-question-option-${i}`}>
                   <span className="v3-qoption-t">{o}</span>
-                  {i < 9 ? <Kbd className="v3-qoption-n" aria-hidden>{i + 1}</Kbd> : null}
+                  {!req.nativeConfirmation && i < 9 ? <Kbd className="v3-qoption-n" aria-hidden>{i + 1}</Kbd> : null}
                 </button>
               ))}
             </div>
           ) : null}
 
-          {!viaComposer && !req.form?.length && (req.method === 'select' || req.method === 'input') ? (
+          {!req.nativeConfirmation && !viaComposer && !req.form?.length && (req.method === 'select' || req.method === 'input') ? (
             <TextField
               data-testid={req.method === 'select' ? 'v3-question-custom' : 'v3-question-input'}
               aria-label={req.placeholder || (req.method === 'select' ? t('q.customReply') : title)}
@@ -314,7 +317,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
         </div>
       )}
 
-      {collapsed || req.form?.length || viaComposer ? null : (
+      {collapsed || req.nativeConfirmation || req.form?.length || viaComposer ? null : (
         <CardActions
           className="v3-qfoot"
           lead={<Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>}

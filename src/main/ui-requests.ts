@@ -48,6 +48,7 @@ export class UiRequests {
     form?: import('../shared/question-form').QuestionField[]
     placeholder?: string
     purpose?: 'approval'
+    nativeConfirmation?: ExtensionUiRequest['nativeConfirmation']
     sensitive?: boolean
     toolCallId?: string
     timeout: number
@@ -79,6 +80,7 @@ export class UiRequests {
         ...(request.form ? { form: request.form } : {}),
         ...(request.placeholder ? { placeholder: request.placeholder } : {}),
         ...(request.purpose ? { purpose: request.purpose } : {}),
+        ...(request.nativeConfirmation ? { nativeConfirmation: request.nativeConfirmation } : {}),
         ...(request.sensitive ? { sensitive: true } : {}),
         ...(request.toolCallId ? { toolCallId: request.toolCallId } : {})
       } as unknown as ExtensionUiRequest

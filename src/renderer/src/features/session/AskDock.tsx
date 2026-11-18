@@ -50,7 +50,7 @@ export function AskDock(): JSX.Element | null {
     const id = s.approvals[0]?.subagentId
     return id ? (s.subagents.find((run) => run.id === id)?.parentSessionId ?? null) : null
   })
-  const asking = useStore((s) => s.uiRequests.length > 0)
+  const asking = useStore((s) => s.uiRequests.some((request) => request.nativeConfirmation !== 'trust' || s.nativeSessionPanel?.mode !== 'trust'))
   const view = useMemo(
     () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
     [peekedSessionId, peekedPath, session]

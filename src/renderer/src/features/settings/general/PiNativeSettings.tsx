@@ -320,7 +320,7 @@ export function PiShareDestinationGroup({ title }: { title?: string }): ReactEle
   ]
   return (
     <SettingsGroup title={title ?? text.share}>
-      <SettingsRow settingId="data-share-destination" label={text.share} description={`${text.shareDesc}${lang === 'en-US' ? ' ' : ''}${text.effectNote}`}>
+      <SettingsRow settingId="data-share-destination" label={text.share} description={text.shareDesc}>
         <Segmented
           label={text.share}
           value={state.settings.sessionShareDestination}

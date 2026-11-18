@@ -37,8 +37,9 @@
   .t3-cmd__list {
     gap: 0;
     min-height: 0;
+    max-height: none;
+    overflow: visible;
     padding: 0.5rem;
-    scroll-padding-bottom: 1.5rem;
   }
   .t3-cmd__empty {
     padding: 0.875rem 1.25rem 1.75rem;

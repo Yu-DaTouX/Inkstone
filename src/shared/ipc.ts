@@ -1013,6 +1013,7 @@ export interface ExtensionUiRequest {
   method: ExtensionUiMethod
   sensitive?: boolean
   purpose?: 'approval'
+  nativeConfirmation?: 'inline' | 'trust'
   toolCallId?: string
   title?: string
   message?: string
@@ -1600,7 +1601,7 @@ export interface YanBridge {
   renameSession(name: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
 
   fork(entryId: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; text?: string }>
-  clone(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  clone(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; path?: string }>
   forkPoints(): Promise<ForkPoint[]>
   exportHtml(outputPath: string | undefined, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; path?: string; error?: string }>
   deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>

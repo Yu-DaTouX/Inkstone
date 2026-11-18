@@ -76,6 +76,14 @@ export function runCommandRegistryTests(ok, registry) {
     )
   }
 
+  const runtime = registry.mergeCommandDescriptors([
+    { name: 'llama', source: 'extension', description: 'Manage llama.cpp router models' },
+    { name: 'mcp', source: 'extension' }
+  ])
+  const llama = runtime.find((command) => command.name === 'llama')
+  ok(llama?.source === 'compatibility' && !llama.executable && llama.hiddenInMenu && !!llama.availability, '/llama 只显示终端说明')
+  ok(runtime.find((command) => command.name === 'mcp')?.executable === true, '/mcp 继续支持桌面只读状态')
+
   const withInternal = registry.mergeCommandDescriptors([
     { name: '__inkstone_native', source: 'extension', module: 'native-session-bridge', executable: true }
   ])
