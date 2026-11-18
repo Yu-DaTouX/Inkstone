@@ -119,7 +119,9 @@ try {
   const errors = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown' || (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error'))
   report.consoleErrors = errors.map((event) => (event.params.exceptionDetails?.exception?.description ?? event.params.args?.map((arg) => arg.value ?? arg.description).join(' ') ?? '').slice(0, 300))
   clearTimeout(watchdog)
-  await finish(0)
+  const failures = report.checks.filter((check) => !check.ok)
+  if (failures.length) at('失败项：' + failures.map((check) => check.name).join('；'))
+  await finish(failures.length ? 1 : 0)
 } catch (error) {
   report.fatal = String(error?.stack ?? error)
   at('FATAL ' + report.fatal)
