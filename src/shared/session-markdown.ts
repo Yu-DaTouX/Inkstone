@@ -53,13 +53,13 @@ function blocksOf(message: UIMessage): { speaker: string; parts: string[] } | nu
     parts.push(`${fence}\n${body}\n${fence}`)
     return { speaker: pick('用户', 'User'), parts }
   }
+  if (message.role === 'user' && parseHostNotice(message.text)) return null
+  const text = message.text.trimEnd()
+  if (text) parts.push(text)
   if (message.role === 'user') {
-    if (parseHostNotice(message.text)) return null
-    if (message.text.trim()) parts.push(message.text.trim())
     if (message.images?.length) parts.push(imageNote(message.images.length))
     return parts.length ? { speaker: pick('用户', 'User'), parts } : null
   }
-  if (message.text.trim()) parts.push(message.text.trim())
   const calls = (message.toolCalls ?? []).filter((call) => !call.parentToolCallId)
   if (calls.length) parts.push(calls.map(toolLine).join('\n'))
   if (message.images?.length) parts.push(imageNote(message.images.length))

@@ -391,6 +391,20 @@ try {
     assert.ok(page.includes(`<title>${escaped}</title>`))
     assert.ok(markdown.startsWith('# 方案 \\*二\\*'))
   })
+  await check('Markdown 和 HTML 导出：用户和助手正文的首行缩进不丢失', async () => {
+    const user = '    first user line\n    second user line'
+    const assistant = '\tfirst assistant line\n\tsecond assistant line'
+    const markdown = sessionMarkdown([
+      { id: 'u1', role: 'user', text: ' \t\n ' },
+      { id: 'u2', role: 'user', text: user },
+      { id: 'a1', role: 'assistant', text: assistant }
+    ], { exportedAt: 1 })
+    const page = await sessionHtmlDocument(markdown, '标题', 'zh-CN')
+    assert.ok(page.includes('<pre><code>first user line\nsecond user line\n</code></pre>'), page.split('<main>')[1])
+    assert.ok(page.includes('<pre><code>first assistant line\nsecond assistant line\n</code></pre>'))
+    assert.ok(markdown.includes(`**用户**\n\n${user}`))
+    assert.ok(markdown.includes(`**助手**\n\n${assistant}`))
+  })
   await check('读不到会话或格式不认识时不写文件；不认识的格式按会话包导出', async () => {
     const missing = await register({ readMessages: async () => null }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'markdown', title: 'none' })
     assert.equal(missing.ok, false)
