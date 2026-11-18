@@ -92,4 +92,25 @@ export default async function run({ cdp, newSession, waitFor, sleep, check }) {
   await cdp.evaluate(`window.__yanStore.setState(s => ({ session: {...s.session,isStreaming:false,isAgentRunning:false} }))`)
   await waitFor(`!!${longTokens}`, 8000)
   check('长代码收尾后按原限制正常着色', await cdp.evaluate(`!!${longTokens}`))
+
+  const unfinished = String.raw`字面 \[标签](路径；链接 [甲\[乙\]](https://example.invalid/a\)b`
+  const finished = unfinished + ')'
+  const linkProse = prose('link-answer')
+  await cdp.evaluate(`(() => {
+    const now = Date.now()
+    window.__yanStore.setState(s => ({ messages: [...s.messages,
+      {id:'link-user',role:'user',text:'检查链接',timestamp:now},
+      {id:'link-answer',role:'assistant',text:${JSON.stringify(unfinished)},timestamp:now}],
+      session: {...s.session,isStreaming:true,isAgentRunning:true},runTail:null
+    }))
+  })()`)
+  await waitFor(`${linkProse}?.textContent.includes('甲[乙]') && !!${linkProse}?.querySelector('.v3-caret')`, 8000)
+  await sleep(650)
+  const pending = await cdp.evaluate(`({text:${linkProse}.textContent, links:${linkProse}.querySelectorAll('a').length})`)
+  check('流式正文保留转义字面文本，不提前显示链接地址', pending.text.includes('字面 [标签](路径；链接 甲[乙]') && !pending.text.includes('example.invalid') && pending.links === 0, pending)
+  await cdp.evaluate(`window.__yanStore.setState(s => ({ messages: [...s.messages.slice(0,-1), {...s.messages.at(-1),text:${JSON.stringify(finished)}}], session: {...s.session,isStreaming:false,isAgentRunning:false} }))`)
+  const link = `${linkProse}?.querySelector('a')`
+  await waitFor(`!!${link} && !${linkProse}?.querySelector('.v3-caret')`, 8000)
+  const resultLink = await cdp.evaluate(`({text:${link}.textContent, href:${link}.getAttribute('href')})`)
+  check('回合收尾后链接文字和地址完整', resultLink.text.includes('甲[乙]') && resultLink.href === 'https://example.invalid/a)b', resultLink)
 }
