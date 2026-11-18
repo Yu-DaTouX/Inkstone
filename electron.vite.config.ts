@@ -25,6 +25,36 @@ const buildInfo = {
 }
 const define = { __YAN_BUILD__: JSON.stringify(buildInfo) }
 
+const deferVirtuaMeasurements = {
+  name: 'defer-virtua-measurements',
+  transform(code: string, id: string) {
+    if (!id.replaceAll('\\', '/').endsWith('/node_modules/virtua/lib/index.js')) return
+    const original = '(t || (t = new (I(z(n)).ResizeObserver)(e))).observe(n);'
+    if (!code.includes(original)) throw new Error('virtua measurement patch no longer matches the installed version')
+    return code.replace(original, `
+      if (!t) {
+        const view = I(z(n));
+        const pending = new Map();
+        let frame = 0;
+        t = new view.ResizeObserver((entries) => {
+          for (const entry of entries) pending.set(entry.target, entry);
+          if (!frame) frame = view.requestAnimationFrame(() => {
+            frame = 0;
+            const batch = [...pending.values()];
+            pending.clear();
+            if (batch.length) e(batch, t);
+          });
+        });
+        const unobserve = t.unobserve.bind(t);
+        const disconnect = t.disconnect.bind(t);
+        t.unobserve = (target) => { pending.delete(target); unobserve(target); };
+        t.disconnect = () => { view.cancelAnimationFrame(frame); frame = 0; pending.clear(); disconnect(); };
+      }
+      t.observe(n);
+    `)
+  }
+}
+
 export default defineConfig({
   main: {
     define,
@@ -86,6 +116,7 @@ export default defineConfig({
         }
       }
     },
-    plugins: [react()]
+    optimizeDeps: { exclude: ['virtua'] },
+    plugins: [react(), deferVirtuaMeasurements]
   }
 })

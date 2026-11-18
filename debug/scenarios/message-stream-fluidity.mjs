@@ -125,9 +125,11 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   check('回到最新后贴底', (await bottom()) <= 2, await bottom())
   check('最终文本和 emoji 已完整显示', await cdp.evaluate(`(() => { const text = document.querySelector('[data-turn-id="stream-live"]').textContent; return text.includes('第 44 段输出') && text.includes('🖋️') })()`))
   await shot('message-stream-final')
+  const rounds = process.env.YAN_STREAM_STRESS === '1' ? 640 : 120
+  const chunks = process.env.YAN_STREAM_STRESS === '1' ? 75 : 15
   await cdp.evaluate(`(() => {
     const now = Date.now();
-    const history = Array.from({ length: 120 }, (_, i) => [
+    const history = Array.from({ length: ${rounds} }, (_, i) => [
       { id: 'virtual-user-' + i, role: 'user', text: '长历史第 ' + i + ' 轮', timestamp: now - (240 - i * 2) * 1000 },
       { id: 'virtual-answer-' + i, role: 'assistant', text: '历史内容和工具结果必须保持稳定。'.repeat(10), timestamp: now - (239 - i * 2) * 1000 }
     ]).flat();
@@ -135,11 +137,11 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     window.__yanStore.setState(s => ({ messages: [...history, { id: 'stream-live-user', role: 'user', text: '继续长历史', timestamp: now }, { id: 'stream-live', role: 'assistant', text: window.__streamExpected, timestamp: now + 1 }], session: { ...s.session, isStreaming: true, isAgentRunning: true } }));
   })()`)
   await sleep(900)
-  check('长历史启用虚拟列表且尾部可见', await cdp.evaluate(`!document.querySelector('.v3-stream-inner') && document.querySelectorAll('.v3-msg[data-turn-id]').length < 242 && !!document.querySelector('[data-turn-id="stream-live"]')`))
+  check('长历史启用虚拟列表且尾部可见', await cdp.evaluate(`!document.querySelector('.v3-stream-inner') && document.querySelectorAll('.v3-msg[data-turn-id]').length < ${rounds * 2 + 2} && !!document.querySelector('[data-turn-id="stream-live"]')`))
   await measure('virtualStream', async () => {
-    for (let i = 0; i < 15; i++) { await append(i); await sleep(30) }
+    for (let i = 0; i < chunks; i++) { await append(i); await sleep(chunks === 75 ? 8 : 30) }
   })
-  report.timings.virtualSettleMs = await settle('第 14 段输出')
+  report.timings.virtualSettleMs = await settle(`第 ${chunks - 1} 段输出`)
   check('虚拟列表流式输出在 2.5 秒内收住', report.timings.virtualSettleMs !== null && report.timings.virtualSettleMs <= 2500, report.timings.virtualSettleMs)
   check('虚拟列表流式输出保持贴底', (await bottom()) <= 2, await bottom())
   await cdp.evaluate(`(() => {
@@ -164,7 +166,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     const row = [...box.querySelectorAll('.v3-msg[data-turn-id]')].find(el => el.getBoundingClientRect().bottom > base);
     return { id: row.dataset.turnId, y: row.getBoundingClientRect().top - base };
   })()`)
-  for (let i = 15; i < 20; i++) { await append(i); await sleep(30) }
+  for (let i = chunks; i < chunks + 5; i++) { await append(i); await sleep(30) }
   await sleep(300)
   const virtualShift = await cdp.evaluate(`(() => {
     const box = document.querySelector('.v3-stream'); const row = box.querySelector('[data-turn-id="${virtualAnchor.id}"]');
@@ -175,8 +177,8 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   await sleep(300)
   await cdp.evaluate(`document.querySelector('[data-testid="v3-jump"]')?.click()`)
   await sleep(1100)
-  check('虚拟列表回到最新后尾部完整可见', (await bottom()) <= 2 && await cdp.evaluate(`document.querySelector('[data-turn-id="stream-live"]')?.textContent.includes('第 19 段输出')`), await bottom())
+  check('虚拟列表回到最新后尾部完整可见', (await bottom()) <= 2 && await cdp.evaluate(`document.querySelector('[data-turn-id="stream-live"]')?.textContent.includes('第 ${chunks + 4} 段输出')`), await bottom())
   await shot('message-stream-virtual-final')
   report.resizeWarnings = await cdp.evaluate('window.__streamResizeWarnings')
-  console.log('ResizeObserver warnings', report.resizeWarnings.length)
+  check('ResizeObserver 无循环告警', report.resizeWarnings.length === 0, report.resizeWarnings.length)
 }
