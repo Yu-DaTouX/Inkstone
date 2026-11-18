@@ -5,10 +5,9 @@ async function pressEnter(cdp) {
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
 }
 
-export default async function run({ cdp, box, waitFor, check, sleep, shot, autoApprove, newSession }) {
+export default async function run({ cdp, box, waitFor, check, sleep, shot, newSession }) {
   const ev = (expr) => cdp.evaluate(expr)
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN' })`)
-  await autoApprove()
   const answerOf = `(() => { const call = [...window.__yanStore.getState().messages].reverse().flatMap((m) => m.toolCalls ?? []).find((c) => c.name === 'question' && c.status !== 'running'); return call ? String(call.output ?? '') : '' })()`
 
   for (const via of ['enter', 'button']) {
