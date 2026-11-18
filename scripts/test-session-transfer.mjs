@@ -382,6 +382,15 @@ try {
     for (const text of [...hints, cwd]) assert.ok(page.includes(`<code>${text}</code>`), `缺少完整代码段 ${JSON.stringify(text)}`)
     assert.ok(markdown.includes('```` echo ``two`` and ```three``` ````'))
   })
+  await check('Markdown 和 HTML 导出：会话标题里的格式符号按原字样显示', async () => {
+    const title = '方案 *二* _比较_ ~~旧~~ `代码` [文档](/manual) <内部> &copy; \\ ##'
+    const markdown = sessionMarkdown([], { title, exportedAt: 1 })
+    const page = await sessionHtmlDocument(markdown, title, 'zh-CN')
+    const escaped = title.replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace('&copy;', '&amp;copy;')
+    assert.ok(page.includes(`<h1>${escaped}</h1>`), page.split('<main>')[1])
+    assert.ok(page.includes(`<title>${escaped}</title>`))
+    assert.ok(markdown.startsWith('# 方案 \\*二\\*'))
+  })
   await check('读不到会话或格式不认识时不写文件；不认识的格式按会话包导出', async () => {
     const missing = await register({ readMessages: async () => null }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'markdown', title: 'none' })
     assert.equal(missing.ok, false)

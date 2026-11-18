@@ -70,7 +70,7 @@ function blocksOf(message: UIMessage): { speaker: string; parts: string[] } | nu
 export function sessionMarkdown(messages: readonly UIMessage[], meta: SessionMarkdownMeta): string {
   const title = meta.title?.replace(/\s+/g, ' ').trim() || pick('会话', 'Session')
   const facts = [pick('导出自 Inkstone', 'Exported from Inkstone'), stamp(meta.exportedAt), ...(meta.cwd ? [inlineCode(meta.cwd)] : [])]
-  const out: string[] = [`# ${title}`, `> ${facts.join(' · ')}`]
+  const out: string[] = [`# ${title.replace(/[\\`*_~\[\]<>#&]/g, '\\$&')}`, `> ${facts.join(' · ')}`]
   let speaker = ''
   for (const message of messages) {
     const block = blocksOf(message)
