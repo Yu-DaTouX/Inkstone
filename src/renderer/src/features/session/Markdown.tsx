@@ -688,23 +688,7 @@ export const Markdown = memo(function Markdown({
     return whenIdle(() => startTransition(() => setHighlightReady(true)))
   }, [settling])
 
-  const mathPending = math.needed && !math.plugins
-  const cacheKey = markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
-  const cached = running || keepLiveBlocks || mathPending ? undefined : mdCache.get(cacheKey)
-  if (cached) {
-    mdCache.delete(cacheKey)
-    mdCache.set(cacheKey, cached)
-    return (
-      <WidgetIdentityContext.Provider value={identity}>
-        <MessageSourceCwd.Provider value={sourceCwd}>
-          <MarkdownLive.Provider value={false}>{cached}</MarkdownLive.Provider>
-        </MessageSourceCwd.Provider>
-      </WidgetIdentityContext.Provider>
-    )
-  }
-
-  const unclosed = hasUnclosedFence(renderedText)
-  if (running || unclosed) {
+  if (running || hasUnclosedFence(renderedText)) {
     return (
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
@@ -731,9 +715,17 @@ export const Markdown = memo(function Markdown({
       </WidgetIdentityContext.Provider>
     )
   }
-  const element = parseMarkdown(renderedText, math.plugins, allowHtml, footnoteOptions)
-  const stable = !unclosed && !mathPending && renderedText.length <= MD_CACHE_ENTRY_CHARS
-  if (stable) mdCacheSet(cacheKey, element)
+  const cacheKey = (!math.needed || math.plugins) && renderedText.length <= MD_CACHE_ENTRY_CHARS
+    ? markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
+    : null
+  let element = cacheKey === null ? undefined : mdCache.get(cacheKey)
+  if (element && cacheKey !== null) {
+    mdCache.delete(cacheKey)
+    mdCache.set(cacheKey, element)
+  } else {
+    element = parseMarkdown(renderedText, math.plugins, allowHtml, footnoteOptions)
+    if (cacheKey !== null) mdCacheSet(cacheKey, element)
+  }
   return (
     <WidgetIdentityContext.Provider value={identity}>
       <MessageSourceCwd.Provider value={sourceCwd}>
