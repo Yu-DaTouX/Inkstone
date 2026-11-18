@@ -74,23 +74,31 @@ await runSuite(import.meta.url, async (ok, compile) => {
       cli.ensureNodeLauncher({ execPath: 'C:/old/electron.exe', binDir: lockBin })
       const target = join(lockBin, 'yan-node.cmd')
       const holder = spawn('pwsh', ['-NoProfile', '-NonInteractive', '-Command', `$f = [IO.File]::Open('${target}', 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('locked'); [Console]::Out.Flush(); Start-Sleep -Milliseconds 150; $f.Close()`], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
-      const held = await new Promise((done) => {
-        const timer = setTimeout(() => done(false), 20_000)
-        holder.stdout.on('data', (data) => {
-          if (String(data).includes('locked')) {
+      const closed = new Promise((done) => holder.once('close', done))
+      try {
+        const held = await new Promise((done) => {
+          const timer = setTimeout(() => done('timeout'), 20_000)
+          const finish = (status) => {
             clearTimeout(timer)
-            done(true)
+            done(status)
           }
+          holder.stdout.on('data', (data) => {
+            if (String(data).includes('locked')) finish('locked')
+          })
+          holder.on('error', (error) => finish(error.code === 'ENOENT' ? 'missing' : error.code))
+          void closed.then(() => finish('closed'))
         })
-        holder.on('error', () => done(false))
-      })
-      if (held) {
-        cli.ensureNodeLauncher({ execPath: 'C:/new/electron.exe', binDir: lockBin })
-        ok(readFileSync(target, 'utf8').includes('C:/new/electron.exe'), '目标文件被短暂占用（杀毒、另一实例）时改名重试后成功')
-      } else {
-        ok(true, '本机没有 pwsh，跳过占用重试用例')
+        if (held === 'missing') {
+          ok(true, '本机没有 pwsh，跳过占用重试用例')
+        } else {
+          ok(held === 'locked', 'pwsh 确实取得了文件锁', String(held))
+          cli.ensureNodeLauncher({ execPath: 'C:/new/electron.exe', binDir: lockBin })
+          ok(readFileSync(target, 'utf8').includes('C:/new/electron.exe'), '目标文件被短暂占用（杀毒、另一实例）时改名重试后成功')
+        }
+      } finally {
+        holder.kill()
+        await closed
       }
-      holder.kill()
     }
   } finally {
     rmSync(failDir, { recursive: true, force: true })
