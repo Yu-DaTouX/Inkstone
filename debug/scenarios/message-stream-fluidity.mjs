@@ -201,16 +201,30 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
     await waitFor(`!!document.querySelector('${rail} [data-near="0"]')`, 5000)
     const preview = await cdp.evaluate(`Number(document.querySelector('${rail} [data-near="0"]').dataset.index)`)
-    await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point })
-    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point })
-    await sleep(1300)
-    const landed = await cdp.evaluate(`(() => {
+    const clickRail = async () => {
+      await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point })
+      await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point })
+      await sleep(1300)
+    }
+    const landing = index => cdp.evaluate(`(() => {
       const stream = document.querySelector('.v3-stream');
-      const row = stream.querySelector('[data-turn-id="virtual-user-${preview}"]');
+      const row = stream.querySelector('[data-turn-id="virtual-user-${index}"]');
       const offset = row ? row.getBoundingClientRect().top - stream.getBoundingClientRect().top : null;
       return { index: document.querySelector('${rail} [data-current]')?.dataset.index, offset };
     })()`)
-    check('密集小地图点击落在对应的悬停回合', landed.index === String(preview) && landed.offset !== null && landed.offset >= 0 && landed.offset <= 40, { preview, ...landed })
+    const nearTop = ({ offset }) => offset !== null && offset >= 0 && offset <= 40
+    await clickRail()
+    const landed = await landing(preview)
+    check('密集小地图点击落在对应的悬停回合', landed.index === String(preview) && nearTop(landed), { preview, ...landed })
+    for (let i = 0; i < 5; i++) {
+      await cdp.call('Input.dispatchMouseEvent', { type: 'mouseWheel', deltaX: 0, deltaY: 120, ...point })
+      await sleep(80)
+    }
+    const selected = preview + 5
+    await waitFor(`document.querySelector('${rail} [data-near="0"]')?.dataset.index === '${selected}'`, 5000)
+    await clickRail()
+    const wheelLanding = await landing(selected)
+    check('密集小地图点击优先跳到滚轮选中的回合', nearTop(wheelLanding), { selected, ...wheelLanding })
   }
   report.resizeWarnings = await cdp.evaluate('window.__streamResizeWarnings')
   check('ResizeObserver 无循环告警', report.resizeWarnings.length === 0, report.resizeWarnings.length)
