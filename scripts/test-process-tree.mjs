@@ -117,6 +117,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
     watch.markExited(T + 1000)
     await watch.sweep()
     ok(killed.join() === '702', '从没见过根进程时，只认 spawn 之后（下限为启动前 1 秒）创建的子进程；更早的、属于该 pid 上一任的孤儿不动', killed.join())
+    table.splice(0, table.length, { pid: 703, ppid: 700, created: T + 5000 })
+    watch.markExited(T + 9000)
+    ok((await watch.sweep()).length === 0 && killed.join() === '702', '再次扫尾仍使用首次退出的时间上界')
   }
   {
     const [first, second] = await Promise.all([listWindowsProcesses(), listWindowsProcesses()])

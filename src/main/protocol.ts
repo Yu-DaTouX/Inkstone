@@ -559,7 +559,8 @@ export class PiRpc extends EventEmitter {
   private sweepTree(watch: ProcessTreeWatch | null, exitedAt: number): void {
     if (!watch) return
     if (this.tree === watch) this.tree = null
-    const run = watch.sweep(exitedAt).catch(() => []).finally(() => piTreeRegistry.release(watch))
+    watch.markExited(exitedAt)
+    const run = watch.sweep().catch(() => []).finally(() => piTreeRegistry.release(watch))
     this.treeSweep = run
     void run.finally(() => {
       if (this.treeSweep === run) this.treeSweep = null

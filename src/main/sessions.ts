@@ -466,12 +466,16 @@ export function runSessionPurgeQueue(): Promise<number> {
   })
 }
 
-export function startSessionPurgeSweep(): void {
+export function startSessionPurgeSweep(): () => void {
   const run = (): void => {
     void runSessionPurgeQueue().catch(() => undefined)
   }
-  setTimeout(run, PURGE_SWEEP_FIRST_MS).unref()
-  setInterval(run, PURGE_SWEEP_EVERY_MS).unref()
+  const first = setTimeout(run, PURGE_SWEEP_FIRST_MS).unref()
+  const interval = setInterval(run, PURGE_SWEEP_EVERY_MS).unref()
+  return () => {
+    clearTimeout(first)
+    clearInterval(interval)
+  }
 }
 
 function comparablePath(value: string): string {

@@ -1225,6 +1225,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean; re
 
 let modelsWatcher: ModelsWatcher | null = null
 let shuttingDown = false
+const stopMaintenance: Array<() => void> = []
 let releaseDesktopDataRoot: (() => Promise<void>) | undefined
 let shutdownTask: Promise<void> | null = null
 let shutdownFinished = false
@@ -1239,6 +1240,7 @@ function shutdown(): Promise<void> {
 
 async function runShutdown(): Promise<void> {
   shuttingDown = true
+  for (const stop of stopMaintenance.splice(0)) stop()
   disposeKeepAwake()
   modelsWatcher?.close()
   modelsWatcher = null
@@ -2348,10 +2350,10 @@ function registerIpc(): void {
       }
     }
   )
-  if (!isRestoredReadonly()) startDataMaintenance({
-    isBusy: () => !runners || runners.statuses().some((runner) => runner.running || runner.waiting) || (subagentService.current()?.list().some((run) => run.status === 'running' || run.status === 'starting') ?? false),
+  if (!isRestoredReadonly()) stopMaintenance.push(startDataMaintenance({
+    isBusy: () => shuttingDown || !runners || runners.statuses().some((runner) => runner.running || runner.waiting) || (subagentService.current()?.list().some((run) => run.status === 'running' || run.status === 'starting') ?? false),
     trash: (file) => shell.trashItem(file)
-  })
+  }))
 
   registerRunsIpc(ipc, {
     snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
@@ -2954,13 +2956,13 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
-  if (!isRestoredReadonly()) startSessionPurgeSweep()
+  if (!isRestoredReadonly()) stopMaintenance.push(startSessionPurgeSweep())
   setPersistedNoticeSink((message) => push({ ch: 'notify', payload: { id: `persisted-newer-${Date.now()}`, method: 'notify', notifyType: 'warning', message } }))
   installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
   if (!isRestoredReadonly()) {
     void sweepCredentialFiles().catch((error) => reportMainError('credential-vault', error))
-    startDailyCredentialSweep((error) => reportMainError('credential-vault', error))
+    stopMaintenance.push(startDailyCredentialSweep((error) => reportMainError('credential-vault', error)))
     void sweepStaleTemps({ dirs: [YAN_DIR, PI_AGENT_DIR] }).catch((error) => reportMainError('stale-temp-sweep', error))
     void moveLegacyState(YAN_DIR).then((result) => {
       if (result.moved.length || result.failed.length) logMainEvent(pick('遗留状态', 'Legacy state'), pick(`已移到 ${result.target}（只移不删）：${result.moved.join('、') || '无'}${result.failed.length ? `；未能移动：${result.failed.join('、')}` : ''}`, `Moved to ${result.target} (moved, never deleted): ${result.moved.join(', ') || 'none'}${result.failed.length ? `; could not move: ${result.failed.join(', ')}` : ''}`))

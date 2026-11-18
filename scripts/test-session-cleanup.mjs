@@ -55,7 +55,7 @@ const entry = join(root, 'entry.ts')
 const sourceOf = (relative) => fileURLToPath(new URL(relative, import.meta.url)).replace(/\\/g, '/')
 await writeFile(
   entry,
-  `export { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged, runSessionPurgeQueue } from '${sourceOf('../src/main/sessions.ts')}'`
+  `export { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged, runSessionPurgeQueue, startSessionPurgeSweep } from '${sourceOf('../src/main/sessions.ts')}'`
 )
 await build({
   entryPoints: [entry],
@@ -83,7 +83,29 @@ async function writeSession(id, extra = {}) {
   return file
 }
 
-const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged, runSessionPurgeQueue } = await import(pathToFileURL(outfile).href)
+const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged, runSessionPurgeQueue, startSessionPurgeSweep } = await import(pathToFileURL(outfile).href)
+
+await check('退出可取消尚未运行的首次与周期清扫', async () => {
+  const original = { setTimeout, setInterval, clearTimeout, clearInterval }
+  const handles = []
+  const cleared = []
+  const set = (kind) => () => {
+    const handle = { kind, unref() { return this } }
+    handles.push(handle)
+    return handle
+  }
+  try {
+    Object.assign(globalThis, {
+      setTimeout: set('first'), setInterval: set('periodic'),
+      clearTimeout: (handle) => cleared.push(handle), clearInterval: (handle) => cleared.push(handle)
+    })
+    startSessionPurgeSweep()()
+    assert.deepEqual(handles.map((h) => h.kind), ['first', 'periodic'])
+    assert.deepEqual(cleared, handles)
+  } finally {
+    Object.assign(globalThis, original)
+  }
+})
 
 process.stdout.write('\n▌回收站按时间清理\n')
 await check('超过 7 天的回收站条目在删除时清掉，别的保留', async () => {
