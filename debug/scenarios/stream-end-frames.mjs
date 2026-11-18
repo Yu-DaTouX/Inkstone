@@ -33,14 +33,14 @@ const PROBE = `(() => {
   return true
 })()`
 
-export default async function run({ cdp, check, sleep, newSession, live, box, out, log, autoApprove }) {
+export default async function run({ cdp, check, sleep, newSession, live, turn, box, out, log, autoApprove }) {
   const ev = (expr) => cdp.evaluate(expr)
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1500, height: Number(process.env.EF_H ?? 2600), deviceScaleFactor: 1, mobile: false })
   if (autoApprove) await autoApprove()
   await newSession(box.project)
   await ev(PROBE)
-  const prompt = process.env.EF_PROMPT ?? '读一下 README.md、INCIDENT.md 和 docs/REPORTING.md，然后用三四句话概括这个项目要解决什么问题。'
-  await live(prompt, { timeout: 300000, settleMs: 1500 })
+  const prompt = process.env.EF_PROMPT ?? (live ? '读一下 README.md、INCIDENT.md 和 docs/REPORTING.md，然后用三四句话概括这个项目要解决什么问题。' : 'FLOW 修复金额精度')
+  await (live ?? turn)(prompt, { timeout: 300000, settleMs: 1500 })
   await sleep(1500)
   const frames = await ev('window.__ef')
   await ev('window.__efStop()')
