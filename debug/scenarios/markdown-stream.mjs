@@ -163,7 +163,7 @@ function analyze(frames, from, to) {
   return out
 }
 
-export default async function run({ box, cdp, newSession, check, sleep, shot, report, runDir, state, autoApprove }) {
+export default async function run({ box, cdp, newSession, check, sleep, shot, report, runDir, state }) {
   const tag = process.env.MD_TAG || 'run'
   const trigger = process.env.MD_TRIGGER || 'MDSHOW'
   const ev = (expr) => cdp.evaluate(expr)
@@ -171,7 +171,6 @@ export default async function run({ box, cdp, newSession, check, sleep, shot, re
   mkdirSync(burstDir, { recursive: true })
   mkdirSync(join(box.project, 'fig'), { recursive: true })
   copyFileSync(join(import.meta.dirname, '../../assets/inkstone/workspace-0.14.1-dark.png'), join(box.project, 'fig/pic.png'))
-  await autoApprove()
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', reduceMotion: false })`)
   await newSession()
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false })
