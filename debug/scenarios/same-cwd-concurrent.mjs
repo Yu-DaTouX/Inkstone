@@ -44,7 +44,7 @@ export default async function run({ cdp, box, check, report, waitFor, sleep, sho
   }
   await waitFor('s.conn === "ready"')
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
-  await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', permissionMode: 'all' })`)
+  await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN' })`)
 
   await ev(`window.__yanStore.getState().send('先开第一个会话')`)
   await waitFor(`!(s.session?.isStreaming || s.session?.isAgentRunning) && s.messages.length >= 2`, 60000, 100)
