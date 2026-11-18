@@ -78,6 +78,7 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
       res.runId ?? res.id,
       res.generation
     )
+    nav.newView = res.sessionId && !arrived?.session ? { gate, sessionId: res.sessionId } : null
     set({
       ...(res.id || res.runId ? { activeRunnerId: res.runId ?? res.id } : {}),
       ...(arrived

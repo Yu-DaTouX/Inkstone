@@ -10,7 +10,12 @@ export const nav: {
   seq: number
   switchInFlight: { gate: number; done: Promise<void> } | null
   newInFlight: Promise<void> | null
-} = { gate: 0, seq: 0, switchInFlight: null, newInFlight: null }
+  newView: { gate: number; sessionId: string } | null
+} = { gate: 0, seq: 0, switchInFlight: null, newInFlight: null, newView: null }
+
+export function awaitingNewView(): string | undefined {
+  return nav.newView?.gate === nav.gate ? nav.newView.sessionId : undefined
+}
 
 export const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
 
@@ -183,6 +188,8 @@ export function findNewSessionSnapshot(
 export function viewedActiveRunner(s: Store, list: RunnerStatus[]): RunnerStatus | undefined {
   const active = list.find((runner) => runner.isActive)
   if (!active) return undefined
+  const expected = awaitingNewView()
+  if (expected) return active.sessionId === expected ? active : undefined
   const viewing = viewingSessionId(s)
   return !viewing || !active.sessionId || active.sessionId === viewing ? active : undefined
 }

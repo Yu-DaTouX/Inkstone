@@ -398,6 +398,31 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.activeRunnerId === 'r2', '运行身份仍对齐到目标实例')
     }
 
+    section('新建复用当前实例：旧状态晚到也不能抢回视图')
+    {
+      const oldState = { sessionId: 'sess-old', sessionFile: 'old', cwd: 'C:/proj', isAgentRunning: false }
+      const oldRuntime = { sessionId: 'sess-old', runId: 'r2', generation: 3 }
+      const oldRunner = { ...oldRuntime, id: 'r2', isActive: true, running: false }
+      resetView({
+        session: oldState,
+        messages: [msg('old-msg')],
+        activeRunnerId: 'r2',
+        runners: [oldRunner],
+        sessionRuntimes: { 'sess-old': snapshot('sess-old', { ...oldRuntime, session: oldState, messages: [msg('old-msg')] }) }
+      })
+      host.runnerStatuses = [oldRunner]
+      host.newSessionResult = { ok: true, id: 'r2', runId: 'r2', sessionId: 'sess-new', generation: 3 }
+      await useStore.getState().newSession({ cwd: 'C:/proj' })
+      await useStore.getState().syncRunners()
+      const push = (frame) => useStore.getState().applyPush(frame)
+      push({ ch: 'runners', payload: [oldRunner] })
+      push({ ch: 'state', runtime: oldRuntime, payload: oldState })
+      ok(useStore.getState().session === null && useStore.getState().messages.length === 0, '已知新 ID 时旧 runner 状态和推送都不能恢复旧历史')
+      push({ ch: 'state', runtime: { ...oldRuntime, sessionId: 'sess-new' }, payload: { ...oldState, sessionId: 'sess-new', sessionFile: 'new' } })
+      ok(useStore.getState().session?.sessionId === 'sess-new' && useStore.getState().messages.length === 0, '新会话自己的状态能够落到视图')
+      host.runnerStatuses = []
+    }
+
     section('新建缺 generation：sessionId 未命中时不能用同 runId 兜底')
     {
       resetView({

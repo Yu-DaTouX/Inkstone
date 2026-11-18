@@ -70,6 +70,7 @@ import { applyBrowserVisibility, createBrowserSlice, revealBrowserPane, revealTe
 import { createSettingsSlice } from './slices/settings'
 import {
   EMPTY_QUEUE,
+  awaitingNewView,
   findRuntimeSnapshot,
   nav,
   projectSnapshotKeepingHistory,
@@ -743,13 +744,14 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     const s = get()
+    const expectedNewView = awaitingNewView()
 
     const route = routePush(
       {
         runners: s.runners,
         activeRunnerId: s.activeRunnerId,
         sessionRuntimes: s.sessionRuntimes,
-        peekedSessionId: s.peekedSessionId,
+        peekedSessionId: expectedNewView ?? s.peekedSessionId,
         peekedPath: s.peekedPath,
         session: s.session,
         visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : [])
@@ -950,6 +952,8 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       }
       case 'state': {
+        if (expectedNewView && m.payload.sessionId !== expectedNewView) break
+        if (expectedNewView) nav.newView = null
         const endedRun =
           s.session?.sessionId === m.payload.sessionId && s.session?.compaction && !m.payload.compaction
             ? m.payload.lastCompaction
