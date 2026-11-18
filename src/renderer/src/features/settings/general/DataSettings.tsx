@@ -420,7 +420,19 @@ export function DataSettings(): ReactElement {
       </Button>
     ) : null
 
-  const canMove = Boolean(info?.movable && !info.relocated)
+  const cancelMove = async (): Promise<void> => {
+    setBusy('storage')
+    setMessage(null)
+    try {
+      await window.yan.storage.cancel()
+      await loadInfo()
+    } catch (cause) {
+      setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
+    } finally {
+      setBusy(null)
+    }
+  }
+  const canMove = Boolean(info?.movable && !info.relocated && !info.pendingTarget)
 
   return (
     <section className="settings-section" data-testid="v3-data-settings">
@@ -507,7 +519,11 @@ export function DataSettings(): ReactElement {
               </>
             }
           >
-            {canMove && target ? (
+            {info?.pendingTarget ? (
+              <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-move-cancel" onPress={() => void cancelMove()}>
+                {t('set.dataCancelScheduledMove')}
+              </Button>
+            ) : canMove && target ? (
               <>
                 <Button variant="secondary" isDisabled={busy !== null} onPress={() => setTarget(null)}>
                   {text.cancel}

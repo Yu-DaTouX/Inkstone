@@ -106,7 +106,8 @@ export interface Notice {
   type: 'info' | 'warning' | 'error'
   text: string
   at: number
-  action?: 'search-api-hint' | 'git-install' | 'app-update'
+  action?: 'search-api-hint' | 'git-install' | 'app-update' | 'copy-share-link'
+  actionValue?: string
 }
 
 export interface Store {
@@ -234,11 +235,11 @@ export interface Store {
     notice?: string
   }) => void
   applyQueueOrder: (next: QueueState) => Promise<void>
-  applyQueueOp: (op: QueueOp) => Promise<void>
+  applyQueueOp: (op: QueueOp) => Promise<boolean>
   armQuotaResume: (ifWindowFull?: boolean) => Promise<boolean>
   cancelQuotaResume: () => void
   abort: () => Promise<void>
-  abortTurn: () => Promise<void>
+  abortTurn: (identity?: ComposerSubmitIdentity) => Promise<void>
   runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
   abortBash: () => Promise<void>
   newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; worktree?: boolean }) => Promise<{
@@ -575,12 +576,14 @@ export const useStore = create<Store>((rawSet, get) => {
         await get().switchSession(result.path)
       }
       if (action === 'reload') await Promise.all([get().reloadModels(), get().reloadCommands()])
-      const message = result.url
-        ? uiText('state.native.shareLink', { url: result.url })
-        : result.path
-          ? uiText('state.native.donePath', { path: result.path })
-          : uiText('state.native.done')
-      get().notify('info', message)
+      if (result.url) {
+        set({ notices: [...get().notices.slice(-2), {
+          id: crypto.randomUUID(), type: 'info', text: uiText('state.native.shareLink', { url: result.url }),
+          at: Date.now(), action: 'copy-share-link', actionValue: result.url
+        }] })
+      } else {
+        get().notify('info', result.path ? uiText('state.native.donePath', { path: result.path }) : uiText('state.native.done'))
+      }
     }
     return result
   },
@@ -977,9 +980,6 @@ export const useStore = create<Store>((rawSet, get) => {
         } else if (endedRun?.status === 'failed') {
           set({ notices: pushNotice(get().notices, 'error', uiText('state.compact.failed', { error: compactionErrorText(uiText, endedRun.error) })) })
         }
-        if (endedRun) {
-          for (const item of pendingSendsForView(get())) void get().releaseSend(item.id, 'followUp')
-        }
         if (Array.isArray(m.payload.availableThinkingLevels)) {
           const levels = keepRef(get().thinkingLevels, m.payload.availableThinkingLevels)
           if (levels !== get().thinkingLevels) set({ thinkingLevels: levels })
@@ -1093,6 +1093,14 @@ useStore.subscribe((state, previous) => {
   useStore.setState({
     pendingSends: state.pendingSends.map((item) => (item.sessionId === null && item.ownerKey === key && item.navSeq === nav.seq ? { ...item, sessionId, ownerKey: undefined, navSeq: undefined } : item))
   })
+})
+
+useStore.subscribe((state, previous) => {
+  const session = state.session
+  if (!session?.sessionId || session.compaction || !session.lastCompaction || state.switchLoading || state.pendingActivation) return
+  if (session.sessionId === previous.session?.sessionId && !previous.session.compaction &&
+      session.lastCompaction === previous.session.lastCompaction && !previous.switchLoading && !previous.pendingActivation) return
+  for (const item of pendingSendsForView(state)) void state.releaseSend(item.id, 'followUp')
 })
 
 useStore.subscribe((state, previous) => {

@@ -48,6 +48,12 @@ function noticeTitle(notice: Notice, t: TFunc): string {
 
 function noticeAction(notice: Notice, t: TFunc): ToastContent['action'] {
   if (notice.action === 'git-install') return { label: t('git.goInstall'), onAction: () => useStore.getState().openSettings('git') }
+  if (notice.action === 'copy-share-link' && notice.actionValue) {
+    const url = notice.actionValue
+    return { label: t('state.native.copyShareLink'), onAction: () => {
+      void navigator.clipboard.writeText(url).catch(() => useStore.getState().notify('error', t('state.error.copyFailedClipboard')))
+    } }
+  }
   return undefined
 }
 

@@ -5,7 +5,8 @@ import { useStore } from '../../state/store'
 import { Switch } from '../../ui'
 import { composerDraftKey } from '../../state/composer-recovery'
 import { saveDraft } from './draft-store'
-import { setWorktreeIntent, useWorktreeIntended } from './worktree-intent'
+import { nav } from '../../state/slices/runtime'
+import { isCreatedWorktreeView, setWorktreeIntent, useWorktreeIntended } from './worktree-intent'
 
 export function WorktreeToggle({ text }: { text: string }): ReactElement | null {
   const t = useT()
@@ -37,8 +38,10 @@ export function WorktreeToggle({ text }: { text: string }): ReactElement | null 
     setBusy(true)
     try {
       const scope = runner.projectId ? 'project' : 'global'
-      const res = await before.newSession({ cwd: home, projectId: runner.projectId, scope, ...(on ? { worktree: true } : {}) })
-      if (!res.ok) return
+      const creating = before.newSession({ cwd: home, projectId: runner.projectId, scope, ...(on ? { worktree: true } : {}) })
+      const gate = nav.gate
+      const res = await creating
+      if (!res.ok || gate !== nav.gate || !isCreatedWorktreeView(res)) return
       saveDraft(key, { text: '', attachments: [] })
       if (key) useStore.getState().setSessionDraft('', key)
       if (attachments.length) useStore.setState({ attachments })

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { HostT } from '../../lib/host-actions'
 import { composerDraftKey } from '../../state/composer-recovery'
+import { nav } from '../../state/slices/runtime'
 import { useStore } from '../../state/store'
 import { saveDraft } from './draft-store'
 
@@ -25,13 +26,21 @@ export async function materializeWorktreeIntent(t: HostT): Promise<'none' | 'cre
   if (!fresh || runner.isolationBranch) return 'none'
   const key = composerDraftKey(before)
   const attachments = before.attachments
-  const created = await before.newSession({ cwd: runner.cwd, projectId: runner.projectId, scope: runner.projectId ? 'project' : 'global', worktree: true })
-  if (!created.ok) return 'failed'
+  const creating = before.newSession({ cwd: runner.cwd, projectId: runner.projectId, scope: runner.projectId ? 'project' : 'global', worktree: true })
+  const gate = nav.gate
+  const created = await creating
+  if (!created.ok || gate !== nav.gate || !isCreatedWorktreeView(created)) return 'failed'
   saveDraft(key, { text: '', attachments: [] })
   if (key) useStore.getState().setSessionDraft('', key)
   if (attachments.length) useStore.setState({ attachments })
   void announce(t, created.runId)
   return 'created'
+}
+
+export function isCreatedWorktreeView(created: { runId?: string; sessionId?: string }): boolean {
+  const s = useStore.getState()
+  return !s.peekedPath && !s.peekedSessionId && !!created.runId && s.activeRunnerId === created.runId &&
+    (!s.session?.sessionId || !created.sessionId || s.session.sessionId === created.sessionId)
 }
 
 async function announce(t: HostT, runId: string | undefined): Promise<void> {

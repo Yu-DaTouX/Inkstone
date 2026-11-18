@@ -4,7 +4,7 @@ import { sameComposerView, type ComposerSubmitIdentity } from '../composer-recov
 import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from '../session-activation'
 import { mergePeekedHistory } from '../session-message-merge'
 import { migratePathDraft } from '../session-runtime'
-import { sameSessionFile, viewIdentityOf } from '../view-identity'
+import { sameSessionFile } from '../view-identity'
 import { discardPendingMessagePatches, type Store } from '../store'
 import {
   EMPTY_QUEUE,
@@ -47,6 +47,7 @@ function beginNewSession(): () => void {
 export type SessionNavSlice = Pick<Store, 'compactCommand' | 'peekedPath' | 'peekedSessionId' | 'peekNote' | 'switchLoading' | 'pendingActivation' | 'newSession' | 'switchSession' | 'ensureActivated' | 'fork' | 'clone' | 'exportHtml' | 'compact' | 'stop'>
 
 export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSlice {
+  let rollbackView: Partial<Store> | undefined
   return {
   compactCommand: null,
   peekedPath: null,
@@ -111,6 +112,7 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
   },
   switchSession: async (path) => {
     nav.seq += 1
+    const continuing = nav.switchInFlight?.gate === nav.gate
     const gate = ++nav.gate
     const finishSwitch = beginSessionSwitch(gate)
     try {
@@ -120,7 +122,7 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
       findSnapshotByPath(get().sessionRuntimes, path)
     const cachedMessages = cachedSnapshot?.messages
     const left = get()
-    const leftView = {
+    const leftView = (rollbackView = (continuing ? rollbackView : undefined) ?? {
       peekedPath: left.peekedPath,
       peekedSessionId: left.peekedSessionId,
       peekNote: left.peekNote,
@@ -135,7 +137,7 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
       widgets: left.widgets,
       widgetPlacements: left.widgetPlacements,
       pendingActivation: left.pendingActivation
-    }
+    })
     set({
       peekedPath: path,
       peekedSessionId: sum?.id ?? cachedSnapshot?.runtime.sessionId ?? null,
@@ -198,7 +200,7 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
     performance.mark('yan:switch-selected')
     if (gate !== nav.gate) return
     if (!res.ok) {
-      const leftId = viewIdentityOf(leftView).sessionId
+      const leftId = leftView.peekedSessionId ?? leftView.session?.sessionId
       const leftCache = leftId ? get().sessionRuntimes[leftId] : undefined
       set({
         ...leftView,
@@ -245,6 +247,7 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
     void get().reloadModels()
     void get().reloadCommands()
     } finally {
+      if (nav.switchInFlight?.gate === gate) rollbackView = undefined
       if (gate === nav.gate && get().switchLoading) set({ switchLoading: false })
       finishSwitch()
     }

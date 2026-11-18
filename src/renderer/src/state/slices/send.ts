@@ -4,7 +4,7 @@ import { uiText } from '../../i18n/ui-text'
 import type { QueueOp } from '../../features/composer/queue-plan'
 import { markStopRequested } from '../../features/session/stop-intent'
 import { requestStopConfirm, runStopFlow } from '../../features/session/stop-with-background'
-import { composerSubmitIdentity, recoveryRuntimeFor, sameComposerView } from '../composer-recovery'
+import { composerSubmitIdentity, recoveryRuntimeFor, sameComposerView, type ComposerSubmitIdentity } from '../composer-recovery'
 import type { SubmittingMessage } from '../submitting-messages'
 import { terminalJobsForView, useTerminalJobs } from '../terminal-jobs'
 import { viewIdentityOf } from '../view-identity'
@@ -91,8 +91,8 @@ export type SendSlice = Pick<Store, 'queue' | 'pendingSends' | 'pendingSourceLin
 
 export function createSendSlice({ set, get }: SliceContext): SendSlice {
   const releasingSends = new Set<PendingSend>()
-  const settleQueueEdit = async (sessionId: string | undefined, res: QueueEditResult): Promise<void> => {
-    if (res.ok) return
+  const settleQueueEdit = async (sessionId: string | undefined, res: QueueEditResult): Promise<boolean> => {
+    if (res.ok) return true
     const dropped = res.dropped ?? []
     if (dropped.length) {
       const current = get()
@@ -105,6 +105,7 @@ export function createSendSlice({ set, get }: SliceContext): SendSlice {
       }))
     }
     set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.queueEditFailed')) })
+    return false
   }
   return {
   queue: EMPTY_QUEUE,
@@ -252,33 +253,45 @@ export function createSendSlice({ set, get }: SliceContext): SendSlice {
   applyQueueOrder: async (next) => {
     const sessionId = get().session?.sessionId
     const target = await sessionActionTarget(get)
-    if (!target) return settleQueueEdit(sessionId, { ok: false, error: uiText('state.error.sessionNotActivated') })
-    await settleQueueEdit(sessionId, await piCall(() => window.yan.queueEdit(next, target.expected)))
+    await settleQueueEdit(sessionId, target
+      ? await piCall(() => window.yan.queueEdit(next, target.expected))
+      : { ok: false, error: uiText('state.error.sessionNotActivated') })
   },
   applyQueueOp: async (op) => {
     const sessionId = get().session?.sessionId
     const target = await sessionActionTarget(get)
     if (!target) return settleQueueEdit(sessionId, { ok: false, error: uiText('state.error.sessionNotActivated') })
-    await settleQueueEdit(sessionId, await piCall(() => queueEditRequest(op, target.expected)))
+    return settleQueueEdit(sessionId, await piCall(() => queueEditRequest(op, target.expected)))
   },
   abort: async () => {
+    const before = get()
+    const identity = composerSubmitIdentity(before)
+    const gate = nav.gate
+    const stillHere = () => gate === nav.gate && sameComposerView(get(), identity)
     await runStopFlow({
       jobs: async () => {
         await useTerminalJobs.getState().load().catch(() => undefined)
-        const { peekedSessionId, peekedPath, session } = get()
-        return terminalJobsForView(useTerminalJobs.getState().jobs, { peekedSessionId, peekedPath, session })
+        return terminalJobsForView(useTerminalJobs.getState().jobs, before)
       },
-      confirm: requestStopConfirm,
-      abortTurn: () => get().abortTurn(),
-      stopJob: (id) => window.yan.terminal.stopJob(id)
+      confirm: (summary) => stillHere() ? requestStopConfirm(summary) : Promise.resolve('cancel'),
+      abortTurn: async () => { if (stillHere()) await get().abortTurn(identity) },
+      stopJob: async (id) => {
+        if (stillHere()) await window.yan.terminal.stopJob(id)
+      }
     })
   },
-  abortTurn: async () => {
-    const sessionId = get().session?.sessionId
+  abortTurn: async (identity: ComposerSubmitIdentity = composerSubmitIdentity(get())) => {
+    const stillHere = () => {
+      const current = composerSubmitIdentity(get())
+      return sameComposerView(get(), identity) &&
+        (!identity.runId || (identity.runId === current.runId && identity.generation === current.generation))
+    }
+    if (!stillHere()) return
+    const sessionId = identity.sessionId
     markStopRequested(sessionId)
     try {
-      const expected = await submitRuntimeFor(get, composerSubmitIdentity(get()))
-      if (expected === null) return
+      const expected = await submitRuntimeFor(get, identity)
+      if (expected === null || !stillHere()) return
       const cleared = await window.yan.abort(expected)
       if (cleared.error) set({ notices: pushNotice(get().notices, 'error', cleared.error) })
       const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)

@@ -1,6 +1,9 @@
 import { useCallback, useMemo } from 'react'
 import type { QueueState } from '../../../../shared/ipc'
 import { pendingSendsForView, useStore, type PendingSend } from '@/state/store'
+import { composerSubmitIdentity, sameComposerView, type ComposerSubmitIdentity } from '../../state/composer-recovery'
+import { queueImagesToAttachments } from '../../state/queue-images'
+import { MAX_ATTACHMENTS, MAX_IMAGE_BYTES } from '../../state/slices/queue-recovery'
 import { useT } from '../../i18n'
 import { showToast } from '../../ui'
 
@@ -80,24 +83,28 @@ export function buildQueueRows(
   ]
 }
 
-function activeRunnerRunning(): boolean {
-  const state = useStore.getState()
-  return state.runners.find((r) => (r.runId ?? r.id) === state.activeRunnerId)?.running === true
-}
-
-async function requeueRows(rows: readonly QueueRow[]): Promise<void> {
-  const store = useStore.getState()
-  const running = activeRunnerRunning()
-  const back: string[] = []
+async function requeueRows(rows: readonly QueueRow[], identity: ComposerSubmitIdentity): Promise<void> {
+  const back: QueueRow[] = []
   for (const row of rows) {
+    const store = useStore.getState()
     const images = row.images.map((image) => ({ ...image }))
-    if (row.kind === 'pending') store.holdSend(row.text, images)
-    else if (running) await store.send(row.text, images, row.kind === 'steering' ? 'steer' : 'followUp')
-    else if (row.text) back.push(row.text)
+    const runner = store.runners.find((r) => (r.runId ?? r.id) === identity.runId)
+    if (sameComposerView(store, identity) && runner?.generation === identity.generation) {
+      if (row.kind === 'pending' && store.session?.compaction) {
+        store.holdSend(row.text, images)
+        continue
+      }
+      if (row.kind !== 'pending' && runner?.running &&
+          await store.send(row.text, images, row.kind === 'steering' ? 'steer' : 'followUp').catch(() => false)) continue
+    }
+    back.push(row)
   }
   if (back.length) {
-    const text = back.join('\n')
-    useStore.setState((state) => ({ queueRestore: state.queueRestore ? `${text}\n${state.queueRestore}` : text }))
+    useStore.getState().recoverComposerInput({
+      identity,
+      text: back.map((row) => row.text).filter(Boolean).join('\n'),
+      attachments: queueImagesToAttachments(back.flatMap((row) => row.images), { maxCount: MAX_ATTACHMENTS, maxImageBytes: MAX_IMAGE_BYTES }, 'queue-undo')
+    })
   }
 }
 
@@ -153,12 +160,14 @@ export function useQueueAdapter(): QueueAdapter {
   const discard = useCallback((row: QueueRow) => {
     useStore.getState().discardSend(row.id)
   }, [])
-  const clearAll = useCallback(() => {
+  const clearAll = useCallback(async () => {
     const state = useStore.getState()
-    const cleared = buildQueueRows(state.queue, pendingSendsForView(state))
-    for (const item of pendingSendsForView(state)) state.discardSend(item.id)
-    void state.applyQueueOp({ op: 'clear' })
+    const identity = composerSubmitIdentity(state)
+    const pendingRows = pendingSendsForView(state)
+    const cleared = buildQueueRows(state.queue, pendingRows)
     if (!cleared.length) return
+    if ((state.queue.steering.length || state.queue.followUp.length) && !(await state.applyQueueOp({ op: 'clear' }))) return
+    for (const item of pendingRows) state.discardSend(item.id)
     let undone = false
     showToast(t('queue.cleared', { n: cleared.length }), {
       timeout: 8000,
@@ -167,7 +176,7 @@ export function useQueueAdapter(): QueueAdapter {
         onAction: () => {
           if (undone) return
           undone = true
-          void requeueRows(cleared)
+          void requeueRows(cleared, identity)
         }
       }
     })
