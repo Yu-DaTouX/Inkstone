@@ -1,7 +1,7 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { createRequire, Module } from 'node:module'
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, lstatSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile, utimes } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import ts from 'typescript'
@@ -40,7 +40,7 @@ try {
     const session = JSON.parse(await readFile(join(restored.path, 'pi-agent', 'sessions', 'fixture.jsonl'), 'utf8'))
     assert.equal(session.attachment.path, rebound)
   })
-  for (const scenario of ['source-change', 'target-change', 'success']) {
+  for (const scenario of ['source-change', 'target-change', 'target-collision', 'success']) {
     await test(`migration ${scenario}: content validation and retained backup`, async () => {
       const root = join(run, scenario)
       const home = join(root, 'home')
@@ -48,6 +48,7 @@ try {
       const from = join(home, '.pi', 'agent')
       const target = join(root, 'target')
       await mkdir(from, { recursive: true })
+      if (scenario === 'target-collision') await mkdir(target)
       await mkdir(join(appdata, 'yan-desktop'), { recursive: true })
       await writeFile(join(from, 'note.txt'), 'old!')
       await writeFile(join(from, 'future.txt'), 'mask')
@@ -66,7 +67,12 @@ try {
       delete process.env.YAN_PI_DIR
       try {
         const result = await mod.exports.runPendingStorageMove((progress) => {
-          if (progress.phase === 'verify' && scenario !== 'success') writeFileSync(join(scenario === 'source-change' ? from : target, 'note.txt'), 'new!')
+          if (progress.phase === 'copy' && progress.files === 0 && scenario === 'target-collision') writeFileSync(join(target, 'note.txt'), 'external collision')
+          if (progress.phase === 'verify' && scenario === 'source-change') writeFileSync(join(from, 'note.txt'), 'new!')
+          if (progress.phase === 'verify' && scenario === 'target-change') {
+            writeFileSync(join(target, 'note.txt'), 'new!')
+            writeFileSync(join(target, 'concurrent.txt'), 'external file')
+          }
           if (progress.phase === 'cleanup') {
             const name = readdirSync(resolve(from, '..')).find((entry) => entry.startsWith('agent.迁移前备份-'))
             writeFileSync(join(resolve(from, '..'), name, 'late.txt'), 'late writer')
@@ -79,7 +85,11 @@ try {
           assert.equal(await readFile(join(result.leftover, 'late.txt'), 'utf8'), 'late writer')
         } else {
           assert.equal(await readFile(join(from, 'note.txt'), 'utf8'), scenario === 'source-change' ? 'new!' : 'old!')
-          assert.equal(existsSync(target), false)
+          assert.equal(lstatSync(from).isSymbolicLink(), false)
+          assert.ok(result.error.includes(target))
+          const expected = scenario === 'target-change' ? 'new!' : scenario === 'target-collision' ? 'external collision' : 'old!'
+          assert.equal(await readFile(join(target, 'note.txt'), 'utf8'), expected)
+          if (scenario === 'target-change') assert.equal(await readFile(join(target, 'concurrent.txt'), 'utf8'), 'external file')
         }
       } finally {
         process.env = saved

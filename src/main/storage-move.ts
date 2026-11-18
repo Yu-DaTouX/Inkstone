@@ -13,7 +13,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { cp, lstat, readlink, readdir, rm, stat, statfs } from 'node:fs/promises'
+import { cp, lstat, readlink, readdir, stat, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
@@ -199,8 +199,12 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
   if (!pending?.target) return undefined
   const from = defaultAgentDir()
   const to = resolve(pending.target)
+  let copyStarted = false
   const write = (r: Omit<StorageMoveResult, 'at' | 'from' | 'to'>): StorageMoveResult => {
-    const result = { ...r, at: Date.now(), from, to }
+    const retained = !r.ok && copyStarted
+      ? pick(` 目标目录 ${to} 的内容已保留；重试请选另一个空文件夹。`, ` Contents at ${to} were left in place. Choose a different empty folder to retry.`)
+      : ''
+    const result = { ...r, ...(retained ? { error: `${r.error ?? ''}${retained}` } : {}), at: Date.now(), from, to }
     try {
       mkdirSync(controlDir(), { recursive: true })
       writeFileSync(RESULT_FILE(), JSON.stringify(result, null, 2))
@@ -236,50 +240,35 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
     report({})
     const before = await tally(from)
     report({ phase: 'copy', totalFiles: before.files, totalBytes: before.bytes })
-    const createdTarget = !existsSync(to)
     mkdirSync(to, { recursive: true })
-    const discardTarget = async (): Promise<void> => {
-      if (createdTarget) {
-        await rm(to, { recursive: true, force: true })
-        return
-      }
-      for (const name of await readdir(to).catch(() => [])) await rm(join(to, name), { recursive: true, force: true })
+    copyStarted = true
+    for (const name of await readdir(from)) {
+      await cp(join(from, name), join(to, name), {
+        recursive: true,
+        preserveTimestamps: true,
+        verbatimSymlinks: true,
+        errorOnExist: true,
+        force: false,
+        filter: async (source) => {
+          const entry = await lstat(source)
+          if (entry.isFile()) report({ files: progress.files + 1, bytes: progress.bytes + entry.size })
+          return true
+        }
+      })
     }
-    try {
-      for (const name of await readdir(from)) {
-        await cp(join(from, name), join(to, name), {
-          recursive: true,
-          preserveTimestamps: true,
-          verbatimSymlinks: true,
-          errorOnExist: true,
-          force: false,
-          filter: async (source) => {
-            const entry = await lstat(source)
-            if (entry.isFile()) report({ files: progress.files + 1, bytes: progress.bytes + entry.size })
-            return true
-          }
-        })
-      }
-      report({ phase: 'verify' })
-      const [source, after] = await Promise.all([tally(from), tally(to)])
-      if (after.content !== source.content || source.content !== before.content) {
-        await discardTarget()
-        return write({ ok: false, error: pick(`复制核对不一致（${source.files} → ${after.files} 个文件），已撤回，原数据未动`, `Copy check mismatch (${source.files} → ${after.files} files). Rolled back, original data untouched`) })
-      }
-      const recheck = await tally(from)
-      if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime || recheck.content !== before.content) {
-        await discardTarget()
-        return write({ ok: false, error: pick('迁移期间数据目录仍在被写入（可能还有别的 pi 或砚在运行），已撤回，原数据未动', 'The data folder was still being written during the move (another pi or Inkstone may be running). Rolled back, original data untouched') })
-      }
-    } catch (error) {
-      await discardTarget()
-      throw error
+    report({ phase: 'verify' })
+    const [source, after] = await Promise.all([tally(from), tally(to)])
+    if (after.content !== source.content || source.content !== before.content) {
+      return write({ ok: false, error: pick(`复制核对不一致（${source.files} → ${after.files} 个文件），未切换数据目录`, `Copy check mismatch (${source.files} → ${after.files} files). The data location was not switched.`) })
+    }
+    const recheck = await tally(from)
+    if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime || recheck.content !== before.content) {
+      return write({ ok: false, error: pick('迁移期间原目录仍在被写入（可能还有别的 pi 或砚在运行），未切换数据目录', 'The original data folder was still being written during the move (another pi or Inkstone may be running). The data location was not switched.') })
     }
     const backup = `${from}.迁移前备份-${Date.now()}-${randomUUID()}`
     try {
       renameSync(from, backup)
     } catch (e) {
-      await discardTarget()
       return write({ ok: false, error: pick(`原目录被占用，无法切换（请关掉终端里的 pi 后重试）：${e instanceof Error ? e.message : String(e)}`, `The original folder is in use and cannot be switched (close pi in terminals and retry): ${e instanceof Error ? e.message : String(e)}`) })
     }
     try {
@@ -291,7 +280,6 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       } catch (e2) {
         return write({ ok: false, leftover: backup, error: pick(`无法建立联接，也无法自动恢复原目录。你的数据完整保存在：${backup}（把它改回「agent」即可恢复）。${why}；${e2 instanceof Error ? e2.message : String(e2)}`, `Cannot create the junction or restore the original folder. Your data is intact at: ${backup} (rename it back to "agent" to restore). ${why}; ${e2 instanceof Error ? e2.message : String(e2)}`) })
       }
-      await discardTarget()
       return write({ ok: false, error: pick(`无法在原位置建立联接，已恢复原状：${why}`, `Cannot create a junction at the original location. Restored: ${why}`) })
     }
     report({ phase: 'cleanup' })
