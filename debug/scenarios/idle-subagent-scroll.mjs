@@ -26,7 +26,7 @@ const RECORDER = `(() => {
   requestAnimationFrame(tick)
 })()`
 
-export default async function run({ cdp, waitFor, check, report, turn, box, sleep, shot, log, autoApprove }) {
+export default async function run({ cdp, waitFor, check, report, turn, box, sleep, shot, log }) {
   const [big] = box.samples
   if (!big) throw new Error('需要大会话样本：先跑 npm run debug -- samples pick')
   const ev = (expr) => cdp.evaluate(expr)
@@ -37,7 +37,6 @@ export default async function run({ cdp, waitFor, check, report, turn, box, slee
   await waitFor('!s.pendingActivation && !s.peekedPath', 30000, 20)
   const model = await ev(`window.__yanStore.getState().setModel('fake', 'fake-model', true)`)
   check('切到假模型', model?.ok !== false, model)
-  await autoApprove()
   log('虚拟列表', await ev(`!document.querySelector('.v3-stream-host .v3-stream-inner')`))
 
   await turn(process.env.YAN_SCROLL_PROMPT || 'SUBAGENTS3 THENREST 派三个子代理', { timeout: 120000 })
