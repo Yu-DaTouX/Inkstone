@@ -1,8 +1,7 @@
 export const meta = { description: '连续派写入型子代理：第一个在当前目录，后面的自动进 worktree；同时截图 Key 故障转移开关' }
 
-export default async function run({ cdp, box, waitFor, check, report, sleep, shot, autoApprove, newSession }) {
+export default async function run({ cdp, box, waitFor, check, report, sleep, shot, newSession }) {
   const ev = (expr) => cdp.evaluate(expr)
-  await autoApprove()
   await newSession(box.project)
   await ev(`window.__yanStore.getState().send('SUBAGENTS3')`)
   await waitFor(`Object.values(s.subagents ?? {}).length >= 3 || (s.subagents?.length ?? 0) >= 3`, 60000, 100)
