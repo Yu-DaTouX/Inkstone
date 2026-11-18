@@ -16,11 +16,14 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot, lo
   const switchOnce = async (target) => {
     await ev(`performance.clearMarks(); window.__switchT0 = performance.now()`)
     const started = Date.now()
-    const run = ev(`window.__yanStore.getState().switchSession(${JSON.stringify(target.path)}).then(() => performance.now() - window.__switchT0)`)
-    await waitFor(`s.messages.length > 0 && !s.switchLoading`, 90000, 10)
+    const path = JSON.stringify(target.path)
+    const visible = `!s.switchLoading && s.messages.length > 0 && (s.peekedPath ?? s.session?.sessionFile) === ${path}`
+    const attached = `(s.session?.sessionFile === ${path} || s.pendingActivation?.sessionFile === ${path})`
+    const run = ev(`window.__yanStore.getState().switchSession(${path}).then(() => performance.now() - window.__switchT0)`)
+    await waitFor(visible, 90000, 10)
     const visibleMs = Date.now() - started
     const awaitedMs = Math.round(await run)
-    await waitFor(`s.session?.sessionFile === ${JSON.stringify(target.path)} || !!s.pendingActivation`, 90000, 10).catch(() => {})
+    await waitFor(`${visible} && ${attached}`, 90000, 10)
     const attachedMs = Date.now() - started
     const marks = await ev(`Object.fromEntries(performance.getEntriesByType('mark').filter((m) => m.name.startsWith('yan:switch')).map((m) => [m.name.slice(11), Math.round(m.startTime - window.__switchT0)]))`)
     const state = await ev(`(() => { const s = window.__yanStore.getState(); return { messages: s.messages.length, deferred: !!s.pendingActivation, runners: s.runners?.length ?? null } })()`)
