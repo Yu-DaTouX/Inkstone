@@ -343,10 +343,13 @@ try {
     assert.ok(missing.error.length > 0)
   })
   await check('按 HTML 导出：保存界面渲染好的页面；没有页面内容时不弹保存框', async () => {
-    const saved = await register().invoke('yan:sessionTransfer:export', sessionFile, { format: 'html', html: '<!doctype html><p>hi</p>' })
+    const html = '<!doctype html><p>你好 🖋️</p>'
+    const saved = await register().invoke('yan:sessionTransfer:export', sessionFile, { format: 'html', html })
     assert.equal(saved.ok, true, saved.error)
     assert.ok(saved.path.endsWith('sess-original.html'), saved.path)
-    assert.equal(await readFile(saved.path, 'utf8'), '<!doctype html><p>hi</p>')
+    const bytes = await readFile(saved.path)
+    assert.equal(bytes.toString('utf8'), html)
+    assert.equal(saved.bytes, bytes.length)
     let asked = 0
     const empty = await register({ pickExportPath: async () => (asked += 1, null) }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'html' })
     assert.equal(empty.ok, false)

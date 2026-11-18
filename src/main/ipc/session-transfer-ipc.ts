@@ -75,12 +75,14 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
       if (!source) return { ok: false, error: pick('当前没有可导出的会话。', 'There is no current session to export.') }
       const stem = fileStem(title) || basename(source).replace(/\.jsonl$/i, '')
       let text: string | null = null
+      let textBytes: number | undefined
       if (format === 'markdown') {
         text = await markdownOf(source, title || stem)
         if (text === null) return { ok: false, error: unreadable() }
       } else if (format === 'html') {
         if (typeof options.html !== 'string' || !options.html) return { ok: false, error: exportFailed(unsupported()) }
-        if (Buffer.byteLength(options.html, 'utf8') > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: exportFailed(sessionTooLargeError()) }
+        textBytes = Buffer.byteLength(options.html, 'utf8')
+        if (textBytes > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: exportFailed(sessionTooLargeError()) }
         text = options.html
       }
       const target = await deps.pickExportPath(`${stem}${SESSION_EXPORT_EXTENSIONS[format]}`, format)
@@ -89,7 +91,7 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
       if (text !== null) {
         const file = withExtension(target, SESSION_EXPORT_EXTENSIONS[format])
         await atomicWriteFile(file, text)
-        done = { ok: true, path: file, bytes: Buffer.byteLength(text, 'utf8') }
+        done = { ok: true, path: file, bytes: textBytes ?? Buffer.byteLength(text, 'utf8') }
       } else {
         const result = await exportSession(source, target, { now })
         done = result.ok ? { ok: true, path: result.path, bytes: result.bytes } : { ok: false, error: exportFailed(result.error) }
