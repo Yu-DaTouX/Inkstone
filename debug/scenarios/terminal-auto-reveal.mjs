@@ -52,6 +52,25 @@ export default async function run({ cdp, box, newSession, waitFor, check, shot, 
   check('自动展示能从第二个标签切回目标，不重复挂载', switched.tabs.length === 2 && switched.hosts === 2 && switched.active === before.active, switched)
   await shot('target-terminal-selected')
 
+  await ev('window.__yanRightPanel.getState().setWidth(360); document.querySelector("[data-testid=terminal-new]").click()')
+  await waitFor('document.querySelectorAll(".term-pane-host").length === 3 && document.querySelector("[data-testid=terminal-pane]")?.getAttribute("data-phase") === "ready"', 30000)
+  const list = 'document.querySelector("[data-testid=terminal-tabs]")'
+  const tabs = `${list}.querySelectorAll('[role="tab"]')`
+  await waitFor(`${list}.scrollWidth > ${list}.clientWidth`, 5000)
+  await ev(`${list}.querySelector('[aria-selected="true"]').focus()`)
+  for (const [key, code, index] of [['Home', 36, 0], ['End', 35, 2]]) {
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code })
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code })
+    const tab = `${tabs}[${index}]`
+    await waitFor(`${tab} === document.activeElement && ${tab}.getAttribute('aria-selected') === 'true'`, 5000)
+    const geometry = await ev(`(() => {
+      const list = ${list}.getBoundingClientRect()
+      const tab = ${tab}.closest('.ui-ptab').getBoundingClientRect()
+      return { left: tab.left - list.left, right: list.right - tab.right }
+    })()`)
+    check(`窄栏 ${key} 切换后当前标签完整可见`, geometry.left >= -1 && geometry.right >= -1, geometry)
+  }
+
   await ev('window.__yanRightPanel.getState().setOpen(false)')
   await sleep(200)
   await emit('another-session-owner', terminal.id)
