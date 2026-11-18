@@ -53,4 +53,26 @@ export default async function run({ cdp, newSession, waitFor, sleep, check }) {
   await cdp.evaluate(`window.__yanStore.setState(s => ({ messages: [...s.messages.slice(0,-1), {...s.messages.at(-1),text:${JSON.stringify(open + '````\n')}}] }))`)
   await waitFor(`!!${pre}?.querySelector('[class^="hljs-"]')`, 8000)
   check('同类等长围栏闭合后恢复高亮', await cdp.evaluate(`!!${pre}?.querySelector('[class^="hljs-"]')`))
+
+  const label = '前一段。\n\n**结论**'
+  await cdp.evaluate(`(() => {
+    const now = Date.now()
+    window.__yanStore.setState(s => ({ messages: [...s.messages,
+      {id:'lead-user',role:'user',text:'结论',timestamp:now},
+      {id:'lead-answer',role:'assistant',text:${JSON.stringify(label)},timestamp:now}],
+      session: {...s.session,isStreaming:true,isAgentRunning:true},runTail:null
+    }))
+  })()`)
+  const paragraph = `${prose('lead-answer')}?.lastElementChild`
+  await waitFor(`${paragraph}?.textContent.includes('结论') && !!${paragraph}?.querySelector('.v3-caret')`, 8000)
+  const font = () => cdp.evaluate(`(() => {
+    const p = ${paragraph}
+    return { paragraph: getComputedStyle(p).fontSize, prose: getComputedStyle(p.parentElement).fontSize }
+  })()`)
+  const streamingFont = await font()
+  check('未写完的加粗段仍按正文排版', streamingFont.paragraph === streamingFont.prose, streamingFont)
+  await cdp.evaluate(`window.__yanStore.setState(s => ({ session: {...s.session,isStreaming:false,isAgentRunning:false} }))`)
+  await waitFor(`!!${paragraph} && !${paragraph}.querySelector('.v3-caret')`, 8000)
+  const finishedFont = await font()
+  check('已写完的纯加粗标题保留标题样式', parseFloat(finishedFont.paragraph) > parseFloat(finishedFont.prose), finishedFont)
 }

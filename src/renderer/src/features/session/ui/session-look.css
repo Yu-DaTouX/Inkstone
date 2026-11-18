@@ -18,9 +18,9 @@
   .v3-prose h4 { margin-top: var(--s-16); font-size: 1.0625em; line-height: 1.45; }
   .v3-prose :is(h5, h6) { font-size: 1em; font-weight: 500; }
   .v3-prose > :is(h1, h2, h3):first-child { margin-top: 0; }
-  .v3-prose p[data-lead]:not(li p) { margin-top: var(--s-8); font-size: 1.0625em; line-height: 1.45; }
+  .v3-prose p[data-lead]:not(li p, :has(.v3-caret)) { margin-top: var(--s-8); font-size: 1.0625em; line-height: 1.45; }
   .v3-prose > p[data-lead]:first-child { margin-top: 0; }
-  .v3-prose > p[data-lead] + * { margin-top: calc(-1 * var(--s-4)); }
+  .v3-prose > p[data-lead]:not(:has(.v3-caret)) + * { margin-top: calc(-1 * var(--s-4)); }
   .v3-prose :is(ul, ol) { margin: 0; padding-left: var(--s-20); }
   .v3-prose li { margin: 0; }
   .v3-prose li + li, .v3-prose li > :is(ul, ol) { margin-top: var(--s-6); }
