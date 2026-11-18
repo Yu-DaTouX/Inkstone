@@ -197,6 +197,12 @@ export function MessageImage({
   }
 
   const onKeyDown = (event: ReactKeyboardEvent): void => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!event.repeat) open()
+      return
+    }
     if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return
     const img = imageRef.current
     if (!img) return

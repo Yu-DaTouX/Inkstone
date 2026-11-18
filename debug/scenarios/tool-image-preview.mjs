@@ -26,4 +26,22 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
   check('点击后弹出大图预览', await ev(`!!document.querySelector('[role="dialog"] img')`))
   await sleep(600)
   await shot('tool-image-preview-open')
+  const thumb = `document.querySelector('.v3-step-images img')`
+  const viewer = `document.querySelector('[role="dialog"] .imgv-image')`
+  const press = async (key, code, windowsVirtualKeyCode) => {
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode })
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode })
+  }
+  await press('Escape', 'Escape', 27)
+  await waitFor(`!${viewer}`, 5000)
+  for (const [key, code, vk] of [['Enter', 'Enter', 13], [' ', 'Space', 32]]) {
+    await ev(`${thumb}.focus()`)
+    await press(key, code, vk)
+    const opened = await waitFor(`${viewer}?.naturalWidth > 0`, 3000).then(() => true, () => false)
+    check(`${code} 打开已解码的大图`, opened)
+    if (!opened) continue
+    await press('Escape', 'Escape', 27)
+    await waitFor(`!${viewer}`, 5000)
+    check(`${code} 打开后按 Esc 关闭并回焦缩略图`, await waitFor(`document.activeElement === ${thumb}`, 2000).then(() => true, () => false))
+  }
 }
