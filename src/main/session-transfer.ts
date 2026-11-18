@@ -96,8 +96,9 @@ export async function importSession(
     return { ok: false, error: pick('不是有效的砚会话包', 'Not a valid Inkstone session bundle') }
   }
   const nextId = options.newId ?? (() => randomUUID())
-  const originalId = readSessionId(bundle.content)
-  if (!originalId) return { ok: false, error: pick('会话包缺少唯一有效的 session 头', 'Session bundle lacks exactly one valid session header') }
+  const header = findSessionHeader(bundle.content)
+  if (!header) return { ok: false, error: pick('会话包缺少唯一有效的 session 头', 'Session bundle lacks exactly one valid session header') }
+  const originalId = header.data.id
   let sessionId = ''
   let file = ''
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -108,8 +109,9 @@ export async function importSession(
     file = ''
   }
   if (!file) return { ok: false, error: pick('生成新会话名失败（目标目录已有同名文件）', 'Failed to create a new session name (file already exists)') }
-  const content = rewriteSessionHeader(bundle.content, { id: sessionId, ...(options.cwd ? { cwd: options.cwd } : {}) })
-  if (readSessionId(content) !== sessionId) return { ok: false, error: pick('改写会话 session 头失败', 'Failed to rewrite the session header') }
+  if (typeof sessionId !== 'string' || !sessionId.trim()) return { ok: false, error: pick('改写会话 session 头失败', 'Failed to rewrite the session header') }
+  const updated = JSON.stringify({ ...header.data, id: sessionId, ...(options.cwd ? { cwd: options.cwd } : {}) })
+  const content = bundle.content.slice(0, header.start) + updated + bundle.content.slice(header.end)
   try {
     await mkdir(sessionsDir, { recursive: true })
     await atomicWriteFile(file, content)
@@ -120,34 +122,31 @@ export async function importSession(
 }
 
 export function readSessionId(content: string): string | undefined {
-  let id: string | undefined
-  for (const line of content.split('\n')) {
-    try {
-      const parsed = JSON.parse(line) as { type?: unknown; id?: unknown }
-      if (parsed?.type !== 'session') continue
-      if (id !== undefined || typeof parsed.id !== 'string' || !parsed.id.trim()) return undefined
-      id = parsed.id
-    } catch {
-    }
-  }
-  return id
+  return findSessionHeader(content)?.data.id
 }
 
-function rewriteSessionHeader(content: string, patch: { id: string; cwd?: string }): string {
-  const lines = content.split('\n')
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]
+interface SessionHeader {
+  data: Record<string, unknown> & { id: string }
+  start: number
+  end: number
+}
+
+function findSessionHeader(content: string): SessionHeader | undefined {
+  let header: SessionHeader | undefined
+  for (let start = 0; start < content.length;) {
+    const newline = content.indexOf('\n', start)
+    const end = newline < 0 ? content.length : newline
     try {
-      const parsed = JSON.parse(line) as Record<string, unknown>
-      if (parsed?.type === 'session' && typeof parsed.id === 'string' && parsed.id) {
-        Object.assign(parsed, patch)
-        lines[index] = JSON.stringify(parsed)
-        return lines.join('\n')
+      const parsed = JSON.parse(content.slice(start, end)) as Record<string, unknown> | null
+      if (parsed?.type === 'session') {
+        if (header || typeof parsed.id !== 'string' || !parsed.id.trim()) return undefined
+        header = { data: { ...parsed, id: parsed.id }, start, end }
       }
     } catch {
     }
+    start = end + 1
   }
-  return content
+  return header
 }
 
 function describe(error: unknown): string {

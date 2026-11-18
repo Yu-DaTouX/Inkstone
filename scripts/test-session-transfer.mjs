@@ -169,6 +169,15 @@ try {
       assert.deepEqual(await readdir(sessionRoot), before)
     })
   }
+  await check('只改唯一会话头，保留它前后的原始记录和换行', async () => {
+    const before = '{"type":"message","id":"before"}\r\n\r\n'
+    const after = '\n{"type":"message","id":"after"}\r\n'
+    const content = before + '{"type":"session","id":"original","version":3}\r' + after
+    const result = await importContent(content, ['fresh-with-body'])
+    assert.equal(result.ok, true, result.error)
+    assert.equal(await readFile(result.path, 'utf8'), before + '{"type":"session","id":"fresh-with-body","version":3}' + after)
+    assert.equal((await importContent(content + '{"type":"session","id":"late-duplicate"}')).ok, false)
+  })
   await check('即使源文件不存在也不复用原 ID', async () => {
     const result = await importContent('{"type": "session", "id": "absent-source"}', ['absent-source', 'different-id'])
     assert.equal(result.ok, true, result.error)
