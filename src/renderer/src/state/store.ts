@@ -1053,7 +1053,7 @@ export const useStore = create<Store>((rawSet, get) => {
       const cur = get().conn
       try {
         const st = await window.yan.agentStatus()
-        if (st && st.state !== get().conn) {
+        if (st && (st.state !== get().conn || (st.state === 'error' && st.detail !== get().connDetail))) {
           set({ conn: st.state, connDetail: st.detail })
           if (st.state === 'ready' && cur !== 'ready') {
             void get().reloadModels()

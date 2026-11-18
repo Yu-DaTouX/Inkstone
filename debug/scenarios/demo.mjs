@@ -20,8 +20,9 @@ export default async function run({ cdp, fake, box, runDir, check, waitFor, slee
   check('本会话改动卡有数据', await cdp.evaluate(`document.body.innerText.includes('staged.txt') && document.body.innerText.includes('partial.txt')`))
   await take('01-session-and-changes')
   await cdp.evaluate(`document.querySelector('[data-testid=wb-rail-branch]').click()`)
-  await sleep(500)
-  check('分支选择器有 feature 与 worktree 占用分支', await cdp.evaluate(`document.body.innerText.includes('feature/no-upstream') && document.body.innerText.includes('fix/maintenance')`))
+  const hasBranch = (name) => `!!document.querySelector('[data-testid=git-branch-picker] [title="${name}"]')`
+  await waitFor(`${hasBranch('feature/no-upstream')} && ${hasBranch('fix/maintenance')}`, 10000)
+  check('分支选择器有 feature 与 worktree 占用分支', await cdp.evaluate(`${hasBranch('feature/no-upstream')} && ${hasBranch('fix/maintenance')}`))
   await take('02-branches')
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })

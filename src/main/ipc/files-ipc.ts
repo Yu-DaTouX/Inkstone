@@ -17,7 +17,7 @@ import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachm
 import { clearSessionReadCache } from '../session-reader'
 import { YAN_DIR } from '../paths'
 import { managedAttachment } from '../attachment-file'
-import { SESSIONS_DIR } from '../sessions'
+import { ATTACHMENT_SESSION_DIRS, SESSIONS_DIR } from '../sessions'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
 import { savePastedText } from '../pasted-text'
 import { saveSessionQuote } from '../session-quote'
@@ -291,10 +291,10 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   handle('yan:attachments:prune', async () => {
     if (deps.isSessionBusy()) throw new Error(pick('会话正在运行，请结束后再清理附件', 'The session is running; clean up attachments after it finishes'))
     const before = Date.now() - 24 * 60 * 60 * 1000
-    const sessionsDir = SESSIONS_DIR
-    if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
+    if (!existsSync(SESSIONS_DIR)) return { removed: 0, bytes: 0, kept: 0 }
+    const listFiles = (): string[] => ATTACHMENT_SESSION_DIRS.flatMap(listSessionFiles)
     const fingerprint = async (): Promise<string> => {
-      const files = listSessionFiles(sessionsDir).sort()
+      const files = listFiles().sort()
       const rows: Array<[string, number, number, number]> = []
       for (let start = 0; start < files.length; start += PRUNE_FINGERPRINT_BATCH) {
         const batch = files.slice(start, start + PRUNE_FINGERPRINT_BATCH)
@@ -316,7 +316,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       return JSON.stringify(rows)
     }
     const initial = await fingerprint()
-    const referenced = await referencedAttachmentNames(listSessionFiles(sessionsDir))
+    const referenced = await referencedAttachmentNames(listFiles())
     if (deps.isSessionBusy() || initial !== (await fingerprint())) throw new Error(pick('会话在扫描期间发生变化，已停止附件清理，请稍后重试', 'The session changed during the scan; attachment cleanup stopped. Try again shortly'))
     const result = await pruneAttachments(join(YAN_DIR, 'attachments'), referenced, { before })
     clearSessionReadCache()

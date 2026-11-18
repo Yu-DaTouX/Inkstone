@@ -988,7 +988,7 @@ export class RunnerRegistry {
     return ids.length
   }
 
-  async stopAll(): Promise<void> {
+  async stopAll({ parallel = false }: { parallel?: boolean } = {}): Promise<void> {
     this.disposed = true
     this.staleRefresh.clear()
     if (this.reclaimTimer) clearInterval(this.reclaimTimer)
@@ -998,7 +998,8 @@ export class RunnerRegistry {
     this.runners.clear()
     this.admissions.clear()
     this.activeId = null
-    for (const { runner, entry } of all) await this.runStop(runner, entry)
+    if (parallel) await Promise.all(all.map(({ runner, entry }) => this.runStop(runner, entry)))
+    else for (const { runner, entry } of all) await this.runStop(runner, entry)
     await Promise.all(earlier.map((entry) => entry.done))
     this.opts.onChanged?.()
   }

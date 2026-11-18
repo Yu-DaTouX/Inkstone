@@ -180,6 +180,7 @@ import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { createViewResync } from './view-resync'
 import { messageSyncSignature } from '../shared/session-sync'
+import { redactSecretText } from '../shared/redact-diagnostic'
 import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -1248,7 +1249,7 @@ async function runShutdown(): Promise<void> {
     [
       { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
       { name: 'terminals', run: () => disposeTerminals() },
-      { name: 'runners', run: () => runners?.stopAll() },
+      { name: 'runners', run: () => runners?.stopAll({ parallel: true }) },
       {
         name: 'mcp-app-view',
         run: () => {
@@ -1761,6 +1762,7 @@ async function rememberRunnerSession(
 }
 
 let starting: Promise<{ ok: boolean; error?: string }> | null = null
+let startupError: string | null = null
 let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
 let launchSettings: Awaited<ReturnType<typeof getSettings>> | null = null
 
@@ -1814,7 +1816,10 @@ async function reportExtensionSources(): Promise<void> {
 
 function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (starting) return starting
-  starting = doStartAgent(restore).finally(() => {
+  starting = doStartAgent(restore).then((result) => {
+    startupError = result.ok ? null : redactSecretText(result.error || pick('pi 启动失败', 'pi failed to start')).slice(0, 1200)
+    return result
+  }).finally(() => {
     starting = null
   })
   return starting
@@ -2252,6 +2257,9 @@ function registerIpc(): void {
   registerAgentIpc(ipc, {
     runners: () => runners,
     ac,
+    agentStatus: () => ac()?.getConn() ?? (!starting && startupError !== null
+      ? { state: 'error', detail: startupError }
+      : { state: 'starting', detail: '' }),
     startAgent,
     whenAgentStarted,
     flushRestoreNotice,

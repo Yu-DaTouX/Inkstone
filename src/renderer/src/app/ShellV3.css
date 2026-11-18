@@ -510,7 +510,7 @@
   }
   .v3-conn-banner > .ui-notice__body {
     flex: 0 1 auto;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .v3-extension-skip {
     flex: none;

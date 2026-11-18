@@ -377,6 +377,7 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
 }
 
 const TRASH_DIR = join(YAN_DIR, 'trash', 'sessions')
+export const ATTACHMENT_SESSION_DIRS = [SESSIONS_DIR, join(YAN_DIR, 'subagents', 'sessions'), TRASH_DIR]
 const TRASH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const TRASH_PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const DELETED_MAX_TOKENS = 50

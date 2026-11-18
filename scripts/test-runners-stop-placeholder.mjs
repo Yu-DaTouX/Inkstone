@@ -76,6 +76,22 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await registry.stopAll()
   }
 
+  {
+    const { registry, agents } = harness()
+    await registry.select({ cwd: 'C:/p/a', sessionFile: 'C:/s/a.jsonl' })
+    await registry.select({ cwd: 'C:/p/b', sessionFile: 'C:/s/b.jsonl' })
+    for (const agent of agents) agent.stopGate = gate()
+    let finished = false
+    const stopping = registry.stopAll({ parallel: true }).then(() => { finished = true })
+    ok(agents.length === 2 && agents.every((agent) => agent.calls.stop === 1), '退出时同时启动各实例的关闭')
+    agents[0].stopGate.open()
+    await Promise.resolve()
+    ok(!finished && registry.hasBusyCwd('C:/p/b'), '仍等待未完成的实例并保留它的占位')
+    agents[1].stopGate.open()
+    await stopping
+    ok(registry.size === 0 && !registry.hasBusyCwd('C:/p/b'), '全部结束后释放占位')
+  }
+
   console.log('同目录与预览')
   {
     const { registry, agents } = harness()

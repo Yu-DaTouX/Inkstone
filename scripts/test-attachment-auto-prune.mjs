@@ -18,10 +18,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const attachments = join(root, 'attachments')
     const sessions = join(root, 'sessions')
     const subSessions = join(root, 'subagents', 'sessions')
+    const trashedSessions = join(root, 'trash', 'sessions')
     const queue = join(root, 'queue-recovery')
     await mkdir(attachments, { recursive: true })
     await mkdir(join(sessions, 'proj'), { recursive: true })
     await mkdir(join(subSessions, 'sub-00000001'), { recursive: true })
+    await mkdir(trashedSessions, { recursive: true })
     await mkdir(queue, { recursive: true })
     const file = (data) => join(attachments, `${sha1(data)}.png`)
     const put = async (data, ageDays) => {
@@ -31,6 +33,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
     await put('OLD_REFERENCED', 90)
     await put('OLD_SUBAGENT', 90)
+    await put('OLD_TRASHED_SESSION', 90)
     await put('OLD_QUEUED', 90)
     await put('OLD_RECLAIMED', 90)
     await put('OLD_STALE', 90)
@@ -38,6 +41,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await put('FRESH_STALE', 5)
     await writeFile(join(sessions, 'proj', 'a.jsonl'), [JSON.stringify({ type: 'session' }), imageLine('OLD_REFERENCED')].join('\n') + '\n')
     await writeFile(join(subSessions, 'sub-00000001', 'b.jsonl'), imageLine('OLD_SUBAGENT') + '\n')
+    await writeFile(join(trashedSessions, '100-token-0-c.jsonl'), imageLine('OLD_TRASHED_SESSION') + '\n')
     await writeFile(join(queue, 's1.json'), JSON.stringify({ version: 2, sessionId: 's1', items: { steering: [], followUp: [{ text: 'x', images: [{ data: 'OLD_QUEUED', mimeType: 'image/png' }] }] } }))
     await writeFile(join(queue, 's2.json.reclaimed'), JSON.stringify({ version: 2, sessionId: 's2', items: { steering: [{ text: 'y', images: [{ data: 'OLD_RECLAIMED', mimeType: 'image/png' }] }], followUp: [] } }))
 
@@ -45,7 +49,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const logs = []
     const base = {
       attachmentsDir: attachments,
-      sessionDirs: [sessions, subSessions],
+      sessionDirs: [sessions, subSessions, trashedSessions],
       queueDir: queue,
       now: () => now,
       log: (line) => logs.push(line)
@@ -60,6 +64,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(changed.status === 'done', '正常扫描完成', JSON.stringify(changed))
     ok(trashed.length === 2 && trashed.includes(file('OLD_STALE')) && trashed.includes(file('OLD_STALE_2')), '只把没被引用且超过 30 天的附件交给回收站', trashed.join(','))
     ok([file('OLD_REFERENCED'), file('OLD_SUBAGENT'), file('OLD_QUEUED'), file('OLD_RECLAIMED'), file('FRESH_STALE')].every((path) => !trashed.includes(path)), '被主会话、子代理会话、排队中与待恢复队列引用的，以及新鲜的都不动')
+    ok(!trashed.includes(file('OLD_TRASHED_SESSION')), '只被回收站会话引用的旧附件仍保留供撤销删除')
     ok(existsSync(file('OLD_STALE')) && existsSync(file('OLD_STALE_2')), '清理只经回收站接口，不会直接删除文件')
     ok(logs.some((line) => /moved 2 unreferenced attachments older than 30 days to the Recycle Bin/.test(line)), '清理后记一行日志', logs.join(' | '))
     trashed.length = 0

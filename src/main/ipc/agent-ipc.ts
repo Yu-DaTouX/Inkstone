@@ -4,7 +4,7 @@ import type { RunnerRegistry } from '../runners'
 import type { RunnerVisibility } from '../runner-reclaim'
 import type { ApprovalBroker } from '../approval-broker'
 import type { LineModel } from '../native-compaction-line'
-import type { ExpectedRuntimeOwner, MainPush, QueueEditOp, QueueSnapshot, QueueState } from '../../shared/ipc'
+import type { ExpectedRuntimeOwner, MainPush, YanBridge, QueueEditOp, QueueSnapshot, QueueState } from '../../shared/ipc'
 import type { RuntimeRef } from '../../shared/runs'
 import { pick } from '../../shared/ui-lang'
 import { getSettings } from '../settings'
@@ -29,6 +29,7 @@ export interface PinnedSendTarget {
 export interface AgentIpcDeps {
   runners(): RunnerRegistry | null
   ac(): AgentController | null
+  agentStatus(): Awaited<ReturnType<YanBridge['agentStatus']>>
   startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }>
   whenAgentStarted(): Promise<void>
   flushRestoreNotice(): void
@@ -267,9 +268,7 @@ export function registerAgentIpc(ipc: IpcRegistrar, deps: AgentIpcDeps): void {
     return ac()?.getState() ?? null
   })
 
-  handle('yan:agentStatus', async () =>
-    ac()?.getConn() ?? { state: 'starting' as const, detail: '' }
-  )
+  handle('yan:agentStatus', async () => deps.agentStatus())
   handle('yan:getMessages', async () => {
     await whenAgentStarted()
     return ac()?.getMessages() ?? []

@@ -5,7 +5,7 @@ import { scheduleIdleTask } from './idle-schedule'
 import { YAN_DIR } from './paths'
 import { QUEUE_RECOVERY_DIR } from './queue-persistence'
 import { clearSessionReadCache } from './session-reader'
-import { SESSIONS_DIR } from './sessions'
+import { ATTACHMENT_SESSION_DIRS } from './sessions'
 
 const MINUTE_MS = 60 * 1000
 const HOUR_MS = 60 * MINUTE_MS
@@ -34,7 +34,7 @@ export function startDataMaintenance(deps: DataMaintenanceDeps): () => void {
     run: async () => {
       const outcome = await autoPruneAttachments({
         attachmentsDir: join(YAN_DIR, 'attachments'),
-        sessionDirs: [SESSIONS_DIR, join(YAN_DIR, 'subagents', 'sessions')],
+        sessionDirs: ATTACHMENT_SESSION_DIRS,
         queueDir: QUEUE_RECOVERY_DIR,
         isBusy: deps.isBusy,
         trash: deps.trash,

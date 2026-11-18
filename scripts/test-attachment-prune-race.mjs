@@ -12,11 +12,15 @@ async function fixture(disappear) {
   let callback, afterScan = false, pruned = false
   runInNewContext(code, {
     handle: (_, fn) => { callback = fn }, deps: { isSessionBusy: () => false },
-    SESSIONS_DIR: '/fixture/sessions', YAN_DIR: '/fixture', join, existsSync: () => true,
-    listSessionFiles: () => ['session.jsonl'],
+    SESSIONS_DIR: '/fixture/sessions', ATTACHMENT_SESSION_DIRS: ['/fixture/sessions', '/fixture/trash/sessions'], YAN_DIR: '/fixture', join, existsSync: () => true,
+    listSessionFiles: (dir) => [join(dir, 'session.jsonl')],
     stat: async () => { if (disappear && afterScan) throw Object.assign(new Error('gone'), { code: 'ENOENT' }); return { size: 1, mtimeMs: 1, ctimeMs: 1 } },
     PRUNE_FINGERPRINT_BATCH: 32, pick: zh => zh, clearSessionReadCache: () => {},
-    referencedAttachmentNames: async () => { afterScan = true; return new Set() },
+    referencedAttachmentNames: async (files) => {
+      assert.ok(files.includes(join('/fixture/trash/sessions', 'session.jsonl')))
+      afterScan = true
+      return new Set()
+    },
     pruneAttachments: () => { pruned = true; return { removed: 0 } }, Date, JSON
   })
   if (disappear) await assert.rejects(callback(), /会话在扫描期间发生变化/)
@@ -34,7 +38,7 @@ async function batchFixture(count, batch) {
   let secondBatchYielded = null
   runInNewContext(code, {
     handle: (_, fn) => { callback = fn }, deps: { isSessionBusy: () => false },
-    SESSIONS_DIR: '/fixture/sessions', YAN_DIR: '/fixture', join, existsSync: () => true,
+    SESSIONS_DIR: '/fixture/sessions', ATTACHMENT_SESSION_DIRS: ['/fixture/sessions'], YAN_DIR: '/fixture', join, existsSync: () => true,
     listSessionFiles: () => files,
     stat: () => {
       const index = seen++
