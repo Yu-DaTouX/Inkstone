@@ -365,8 +365,10 @@ export function DataSettings(): ReactElement {
     setMessage(null)
     try {
       const result = await window.yan.sessionTransfer.importSession()
-      if (result.ok && result.sessionId) setMessage({ scope: 'session', tone: 'info', text: local.importDone.replace('{id}', result.sessionId) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error || local.transferFailed })
+      if (result.ok && result.sessionId) {
+        await useStore.getState().refreshSessions()
+        setMessage({ scope: 'session', tone: 'info', text: local.importDone.replace('{id}', result.sessionId) })
+      } else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error || local.transferFailed })
     } catch (cause) {
       setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {
