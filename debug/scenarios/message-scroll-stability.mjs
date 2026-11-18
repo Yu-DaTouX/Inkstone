@@ -127,7 +127,8 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
     await sleep(400)
     await ev(`(() => {
       const root = document.querySelector('.v3-stream')
-      window.__previewRemount = { placeholders: 0 }
+      const original = [...root.querySelectorAll('.v3-artifact-code')].find(node => node.textContent.length > 50)
+      window.__previewRemount = { original, text: original.textContent, placeholders: 0 }
       const check = node => {
         if (!(node instanceof Element)) return
         const previews = [...node.querySelectorAll('.v3-artifact-code'), ...(node.matches('.v3-artifact-code') ? [node] : [])]
@@ -139,16 +140,16 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
     })()`)
 
     await ev('(() => { const root = document.querySelector(".v3-stream"); root.dispatchEvent(new CustomEvent("yan-scroll-intent", { bubbles: true })); root.scrollTop -= 6000 })()')
-    await sleep(600)
+    await waitFor('!window.__previewRemount.original.isConnected', 5000)
     await ev(`(() => {
       const root = document.querySelector('.v3-stream')
       root.scrollTop = root.scrollHeight
       root.dispatchEvent(new WheelEvent('wheel', { deltaY: 10000, bubbles: true }))
     })()`)
-    await sleep(800)
-    const preview = await ev('(() => { const s = window.__previewRemount; s.stop(); return { placeholders: s.placeholders } })()')
+    await waitFor('[...document.querySelectorAll(".v3-artifact-code")].some(node => node !== window.__previewRemount.original && node.textContent === window.__previewRemount.text)', 5000)
+    const preview = await ev('(() => { const s = window.__previewRemount; s.stop(); delete window.__previewRemount; return { remounted: !s.original.isConnected, placeholders: s.placeholders } })()')
     report.previewRemount = preview
-    check('已读文件预览重挂载没有缩回加载占位', preview.placeholders === 0, preview)
+    check('已读文件预览重挂载没有缩回加载占位', preview.remounted && preview.placeholders === 0, preview)
   }
   const idle = await record('idle-table', () => sleep(6500))
   check('空闲长会话的末尾表格没有逐帧跳变', idle.tableFrames > 100 && idle.maxStep < 2, idle)
@@ -165,5 +166,5 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
     await ev('(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ session: { ...s.session, isAgentRunning: false, isStreaming: false } }) })()')
     await sleep(1500)
   })
-  check('流式更新没有超过一屏的瞬间回跳', streaming.maxStep < 500, streaming)
+  check('流式更新没有超过一屏的瞬间回跳', streaming.tableFrames > 0 && streaming.maxStep < 500, streaming)
 }
