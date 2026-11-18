@@ -1132,13 +1132,13 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   }, [narrowBuffer, identity])
 
   const userCount = useMemo(() => countUserMessages(effectiveMessages), [effectiveMessages])
-  const sentRef = useRef<{ identity: string | null; count: number }>({ identity: null, count: 0 })
+  const sentRef = useRef({ identity, count: userCount, loading: switchLoading })
   useEffect(() => {
     const prev = sentRef.current
-    sentRef.current = { identity: identity ?? null, count: userCount }
-    if (prev.identity !== (identity ?? null) || userCount <= prev.count) return
+    sentRef.current = { identity, count: userCount, loading: switchLoading }
+    if (switchLoading || prev.loading || prev.identity !== identity || userCount <= prev.count) return
     if (!stickRef.current) jumpToBottom()
-  }, [identity, userCount, jumpToBottom])
+  }, [identity, userCount, switchLoading, jumpToBottom])
 
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty && !readOnly ? '' : undefined}>
