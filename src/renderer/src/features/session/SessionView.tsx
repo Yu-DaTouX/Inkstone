@@ -963,7 +963,10 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       const exact = request.exact?.() ?? null
       const before = box.scrollTop
       write(exact ?? request.destination())
-      still = exact !== null && Math.abs(box.scrollTop - before) < 0.5 ? still + 1 : 0
+      const handle = instant && virtual ? vlistRef.current : null
+      const measured = !handle || [...box.querySelectorAll<HTMLElement>('.v3-stream-row[data-row]')].every((row) =>
+        Math.abs(row.offsetHeight - handle.getItemSize(Number(row.dataset.row))) <= 1)
+      still = measured && exact !== null && Math.abs(box.scrollTop - before) < 0.5 ? still + 1 : 0
       if (still >= FLIGHT_SETTLE_STILL || ++frames >= FLIGHT_SETTLE_FRAMES) {
         finish()
         return
