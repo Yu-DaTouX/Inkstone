@@ -110,8 +110,8 @@ function scanTail(text: string): TailScan {
 
 const DISPLAY_MATH_OPEN = /^ {0,3}\$\$/
 const BARE_MARKER = /^ {0,3}(?:[-*+]|>|#{1,6}|-{2}|\d{1,9}[.)]?)$/
-const PARTIAL_IMAGE =/!\[[^\[\]\n]*(?:\](?:\([^)\n]*)?)?$/
-const PARTIAL_LINK =/(!?)\[([^\[\]\n]*)\]\([^)\n]*$/
+const PARTIAL_IMAGE = /(?<!\\)((?:\\\\)*)!\[[^\[\]\n]*(?:\](?:\([^)\n]*)?)?$/
+const PARTIAL_LINK = /(?<!\\)((?:\\\\)*)\[([^\[\]\n]*)\]\([^)\n]*$/
 const TABLE_ROW_START = /^ {0,3}\|/
 const DELIMITER_CELL = /^:?-+:?$/
 
@@ -121,11 +121,11 @@ function holdPartialLink(text: string): string {
   if (!line.includes('[')) return text
   const insideCode = (until: number): boolean => (line.slice(0, until).match(/`/g)?.length ?? 0) % 2 === 1
   const image = PARTIAL_IMAGE.exec(line)
-  if (image && !insideCode(image.index)) return text.slice(0, lineStart + image.index)
+  if (image && !insideCode(image.index)) return text.slice(0, lineStart + image.index) + image[1]
   if (!line.includes('](')) return text
   const match = PARTIAL_LINK.exec(line)
   if (!match || insideCode(match.index)) return text
-  return text.slice(0, lineStart + match.index) + match[2]
+  return text.slice(0, lineStart + match.index) + match[1] + match[2]
 }
 
 function holdBareMarker(text: string): string {

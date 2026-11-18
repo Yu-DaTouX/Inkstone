@@ -207,6 +207,15 @@ check('流式预处理：写到一半的链接只留文字，图片整体等写�
   assert.equal(prepareStreamingMarkdown('`[x](y` 行内', true), '`[x](y` 行内')
 })
 
+check('流式预处理：区分转义后的字面文本与真正的半成品链接或图片', () => {
+  const literal = String.raw`写法 \[标签](路径`
+  assert.equal(prepareStreamingMarkdown(literal, true), literal)
+  assert.equal(prepareStreamingMarkdown(`${literal}；见[文档](路径`, true), `${literal}；见文档`)
+  assert.equal(prepareStreamingMarkdown(String.raw`见 \\[文档](路径`, true), String.raw`见 \\文档`)
+  assert.equal(prepareStreamingMarkdown(String.raw`看 \![图](路径`, true), String.raw`看 \!图`)
+  assert.equal(prepareStreamingMarkdown(String.raw`看 \\![图](路径`, true), String.raw`看 \\`)
+})
+
 check('流式预处理：表头没写完或分隔行没到时整块先不显示，数据行写完才出现', () => {
   const head = '| 名称 | 说明 |'
   const delimiter = '| --- | --- |'
