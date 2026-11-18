@@ -11,8 +11,16 @@ export interface SessionMarkdownMeta {
 const HINT_KEYS = ['path', 'file_path', 'command', 'query', 'url', 'pattern', 'description']
 const HINT_MAX = 160
 
+function backtickFence(text: string, minLength: number): string {
+  let length = minLength
+  for (const [run] of text.matchAll(/`+/g)) length = Math.max(length, run.length + 1)
+  return '`'.repeat(length)
+}
+
 function inlineCode(text: string): string {
-  return text.includes('`') ? `\`\` ${text} \`\`` : `\`${text}\``
+  const fence = backtickFence(text, 1)
+  const pad = fence.length > 1 || (text.startsWith(' ') && text.endsWith(' ') && /[^ ]/.test(text)) ? ' ' : ''
+  return `${fence}${pad}${text}${pad}${fence}`
 }
 
 function stamp(at: number): string {
@@ -41,9 +49,7 @@ function blocksOf(message: UIMessage): { speaker: string; parts: string[] } | nu
     if (!message.bash) return null
     const output = message.text.trimEnd()
     const body = `$ ${message.bash.command}${output ? `\n${output}` : ''}`
-    let fenceLength = 3
-    for (const [run] of body.matchAll(/`{3,}/g)) fenceLength = Math.max(fenceLength, run.length + 1)
-    const fence = '`'.repeat(fenceLength)
+    const fence = backtickFence(body, 3)
     parts.push(`${fence}\n${body}\n${fence}`)
     return { speaker: pick('用户', 'User'), parts }
   }

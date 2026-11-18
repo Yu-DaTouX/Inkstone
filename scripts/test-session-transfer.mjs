@@ -360,6 +360,16 @@ try {
     assert.ok(page.includes('<h2>后续回复</h2>'))
     assert.ok(markdown.includes('``````\n$ show notes\n' + output + '\n``````'))
   })
+  await check('Markdown 和 HTML 导出：行内代码保留连续反引号和目录两端的空格', async () => {
+    const hints = ['echo ``two`` and ```three```', '``', '`left', 'right`']
+    const cwd = ' E:/demo space '
+    const markdown = sessionMarkdown([{
+      id: 'a1', role: 'assistant', text: '', toolCalls: hints.map((command, i) => ({ id: `t${i}`, name: 'bash', args: { command }, status: 'ok' }))
+    }], { cwd, exportedAt: 1 })
+    const page = await sessionHtmlDocument(markdown, '标题', 'zh-CN')
+    for (const text of [...hints, cwd]) assert.ok(page.includes(`<code>${text}</code>`), `缺少完整代码段 ${JSON.stringify(text)}`)
+    assert.ok(markdown.includes('```` echo ``two`` and ```three``` ````'))
+  })
   await check('读不到会话或格式不认识时不写文件；不认识的格式按会话包导出', async () => {
     const missing = await register({ readMessages: async () => null }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'markdown', title: 'none' })
     assert.equal(missing.ok, false)
