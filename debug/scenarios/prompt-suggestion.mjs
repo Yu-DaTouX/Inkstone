@@ -19,7 +19,8 @@ export default async function run({ cdp, fake, check, waitFor, turn, sleep, shot
   await waitFor(`s.statuses?.[${JSON.stringify(KEY)}] === ${JSON.stringify(SUGGESTION)}`, 20000)
   const asked = fake.requests.slice(before).filter((request) => request.text.startsWith('[Inkstone: predict'))
   check('回复结束后发了一次预测请求', asked.length === 1, fake.requests.slice(before).map((request) => request.text))
-  check('预测请求禁用了工具但没删工具', asked[0]?.tools > 0, asked[0])
+  const { tools, toolChoice } = asked[0] ?? {}
+  check('预测请求禁用了工具但没删工具', tools > 0 && toolChoice === 'none', { tools, toolChoice })
   await sleep(300)
   const shown = await composer()
   check('输入框显示灰字建议', shown?.suggestion === 'true' && shown.placeholder === SUGGESTION && shown.text === '', shown)
