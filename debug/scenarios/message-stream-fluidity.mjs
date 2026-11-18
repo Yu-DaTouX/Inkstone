@@ -194,6 +194,11 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   await shot('message-stream-virtual-final')
   if (rounds === 640) {
     const rail = '[data-testid="v3-outline-rail"]'
+    const tickMotion = await cdp.evaluate(`(() => {
+      const tick = document.querySelector('${rail} [data-current]');
+      return ['', '::before', '::after'].map(part => getComputedStyle(tick, part || null).transitionDuration);
+    })()`)
+    check('小地图保留刻度伸缩，但不同时过渡伪元素', tickMotion[0] !== '0s' && tickMotion.slice(1).every(duration => duration === '0s'), tickMotion)
     const point = await cdp.evaluate(`(() => {
       const r = document.querySelector('.v3-rail-ticks').getBoundingClientRect();
       return { x: r.left + r.width / 2, y: Math.floor(r.top + r.height / 2) + 0.875 };

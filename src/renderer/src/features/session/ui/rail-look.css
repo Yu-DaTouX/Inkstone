@@ -17,12 +17,10 @@
   .v3-rail-tick::before {
     background: var(--fg3);
     opacity: var(--base);
-    transition: opacity var(--dur-quick) var(--ease);
   }
   .v3-rail-tick::after {
     background: var(--fg);
     opacity: var(--lit);
-    transition: opacity var(--dur-quick) var(--ease);
   }
   .v3-rail-tick[data-in-view] { --k: .5; --lit: .6; }
   .v3-rail-tick[data-current] { --k: .7; --lit: .95; }
@@ -116,8 +114,6 @@
     .v3-rail,
     .v3-rail-dock,
     .v3-rail-tick,
-    .v3-rail-tick::before,
-    .v3-rail-tick::after,
     .v3-rail-step,
     .v3-rail-card,
     .v3-rail[data-preview] .v3-rail-card,
@@ -126,8 +122,6 @@
   :root[data-reduce-motion='true'] .v3-rail,
   :root[data-reduce-motion='true'] .v3-rail-dock,
   :root[data-reduce-motion='true'] .v3-rail-tick,
-  :root[data-reduce-motion='true'] .v3-rail-tick::before,
-  :root[data-reduce-motion='true'] .v3-rail-tick::after,
   :root[data-reduce-motion='true'] .v3-rail-step,
   :root[data-reduce-motion='true'] .v3-rail .v3-rail-card,
   :root[data-reduce-motion='true'] .v3-rail[data-preview] .v3-rail-card[data-follow] { transition: none; animation: none; }
