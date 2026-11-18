@@ -212,7 +212,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const t = useT()
   const tt = useSessionText()
   const [showAll, setShowAll] = useToolExpansion(`spread:${turnId ?? process[0]?.id ?? ''}`)
-  const items = spreadProcess(process, { foldThinking: !live && view !== 'thinking' })
+  const items = spreadProcess(process, { foldThinking: view !== 'thinking' })
   const overflow = live ? 0 : Math.max(0, items.length - SPREAD_HISTORY_ITEMS)
   const skipped = overflow && showAll !== true ? overflow : 0
   const lastGroup = items.findLastIndex((item) => item.kind === 'group')
@@ -343,7 +343,7 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
           </span>
         </CollapsibleHeader>
       )}
-      <Expand id={panelId} className="v3-step-panel" open={visible} role="group" aria-label={t('proc.title')} aria-hidden={!visible || undefined}>
+      <Expand id={panelId} className="v3-step-panel" open={visible} exit="sheet" role="group" aria-label={t('proc.title')} aria-hidden={!visible || undefined}>
         {visible ? <AnimatedHeight>{body}</AnimatedHeight> : null}
       </Expand>
       {compactionAfter && !open && !stage ? <CompactionMarker /> : null}

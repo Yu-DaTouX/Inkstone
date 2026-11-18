@@ -118,10 +118,11 @@ export interface ExpandProps extends Omit<HTMLAttributes<HTMLDivElement>, 'child
   open: boolean
   children?: ReactNode
   keepMounted?: boolean
+  exit?: 'base' | 'sheet'
 }
 
-export const Expand = forwardRef<HTMLDivElement, ExpandProps>(function Expand({ open, keepMounted = false, className, children, ...rest }, ref) {
-  const presence = usePresence(open)
+export const Expand = forwardRef<HTMLDivElement, ExpandProps>(function Expand({ open, keepMounted = false, exit = 'base', className, children, ...rest }, ref) {
+  const presence = usePresence(open, { exit })
   const kept = useRef<ReactNode>(children)
   if (open) kept.current = children
   const content = open ? children : presence.present || keepMounted ? kept.current : null

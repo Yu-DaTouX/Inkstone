@@ -15,7 +15,7 @@ const PROBE = `(() => {
     const msg = msgs[msgs.length - 1]
     const base = stream ? stream.getBoundingClientRect().top : 0
     const top = (el) => Math.round((el.getBoundingClientRect().top - base) * 10) / 10
-    const segs = msg ? [...msg.querySelectorAll('.v3-prose')].map((el) => ({ k: (el.closest('[data-seg-id]')?.getAttribute('data-seg-id') ?? el.closest('.v3-process') ? 'in-process' : 'free') + ':' + (el.textContent ?? '').slice(0, 12), top: top(el), h: Math.round(el.getBoundingClientRect().height) })) : []
+    const segs = msg ? [...msg.querySelectorAll('.v3-prose')].map((el) => ({ k: (el.closest('[data-seg-id]')?.getAttribute('data-seg-id') ?? (el.closest('.v3-process') ? 'in-process' : 'free')) + ':' + (el.textContent ?? '').slice(0, 12), top: top(el), h: Math.round(el.getBoundingClientRect().height) })) : []
     const proc = msg ? msg.querySelector('[data-testid="v3-process"]') : null
     const panel = proc ? proc.querySelector('.ui-collapsible__panel') : null
     const leave = proc ? proc.querySelector('.v3-process-leave') : null
@@ -48,7 +48,7 @@ export default async function run({ cdp, check, sleep, newSession, live, turn, b
   writeFileSync(join(out, 'stream-end-frames.json'), JSON.stringify(frames))
   const last = (f) => f.segs[f.segs.length - 1]
   let worst = 0
-  const window5 = end >= 0 ? frames.slice(Math.max(0, end - 5), end + 40) : []
+  const window5 = end >= 0 ? frames.slice(Math.max(0, end - 5)).filter((f) => f.t <= frames[end].t + 500) : []
   for (let i = 1; i < window5.length; i++) {
     const a = window5[i - 1]
     const b = window5[i]
@@ -56,12 +56,13 @@ export default async function run({ cdp, check, sleep, newSession, live, turn, b
     const keys = b.segs.map((s) => s.k).filter((k) => a.segs.some((s) => s.k === k))
     for (const k of keys) {
       const d = Math.abs(b.segs.find((s) => s.k === k).top - a.segs.find((s) => s.k === k).top)
-      if (d > 12) { worst = Math.max(worst, d); console.log('JUMP ' + k + ' ' + d + ' at +' + (b.t - frames[end].t) + 'ms') }
+      worst = Math.max(worst, d)
+      if (d > 12) console.log('JUMP ' + k + ' ' + d + ' at +' + (b.t - frames[end].t) + 'ms')
     }
   }
   const lastTops = window5.map((f) => (last(f) ? last(f).top : null))
   console.log('END ' + end + ' frames ' + frames.length)
   console.log('PROC ' + window5.slice(0, 20).map((f) => [f.running ? 'R' : 'D', f.procH, f.panelH, f.leaveH, last(f)?.top].join('/')).join(' '))
   log('结束帧', { frames: frames.length, end, worst, lastTops: lastTops.slice(0, 30) })
-  check('答复结束前后各段位置不跳（滚动不变时 单帧 ≤12px）', end >= 0 && worst === 0, { worst })
+  check('答复结束前后各段位置不跳（滚动不变时 单帧 ≤12px）', end >= 0 && worst <= 12, { worst })
 }

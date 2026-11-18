@@ -182,6 +182,7 @@
   .v3-process-head .ui-collapsible__icon { inline-size: var(--s-16); justify-content: center; }
   .v3-process-line { display: flex; flex-wrap: nowrap; align-items: center; column-gap: var(--s-6); min-width: 0; }
   .v3-step-panel[hidden]:not([data-animated]) { display: none; }
+  .v3-process > .v3-step-panel:not([data-open]) { transition-duration: var(--dur-sheet); transition-timing-function: linear; }
   .v3-process-count { display: block; flex: 0 1 auto; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-process-count[data-kind='elapsed'], .v3-process-diff { flex: none; }
   .v3-process-head .ui-collapsible__label { flex: 0 1 auto; }
