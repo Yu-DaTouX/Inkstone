@@ -133,18 +133,19 @@ interface SessionHeader {
 
 function findSessionHeader(content: string): SessionHeader | undefined {
   let header: SessionHeader | undefined
-  for (let start = 0; start < content.length;) {
+  for (let start = 0, end: number; start < content.length; start = end + 1) {
     const newline = content.indexOf('\n', start)
-    const end = newline < 0 ? content.length : newline
+    end = newline < 0 ? content.length : newline
+    const line = content.slice(start, end)
+    if (!line.includes('"session"') && !line.includes('\\u')) continue
     try {
-      const parsed = JSON.parse(content.slice(start, end)) as Record<string, unknown> | null
+      const parsed = JSON.parse(line) as Record<string, unknown> | null
       if (parsed?.type === 'session') {
         if (header || typeof parsed.id !== 'string' || !parsed.id.trim()) return undefined
         header = { data: { ...parsed, id: parsed.id }, start, end }
       }
     } catch {
     }
-    start = end + 1
   }
   return header
 }

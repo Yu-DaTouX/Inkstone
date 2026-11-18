@@ -178,6 +178,18 @@ try {
     assert.equal(await readFile(result.path, 'utf8'), before + '{"type":"session","id":"fresh-with-body","version":3}' + after)
     assert.equal((await importContent(content + '{"type":"session","id":"late-duplicate"}')).ok, false)
   })
+  await check('会话头预筛保留转义字段、重复头校验和非会话记录', async () => {
+    const header = String.raw`{"ty\u0070e":"sessio\u006e","id":"original","version":3}`
+    const before = '{"type":"message","id":"before","text":"unchanged"}\r\n'
+    const after = '\n{"type":"message","text":"session"}\r\n'
+    const content = before + header + after
+    assert.equal(readSessionId(content), 'original')
+    assert.equal(readSessionId(content + header), undefined)
+    assert.equal((await importContent(content + header)).ok, false)
+    const result = await importContent(content, ['escaped-header'])
+    assert.equal(result.ok, true, result.error)
+    assert.equal(await readFile(result.path, 'utf8'), before + '{"type":"session","id":"escaped-header","version":3}' + after)
+  })
   await check('即使源文件不存在也不复用原 ID', async () => {
     const result = await importContent('{"type": "session", "id": "absent-source"}', ['absent-source', 'different-id'])
     assert.equal(result.ok, true, result.error)
