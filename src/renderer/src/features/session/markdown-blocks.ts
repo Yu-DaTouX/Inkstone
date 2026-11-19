@@ -115,6 +115,46 @@ const PARTIAL_LINK = /(?<!\\)((?:\\\\)*)\[((?:\\[^\n]|[^\\[\]\n])*)\]\((?:\\[^\n
 const TABLE_ROW_START = /^ {0,3}\|/
 const DELIMITER_CELL = /^:?-+:?$/
 
+export function revealClosedMermaid(text: string, edge: number): number {
+  const opener = '```mermaid\n'
+  const offset = Math.max(0, edge - 4096)
+  const prefix = text.slice(offset, edge)
+  const gap = prefix.lastIndexOf('\n\n' + opener)
+  const start = gap >= 0 ? offset + gap + 2 : !offset && prefix.startsWith(opener) ? 0 : -1
+  if (start < 0) return edge
+  const body = start + opener.length
+  const end = /^ {0,3}`{3,}[ \t]*\r?\n/m.exec(text.slice(body, body + 4096))
+  const closed = end ? body + end.index + end[0].length : edge
+  if (closed <= edge) return edge
+  const scan = scanTail(text.slice(0, start))
+  return scan.fenceOpen || scan.mathAt >= 0 || scan.inlineAt >= 0 ? edge : closed
+}
+
+export function skipTableSeparator(text: string, edge: number): number {
+  if (text[edge - 1] !== '\n') return edge
+  const start = text.lastIndexOf('\n', edge - 2) + 1
+  const end = text.indexOf('\n', edge)
+  if (end < 0 || (start > 0 && text[start - 2] !== '\n')) return edge
+  const header = text.slice(start, edge - 1)
+  const separator = text.slice(edge, end)
+  if (!TABLE_ROW_START.test(header) || !TABLE_ROW_START.test(separator)) return edge
+  const cells = tableCells(separator)
+  if (cells.length !== tableCells(header).length || !cells.every((cell) => DELIMITER_CELL.test(cell))) return edge
+  const scan = scanTail(text.slice(0, edge))
+  return scan.fenceOpen || scan.mathAt >= 0 || scan.inlineAt >= 0 ? edge : end + 1
+}
+
+export function skipLinkDestination(text: string, edge: number): number {
+  const destination = /^https?:\/\/[^\s()\\]+\)/.exec(text.slice(edge, edge + 2048))
+  if (!destination) return edge
+  const prefix = text.slice(0, edge)
+  const line = prefix.slice(prefix.lastIndexOf('\n') + 1)
+  if (/^(?: {4}|\t)/.test(line) || PARTIAL_IMAGE.test(line)) return edge
+  const scan = scanTail(prefix)
+  return !scan.fenceOpen && scan.inlineAt < 0 && scan.mathAt < 0 && holdPartialLink(prefix) !== prefix
+    ? edge + destination[0].length : edge
+}
+
 function holdPartialLink(text: string): string {
   const lineStart = text.lastIndexOf('\n') + 1
   const line = text.slice(lineStart)
@@ -171,8 +211,8 @@ function holdPartialTable(text: string): string {
   if (!delimiter || delimiter.length !== columns || !delimiter.every((cell) => DELIMITER_CELL.test(cell))) return text.slice(0, blockOffset)
   if (complete || block.length < 3) return text
   const row = block[block.length - 1]
-  if (row.trimEnd().endsWith('|') && tableCells(row).length >= columns) return text
-  return text.slice(0, text.length - row.length)
+  if (!row.slice(row.indexOf('|') + 1).trim()) return text.slice(0, text.length - row.length)
+  return text
 }
 
 export function splitMarkdownBlocks(text: string): MarkdownBlock[] {

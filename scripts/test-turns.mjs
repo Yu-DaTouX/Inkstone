@@ -262,6 +262,11 @@ export async function runTurnTests(ok, turns) {
     const open = '看这个：\n\n```ts\nconst a = 1'
     const op = splitParagraphs(open)
     ok(op.length === 2, '未闭合的围栏也能切出前面的段落', `实际 ${op.length}`)
+
+    const diagram = '```mermaid\nflowchart LR\nA --> B\n```'
+    const response = (text, streamingId) => groupIntoTurns([{id:'u',role:'user',text:'图'}, {id:'a',role:'assistant',text}], streamingId).at(-1)?.response?.text
+    ok(response(diagram + '\n', 'a') === diagram + '\n', '流式 Mermaid 保留关闭围栏的换行')
+    ok(response(diagram, 'a') === diagram && response(diagram + '\n') === diagram, '不添加未到达的换行，不更改历史文本')
   }
 
   console.log('\n--- 13. 缓存命中率 ---')

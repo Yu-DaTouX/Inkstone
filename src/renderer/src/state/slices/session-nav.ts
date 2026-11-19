@@ -21,6 +21,12 @@ import {
 } from './runtime'
 import { piCall, pushNotice, type SliceContext } from './shared'
 
+function markSwitchTiming(stage: 'start' | 'peeked' | 'painted' | 'selected'): void {
+  const name = `yan:switch-${stage}`
+  performance.clearMarks(name)
+  performance.mark(name)
+}
+
 function beginSessionSwitch(gate: number): () => void {
   discardPendingMessagePatches()
   let resolve!: () => void
@@ -155,11 +161,11 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
       widgetPlacements: cachedSnapshot?.widgetPlacements ?? {}
     })
 
-    performance.mark('yan:switch-start')
+    markSwitchTiming('start')
     try {
       const peek = await window.yan.peekSession(path, { trackSync: !cachedMessages?.length })
       if (gate !== nav.gate) return
-      performance.mark('yan:switch-peeked')
+      markSwitchTiming('peeked')
       if (peek) {
         const stableId = peek.sessionId ?? sum?.id
         const before = get()
@@ -176,7 +182,9 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
         } else if (migrated !== before.sessionRuntimes) {
           set({ sessionRuntimes: migrated })
         }
-        requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (gate === nav.gate) markSwitchTiming('painted')
+        }))
       }
     } catch {
       if (gate !== nav.gate) return
@@ -197,8 +205,8 @@ export function createSessionNavSlice({ set, get }: SliceContext): SessionNavSli
     const res = await piCall(() =>
       window.yan.selectSession({ sessionFile: sum?.path ?? path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
     )
-    performance.mark('yan:switch-selected')
     if (gate !== nav.gate) return
+    markSwitchTiming('selected')
     if (!res.ok) {
       const leftId = leftView.peekedSessionId ?? leftView.session?.sessionId
       const leftCache = leftId ? get().sessionRuntimes[leftId] : undefined

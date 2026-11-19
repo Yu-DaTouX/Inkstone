@@ -410,10 +410,12 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       const hasTools = ownCalls > 0
       const target = seg()
       const at = Math.max(0, target.tools.length - ownCalls)
-      for (const p of paragraphsOf(m, m.text)) {
+      const parts = paragraphsOf(m, m.text)
+      const closedMermaid = m.id === streamingId && /^ {0,3}`{3,}[ \t]*\r?\n[\s]*$/.test(m.text.slice(m.text.trimEnd().lastIndexOf('\n') + 1)) && parts.at(-1)?.startsWith('```mermaid\n')
+      for (const [index, p] of parts.entries()) {
         const item = {
           id: `${m.id}#${cur.texts.length}`,
-          text: p,
+          text: closedMermaid && index === parts.length - 1 ? p + '\n' : p,
           hasTools,
           ...(m.sourceCwd ? { sourceCwd: m.sourceCwd } : {}),
           ...(at > 0 ? { at } : {})

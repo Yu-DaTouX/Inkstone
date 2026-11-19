@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
+import { revealClosedMermaid, skipLinkDestination, skipTableSeparator } from './markdown-blocks'
 
 export const REVEAL_DRAIN_MS = 160
 export const MAX_DRAIN_MS = 700
@@ -204,8 +205,15 @@ export function useSmoothReveal(text: string, live: boolean, id?: string | null,
       const state = stateRef.current ?? startReveal(Math.min(shownRef.current, current.length), now)
       const cap = burstRef.current.burst ? typeRate(current.slice(Math.floor(state.shown))) : Infinity
       const step = stepReveal(state, current.length, now, liveRef.current, cap)
-      stateRef.current = step
-      const next = revealLength(current, step.shown)
+      const paced = revealLength(current, step.shown)
+      let next = paced
+      const prev = shownRef.current
+      const edge = current.slice(Math.max(0, prev - 1), paced).indexOf('](')
+      if (edge >= 0) next = Math.max(next, skipLinkDestination(current, Math.max(0, prev - 1) + edge + 2))
+      const newline = current.indexOf('\n', Math.max(0, prev))
+      if (newline >= 0 && newline < paced) next = Math.max(next, skipTableSeparator(current, newline + 1))
+      if (liveRef.current) next = revealClosedMermaid(current, next)
+      stateRef.current = next > paced ? { ...step, shown: next } : step
       if (next !== shownRef.current) {
         shownRef.current = next
         remember(id, current, next)

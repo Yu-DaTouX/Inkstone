@@ -17,7 +17,7 @@ const outfile = join(dir, 'markdown-blocks.mjs')
 const kbdOutfile = join(dir, 'markdown-kbd.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-blocks.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-kbd.ts')], bundle: true, platform: 'node', format: 'esm', outfile: kbdOutfile, logLevel: 'error' })
-const { hasUnclosedFence, splitMarkdownBlocks, prepareStreamingMarkdown } = await import(pathToFileURL(outfile).href)
+const { hasUnclosedFence, splitMarkdownBlocks, prepareStreamingMarkdown, revealClosedMermaid, skipLinkDestination, skipTableSeparator } = await import(pathToFileURL(outfile).href)
 const { rehypeKbd } = await import(pathToFileURL(kbdOutfile).href)
 await rm(dir, { recursive: true, force: true })
 
@@ -238,7 +238,38 @@ check('流式预处理：转义右括号不提前结束链接或图片地址', (
   assert.equal(prepareStreamingMarkdown('看[文档](docs' + '\\', true), '看文档')
 })
 
-check('流式预处理：表头没写完或分隔行没到时整块先不显示，数据行写完才出现', () => {
+check('完整 Mermaid 可直接进入渲染，普通代码及未闭合示例仍跟随出字', () => {
+  const opener = '```mermaid\n'
+  const body = 'flowchart LR\nA --> B\n'
+  const diagram = opener + body + '```\n'
+  const edge = opener.length
+  assert.equal(revealClosedMermaid(diagram + '\n正文', edge), diagram.length)
+  assert.equal(revealClosedMermaid(diagram, edge - 1), edge - 1)
+  assert.equal(revealClosedMermaid(diagram.trimEnd(), edge), edge)
+  assert.equal(revealClosedMermaid(opener + body, edge), edge)
+  for (const prefix of ['````md\n\n', '$$\n\n']) {
+    assert.equal(revealClosedMermaid(prefix + diagram, prefix.length + edge), prefix.length + edge)
+  }
+  assert.equal(revealClosedMermaid('```text\n' + body + '```\n', edge), edge)
+})
+
+check('仅跳过完整到达且不显示的链接地址和表格分隔行', () => {
+  for (const text of ['见 `code` 和[链接](https://example.com) 后文', '[链接](https://example.com']) {
+    const edge = text.indexOf('](') + 2
+    assert.equal(skipLinkDestination(text, edge), text.includes(')') ? text.indexOf(')', edge) + 1 : edge)
+  }
+  for (const text of ['```md\n[示例](https://example.com)', '看 ![图](https://example.com)', '`[示例](https://example.com)`', '    [示例](https://example.com)']) {
+    const edge = text.indexOf('](') + 2
+    assert.equal(skipLinkDestination(text, edge), edge)
+  }
+  const table = '| a | b |\n| --- | --- |\n| x | y |'
+  const edge = table.indexOf('\n') + 1
+  assert.equal(skipTableSeparator(table, edge), table.lastIndexOf('\n') + 1)
+  assert.equal(skipTableSeparator(table.slice(0, -10), edge), edge)
+  assert.equal(skipTableSeparator('```\n\n' + table, edge + 5), edge + 5)
+})
+
+check('表头完整后，已到达的数据行文字逐步显示', () => {
   const head = '| 名称 | 说明 |'
   const delimiter = '| --- | --- |'
   assert.equal(prepareStreamingMarkdown('前文\n\n| 名', true), '前文\n\n')
@@ -248,8 +279,11 @@ check('流式预处理：表头没写完或分隔行没到时整块先不显示�
   assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}`, true), `${head}\n${delimiter}`)
   assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n`, true), `${head}\n${delimiter}\n`)
   assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |`, true), `${head}\n${delimiter}\n| a1 | b1 |`)
-  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |\n| a2 |`, true), `${head}\n${delimiter}\n| a1 | b1 |\n`)
-  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |\n| a2 | b2`, true), `${head}\n${delimiter}\n| a1 | b1 |\n`)
+  for (const row of ['| a2 |', '| a2 | b2']) {
+    const prefix = `${head}\n${delimiter}\n| a1 | b1 |\n${row}`
+    assert.equal(prepareStreamingMarkdown(prefix, true), prefix)
+    assert.match(html(prefix), /<tr><td>a2<\/td><td>.*?<\/td><\/tr>/)
+  }
   assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |\n| a2 | b2 |\n`, true), `${head}\n${delimiter}\n| a1 | b1 |\n| a2 | b2 |\n`)
   assert.equal(prepareStreamingMarkdown('| 非表格的竖线开头段落\n\n后文', true), '| 非表格的竖线开头段落\n\n后文')
   assert.equal(prepareStreamingMarkdown('```\n| a | b |\n```', true), '```\n| a | b |\n```')
@@ -262,7 +296,9 @@ check('表格行里的行内代码生成时不先露出半行再消失', () => {
   const header = '| 场景 | 做法 | 避免 |\n| --- | --- | --- |\n'
   const row = '| 业务规则不满足 | 返回失败 | 抛出 `Error` |'
   for (let length = 1; length < row.length; length++) {
-    assert.equal(prepareStreamingMarkdown(header + row.slice(0, length), true), header, `prefix ${length}`)
+    const rendered = html(prepareStreamingMarkdown(header + row.slice(0, length), true))
+    assert.match(rendered, /^<table>[\s\S]*<\/table>$/, `prefix ${length}`)
+    if (length > '| 业'.length) assert.ok(rendered.includes('业'), `prefix ${length} keeps the visible cell`)
   }
   assert.equal(prepareStreamingMarkdown(header + row, true), header + row)
   for (let length = 1; length <= 20; length++) {

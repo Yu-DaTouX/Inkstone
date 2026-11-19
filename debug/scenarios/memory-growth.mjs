@@ -5,7 +5,7 @@ import { memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
 
 export const meta = { observation: true, description: '内存增长：三个会话各跑 FLOW/MANYTOOLS/LONGTEXT，之后循环 N 轮（YAN_MEM_ROUNDS，默认 25）切换会话、开关分屏与文件预览、再发一轮流式，每轮强制 GC 后记录 JS 堆、DOM 节点、事件监听器，输出曲线与首尾增量；YAN_MEM_SNAPSHOT=1 在第 3 轮与最后一轮存堆快照', }
 
-export default async function run({ cdp, box, runDir, report, sleep, log, newSession, state, turn, waitFor }) {
+export default async function run({ cdp, box, runDir, report, sleep, log, newSession, state, turn, waitFor, check }) {
   const ev = (expr) => cdp.evaluate(expr)
   const rounds = Number(process.env.YAN_MEM_ROUNDS ?? 25)
   const imagesOn = process.env.YAN_MEM_IMAGES === '1'
@@ -20,7 +20,8 @@ export default async function run({ cdp, box, runDir, report, sleep, log, newSes
   const measure = async () => {
     for (let i = 0; i < 3; i++) { await cdp.call('HeapProfiler.collectGarbage'); await sleep(150) }
     const m = Object.fromEntries((await cdp.call('Performance.getMetrics')).result.metrics.map((x) => [x.name, x.value]))
-    return { heapMB: +(m.JSHeapUsedSize / 1048576).toFixed(1), nodes: m.Nodes, listeners: m.JSEventListeners, documents: m.Documents, frames: m.Frames, proc: memoryByKind(sampleProcessTree(marker)) }
+    const switchMarks = await ev(`performance.getEntriesByType('mark').filter(mark => mark.name.startsWith('yan:switch-')).length`)
+    return { heapMB: +(m.JSHeapUsedSize / 1048576).toFixed(1), nodes: m.Nodes, listeners: m.JSEventListeners, documents: m.Documents, frames: m.Frames, switchMarks, proc: memoryByKind(sampleProcessTree(marker)) }
   }
   const snapshot = async (name) => {
     cdp.events.length = 0
@@ -80,5 +81,7 @@ export default async function run({ cdp, box, runDir, report, sleep, log, newSes
   report.curve = curve
   report.delta = { heapMB: +(last.heapMB - first.heapMB).toFixed(1), nodes: last.nodes - first.nodes, listeners: last.listeners - first.listeners, from: first.round, to: last.round }
   log('delta', report.delta)
+  const marks = curve.slice(1).map((row) => row.switchMarks)
+  check('会话切换计时标记保留最新阶段且总量不累积', marks.length > 0 && marks.every((count) => count >= 3 && count <= 4), marks)
   writeFileSync(join(runDir, 'curve.json'), JSON.stringify(curve, null, 1))
 }
