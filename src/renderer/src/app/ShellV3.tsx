@@ -309,7 +309,8 @@ export default function ShellV3(): ReactElement {
   sessionBarFitsRef.current = sessionBarFits
   const sessionBarWanted = route.name === 'chat' && (hasMessages || !singlePane) && sessionBarOn
   const sessionBarShown = sessionBarWanted && sessionBarFits
-  const sessionBarPresence = usePresence(sessionBarShown, { exit: 'sheet' })
+  const panelMotionMs = useStore((s) => sanitizePanelMotion(s.settings?.panelMotionMs) ?? PANEL_MOTION_DEFAULT)
+  const sessionBarPresence = usePresence(sessionBarShown, { animate: panelMotionMs > 0 && sessionBarFits, exit: panelMotionMs })
   const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, laneMinWidth)
   const shownTilesWidthNow = clampTilesWidth(tilesWidth, tilesRoom)
   const shownTilesWidthRef = useRef(shownTilesWidthNow)
@@ -343,7 +344,6 @@ export default function ShellV3(): ReactElement {
   }, [paneFlipping, singlePane])
   const [settledBarOn, setSettledBarOn] = useState(sessionBarOn)
   const [settledBarShown, setSettledBarShown] = useState(sessionBarShown)
-  const panelMotionMs = useStore((s) => sanitizePanelMotion(s.settings?.panelMotionMs) ?? PANEL_MOTION_DEFAULT)
   useEffect(() => {
     if (settledBarOn === sessionBarOn) return
     const timer = window.setTimeout(() => setSettledBarOn(sessionBarOn), panelMotionMs + 100)
@@ -652,7 +652,7 @@ export default function ShellV3(): ReactElement {
               </Suspense>
             ) : null}
             {route.name === 'chat' ? (
-              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={!paneFlipping && (settledBarOn !== sessionBarOn || (settledBarShown && !sessionBarShown)) ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
+              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarPresence.present ? '1' : undefined} data-bar-anim={!paneFlipping && (!singlePane || sessionBarShown) && (settledBarOn !== sessionBarOn || (settledBarShown && !sessionBarShown)) ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
                 <SideBySide split={split} narrow={splitParked} maxColumns={splitFit} />
                 {sessionBarPresence.present ? (

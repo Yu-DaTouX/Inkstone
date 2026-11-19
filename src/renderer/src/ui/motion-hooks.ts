@@ -64,7 +64,7 @@ export interface Presence {
   entering: boolean
 }
 
-export function usePresence(open: boolean, { animate = true, exit = 'base' }: { animate?: boolean; exit?: MotionDuration } = {}): Presence {
+export function usePresence(open: boolean, { animate = true, exit = 'base' }: { animate?: boolean; exit?: MotionDuration | number } = {}): Presence {
   const reduced = useReducedMotion()
   const allowed = animate && !reduced
   const [state, setState] = useState<PresenceState>(open ? 'open' : 'closed')
@@ -78,7 +78,7 @@ export function usePresence(open: boolean, { animate = true, exit = 'base' }: { 
   }
   useEffect(() => {
     if (state !== 'closing') return
-    const timer = window.setTimeout(() => setState((current) => (current === 'closing' ? 'closed' : current)), motionMs(exit))
+    const timer = window.setTimeout(() => setState((current) => (current === 'closing' ? 'closed' : current)), typeof exit === 'number' ? exit : motionMs(exit))
     return () => window.clearTimeout(timer)
   }, [state, exit])
   return { present: next !== 'closed', closing: next === 'closing', entering: open && entering }
