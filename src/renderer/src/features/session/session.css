@@ -225,7 +225,8 @@
   .v3-step[data-state='denied'] > .v3-step-head :is(.v3-step-label, .v3-steps-label) { color: var(--fg3); }
   .v3-step-deny { flex: none; color: var(--fg3); }
   .v3-step-target { flex: 0 1 auto; }
-  .v3-step-line > .v3-step-label { flex-shrink: 1; max-width: 100%; }
+  .v3-step-line > .v3-step-label { max-width: 100%; }
+  .v3-step-line:has(> .v3-step-target[data-code]) > .v3-step-label { flex-shrink: 0; max-width: 50%; }
   .v3-think-step .v3-step-line > .v3-step-label { flex-shrink: 0; }
   .v3-process:not([data-headless]) .v3-step-group > .v3-step-panel > .v3-step-nest { border-left: 0; }
   .v3-step-sec { min-width: 0; }
