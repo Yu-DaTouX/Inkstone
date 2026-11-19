@@ -1,3 +1,4 @@
+import type { BrowserViewport } from './browser-viewport'
 import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
@@ -949,7 +950,7 @@ export interface ChromeSyncReport {
   cookiesSynced: boolean
 }
 
-export type BrowserViewport = 'responsive' | 'mobile' | 'tablet' | 'desktop'
+export type { BrowserViewport } from './browser-viewport'
 
 export interface BrowserTabState {
   id: string

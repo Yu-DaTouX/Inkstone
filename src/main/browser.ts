@@ -8,7 +8,6 @@ import { randomBytes } from 'node:crypto'
 import type {
   BrowserBlockedRequest,
   BrowserBounds,
-  BrowserViewport,
   BrowserNetworkSnapshot,
   BrowserObservation,
   BrowserPermissionRecord,
@@ -20,6 +19,7 @@ import type {
 } from '../shared/ipc'
 import { sharedResources, INTERACTIVE_RESOURCE, ResourceBusyError } from './interactive-resources'
 import { failureUrl, proxyLoadFailure, shouldSurfaceLoadError } from '../shared/browser-navigation'
+import { browserViewportPreset, isBrowserViewport, viewportRect } from '../shared/browser-viewport'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
@@ -133,32 +133,8 @@ interface BrowserTab {
 
 const UA_RELOAD_DELAY_MS = 600
 
-const VIEWPORT_PRESETS: Partial<Record<BrowserViewport, { width: number; height: number }>> = {
-  mobile: { width: 375, height: 812 },
-  tablet: { width: 768, height: 1024 },
-  desktop: { width: 1280, height: 800 }
-}
-
-function isBrowserViewport(value: unknown): value is BrowserViewport {
-  return value === 'responsive' || value === 'mobile' || value === 'tablet' || value === 'desktop'
-}
-
 function mobileUserAgent(): string {
   return `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome || '140.0.0.0'} Mobile Safari/537.36`
-}
-
-export interface ViewportFit extends BrowserBounds {
-  scale: number
-  emulated: { width: number; height: number } | null
-}
-
-export function viewportRect(pane: BrowserBounds, viewport: BrowserViewport): ViewportFit {
-  const preset = VIEWPORT_PRESETS[viewport]
-  if (!preset) return { ...pane, scale: 1, emulated: null }
-  const scale = Math.min(1, pane.width / preset.width)
-  const width = Math.max(1, Math.min(pane.width, Math.round(preset.width * scale)))
-  const emulatedHeight = Math.max(1, Math.round(pane.height / scale))
-  return { x: pane.x + Math.round((pane.width - width) / 2), y: pane.y, width, height: pane.height, scale, emulated: { width: preset.width, height: emulatedHeight } }
 }
 
 interface ExternalTarget {
@@ -1420,7 +1396,7 @@ export class BrowserController {
     if (!pane || tab.view.webContents.isDestroyed()) return Promise.resolve()
     const fitted = viewportRect(pane, viewport)
     tab.view.setBounds({ x: fitted.x, y: fitted.y, width: fitted.width, height: fitted.height })
-    const mobileUa = viewport === 'mobile'
+    const mobileUa = browserViewportPreset(viewport)?.group === 'mobile'
     const key = `${viewport}:${mobileUa ? 'm' : 'd'}:${fitted.emulated ? `${fitted.emulated.width}x${fitted.emulated.height}@${fitted.scale.toFixed(4)}` : ''}`
     if (tab.emulatedKey === key) return Promise.resolve()
     tab.emulatedKey = key
@@ -1442,8 +1418,7 @@ export class BrowserController {
     }, UA_RELOAD_DELAY_MS)
   }
 
-  private async applyViewport(tab: BrowserTab, fitted: ViewportFit, mobileUa: boolean): Promise<void> {
-    const viewport = tab.state.viewport ?? 'responsive'
+  private async applyViewport(tab: BrowserTab, fitted: ReturnType<typeof viewportRect>, mobileUa: boolean): Promise<void> {
     const preset = fitted.emulated
     const userAgent = mobileUa ? mobileUserAgent() : tab.view.webContents.session.getUserAgent()
     tab.view.webContents.setUserAgent(userAgent)
@@ -1453,7 +1428,7 @@ export class BrowserController {
       await tab.cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => undefined)
       return
     }
-    const mobile = viewport === 'mobile'
+    const mobile = mobileUa
     await tab.cdp.send('Emulation.setDeviceMetricsOverride', { width: preset.width, height: preset.height, deviceScaleFactor: mobile ? 2 : 0, mobile, scale: fitted.scale }).catch(() => undefined)
     await tab.cdp.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: mobile ? 5 : 1 }).catch(() => undefined)
   }

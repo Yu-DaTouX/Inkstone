@@ -1,6 +1,12 @@
+import { browserViewportPreset, type BrowserViewport } from '../../../../shared/browser-viewport'
 import type { Lang } from '../../i18n'
 import type { BrowserLoginImportStatus, BrowserSiteAddResult } from '../../../../shared/ipc'
 import type { BrowserLoadFailure } from '../../../../shared/browser-navigation'
+
+function viewportLabel(viewport: BrowserViewport, responsive: string, names: Record<'mobile' | 'tablet' | 'desktop', string>): string {
+  const preset = browserViewportPreset(viewport)
+  return preset ? `${names[preset.group]} ${preset.width}×${preset.height}` : responsive
+}
 
 export interface BrowserText {
   inactive: string
@@ -39,7 +45,7 @@ export interface BrowserText {
   collapseTabs: string
   resizeTabs: string
   viewport: string
-  viewportNames: Record<'responsive' | 'mobile' | 'tablet' | 'desktop', string>
+  viewportName(viewport: BrowserViewport): string
   expandTabs: string
   viewMenu: string
   viewMenuValue(name: string): string
@@ -117,7 +123,7 @@ const ZH: BrowserText = {
   collapseTabs: '取消固定，悬停时展开',
   resizeTabs: '调整标签栏宽度',
   viewport: '视口尺寸',
-  viewportNames: { responsive: '自适应面板', mobile: '手机 375×812', tablet: '平板 768×1024', desktop: '桌面 1280×800' },
+  viewportName: viewport => viewportLabel(viewport, '自适应面板', { mobile: '手机', tablet: '平板', desktop: '桌面' }),
   expandTabs: '固定展开标签栏',
   viewMenu: '视图',
   viewMenuValue: (name) => `视图：${name}`,
@@ -191,7 +197,7 @@ const EN: BrowserText = {
   collapseTabs: 'Unpin, expand on hover',
   resizeTabs: 'Resize tab bar',
   viewport: 'Viewport size',
-  viewportNames: { responsive: 'Fit panel', mobile: 'Mobile 375×812', tablet: 'Tablet 768×1024', desktop: 'Desktop 1280×800' },
+  viewportName: viewport => viewportLabel(viewport, 'Fit panel', { mobile: 'Mobile', tablet: 'Tablet', desktop: 'Desktop' }),
   expandTabs: 'Pin tabs open',
   viewMenu: 'View',
   viewMenuValue: (name) => `View: ${name}`,

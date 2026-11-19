@@ -31,7 +31,7 @@ import {
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { addressShown, addressTarget, isBlankAddress, nextAddressInput, nextAddressMemory, type AddressMemory } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
-import type { BrowserViewport } from '../../../../shared/ipc'
+import { BROWSER_VIEWPORT_PRESETS, browserViewportPreset, isBrowserViewport, type BrowserViewport } from '../../../../shared/browser-viewport'
 import { browserText } from './browser-text'
 import { BROWSER_NARROW_PANE, pinnedTabsShown, readTabsLayout, writeTabsLayout, type BrowserTabsLayout } from './tabs-layout'
 import { browserControlAllowed } from './ownership'
@@ -45,7 +45,7 @@ export type { BrowserPaneProps }
 const TABS_PINNED_KEY = 'inkstone.browser.tabsPinned'
 const START_PAGE_TOKEN = 'browser-start-page'
 const LOAD_ERROR_TOKEN = 'browser-load-error'
-const VIEWPORTS: readonly BrowserViewport[] = ['responsive', 'mobile', 'tablet', 'desktop']
+const VIEWPORTS = ['responsive', ...Object.keys(BROWSER_VIEWPORT_PRESETS)].filter(isBrowserViewport)
 const VIEWPORT_ICONS = { responsive: MonitorSmartphone, mobile: Smartphone, tablet: Tablet, desktop: Monitor } as const
 const TABS_WIDTH_KEY = 'inkstone.browser.tabsWidth'
 const PEEK_TOKEN = 'browser-tabs-peek'
@@ -442,7 +442,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
 
   const tabs = state.tabs ?? []
   const viewport: BrowserViewport = tabs.find((tab) => tab.id === state.activeTabId)?.viewport ?? 'responsive'
-  const ViewportIcon = VIEWPORT_ICONS[viewport]
+  const ViewportIcon = VIEWPORT_ICONS[browserViewportPreset(viewport)?.group ?? 'responsive']
   const newTabButton = (
     <IconButton
       aria-label={t('browser.newTab')}
@@ -718,7 +718,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <ExternalLink size={14} aria-hidden="true" />
         </IconButton>
         <MenuTrigger>
-          <IconButton aria-label={text.viewMenuValue(text.viewportNames[viewport])} tooltip={text.viewMenuValue(text.viewportNames[viewport])} tooltipPlacement="left" aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">
+          <IconButton aria-label={text.viewMenuValue(text.viewportName(viewport))} tooltip={text.viewMenuValue(text.viewportName(viewport))} tooltipPlacement="left" aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">
             <ViewportIcon size={14} aria-hidden="true" />
           </IconButton>
           <Popover placement="bottom end" surface="solid">
@@ -730,13 +730,13 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
                 selectedKeys={[viewport]}
                 onSelectionChange={(keys) => {
                   const key = keys === 'all' ? null : [...keys][0]
-                  if (key && controlRef.current) void window.yan.browser.setViewport(String(key) as BrowserViewport)
+                  if (isBrowserViewport(key) && controlRef.current) void window.yan.browser.setViewport(key)
                 }}
               >
                 <Header>{text.viewport}</Header>
                 {VIEWPORTS.map((item) => (
-                  <MenuItem key={item} id={item} textValue={text.viewportNames[item]} data-testid={`browser-pane-viewport-${item}`}>
-                    {text.viewportNames[item]}
+                  <MenuItem key={item} id={item} textValue={text.viewportName(item)} data-testid={`browser-pane-viewport-${item}`}>
+                    {text.viewportName(item)}
                   </MenuItem>
                 ))}
               </MenuSection>
