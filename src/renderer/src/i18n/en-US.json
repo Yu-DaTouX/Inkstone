@@ -1791,6 +1791,7 @@
   "sidebar.t3.clearSearch": "Clear session search",
   "sidebar.t3.searching": "Searching session messages…",
   "sidebar.t3.noResults": "No sessions found",
+  "sidebar.t3.searchFailed": "Could not search session messages. Try again shortly.",
   "sidebar.t3.contentMatches": "Message matches",
   "sidebar.t3.newThread": "New session",
   "sidebar.t3.newThreadWithShortcut": "New session ({keys})",

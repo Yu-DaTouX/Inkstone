@@ -568,9 +568,9 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         >
           {searching ? (
             <>
-              {search.threads.length === 0 && search.matches.length === 0 ? (
+              {search.failed || (search.threads.length === 0 && search.matches.length === 0) ? (
                 <p role="status" className="t3-sidebar-shell__empty">
-                  {search.pending ? t('sidebar.t3.searching') : t('sidebar.t3.noResults')}
+                  {t(search.failed ? 'sidebar.t3.searchFailed' : search.pending ? 'sidebar.t3.searching' : 'sidebar.t3.noResults')}
                 </p>
               ) : null}
               {search.threads.length > 0 ? (

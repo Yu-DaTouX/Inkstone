@@ -6,6 +6,7 @@ import { Script, createContext } from 'node:vm'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import { safeTerminalCut } from './terminal-registry'
 import { buildTerminalNotice, type TerminalNoticeState } from '../shared/host-notice-text'
+import { pick } from '../shared/ui-lang'
 import type { TerminalJob } from '../shared/terminal-jobs'
 import { addTerminalJob, terminalJob, updateTerminalJob } from './terminal-jobs'
 import type { TerminalSessionInfo, TerminalSnapshot, TerminalStartOptions, TerminalStartResult, TerminalStream, TerminalAgentPhase } from './terminal'
@@ -1167,8 +1168,8 @@ export class TerminalAgentCommands {
     const id = stream.info.id
     const background = flagParam(params, 'background')
     const until = background ? untilPattern(params) : null
-    if (background && !until) throw new CapabilityCommandError('terminal_until_required', '交互式后台等待需要 --until，匹配程序真正输出的完成标记；请用整行匹配，避免命中输入回显')
-    if (background && backgroundJobs.has(id)) throw new CapabilityCommandError('terminal_busy', '这个终端已有后台等待；用普通 write / keys 交互，不要重复登记')
+    if (background && !until) throw new CapabilityCommandError('terminal_until_required', pick('交互式后台等待需要 --until，匹配程序真正输出的完成标记；请用整行匹配，避免命中输入回显', 'Interactive background waits require --until. Match the whole line containing the completion marker, not echoed input.'))
+    if (background && backgroundJobs.has(id)) throw new CapabilityCommandError('terminal_busy', pick('这个终端已有后台等待；用普通 write / keys 交互，不要重复登记', 'This terminal already has a background wait. Use ordinary write / keys without registering another wait.'))
     await this.guard(stream, data)
     const waitMs = numberParam(params, 'wait', TERMINAL_WRITE_WAIT_MS, 0, TERMINAL_WRITE_WAIT_MAX_MS)
     return this.withAnnounce(id, action, async () => {
@@ -1183,9 +1184,9 @@ export class TerminalAgentCommands {
       if (background && !signal?.aborted && state !== 'matched' && state !== 'exited' && state !== 'cancelled') {
         const timeoutMs = secondsParam(params, 'timeout', 0, TERMINAL_BACKGROUND_TIMEOUT_MAX_MS)
         const job = this.watchBackground({ id, from, command: action === 'write' ? stringParam(params, 'text') : stringParam(params, 'keys'), until, timeoutMs: timeoutMs || TERMINAL_BACKGROUND_TIMEOUT_MS, timeoutAsked: timeoutMs > 0, owner: this.ownerKey(), startedAt, cwd: stream.info.cwd, matchOnly: true })
-        return this.result(action, output.info ?? stream.info, output, { state: 'background', jobId: job.id, hint: '已登记交互式后台等待；命中 --until、终端退出或指定超时后会通知并唤醒你，不要轮询。停止用 keys ctrl+c；普通 write / keys 不会取消等待' })
+        return this.result(action, output.info ?? stream.info, output, { state: 'background', jobId: job.id, hint: pick('已登记交互式后台等待；命中 --until、终端退出或指定超时后会通知并唤醒你，不要轮询。停止用 keys ctrl+c；普通 write / keys 不会取消等待', 'Interactive background wait registered. A match, terminal exit or timeout will notify and wake you; do not poll. Stop with keys ctrl+c. Ordinary write / keys will not cancel the wait.') })
       }
-      return this.result(action, output.info ?? stream.info, output, { state: signal?.aborted ? 'cancelled' : state, ...(!background && data.includes('\r') && !backgroundJobs.has(id) ? { hint: '本次只短暂收集输出，没有登记完成通知；给交互式程序派长任务时加 --background --until <完成标记的整行正则>' } : {}) })
+      return this.result(action, output.info ?? stream.info, output, { state: signal?.aborted ? 'cancelled' : state, ...(!background && data.includes('\r') && !backgroundJobs.has(id) ? { hint: pick('本次只短暂收集输出，没有登记完成通知；给交互式程序派长任务时加 --background --until <完成标记的整行正则>', 'Only a short output sample was collected; no completion notification was registered. For long interactive tasks, use --background --until <whole-line completion regex>.') } : {}) })
     })
   }
 

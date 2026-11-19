@@ -1791,6 +1791,7 @@
   "sidebar.t3.clearSearch": "清除搜索",
   "sidebar.t3.searching": "正在搜索会话内容…",
   "sidebar.t3.noResults": "没有匹配的会话",
+  "sidebar.t3.searchFailed": "无法搜索会话正文，请稍后再试。",
   "sidebar.t3.contentMatches": "内容命中",
   "sidebar.t3.newThread": "新建会话",
   "sidebar.t3.newThreadWithShortcut": "新建会话（{keys}）",

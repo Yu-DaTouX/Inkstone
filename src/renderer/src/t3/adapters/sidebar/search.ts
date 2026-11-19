@@ -12,7 +12,11 @@ export interface SidebarSearch {
   threads: SidebarThreadView[]
   matches: ContentMatch[]
   pending: boolean
+  failed: boolean
 }
+
+const EMPTY_HITS: SessionSearchHit[] = []
+type SearchResult = { query: string; hits: SessionSearchHit[]; failed: boolean }
 
 function matchesThread(view: SidebarThreadView, query: string): boolean {
   const needle = query.trim().toLowerCase()
@@ -24,37 +28,33 @@ export function useSidebarSearch(query: string, sections: SidebarSections): Side
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
-  const [hits, setHits] = useState<SessionSearchHit[]>([])
-  const [pending, setPending] = useState(false)
+  const [result, setResult] = useState<SearchResult | null>(null)
   const trimmed = query.trim()
+  const searchable = shouldSearchContent(trimmed)
+  const current = searchable && result?.query === trimmed ? result : null
+  const hits = current?.hits ?? EMPTY_HITS
 
   useEffect(() => {
-    if (!shouldSearchContent(trimmed)) {
-      setHits([])
-      setPending(false)
-      return undefined
-    }
+    setResult(null)
+    if (!searchable) return undefined
     let alive = true
-    setPending(true)
     const id = window.setTimeout(() => {
       window.yan
         .searchSessions(trimmed, CONTENT_SEARCH_LIMIT * 2)
         .then((result) => {
           if (!alive) return
-          setHits(result.hits)
-          setPending(false)
+          setResult({ query: trimmed, hits: result.hits, failed: false })
         })
         .catch(() => {
           if (!alive) return
-          setHits([])
-          setPending(false)
+          setResult({ query: trimmed, hits: EMPTY_HITS, failed: true })
         })
     }, DEBOUNCE_MS)
     return () => {
       alive = false
       window.clearTimeout(id)
     }
-  }, [trimmed])
+  }, [trimmed, searchable])
 
   const all = useMemo(
     () => [...sections.pinned, ...sections.active, ...sections.working, ...sections.snoozed, ...sections.settled],
@@ -72,5 +72,5 @@ export function useSidebarSearch(query: string, sections: SidebarSections): Side
       }),
     [hits, sessions, threads, manualTitles, titles]
   )
-  return { threads, matches, pending }
+  return { threads, matches, pending: searchable && !current, failed: current?.failed ?? false }
 }
