@@ -1,5 +1,5 @@
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 export const meta = { description: '工具行无箭头、收起竖线不残留、@菜单不跟随鼠标、更改卡文件可点击；仅隔离合成数据' }
 
@@ -96,6 +96,40 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
   await sleep(400)
   check('浅色窄窗改动卡无横向溢出', await ev(`document.documentElement.scrollWidth<=innerWidth+1&&document.querySelector('.v3-stream').scrollWidth<=document.querySelector('.v3-stream').clientWidth+1`))
   await shot('changes-light-narrow')
+  await writeFile(join(box.project, '.git', 'info', 'exclude'), '\n.card-fixtures/\n', { flag: 'a' })
+  const longPath = `.card-fixtures/${'evidence-directory-'.repeat(9)}/双端对比.md`
+  await mkdir(dirname(join(box.project, longPath)), { recursive: true })
+  await writeFile(join(box.project, longPath), 'fixture\n')
+  let hash = 2166136261
+  for (let i = 0; i < user.text.length; i++) hash = Math.imul(hash ^ user.text.charCodeAt(i), 16777619)
+  await ev(`(()=>{const st=window.__yanStore;const {session}=st.getState();st.setState({checkpoints:[{id:'four-checkpoint',sessionKey:session.conversationId??session.sessionId,at:${user.timestamp},textHash:${JSON.stringify(`${(hash >>> 0).toString(16)}:${user.text.length}`)},kind:'turn'}]})})()`)
+  await showChanges([longPath])
+  await waitFor(`document.querySelector('[data-testid="v3-turn-changes-ignored"]')?.textContent==='Git 已忽略'`)
+  const measure = `(()=>{
+    const card=document.querySelector('[data-testid="v3-turn-changes"]');
+    const within=(part)=>{const range=document.createRange();range.selectNodeContents(part);const cardRect=card.getBoundingClientRect();return [...range.getClientRects()].every(r=>r.width>0&&r.left>=cardRect.left-1&&r.right<=cardRect.right+1)};
+    const label=card.querySelector('[data-testid="v3-turn-changes-label"]'),summary=card.querySelector('[data-testid="v3-turn-changes-summary"]'),undo=card.querySelector('[data-testid="v3-turn-changes-undo"]');
+    const row=card.querySelector('[data-testid="v3-turn-changes-row"]'),path=row?.querySelector('.v3-chg-name');
+    if(!row||!path||!label||!summary||!undo)return null;
+    return {title:label.textContent,summary:summary.textContent,path:path.textContent,wrapped:path.getBoundingClientRect().height>20,visible:[label,summary,undo,path,row.querySelector('.v3-chg-stats'),card.querySelector('[data-testid="v3-turn-changes-ignored"]')].every(within)};
+  })()`
+  const single = await ev(measure)
+  check('窄窗单文件完整显示标题、计数、撤销、长路径、增删行和忽略状态', single?.title === '本轮改动' && single.summary === '编辑 1 个文件' && single.path === longPath && single.visible && single.wrapped, single)
+  await shot('changes-light-narrow-single-ignored')
+  const many = Array.from({length: 9}, (_, i) => `.card-fixtures/report-${i}.md`)
+  await Promise.all(many.map((path) => writeFile(join(box.project, path), 'fixture\n')))
+  await showChanges(many)
+  const more = '[data-testid="v3-turn-changes-more"]'
+  const rowCount = `document.querySelectorAll('[data-testid="v3-turn-changes-row"]').length`
+  check('多文件卡默认显示总数和可展开的剩余数量', await ev(`${rowCount}===6&&document.querySelector('${more}')?.textContent==='展开其余 3 个文件'`))
+  await ev(`document.querySelector('${more}').focus()`)
+  await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13})
+  await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13})
+  await waitFor(`${rowCount}===9`)
+  check('键盘展开后，原本隐藏的忽略文件可见且按钮保留焦点', await ev(`document.querySelector('[title="${many.at(-1)}"]')?.getBoundingClientRect().width>0&&document.activeElement===document.querySelector('${more}')&&document.activeElement.getAttribute('aria-expanded')==='true'`))
+  await ev(`document.querySelector('${more}').click()`)
+  await waitFor(`${rowCount}===6`)
+  check('文件列表能原处收起', await ev(`document.querySelector('${more}').getAttribute('aria-expanded')==='false'`))
   await writeFile(join(box.project, 'four-preview.ts'), 'export const cardOpen = "four-preview-content";\n')
   await showChanges(['four-preview.ts'])
   const realFile = await ev(`!!document.querySelector('[data-testid="v3-turn-change-file"]')`)

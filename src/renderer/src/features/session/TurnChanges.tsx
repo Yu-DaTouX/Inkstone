@@ -20,6 +20,7 @@ interface ChangesText {
   summary: (counts: Record<TurnFileStatus, number>) => string
   deliverables: (n: number) => string
   more: (n: number) => string
+  less: string
   view: string
   undo: string
   ignoredAll: string
@@ -35,7 +36,8 @@ const ZH: ChangesText = {
     c.deleted ? `删除 ${c.deleted} 个文件` : ''
   ].filter(Boolean).join(' · '),
   deliverables: (n) => `${n} 个交付文件`,
-  more: (n) => `还有 ${n} 个文件`,
+  more: (n) => `展开其余 ${n} 个文件`,
+  less: '收起文件列表',
   view: '查看更改',
   undo: '撤销',
   ignoredAll: 'Git 已忽略',
@@ -50,7 +52,8 @@ const EN: ChangesText = {
     c.deleted ? `Deleted ${c.deleted} ${c.deleted === 1 ? 'file' : 'files'}` : ''
   ].filter(Boolean).join(' · '),
   deliverables: (n) => `${n} ${n === 1 ? 'deliverable' : 'deliverables'}`,
-  more: (n) => `${n} more ${n === 1 ? 'file' : 'files'}`,
+  more: (n) => `Show ${n} more ${n === 1 ? 'file' : 'files'}`,
+  less: 'Show fewer files',
   view: 'View changes',
   undo: 'Undo',
   ignoredAll: 'Ignored by Git',
@@ -107,6 +110,7 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
   rewindOwner: string | null
 }): JSX.Element | null {
   const { lang } = useI18n()
+  const [expanded, setExpanded] = useState(false)
   const openRewind = useStore((s) => s.openRewind)
   const previewFile = useStore((s) => s.previewFile)
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
@@ -130,22 +134,18 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
   const prompt = checkpointId ? anchor : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
   const summary = [changes ? text.summary(changes.counts) : '', deliverables.length ? text.deliverables(deliverables.length) : ''].filter(Boolean).join(' \u00b7 ')
-  const single = rows.length + deliverables.length === 1
-  const shownRows = rows.length > ROW_LIMIT + 1 ? rows.slice(0, ROW_LIMIT) : rows
-  const hidden = rows.length - shownRows.length
-  const totals = changes && changes.added >= 0 && changes.added + changes.removed > 0 ? changes : null
+  const more = rows.length > ROW_LIMIT + 1 ? rows.length - ROW_LIMIT : 0
+  const shownRows = more && !expanded ? rows.slice(0, ROW_LIMIT) : rows
+  const totals = rows.length > 1 && changes && changes.added >= 0 && changes.added + changes.removed > 0 ? changes : null
   const openFile = (file: ReplyFileLink): void => void previewFile(file.path, file.line, previewCwd, file.lineEnd)
   const openChange = (path: string): void => void previewFile(path, undefined, previewCwd || cwd)
 
   return (
-    <section className="v3-chg" data-testid="v3-turn-changes" data-single={single || undefined} aria-label={`${text.title} \u00b7 ${summary}`}>
+    <section className="v3-chg" data-testid="v3-turn-changes" aria-label={`${text.title} \u00b7 ${summary}`}>
       <header className="v3-chg-head">
         <div className="v3-chg-title">
           <span className="v3-result-label" data-testid="v3-turn-changes-label">{text.title}</span>
           <span className="v3-chg-summary" data-testid="v3-turn-changes-summary">{summary}</span>
-          {single ? <span className="v3-chg-sep" aria-hidden>{'\u00b7'}</span> : null}
-          {single && rows[0] ? <ChangePath row={rows[0]} onOpen={openChange} /> : null}
-          {single && deliverables[0] ? <DeliverableButton file={deliverables[0]} onOpen={openFile} /> : null}
           {totals ? <DiffStat className="v3-chg-stats" added={totals.added} removed={totals.removed} /> : null}
         </div>
         <div className="v3-chg-actions">
@@ -166,27 +166,25 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
           ) : null}
         </div>
       </header>
-      {single ? null : (
-        <ul className="v3-chg-list">
-          {shownRows.map((row) => (
-            <li key={row.file.path} className="v3-chg-row" data-testid="v3-turn-changes-row" title={row.file.path}>
-              <ChangePath row={row} onOpen={openChange} />
-              {row.file.added + row.file.removed > 0 ? <DiffStat className="v3-chg-stats" added={row.file.added} removed={row.file.removed} /> : null}
-            </li>
-          ))}
-          {hidden > 0 ? (
-            <li className="v3-chg-row" data-kind="more">
-              <Button size="sm" variant="ghost" className="v3-chg-more" onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-more">{text.more(hidden)}</Button>
-            </li>
-          ) : null}
-          {deliverables.map((file) => (
-            <li key={file.path} className="v3-chg-row" data-kind="deliverable">
-              <DeliverableButton file={file} onOpen={openFile} />
-              {file.label && file.label !== file.base ? <span className="v3-chg-note">{file.label}</span> : null}
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="v3-chg-list">
+        {shownRows.map((row) => (
+          <li key={row.file.path} className="v3-chg-row" data-testid="v3-turn-changes-row" title={row.file.path}>
+            <ChangePath row={row} onOpen={openChange} />
+            {row.file.added + row.file.removed > 0 ? <DiffStat className="v3-chg-stats" added={row.file.added} removed={row.file.removed} /> : null}
+          </li>
+        ))}
+        {more > 0 ? (
+          <li key="more" className="v3-chg-row" data-kind="more">
+            <Button size="sm" variant="ghost" className="v3-chg-more" aria-expanded={expanded} onPress={() => setExpanded(!expanded)} data-testid="v3-turn-changes-more">{expanded ? text.less : text.more(more)}</Button>
+          </li>
+        ) : null}
+        {deliverables.map((file) => (
+          <li key={file.path} className="v3-chg-row" data-kind="deliverable">
+            <DeliverableButton file={file} onOpen={openFile} />
+            {file.label && file.label !== file.base ? <span className="v3-chg-note">{file.label}</span> : null}
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
