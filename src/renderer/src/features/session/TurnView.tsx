@@ -45,7 +45,7 @@ import type { AssistantTurn, BashTurn, HostTurn, NoteTurn, Turn, TurnSegment, Us
 import { withoutWrapUp } from './wrap-up'
 import { stripImageNotice } from './effective-messages'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
-import { runMessagesFrom, segmentSpanMs, turnChangeSet, turnRunPlace, turnSpanMs } from './turn-process'
+import { runMessagesFrom, turnChangeSet, turnRunPlace, turnSpanMs } from './turn-process'
 import { groupIntoTurns } from '../../../../shared/turns'
 import type { UIMessage } from '../../../../shared/ipc'
 import { splitDecision, type DecisionOutcome } from './turn-outcome'
@@ -293,9 +293,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const changes = useMemo(() => (runEnded ? turnChangeSet(runTurn, changeCwd) : null), [runEnded, runTurn, changeCwd])
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, scopedMessages ?? s.messages, !!streaming)))
   const spanMs = useStore((s) => {
-    if (streaming) return undefined
-    if (runPlace.startedAt !== null) return segmentSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, runPlace.startedAt)
-    return sourceTurn.elapsedMs ? undefined : turnSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, sourceTurn.tools)
+    if (streaming || sourceTurn.elapsedMs !== undefined) return undefined
+    return turnSpanMs(scopedMessages ?? s.messages, runTurn.sourceIds, runTurn.tools)
   })
   const compactionSpot = useStore((s) => {
     const session = scope ? scope.session : s.session
@@ -321,7 +320,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const compactionInProcess = compactionCut && splitAtCompaction(processSegs, compactionCut) ? compactionCut : null
   const showCompaction = compactionSpot !== null && !compactionInProcess
   const failuresAlert = processFailuresAlert(sourceTurn, !!streaming)
-  const turnElapsedMs = runPlace.startedAt !== null ? spanMs : sourceTurn.elapsedMs ?? spanMs
+  const turnElapsedMs = sourceTurn.elapsedMs ?? spanMs
   const decision = !streaming && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
@@ -357,7 +356,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   openByDefault={!split.reply && !split.tail.length && !!tail}
                   alertFailures={failuresAlert}
                   showFailures={!runPlace.continues}
-                  liveStartedAt={runPlace.startedAt}
                   view={view}
                   sessionId={sessionId}
                   turnId={turn.id}
@@ -445,7 +443,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
           {streaming ? null : errorCard}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
-          {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} segments={runTurn.segments} elapsedMs={turnElapsedMs} alertFailures={failuresAlert} /> : null}
+          {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} segments={runTurn.segments} waitMs={runTurn.waitMs} elapsedMs={turnElapsedMs} alertFailures={failuresAlert} /> : null}
           {compactionSpot !== null ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
@@ -508,7 +506,7 @@ function useCopyState(): [CopyState, (next: CopyState) => void] {
 
 const FOOT_STRIP_PARTS = 32
 
-function TurnMeta({ turn, readOnly, segments, elapsedMs, alertFailures }: { turn: AssistantTurn; readOnly: boolean; segments: readonly TurnSegment[]; elapsedMs?: number; alertFailures: boolean }): JSX.Element | null {
+function TurnMeta({ turn, readOnly, segments, waitMs, elapsedMs, alertFailures }: { turn: AssistantTurn; readOnly: boolean; segments: readonly TurnSegment[]; waitMs?: number; elapsedMs?: number; alertFailures: boolean }): JSX.Element | null {
   const t = useT()
   const tt = useSessionText()
   const models = useStore((s) => s.models)
@@ -517,12 +515,12 @@ function TurnMeta({ turn, readOnly, segments, elapsedMs, alertFailures }: { turn
   const summary = useMemo(() => processSummary(segments), [segments])
   const strip = useMemo(() => (summary.actions ? processStripParts(segments, FOOT_STRIP_PARTS) : []), [segments, summary.actions])
   const worked = summary.actions > 0
-  const spentMs = worked ? elapsedMs ?? turn.elapsedMs : turn.elapsedMs
+  const spentMs = elapsedMs ?? turn.elapsedMs
   const elapsed = spentMs && spentMs > 0 ? formatDuration(spentMs) : null
   const modelDisplay = turn.model ? turnModelLabel(turn.model, models) : null
   const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
   if (!reply && !turn.timestamp && !turn.model && !stopLabel && !worked) return null
-  const elapsedTip = elapsed ? `${elapsed} \u00b7 ${turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}` : undefined
+  const elapsedTip = elapsed ? `${elapsed} \u00b7 ${waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(waitMs) }) : t('tok.elapsedTip')}` : undefined
   return (
     <div className="v3-msg-meta v3-turn-meta" data-testid="v3-turn-meta">
       {worked && strip.length ? <ProcessStrip parts={strip} /> : null}

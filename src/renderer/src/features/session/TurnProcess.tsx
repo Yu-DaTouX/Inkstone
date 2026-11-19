@@ -195,13 +195,12 @@ function useSkipArmed(live: boolean, spreadRef: RefObject<HTMLElement | null>): 
   return armed
 }
 
-export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, compactionAfter = null }: {
+export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, compactionAfter = null }: {
   process: TurnSegment[]
   live: boolean
   openByDefault?: boolean
   alertFailures: boolean
   showFailures?: boolean
-  liveStartedAt?: number | null
   view: TranscriptView
   sessionId: string | null
   turnId?: string
@@ -250,7 +249,6 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
                 openByDefault={openByDefault && index === lastGroup}
                 alertFailures={alertFailures}
                 showFailures={showFailures}
-                liveStartedAt={liveStartedAt}
                 view={view}
                 approvalIds={approvalIds}
                 glowId={glowId}
@@ -263,14 +261,13 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   )
 }
 
-function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, showFailures, liveStartedAt, view, approvalIds, glowId, compactionAfter }: {
+function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, showFailures, view, approvalIds, glowId, compactionAfter }: {
   segments: TurnSegment[]
   groupKey: string
   live: boolean
   openByDefault: boolean
   alertFailures: boolean
   showFailures: boolean
-  liveStartedAt: number | null
   view: TranscriptView
   approvalIds: ReadonlySet<string>
   glowId?: string | null
@@ -338,7 +335,7 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
           <span className="v3-process-line" data-testid="v3-process-line">
             <span className="v3-process-count" data-kind={summary.actions ? 'actions' : 'thinking'}>{groupLabel(summary, tt)}</span>
             {lines ? <DiffStat className="v3-process-diff" added={lines.added} removed={lines.removed} /> : null}
-            {live ? <LiveElapsed startedAt={liveStartedAt} /> : null}
+            {live ? <LiveElapsed /> : null}
             {summary.failed && showFailures && !live ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
           </span>
         </CollapsibleHeader>
@@ -387,11 +384,10 @@ function LiveProcessIcon(): JSX.Element {
   return line?.kind === 'waiting' ? <CirclePause size={13} className="v3-process-wait" /> : <TermSpinner className="v3-process-spin" />
 }
 
-function LiveElapsed({ startedAt }: { startedAt: number | null }): JSX.Element | null {
+function LiveElapsed(): JSX.Element | null {
   const progress = useRunProgress()
   if (!progress) return null
-  const elapsedMs = startedAt !== null ? Math.max(0, Date.now() - startedAt) : progress.elapsedMs
-  return <span className="v3-process-count ui-num" data-kind="elapsed">{formatDuration(elapsedMs)}</span>
+  return <span className="v3-process-count ui-num" data-kind="elapsed">{formatDuration(progress.elapsedMs)}</span>
 }
 
 function joinActivities(phrases: readonly string[], join: string): string {

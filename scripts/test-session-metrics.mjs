@@ -17,7 +17,6 @@ try {
     logLevel: 'silent'
   })
   const {
-    liveActivitySince,
     liveStepId,
     latencyFloor,
     liveStepSpeed,
@@ -693,14 +692,17 @@ try {
     eq(stepSpeed(done), 50, '已结算步骤速度')
     eq(stepSpeed({ id: 'x', role: 'assistant', text: '' }), null)
 
-    eq(liveActivitySince(msgs, split.live, false), null, '未运行时不计进行中用时')
-    eq(liveActivitySince(msgs, split.live, true), 20_000, '进行中从这一步开始计')
-    const toolRunning = [
-      { id: 'u1', role: 'user', text: 'go' },
-      { ...done, toolCalls: [tool({ id: 't2', status: 'running', startedAt: 15_000 }), tool({ id: 't3', status: 'ok', startedAt: 14_000, endedAt: 14_500 })] }
-    ]
-    eq(liveActivitySince(toolRunning, null, true), 15_000, '工具执行中按最早未结束的工具计')
-    eq(liveActivitySince([{ ...done, toolCalls: [tool({ id: 't4', status: 'running', startedAt: 1 })] }, { id: 'u2', role: 'user', text: 'new' }], null, true), null, '只看最后一条用户消息之后')
+    const measured = { ...done, timestamp: 10_000, turnTiming: { logicalTurnId: 'u1', startedAt: 9000, endedAt: 12_000, elapsedMs: 3000, terminalReason: 'completed' } }
+    const search = tool({ id: 'ws', name: 'web_search', serverSide: true, startedAt: 19_000, endedAt: 21_000 })
+    const next = { ...streaming, toolCalls: [search] }
+    const running = projectSessionMetrics([msgs[0], measured, next], null, { activeRunStartedAt: 19_000 })
+    eq(running.elapsedMs, 3000, '累计实测时间不把模型与工具相加')
+    eq(running.toolMs, 2000, '服务端搜索不算本地工具时间')
+    eq(running.elapsedPartial, false, '正在运行的新步骤不被标为历史缺测')
+    eq(projectSessionMetrics([msgs[0], measured, next], null).elapsedPartial, true, '已结束但没有计时的旧步骤仍标缺测')
+    const completed = { ...next, turnTiming: { ...measured.turnTiming, logicalTurnId: 'u2', startedAt: 19_000, endedAt: 21_500, elapsedMs: 2500 } }
+    eq(projectSessionMetrics([msgs[0], measured, completed], null).elapsedMs, 5500, '多次实测运行相加，不计轮间空闲')
+    eq(projectSessionMetrics(msgs, null).elapsedMs, null, '只有分项的历史不推断总用时')
   }
 
   console.log(`session-metrics: ${checks} checks passed`)

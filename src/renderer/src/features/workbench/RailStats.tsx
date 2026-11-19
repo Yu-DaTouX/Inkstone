@@ -7,7 +7,6 @@ import { subagentCost, subagentTokens, viewSubagentRuns } from '../../state/suba
 import { useMoney } from '../usage/UsageOverview'
 import {
   latencyFloor,
-  liveActivitySince,
   liveStepId,
   projectSessionMetrics,
   splitLiveStep,
@@ -26,6 +25,7 @@ interface RailSnapshot {
   messages: UIMessage[]
   liveId: string | null
   running: boolean
+  startedAt: number | null
 }
 
 function railSnapshot(s: Store): RailSnapshot {
@@ -33,12 +33,13 @@ function railSnapshot(s: Store): RailSnapshot {
   return {
     messages: s.messages,
     liveId: peeking ? null : liveStepId(s.messages, !!s.session?.isStreaming),
-    running: !peeking && (!!s.session?.isStreaming || !!s.session?.isAgentRunning)
+    running: !peeking && (!!s.session?.isStreaming || !!s.session?.isAgentRunning),
+    startedAt: !peeking && s.session?.isAgentRunning ? s.session.runStartedAt ?? null : null
   }
 }
 
 function sameSnapshot(a: RailSnapshot, b: RailSnapshot): boolean {
-  return a.messages === b.messages && a.liveId === b.liveId && a.running === b.running
+  return a.messages === b.messages && a.liveId === b.liveId && a.running === b.running && a.startedAt === b.startedAt
 }
 
 function viewKey(s: Store): string {
@@ -60,7 +61,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
   const counts = useMemo(() => (enabled ? railOperationCounts(countSource) : null), [enabled, countSource])
   const history = useMemo(() => {
     if (!enabled) return null
-    const { messages, liveId, running } = snapshot
+    const { messages, liveId, running, startedAt } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
     const floor = latencyFloor(settled)
     const reading = windowSpeed(settled, live, floor)
@@ -68,12 +69,12 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
     speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
     const heldReading = speedHold.current.sample
     return {
-      metrics: projectSessionMetrics(settled, stats, { historyPartial }),
+      metrics: projectSessionMetrics(settled, stats, { historyPartial, activeRunStartedAt: startedAt }),
       counts: counts ?? railOperationCounts(messages),
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
       heldReading,
       running,
-      liveSince: liveActivitySince(messages, live, running)
+      liveSince: startedAt !== null && settled.some((m) => m.turnTiming?.startedAt === startedAt) ? null : startedAt
     }
   }, [enabled, snapshot, stats, historyPartial, view, counts])
   return useMemo(() => {
@@ -155,8 +156,8 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
     {
       key: 'time',
       label: time?.label ?? t('sm.elapsed'),
-      value: time ? railTimeText(time, liveMs) : live || running ? railTimeText({ baseMs: 0 }, liveMs) : '—',
-      title: time?.title ?? undefined
+      value: time?.baseMs != null || live ? railTimeText({ baseMs: time?.baseMs ?? 0 }, liveMs) : '—',
+      title: time?.elapsedTitle ?? undefined
     },
     { key: 'speed', label: speed?.label ?? t('sm.tps'), value: speed?.value ?? '—', unit: speed ? speed.unit : undefined, title: speed?.title ?? undefined }
   ]
@@ -181,10 +182,10 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
       </section>
     )
   }
-  if (time) {
+  if (time?.segments.length) {
     breakdown.push(
       <section key="time" className="wb-rs-block" data-block="time" title={time.title ?? undefined}>
-        <span className="wb-rs-label">{time.label}</span>
+        <span className="wb-rs-label">{time.ariaLabel}</span>
         <SegmentBar aria-label={barLabel(time.ariaLabel, time.segments)} segments={time.segments} />
         <p className="wb-rs-note wb-rs-num">{time.detail}</p>
       </section>

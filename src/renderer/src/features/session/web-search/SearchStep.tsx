@@ -69,6 +69,7 @@ interface SearchCapProps {
   busy: boolean
   glow: boolean
   warn?: boolean
+  missingSources?: string
   targets: readonly string[]
   count: number | null
   sites: readonly { site: string; url: string }[]
@@ -79,7 +80,7 @@ interface SearchCapProps {
   onToggle: (cap: HTMLElement) => void
 }
 
-function SearchCap({ testId, running, busy, glow, warn, targets, count, sites, summary, open, panelId, expandable, onToggle }: SearchCapProps): JSX.Element {
+function SearchCap({ testId, running, busy, glow, warn, missingSources, targets, count, sites, summary, open, panelId, expandable, onToggle }: SearchCapProps): JSX.Element {
   const [fresh, setFresh] = useState(false)
   const wasBusy = useRef(busy)
   useEffect(() => {
@@ -96,6 +97,7 @@ function SearchCap({ testId, running, busy, glow, warn, targets, count, sites, s
       <QueryTicker items={targets} active={busy} glow={glow} />
       {targets.length > 1 ? <span className="ws-cap-more" aria-hidden="true">+{targets.length - 1}</span> : null}
       {count === null ? null : <span className="ws-cap-count" data-testid="ws-capsule-count" aria-hidden="true">{count}</span>}
+      {missingSources ? <span className="ws-cap-count" aria-hidden="true">{missingSources}</span> : null}
       {sites.length ? (
         <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
           {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
@@ -136,8 +138,9 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
   const label = settled ? (fetching ? (blocked ? tt('fetchBlocked') : tt('fetched')) : tt('searched')) : fetching ? tt('fetching') : tt('searching')
   const name = fetching ? pageName(page, step.command.url) : ''
   const targets = fetching ? [blocked ? `${tt('fetchBlocked')} · ${domainOf(step.command.url) || name}` : name] : step.command.queries
-  const count = settled && !fetching ? sources.length : null
-  const summary = [label, fetching ? name : `“${searchStepLabel(step.command)}”`, count ? `· ${tt('results', { n: count })}` : '', fetching && name !== step.command.url ? step.command.url : ''].filter(Boolean).join(' ')
+  const missingSources = settled && !fetching && (call.serverSide ? sources.length === 0 : !fromDetails && state.status !== 'ready') ? tt('sourcesUnavailable') : undefined
+  const count = settled && !fetching && !call.serverSide && !missingSources ? sources.length : null
+  const summary = [label, fetching ? name : `“${searchStepLabel(step.command)}”`, count !== null ? `· ${tt('results', { n: count })}` : '', missingSources ? `· ${missingSources}` : '', fetching && name !== step.command.url ? step.command.url : ''].filter(Boolean).join(' ')
   const keys = searchExpansionKeys(call.id, step)
   const [stableOpen, setStableOpen] = useToolExpansion(keys.stable)
   const [taggedOpen, setTaggedOpen] = useToolExpansion(keys.tagged)
@@ -160,7 +163,7 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
 
   return (
     <div className="ws-entry">
-      <SearchCap testId="ws-capsule" running={running} busy={!settled} glow={glow} warn={blocked} targets={targets} count={count} sites={sites} summary={summary} open={open} panelId={panelId} expandable={expandable} onToggle={toggle} />
+      <SearchCap testId="ws-capsule" running={running} busy={!settled} glow={glow} warn={blocked} missingSources={call.serverSide ? missingSources : undefined} targets={targets} count={count} sites={sites} summary={summary} open={open} panelId={panelId} expandable={expandable} onToggle={toggle} />
       {expandable ? (
         <div id={panelId} className="ui-source-reveal" data-open={open} aria-hidden={!open || undefined} inert={!open}>
           <div className="ui-source-reveal__inner">
@@ -197,7 +200,7 @@ export function WebGroupView({ calls, glow = true, renderFallback }: { calls: re
     const state = step.operationId ? byId.get(step.operationId) : undefined
     return !step.fromTool && (!step.operationId || state?.status === 'ready' && !state.view.ok)
   }))
-  const entries = groups.filter((group) => !fallback.includes(group)).flatMap(({ running, steps }) => steps.map((step) => ({ running, step })))
+  const entries = groups.filter((group) => !fallback.includes(group)).flatMap(({ call, running, steps }) => steps.map((step) => ({ call, running, step })))
   const stepSources = (step: SearchStep): WebSearchSourceView[] => step.sources ?? pageSource(step.operationId ? byId.get(step.operationId) : undefined)
   const sources = mergeSearchSources(entries.flatMap(({ running, step }) => running ? [] : stepSources(step)))
   const sites = uniqueSites(sources)
@@ -205,9 +208,11 @@ export function WebGroupView({ calls, glow = true, renderFallback }: { calls: re
   const loading = running || entries.some(({ step }) => step.sources === undefined && !!step.operationId && byId.get(step.operationId)?.status === 'loading')
   const fetched = entries.filter(({ step }) => step.command.action === 'fetch').length
   const searched = entries.length - fetched
-  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : '', sources.length ? tt('results', { n: sources.length }) : ''].filter(Boolean).join(' · ')
+  const queries = entries.filter(({ step }) => step.command.action === 'query')
+  const missingSources = !loading && !sources.length && queries.some(({ call }) => call.serverSide) ? tt('sourcesUnavailable') : undefined
+  const count = searched && !loading && queries.every(({ call, step }) => !call.serverSide && (step.sources !== undefined || !!step.operationId)) ? sources.length : null
+  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : '', count !== null ? tt('results', { n: count }) : '', missingSources].filter(Boolean).join(' · ')
   const targets = [...new Set(entries.flatMap(({ running: active, step }) => step.command.action === 'fetch' ? [pageName(active ? undefined : stepSources(step)[0], step.command.url)] : step.command.queries))]
-  const count = searched && (!loading || sources.length) ? sources.length : null
   const first = groups[0]
   const keys = first?.steps[0] ? searchExpansionKeys(first.call.id, first.steps[0]) : { stable: `web:${first?.call.id ?? ''}`, tagged: `web:${first?.call.id ?? ''}` }
   const [stableOpen, setStableOpen] = useToolExpansion(keys.stable)
@@ -218,7 +223,7 @@ export function WebGroupView({ calls, glow = true, renderFallback }: { calls: re
   return (
     <div className="v3-web-group" data-testid="v3-web-group">
       {entries.length ? <div className="ws-entry">
-        <SearchCap testId="ws-group" running={running} busy={loading} glow={glow} targets={targets} count={count} sites={sites} summary={label} open={open} panelId={panelId} expandable={expandable} onToggle={(cap) => {
+        <SearchCap testId="ws-group" running={running} busy={loading} glow={glow} missingSources={missingSources} targets={targets} count={count} sites={sites} summary={label} open={open} panelId={panelId} expandable={expandable} onToggle={(cap) => {
           if (open) revealCollapsedHeader(cap)
           setStableOpen(!open)
           setTaggedOpen(!open)

@@ -5,6 +5,7 @@ export type WebSearchTextKey =
   | 'fetching'
   | 'searched'
   | 'results'
+  | 'sourcesUnavailable'
   | 'fetched'
   | 'fetchBlocked'
   | 'blocked'
@@ -27,6 +28,7 @@ const ZH: Record<WebSearchTextKey, string> = {
   fetching: '读取中',
   searched: '搜索',
   results: '{n} 条结果',
+  sourcesUnavailable: '未记录来源',
   fetched: '已读取网页',
   fetchBlocked: '网页被拦截',
   blocked: '被拦截',
@@ -50,6 +52,7 @@ const EN: Record<WebSearchTextKey, string> = {
   fetching: 'Reading',
   searched: 'Searched',
   results: '{n} results',
+  sourcesUnavailable: 'Sources not recorded',
   fetched: 'Read page',
   fetchBlocked: 'Page blocked',
   blocked: 'Blocked',

@@ -245,10 +245,7 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       if (list.length) return { list, anchored: true }
     }
     const sourceSet = new Set(record.sourceIds)
-    return {
-      list: messages.filter((m) => m.role === 'assistant' && sourceSet.has(m.id)),
-      anchored: false
-    }
+    return { list: messages.filter((m) => m.role === 'assistant' && sourceSet.has(m.id)), anchored: false }
   }
 
   const toolKey = (id: string, name: string): string => `${id}\u0000${name}`
@@ -285,7 +282,7 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       const id = byStamp ?? (positional ? assistants[i].id : undefined)
       if (id) genPatch.set(id, timing)
     }
-    if (!anchored || !record.waitSpans?.length) continue
+    if (!record.waitSpans?.length) continue
     const spanByTool = new Map<string, WaitSpan>()
     for (const span of record.waitSpans) {
       if (typeof span.id !== 'string' || !span.id || typeof span.name !== 'string') continue
@@ -294,7 +291,14 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       spanByTool.set(toolKey(span.id, span.name), span)
     }
     if (!spanByTool.size) continue
-    for (const assistant of assistants) {
+    const matches = new Set(anchored ? assistants.map((m) => m.id) : [])
+    for (const stamp of stamps ?? []) {
+      if (stamp === null || repeated.has(stamp)) continue
+      const id = assistantByStamp.get(stamp)
+      if (id) matches.add(id)
+    }
+    for (const id of matches) {
+      const assistant = messages[indexById.get(id)!]
       const calls = assistant.toolCalls
       if (!calls?.length) continue
       let byTool: Map<string, { startedAt: number; endedAt: number }> | undefined

@@ -138,7 +138,7 @@ export async function runTurnTimingTests(ok, modules) {
       }
     ])
     const t = turns.find((x) => x.kind === 'assistant')
-    ok(t?.elapsedMs === 1234, '推送来的本轮用时优先于日志值', `实际 ${t?.elapsedMs}`)
+    ok(t?.elapsedMs === 9999, '完成计时优先于单步中途快照', `实际 ${t?.elapsedMs}`)
     ok(t?.terminalReason === 'stopped', '终止原因仍取日志（推送不带它）', t?.terminalReason)
   }
 }
@@ -232,6 +232,18 @@ export async function runTurnTimingStoreTests(ok, mod) {
     [{ ...record, anchorId: 'm0', sourceIds: ['a-w1'], waitSpans: [{ id: 'w1', name: 'write', startedAt: 1002, endedAt: 4000 }] }]
   )
   ok(spanned[1]?.toolCalls?.[0]?.startedAt === 1002 && spanned[1]?.toolCalls?.[0]?.endedAt === 4000, '重载后工具起点从记录的分段恢复（从生成参数开始），结束仍用结果时间')
+
+  const steered = applyTurnTimings([
+    { id: 'u1', role: 'user' },
+    { id: 'a1', role: 'assistant', timestamp: 2000, toolCalls: [{ id: 'w1', name: 'write', status: 'ok' }] },
+    { id: 'u2', role: 'user' },
+    { id: 'a2', role: 'assistant', timestamp: 4100 },
+    { id: 'u3', role: 'user' },
+    { id: 'unrelated', role: 'assistant', timestamp: 5000, toolCalls: [{ id: 'w1', name: 'write', status: 'ok' }] }
+  ], [{ ...record, anchorId: 'u2', generationTimings: [null, { durationMs: 200 }], generationStamps: [2000, 4100], waitSpans: [{ id: 'w1', name: 'write', startedAt: 2100, endedAt: 4000 }] }])
+  ok(steered[1]?.toolCalls?.[0]?.startedAt === 2100, '按唯一生成时间恢复插话前的工具计时')
+  ok(steered[3]?.turnTiming?.elapsedMs === 50000 && !steered[1]?.turnTiming, '跨插话的整轮回执只挂在最后一段')
+  ok(steered[5]?.toolCalls?.[0]?.startedAt === undefined, '其他回合的同名同 ID 工具不被误挂')
 
   const fallback = applyTurnTimings(
     [

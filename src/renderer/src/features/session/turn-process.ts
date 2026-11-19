@@ -621,17 +621,6 @@ export function runMessagesFrom(messages: readonly UIMessage[], runFirstId: stri
   return run
 }
 
-export function segmentSpanMs(messages: readonly RunMessage[], sourceIds: readonly string[], startedAt: number): number | undefined {
-  const index = messageIndex(messages)
-  const positions = sourceIds
-    .map((id) => index.pos.get(id))
-    .filter((pos): pos is number => pos !== undefined)
-    .sort((a, b) => a - b)
-  const own = positions.map((pos) => messages[pos])
-  const end = activityEnd(own, 0, own.length)
-  return end > startedAt ? end - startedAt : undefined
-}
-
 export function turnSpanMs(messages: readonly RunMessage[], sourceIds: readonly string[], tools: readonly Pick<UIToolCall, 'endedAt'>[]): number | undefined {
   const index = messageIndex(messages)
   const first = sourceIds.length ? index.pos.get(sourceIds[0]) ?? -1 : -1

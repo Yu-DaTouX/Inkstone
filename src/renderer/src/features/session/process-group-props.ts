@@ -9,7 +9,6 @@ export interface ProcessGroupCompareProps {
   openByDefault: boolean
   alertFailures: boolean
   showFailures: boolean
-  liveStartedAt: number | null
   view: string
   approvalIds: ReadonlySet<string>
   glowId?: string | null
@@ -61,7 +60,7 @@ function sameGlow(a: string | null | undefined, b: string | null | undefined, se
   return !segments.some((segment) => segment.tools.some((call) => call.id === a || call.id === b))
 }
 
-const COMPARED_PROPS = new Set(['segments', 'groupKey', 'live', 'openByDefault', 'alertFailures', 'showFailures', 'liveStartedAt', 'view', 'approvalIds', 'glowId', 'compactionAfter'])
+const COMPARED_PROPS = new Set(['segments', 'groupKey', 'live', 'openByDefault', 'alertFailures', 'showFailures', 'view', 'approvalIds', 'glowId', 'compactionAfter'])
 
 function sameOtherProps(a: object, b: object): boolean {
   const left = a as Record<string, unknown>
@@ -78,7 +77,6 @@ export function sameProcessGroupProps(a: ProcessGroupCompareProps, b: ProcessGro
     a.openByDefault === b.openByDefault &&
     a.alertFailures === b.alertFailures &&
     a.showFailures === b.showFailures &&
-    a.liveStartedAt === b.liveStartedAt &&
     a.view === b.view &&
     sameIds(a.approvalIds, b.approvalIds) &&
     shallowEqual(a.compactionAfter, b.compactionAfter) &&

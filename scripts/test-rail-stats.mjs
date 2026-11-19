@@ -42,6 +42,8 @@ const metrics = (over = {}) => ({
   steps: 7,
   tps: 42.345,
   tpsPartial: false,
+  elapsedMs: 240_000,
+  elapsedPartial: false,
   modelMs: 192_000,
   modelPartial: false,
   toolMs: 65_000,
@@ -117,13 +119,15 @@ assert.equal(new Set(full.tokens.segments.map((s) => s.tone)).size, 4, '构成�
 assert.equal(full.tokens.title.split('\n')[0], `sm.total ${(12_345).toLocaleString()} tok.unit`)
 assert.equal(full.extras, null, '无子 Agent、无费用时省略小字行')
 
-assert.equal(full.time.baseMs, 257_000, '用时 = 模型 + 工具')
-assert.equal(railTimeText(full.time), '4m 17s')
-assert.equal(railTimeText(full.time, 3000), '4m 20s', '运行中按秒累加')
+assert.equal(full.time.baseMs, 240_000, '累计用时用实测运行时长，不相加模型与工具')
+assert.equal(railTimeText(full.time), '4m 00s')
+assert.equal(railTimeText(full.time, 3000), '4m 03s', '运行中按秒累加')
+assert.equal(railTimeText(build1({ elapsedMs: null }).time), '—', '旧记录只有分项时不把分项冒充总用时')
+assert.equal(build1({ elapsedPartial: true }).time.elapsedTitle, 'sm.elapsedTip\nsm.timingPartialTip')
 assert.equal(full.time.partial, false)
 assert.deepEqual(full.time.segments.map((s) => [s.key, s.value]), [['model', 192_000], ['tool', 65_000]])
 assert.equal(full.time.detail, 'sm.modelShort 3m 12s · sm.toolShort 1m 05s · sm.ttftShort 1.2s')
-assert.equal(full.time.title, null)
+assert.equal(full.time.title, 'sm.timingOverlapTip')
 
 assert.equal(full.speed.value, '42.3', '只有平均速度时也显示')
 assert.equal(full.speed.caption, '')
@@ -169,7 +173,7 @@ const noTotal = build1({ tps: null, total: null, input: null, output: null, cach
 assert.equal(noTotal.tokens, null)
 assert.equal(noTotal.summary.total, null)
 
-const noTime = build1({ modelMs: null, toolMs: 0, ttftMs: null })
+const noTime = build1({ elapsedMs: null, modelMs: null, toolMs: 0, ttftMs: null })
 assert.equal(noTime.time, null, '没有任何用时数据时整块不显示')
 const noTools = build1({ toolMs: 0 })
 assert.deepEqual(noTools.time.segments.map((s) => s.key), ['model'])
@@ -181,9 +185,9 @@ assert.equal(partial.headlineTitle, 'sm.historyPartialTip')
 assert.equal(partial.tokens.total, '12.3K', '≥ 去掉后总量不再带符号，语义已在 tokens.title 的提示行里')
 assert.deepEqual(partial.tokens.title.split('\n').slice(1), ['sm.historyPartialTip', 'sm.partialTip'])
 assert.equal(partial.time.partial, true)
-assert.equal(railTimeText(partial.time), '4m 17s', '≥ 去掉后用时不再带符号，语义已在 time.title 的提示里')
+assert.equal(railTimeText(partial.time), '4m 00s', '≥ 去掉后用时不再带符号，语义已在 time.title 的提示里')
 assert.equal(partial.time.detail, 'sm.modelShort 3m 12s · sm.toolShort 1m 05s · sm.ttftShort 1.2s')
-assert.equal(partial.time.title, 'sm.timingPartialTip')
+assert.equal(partial.time.title, 'sm.timingOverlapTip\nsm.timingPartialTip')
 assert.equal(build1({ toolMs: null }).time.partial, true, '有工具但无计时也算缺数据')
 
 const counted = build1({}, { counts: { turns: 4, steps: 8 }, liveSince: 1000 })

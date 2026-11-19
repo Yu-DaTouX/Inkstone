@@ -2078,6 +2078,7 @@ export class AgentController extends EventEmitter {
       capabilities: capabilitySnapshot(model, availableThinkingLevels, levels.status),
       isStreaming: !!data.isStreaming,
       isAgentRunning: this.agentRunning,
+      runStartedAt: this.agentRunning ? this.turn.startedAt : undefined,
       isCompacting: !!data.isCompacting,
       compaction: this.compactionState.running ?? undefined,
       lastCompaction: this.compactionState.last ?? undefined,
@@ -2377,13 +2378,13 @@ export class AgentController extends EventEmitter {
         if (this.turn.terminal === 'stopped' && this.turn.startedMono !== undefined) {
           this.turn.elapsedMs = Math.max(this.turn.elapsedMs ?? 0, Math.max(1, Math.round(performance.now() - this.turn.startedMono)))
         }
+        const persisted = this.persistTurnTiming()
         this.turn.startedAt = undefined
         this.turn.startedMono = undefined
         this.pendingRequestMono = undefined
         this.timingContinues = false
         const deferredHydrate = this.hydrateDeferred
         this.hydrateDeferred = null
-        const persisted = this.persistTurnTiming()
         if (deferredHydrate) void persisted.catch(() => undefined).then(() => this.hydrate(deferredHydrate)).then((refreshed) => {
           if (refreshed.ok || refreshed.changed) return
           this.push({
@@ -2653,12 +2654,26 @@ export class AgentController extends EventEmitter {
   }
 
   private finishTimingSegmentForNotice(): void {
-    void this.turn.persist(true, this.state?.sessionFile, this.messages)
+    void this.persistTurnTiming()
     this.startTimingSegment()
+    if (this.state && this.agentRunning) {
+      this.state = { ...this.state, runStartedAt: this.turn.startedAt }
+      this.push({ ch: 'state', payload: this.state })
+    }
   }
 
   private async persistTurnTiming(final = true): Promise<void> {
-    await this.turn.persist(final, this.state?.sessionFile, this.messages)
+    const messages = this.messages
+    const sourceIds = this.turn.messageIds
+    const elapsedMs = this.turn.elapsedMs
+    const last = final && elapsedMs !== undefined ? messages.findLast(m => sourceIds.includes(m.id)) : undefined
+    if (last && elapsedMs !== undefined) {
+      const startedAt = this.turn.startedAt ?? Date.now() - elapsedMs
+      const patch = { turnTiming: { logicalTurnId: sourceIds[0], startedAt, endedAt: startedAt + elapsedMs, elapsedMs, terminalReason: this.turn.terminal } }
+      Object.assign(last, patch)
+      this.push({ ch: 'msg-update', payload: { id: last.id, patch } })
+    }
+    await this.turn.persist(final, this.state?.sessionFile, messages)
   }
 
   private setAgentRunning(v: boolean): void {
@@ -2667,7 +2682,7 @@ export class AgentController extends EventEmitter {
     if (!v) this.runFromUser = false
     if (v) this.executionRunObserved = true
     if (!this.state) return
-    this.state = { ...this.state, isAgentRunning: v }
+    this.state = { ...this.state, isAgentRunning: v, runStartedAt: v ? this.turn.startedAt : undefined }
     this.push({ ch: 'state', payload: this.state })
     if (!v && this.pendingAborts === 0 && this.state.isStreaming !== true && this.state.isCompacting !== true &&
       this.queue.isEmpty()) {

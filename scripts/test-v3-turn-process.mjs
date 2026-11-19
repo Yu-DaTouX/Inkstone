@@ -347,7 +347,7 @@ group('过程摘要：按工具类型归类并带改动行数')
 
 group('插话与排队：同一次运行内的分段')
 {
-  const { turnRunPlace, segmentSpanMs, runMessagesFrom, turnSpanMs } = mod
+  const { turnRunPlace, runMessagesFrom, turnSpanMs } = mod
   const steered = [
     { id: 'u1', role: 'user', text: '写工具', timestamp: 1000 },
     { id: 'a1', role: 'assistant', text: '', timestamp: 2000, toolCalls: [{ id: 't1', name: 'write', status: 'ok', startedAt: 9000, endedAt: 40000 }] },
@@ -360,7 +360,6 @@ group('插话与排队：同一次运行内的分段')
   ok(head.continues === true && head.startedAt === null, '插话前的段：运行未结束，不算回合结束', head)
   const tail = turnRunPlace(steered, ['a2'])
   ok(tail.continues === false && tail.startedAt === 40000 && tail.runFirstId === 'a1', '插话后的段：从上一批工具结束起算，运行从 a1 开始', tail)
-  ok(segmentSpanMs(steered, ['a2'], tail.startedAt) === 7000, '插话后的段只计自己的 7 秒', segmentSpanMs(steered, ['a2'], tail.startedAt))
   ok(JSON.stringify(runMessagesFrom(steered, tail.runFirstId, ['a2']).map((m) => m.id)) === '["a1","a2"]', '整次运行的助手消息合并给改动卡', runMessagesFrom(steered, tail.runFirstId, ['a2']))
   const next = turnRunPlace(steered, ['a3'])
   ok(next.continues === false && next.startedAt === null && next.runFirstId === null, '运行结束后新发的消息是新的一次运行', next)
@@ -372,7 +371,7 @@ group('插话与排队：同一次运行内的分段')
     { id: 'a2', role: 'assistant', text: '19 个', timestamp: 48500, generationTiming: { durationMs: 6500 } }
   ]
   const queuedPlace = turnRunPlace(queued, ['a2'])
-  ok(queuedPlace.startedAt === 48000 && segmentSpanMs(queued, ['a2'], queuedPlace.startedAt) === 7000, '排队消息从送达时起算，不用排队时刻', queuedPlace)
+  ok(queuedPlace.startedAt === 48000 && queuedPlace.runFirstId === 'a1', '运行内送达的排队消息沿用同一运行边界', queuedPlace)
   const notice = [
     { id: 'u1', role: 'user', text: '派子代理', timestamp: 1000 },
     { id: 'a1', role: 'assistant', text: '已派', timestamp: 2000, toolCalls: [{ id: 't', name: 'agent', status: 'ok', endedAt: 9000 }] },

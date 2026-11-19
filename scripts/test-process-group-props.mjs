@@ -12,7 +12,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   })
   const props = (overrides = {}) => ({
     segments: [segment()], groupKey: 'group:s1', live: false, openByDefault: false, alertFailures: true, showFailures: true,
-    liveStartedAt: null, view: 'concise', approvalIds: new Set(), glowId: null, compactionAfter: null, ...overrides
+    view: 'concise', approvalIds: new Set(), glowId: null, compactionAfter: null, ...overrides
   })
 
   ok(sameSegment(segment(), segment({ thinkingParts: [{ text: '想', at: 0 }] })), '\u91cd\u65b0\u6295\u5f71\u51fa\u7684\u540c\u5185\u5bb9\u6bb5\uff08\u65b0\u5bf9\u8c61\u3001\u540c\u4e00\u6279\u5de5\u5177\u8c03\u7528\uff09\u89c6\u4e3a\u76f8\u540c')
@@ -36,7 +36,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(!sameProcessGroupProps(props({ approvalIds: new Set(['a']) }), props({ approvalIds: new Set(['b']) })), '\u5ba1\u6279\u96c6\u5408\u53d8\u5316\u65f6\u91cd\u6e32\u67d3')
   ok(sameProcessGroupProps(props({ compactionAfter: { messageId: 'm1', toolId: null } }), props({ compactionAfter: { messageId: 'm1', toolId: null } })), '\u538b\u7f29\u5207\u70b9\u5185\u5bb9\u76f8\u540c\u89c6\u4e3a\u76f8\u540c')
   ok(!sameProcessGroupProps(props({ compactionAfter: null }), props({ compactionAfter: { messageId: 'm1', toolId: 't1' } })), '\u538b\u7f29\u5207\u70b9\u53d8\u5316\u65f6\u91cd\u6e32\u67d3')
-  for (const [key, value] of [['live', true], ['openByDefault', true], ['alertFailures', false], ['showFailures', false], ['liveStartedAt', 5], ['view', 'thinking'], ['groupKey', 'group:s2']]) {
+  for (const [key, value] of [['live', true], ['openByDefault', true], ['alertFailures', false], ['showFailures', false], ['view', 'thinking'], ['groupKey', 'group:s2']]) {
     ok(!sameProcessGroupProps(props(), props({ [key]: value })), `${key} \u53d8\u5316\u65f6\u91cd\u6e32\u67d3`)
   }
   ok(!sameProcessGroupProps(props({ segments: [segment()] }), props({ segments: [segment(), segment({ id: 's2' })] })), '\u6bb5\u6570\u53d8\u5316\u65f6\u91cd\u6e32\u67d3')

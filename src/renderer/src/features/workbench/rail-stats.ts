@@ -27,7 +27,8 @@ export interface RailTokens {
 
 export interface RailTime {
   label: string
-  baseMs: number
+  baseMs: number | null
+  elapsedTitle: string | null
   partial: boolean
   ariaLabel: string
   segments: RailSegment[]
@@ -205,7 +206,7 @@ export function timingPartial(metrics: SessionMetrics): boolean {
 }
 
 export function railTimeText(time: Pick<RailTime, 'baseMs'>, liveMs = 0): string {
-  return clockText(time.baseMs + Math.max(0, liveMs))
+  return time.baseMs === null ? '—' : clockText(time.baseMs + Math.max(0, liveMs))
 }
 
 function defaultMoney(usd: number): string {
@@ -252,7 +253,7 @@ function buildTokens(metrics: SessionMetrics, input: RailStatsInput, notes: read
 
 function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | null {
   const toolMs = metrics.toolMs ?? 0
-  if (metrics.modelMs === null && toolMs <= 0) return null
+  if (metrics.elapsedMs === null && metrics.modelMs === null && toolMs <= 0) return null
   const { t } = input
   const partial = timingPartial(metrics)
   const modelMs = metrics.modelMs ?? 0
@@ -267,18 +268,19 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
   const model = segment('model', t('sm.modelShort'), modelMs)
   const tool = segment('tool', t('sm.toolShort'), toolMs)
   const detail = [
-    `${model.label} ${model.text}`,
+    ...(metrics.modelMs === null ? [] : [`${model.label} ${model.text}`]),
     ...(toolMs > 0 ? [`${tool.label} ${tool.text}`] : []),
     ...(metrics.ttftMs === null ? [] : [`${t('sm.ttftShort')} ${spanText(metrics.ttftMs)}`])
   ].join(' · ')
   return {
     label: t('sm.elapsed'),
-    baseMs: modelMs + toolMs,
+    baseMs: metrics.elapsedMs,
+    elapsedTitle: joinNotes([t('sm.elapsedTip'), ...(metrics.elapsedPartial ? [t('sm.timingPartialTip')] : [])]),
     partial,
     ariaLabel: t('sm.timeSplit'),
-    segments: toolMs > 0 ? [model, tool] : [model],
+    segments: [...(metrics.modelMs === null ? [] : [model]), ...(toolMs > 0 ? [tool] : [])],
     detail,
-    title: joinNotes(partial ? [t('sm.timingPartialTip')] : [])
+    title: joinNotes([t('sm.timingOverlapTip'), ...(partial ? [t('sm.timingPartialTip')] : [])])
   }
 }
 

@@ -95,7 +95,7 @@ export function useRunProgress(): RunProgress | null {
   const standaloneCompaction = compacting && !session?.isAgentRunning
   const identity = JSON.stringify([session?.sessionId, runnerId, user?.id, user?.timestamp,
     standaloneCompaction ? session?.compaction?.startedAt ?? 'compact' : 'turn'])
-  const reportedStartedAt = standaloneCompaction ? session?.compaction?.startedAt : user?.timestamp ?? turn[0]?.timestamp
+  const reportedStartedAt = standaloneCompaction ? session?.compaction?.startedAt : session?.runStartedAt ?? user?.timestamp ?? turn[0]?.timestamp
   const clock = resolveRunClock(startedRef.current, { identity, running, startedAt: reportedStartedAt, now })
   startedRef.current = clock
 

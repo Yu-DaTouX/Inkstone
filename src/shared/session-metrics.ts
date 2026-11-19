@@ -7,6 +7,8 @@ export interface SessionMetrics {
   steps: number
   tps: number | null
   tpsPartial: boolean
+  elapsedMs: number | null
+  elapsedPartial: boolean
   modelMs: number | null
   modelPartial: boolean
   toolMs: number | null
@@ -30,6 +32,7 @@ export interface SessionMetrics {
 
 export interface SessionMetricsOptions {
   historyPartial?: boolean
+  activeRunStartedAt?: number | null
 }
 
 function nonNegative(value: unknown): number {
@@ -282,21 +285,6 @@ export function splitLiveStep(messages: readonly UIMessage[], liveId: string | n
   return live ? { settled, live } : { settled: messages, live: null }
 }
 
-export function liveActivitySince(messages: readonly UIMessage[], live: UIMessage | null, running: boolean): number | null {
-  if (!running) return null
-  let since = live && isNonNegative(live.timestamp) ? live.timestamp : null
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i]
-    if (!m) continue
-    if (m.role === 'user' && !isStepNoise(m)) break
-    for (const c of m.toolCalls ?? []) {
-      if (c?.status !== 'running' || !isNonNegative(c.startedAt) || isNonNegative(c.endedAt)) continue
-      since = since === null ? c.startedAt : Math.min(since, c.startedAt)
-    }
-  }
-  return since
-}
-
 export function stepSpeed(m: UIMessage | null | undefined, floor: number | null = null): number | null {
   const decode = m ? stepDecode(m, floor) : null
   return decode && decode.ms > 0 ? decode.tokens / (decode.ms / 1000) : null
@@ -436,7 +424,7 @@ export function projectSessionMetrics(
   let toolTotal = 0
   for (const m of msgs) {
     for (const c of m.toolCalls ?? []) {
-      if (!c || typeof c.id !== 'string' || toolIds.has(c.id)) continue
+      if (!c || c.serverSide || typeof c.id !== 'string' || toolIds.has(c.id)) continue
       toolIds.add(c.id)
       toolTotal += 1
       if (isNonNegative(c.startedAt) && isNonNegative(c.endedAt) && c.endedAt >= c.startedAt) {
@@ -454,6 +442,21 @@ export function projectSessionMetrics(
   }
   if (historyPartial && toolMs !== null) toolPartial = true
 
+  let elapsedMs: number | null = null
+  let hasUnmeasuredRun = false
+  let firstAssistant: UIMessage | undefined
+  for (const m of msgs) {
+    if (m.role !== 'assistant') continue
+    firstAssistant ??= m
+    const timing = m.turnTiming
+    if (!timing || !isNonNegative(timing.elapsedMs)) continue
+    if (firstAssistant !== m && isNonNegative(firstAssistant.timestamp) && firstAssistant.timestamp < timing.startedAt - 1000) hasUnmeasuredRun = true
+    elapsedMs = (elapsedMs ?? 0) + timing.elapsedMs
+    firstAssistant = undefined
+  }
+
+  const activeRunStartedAt = options?.activeRunStartedAt
+  const trailingUnmeasured = !!firstAssistant && (activeRunStartedAt == null || !isNonNegative(firstAssistant.timestamp) || firstAssistant.timestamp < activeRunStartedAt - 1000)
   const cost = stats ? nonNegative(stats.cost) : null
   const costEstimated = stats ? nonNegative(stats.costEstimated) : 0
   const costZero = cost === 0 && total !== null && total > 0
@@ -463,6 +466,8 @@ export function projectSessionMetrics(
     steps,
     tps,
     tpsPartial,
+    elapsedMs,
+    elapsedPartial: hasUnmeasuredRun || trailingUnmeasured || historyPartial,
     modelMs,
     modelPartial,
     toolMs,

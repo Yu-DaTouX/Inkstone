@@ -293,7 +293,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       usage: cur.usage,
       ...(cur.usagePartial && cur.usage ? { usagePartial: true } : {}),
       speed: cur.last?.speed,
-      elapsedMs: cur.last?.elapsedMs ?? cur.timing?.elapsedMs,
+      elapsedMs: cur.timing?.elapsedMs ?? cur.last?.elapsedMs,
       timestamp: cur.timestamp,
       ...(cur.timing
         ? { terminalReason: cur.timing.terminalReason, timingRecorded: true }

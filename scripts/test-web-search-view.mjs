@@ -513,7 +513,7 @@ async function run() {
     const legacyCall = { id: 'w2', name: 'web_search', args: { query: '旧记录' }, status: 'ok' }
     const legacyHtml = renderWith(createElement(view.SearchStepView, { call: legacyCall, step: m.searchStepOf(legacyCall) }, plain))
     ok(legacyHtml.includes('data-testid="ws-capsule"') && legacyHtml.includes('旧记录'), '没 details 的旧记录只留胶囊与查询词', legacyHtml.slice(0, 200))
-    ok(legacyHtml.includes('aria-label="搜索 “旧记录”"') && !legacyHtml.includes('条结果'), '没 details 时不谎报结果数量', legacyHtml.slice(0, 400))
+    ok(legacyHtml.includes('aria-label="搜索 “旧记录” · 未记录来源"') && !legacyHtml.includes('条结果'), '没 details 时不谎报结果数量', legacyHtml.slice(0, 400))
     ok(!legacyHtml.includes('ui-site-icon') && !legacyHtml.includes('ui-shimmer'), '没 details 时不显示站点图标与闪烁', legacyHtml.slice(0, 900))
 
     const fetchCall = { id: 'w3', name: 'web_fetch', args: { url: 'https://example.com/a' }, status: 'ok', details: { search: { action: 'fetch', url: 'https://example.com/a', title: '示例' } } }
@@ -539,6 +539,13 @@ async function run() {
     const emptyHtml = renderWith(createElement(view.SearchStepView, { call: emptyCall, step: m.searchStepOf(emptyCall) }, plain))
     ok(emptyHtml.includes('data-empty="true"') && !emptyHtml.includes('aria-expanded') && !emptyHtml.includes('ui-source-reveal') && !emptyHtml.includes('没有可显示的来源'), '没有来源时胶囊不可展开，也不写空提示', emptyHtml.slice(0, 600))
     ok(emptyHtml.includes('class="ws-tick">甲<') && emptyHtml.includes('>+1<') && !emptyHtml.includes('甲 · 乙<'), '多个查询只显示第一个和 +N', emptyHtml.slice(0, 600))
+    const native = { ...emptyCall, id: 'native-empty', serverSide: true }
+    const nativeHtml = renderWith(createElement(view.SearchStepView, { call: native, step: m.searchStepOf(native) }, plain))
+    const nativeGroup = renderWith(createElement(view.WebGroupView, { calls: [native], renderFallback: () => plain }))
+    for (const html of [nativeHtml, nativeGroup]) ok(html.includes('未记录来源') && !html.includes('ws-capsule-count') && !html.includes('aria-expanded'), '服务端未记录来源时不标 0、不展开')
+    const cited = { ...searchCall, id: 'native-cited', serverSide: true }
+    const citedHtml = renderWith(createElement(view.WebGroupView, { calls: [cited], renderFallback: () => plain }))
+    ok(citedHtml.includes('aria-expanded="true"') && citedHtml.includes('ws-sources') && !citedHtml.includes('ws-capsule-count'), '服务端保留来源可看，不把已有引用叫作结果总数')
     ok(m.isBlockedPage({ title: 'Just a moment...', snippet: '' }) && m.isBlockedPage({ title: 'x', snippet: 'Please complete the security check to access' }) && !m.isBlockedPage({ title: 'Electron 文档', snippet: '窗口' }), '验证页识别只认典型拦截文案')
 
     const citation = { n: 2, title: 'Milvus 3.0 发布', url: 'https://milvus.io/blog/announcing-milvus-3', domain: 'milvus.io', site: 'milvus', snippet: '向量检索引擎的新版本' }

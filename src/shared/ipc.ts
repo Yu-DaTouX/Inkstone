@@ -142,6 +142,7 @@ export interface SessionState {
   capabilities?: ModelCapabilitySnapshot
   isStreaming: boolean
   isAgentRunning?: boolean
+  runStartedAt?: number
   isCompacting: boolean
   compaction?: CompactionRun
   retry?: RetryRun
