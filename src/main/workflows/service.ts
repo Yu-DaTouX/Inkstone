@@ -21,7 +21,7 @@ import { pick } from '../../shared/ui-lang'
 import { atomicWriteFile } from '../atomic-write'
 import { CapabilityCommandError, type CapabilityCommandResult } from '../capability-server'
 import type { NoticeTarget } from '../subagent-notify'
-import { readJournal, readModelJournal, type JournalEntry } from './journal'
+import { initializeJournal, loadReplayJournal, readModelJournal, type JournalEntry } from './journal'
 import { shownModelError, type WorkflowModelHost } from './model-lane'
 import { buildWorkflowNotice, createWorkflowNotifier, type WorkflowNotifier, type WorkflowWorktree } from './notice'
 import { WorkflowRunner, type WorkflowOutcome } from './runner'
@@ -59,6 +59,13 @@ interface WorkflowRecord {
   context: WorkflowContext
   argsJson?: string
   notified?: boolean
+  journalChecked?: boolean
+  legacyJournalUncertain?: boolean
+}
+
+interface LaunchTicket {
+  cancelled: boolean
+  done: Promise<void>
 }
 
 interface FinishWaiter {
@@ -121,6 +128,7 @@ function preview(value: unknown): { text: string; truncated: boolean } {
 export class WorkflowService {
   private readonly records = new Map<string, WorkflowRecord>()
   private readonly runners = new Map<string, WorkflowRunner>()
+  private readonly launches = new Map<string, LaunchTicket>()
   private readonly finishedCalls = new Map<string, (WorkflowModelCall | undefined)[]>()
   private readonly callLoads = new Map<string, Promise<(WorkflowModelCall | undefined)[] | null>>()
   private readonly waiters = new Map<string, Set<FinishWaiter>>()
@@ -332,9 +340,13 @@ export class WorkflowService {
     const dir = this.dirOf({ context: recordContext }, id)
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, SCRIPT_FILE), source, 'utf8')
-    await writeFile(join(dir, JOURNAL_FILE), '', 'utf8')
+    const journalStart = Buffer.alloc(0)
+    const journalFile = join(dir, JOURNAL_FILE)
+    await writeFile(journalFile, journalStart, { flag: 'wx' })
+    await initializeJournal(journalFile, journalStart)
     const record: WorkflowRecord = {
       context: recordContext,
+      journalChecked: true,
       ...(argsJson !== undefined ? { argsJson } : {}),
       view: {
         id,
@@ -356,9 +368,9 @@ export class WorkflowService {
         dir
       }
     }
+    await this.persist(record, true)
     this.records.set(id, record)
-    await this.persist(record)
-    this.launch(record, checked.code, new Map(), new Map())
+    this.launch(record, checked.code, journalStart, new Map(), new Map())
     const view = this.viewOf(record)
     return {
       data: view,
@@ -386,7 +398,7 @@ export class WorkflowService {
     }
   }
 
-  private launch(record: WorkflowRecord, code: string, previous: Map<number, JournalEntry>, previousModels: Map<number, JournalEntry>): void {
+  private launch(record: WorkflowRecord, code: string, journalStart: Buffer, previous: Map<number, JournalEntry>, previousModels: Map<number, JournalEntry>): void {
     const id = record.view.id
     const subagentContext = (): WorkflowContext => ({ ...record.context, parentMessageId: workflowAnchor(id) })
     const runner = new WorkflowRunner({
@@ -394,6 +406,7 @@ export class WorkflowService {
       code,
       ...(record.argsJson !== undefined ? { argsJson: record.argsJson } : {}),
       journalFile: join(record.view.dir, JOURNAL_FILE),
+      journalStart,
       attempt: record.view.attempt,
       concurrency: record.view.concurrency,
       previous,
@@ -421,7 +434,7 @@ export class WorkflowService {
         waitFinished: (subagentId, after, signal) => this.waitFinished(subagentId, after, signal)
       },
       onChange: () => this.schedulePush(record),
-      onFinish: (outcome) => void this.finish(record, runner, outcome)
+      onFinish: (outcome) => this.finish(record, runner, outcome)
     })
     this.runners.set(id, runner)
     runner.start()
@@ -429,39 +442,48 @@ export class WorkflowService {
   }
 
   private async finish(record: WorkflowRecord, runner: WorkflowRunner, outcome: WorkflowOutcome): Promise<void> {
-    if (this.runners.get(record.view.id) !== runner) return
-    record.view.agents = runner.agents.filter(Boolean).map((agent) => ({ ...agent }))
-    record.view.logs = [...runner.logs]
-    if (runner.models.total) {
-      record.view.models = runner.models
-      this.keepCalls(record.view.id, runner.modelCalls())
-    }
-    record.view.status = outcome.status
-    record.view.endedAt = this.now()
-    if (outcome.status === 'failed') record.view.error = outcome.error
-    else delete record.view.error
-    let result: unknown
-    if (outcome.status === 'done') {
-      try {
-        result = JSON.parse(outcome.json)
-      } catch {
-        result = null
-      }
-    }
+    const id = record.view.id
+    if (this.runners.get(id) !== runner) return
+    const endedAt = this.now()
+    let hasResult = false
     if (outcome.status !== 'stopped') {
-      const payload = outcome.status === 'done' ? { ok: true, result, endedAt: record.view.endedAt } : { ok: false, error: outcome.error, endedAt: record.view.endedAt }
       try {
-        await writeFile(join(record.view.dir, RESULT_FILE), JSON.stringify(payload, null, 2), 'utf8')
-        record.view.hasResult = outcome.status === 'done'
+        const payload = outcome.status === 'done'
+          ? { ok: true, result: JSON.parse(outcome.json) as unknown }
+          : { ok: false, error: outcome.error, resumeError: outcome.resumeError }
+        await this.writeResult(record, { ...payload, endedAt, attempt: record.view.attempt })
+        hasResult = outcome.status === 'done'
       } catch (error) {
-        console.warn('[workflow] 写最终结果失败', error)
+        const detail = `写最终结果失败：${error instanceof Error ? error.message : String(error)}`
+        outcome = outcome.status === 'failed'
+          ? { ...outcome, error: `${outcome.error}；${detail}` }
+          : { status: 'failed', error: detail }
       }
       record.notified = false
     }
-    this.runners.delete(record.view.id)
-    await this.persist(record)
+    Object.assign(record.view, {
+      agents: runner.agents.filter(Boolean).map((agent) => ({ ...agent })),
+      logs: [...runner.logs],
+      status: outcome.status,
+      endedAt,
+      hasResult,
+      error: outcome.status === 'failed' ? outcome.error : undefined,
+      resumeError: outcome.status === 'failed' ? outcome.resumeError : undefined
+    })
+    if (runner.models.total) {
+      record.view.models = runner.models
+      this.keepCalls(id, runner.modelCalls())
+    }
+    await this.persist(record, true).catch((error: unknown) => {
+      const detail = `保存工作流终态失败：${error instanceof Error ? error.message : String(error)}`
+      record.view.status = 'failed'
+      record.view.hasResult = false
+      record.view.error = record.view.error ? `${record.view.error}；${detail}` : detail
+      record.notified = false
+    })
+    this.runners.delete(id)
     this.schedulePush(record, true)
-    if (outcome.status !== 'stopped') this.notifier.notify(record)
+    if (record.notified === false) this.notifier.notify(record)
   }
 
   private viewOf(record: WorkflowRecord): WorkflowRunView {
@@ -502,19 +524,20 @@ export class WorkflowService {
     this.pushTimers.set(id, timer)
   }
 
-  private persist(record: WorkflowRecord): Promise<void> {
+  private persist(record: WorkflowRecord, required = false): Promise<void> {
     const id = record.view.id
     const previous = this.persistQueue.get(id) ?? Promise.resolve()
     const next = previous.then(async () => {
       const file = join(record.view.dir, RECORD_FILE)
-      const body = JSON.stringify({ view: record.view, context: record.context, ...(record.argsJson !== undefined ? { argsJson: record.argsJson } : {}), ...(record.notified !== undefined ? { notified: record.notified } : {}) }, null, 2)
-      await atomicWriteFile(file, body)
-    }).catch((error: unknown) => console.warn('[workflow] 保存运行状态失败', error))
-    this.persistQueue.set(id, next)
-    void next.finally(() => {
-      if (this.persistQueue.get(id) === next) this.persistQueue.delete(id)
+      const body = JSON.stringify(record, null, 2)
+      await atomicWriteFile(file, body, required ? { durable: true, syncDir: true } : {})
     })
-    return next
+    const settled = next.catch((error: unknown) => console.warn('[workflow] 保存运行状态失败', error))
+    this.persistQueue.set(id, settled)
+    void settled.then(() => {
+      if (this.persistQueue.get(id) === settled) this.persistQueue.delete(id)
+    })
+    return required ? next : settled
   }
 
   private ensureLoaded(): Promise<void> {
@@ -543,7 +566,18 @@ export class WorkflowService {
           const raw = JSON.parse(await readFile(join(dir, RECORD_FILE), 'utf8')) as unknown
           if (!isRecord(raw) || raw.view.id !== id) continue
           raw.view.dir = dir
+          if (isLiveWorkflow(raw.view.status)) {
+            const saved = await this.readResult(raw)
+            if (saved?.attempt === raw.view.attempt && saved.resumeError) {
+              raw.view.status = 'failed'
+              raw.view.error = saved.error ?? saved.resumeError
+              raw.view.resumeError = saved.resumeError
+              raw.view.hasResult = false
+              raw.notified = false
+            }
+          }
           if (isLiveWorkflow(raw.view.status) && !this.runners.has(id)) {
+            if (!raw.journalChecked && raw.view.models?.running) raw.legacyJournalUncertain = true
             raw.view.status = 'interrupted'
             raw.view.error = '应用退出时工作流还在运行；没有自动续跑，需要时用 yan workflow resume 续跑'
             raw.view.agents = raw.view.agents.map((agent) => (agent.status === 'running' || agent.status === 'queued' ? { ...agent, status: 'stopped' } : agent))
@@ -573,12 +607,18 @@ export class WorkflowService {
   }
 
   private async stop(record: WorkflowRecord): Promise<void> {
-    const runner = this.runners.get(record.view.id)
-    if (runner && !runner.done) {
+    const id = record.view.id
+    const runner = this.runners.get(id)
+    const pending = this.launches.get(id)
+    if (pending) {
+      pending.cancelled = true
+      await pending.done
+    }
+    if (runner) {
       await runner.stop()
       return
     }
-    if (record.view.status === 'interrupted') {
+    if (!this.launches.has(id) && record.view.status === 'interrupted') {
       record.view.status = 'stopped'
       delete record.view.error
       await this.persist(record)
@@ -587,7 +627,9 @@ export class WorkflowService {
   }
 
   private async commandResume(record: WorkflowRecord, params: Record<string, unknown>, context: WorkflowContext): Promise<CapabilityCommandResult> {
-    const runner = this.runners.get(record.view.id)
+    const id = record.view.id
+    if (this.launches.has(id)) throw new CapabilityCommandError('workflow_running', `工作流 ${id} 正在准备续跑`)
+    const runner = this.runners.get(id)
     if (runner && !runner.done) {
       const concurrency = intParam(params.concurrency, 'concurrency', 1, WORKFLOW_LIMITS.maxConcurrency)
       const modelConcurrency = modelConcurrencyOf(params)
@@ -599,11 +641,33 @@ export class WorkflowService {
         if (concurrency) record.view.concurrency = concurrency
         if (modelConcurrency) record.view.modelConcurrency = modelConcurrency
         runner.setConcurrency({ concurrency, modelConcurrency })
-        await this.persist(record)
       }
       if (runner.paused) this.unpause(record)
       else this.schedulePush(record, true)
       return this.actionSummary('resume', record)
+    }
+    let release!: () => void
+    const ticket: LaunchTicket = { cancelled: false, done: new Promise<void>((resolve) => { release = resolve }) }
+    this.launches.set(id, ticket)
+    try {
+      if (runner) await runner.stop()
+      return await this.relaunch(record, params, context, ticket)
+    } finally {
+      this.launches.delete(id)
+      release()
+    }
+  }
+
+  private async relaunch(record: WorkflowRecord, params: Record<string, unknown>, context: WorkflowContext, ticket: LaunchTicket): Promise<CapabilityCommandResult> {
+    const checkCancelled = (): void => {
+      if (ticket.cancelled) throw new CapabilityCommandError('workflow_resume_cancelled', '工作流续跑已被停止')
+    }
+    checkCancelled()
+    if (record.view.resumeError) throw new CapabilityCommandError('workflow_journal_unrecoverable', record.view.resumeError)
+    const saved = await this.readResult(record)
+    checkCancelled()
+    if (saved?.attempt === record.view.attempt && saved.resumeError) {
+      throw new CapabilityCommandError('workflow_journal_unrecoverable', saved.resumeError)
     }
     const stillRunning: string[] = []
     for (const agent of record.view.agents) {
@@ -617,24 +681,26 @@ export class WorkflowService {
     if (!source) throw new CapabilityCommandError('workflow_script_missing', `运行目录里没有 ${SCRIPT_FILE}，不能续跑；改用 yan workflow run 重新开始`)
     const checked = checkWorkflowScript(source)
     if (!checked.ok) throw new CapabilityCommandError('workflow_script_invalid', checked.error)
-    if (file) await writeFile(join(record.view.dir, SCRIPT_FILE), source, 'utf8')
-    if (params.args !== undefined) {
-      const argsJson = argsJsonOf(params.args)
-      if (argsJson === undefined) delete record.argsJson
-      else record.argsJson = argsJson
-    }
+    const argsJson = params.args !== undefined ? argsJsonOf(params.args) : record.argsJson
     const concurrency = intParam(params.concurrency, 'concurrency', 1, WORKFLOW_LIMITS.maxConcurrency)
     const modelConcurrency = modelConcurrencyOf(params)
-    let previous: Map<number, JournalEntry>
-    let previousModels: Map<number, JournalEntry>
-    try {
-      const text = await readFile(join(record.view.dir, JOURNAL_FILE), 'utf8')
-      previous = readJournal(text)
-      previousModels = readModelJournal(text)
-    } catch {
-      previous = new Map()
-      previousModels = new Map()
+    const journalFile = join(record.view.dir, JOURNAL_FILE)
+    const journal = await this.readForResume(record, journalFile)
+    checkCancelled()
+    if (file) await atomicWriteFile(join(record.view.dir, SCRIPT_FILE), source)
+    if (!record.journalChecked) {
+      try {
+        await initializeJournal(journalFile, journal.data)
+        record.journalChecked = true
+      } catch (error) {
+        return this.markJournalUnreadable(record, error)
+      }
     }
+    checkCancelled()
+    const previousView = { ...record.view }
+    const previousArgs = record.argsJson
+    const previousNotice = record.notified
+    record.argsJson = argsJson
     record.view.name = checked.meta.name
     record.view.description = checked.meta.description
     record.view.declaredPhases = checked.meta.phases ?? []
@@ -645,14 +711,25 @@ export class WorkflowService {
     record.view.agents = []
     record.view.logs = []
     delete record.view.models
-    this.finishedCalls.delete(record.view.id)
     delete record.view.endedAt
     delete record.view.error
+    delete record.view.hasResult
     delete record.notified
-    await this.persist(record)
-    this.launch(record, checked.code, previous, previousModels)
-    const reusable = [...previous.values()].filter((entry) => entry.status === 'done').length
-    const reusableModels = [...previousModels.values()].filter((entry) => entry.status === 'done').length
+    try {
+      await this.persist(record, true)
+      checkCancelled()
+    } catch (error) {
+      record.view = previousView
+      record.argsJson = previousArgs
+      record.notified = previousNotice
+      await this.persist(record)
+      throw error
+    }
+    this.notifier.cancel(record.view.id)
+    this.finishedCalls.delete(record.view.id)
+    this.launch(record, checked.code, journal.data, journal.agents, journal.models)
+    const reusable = [...journal.agents.values()].filter((entry) => entry.status === 'done').length
+    const reusableModels = [...journal.models.values()].filter((entry) => entry.status === 'done').length
     return {
       data: this.viewOf(record),
       summary: {
@@ -666,6 +743,50 @@ export class WorkflowService {
         note: '已按运行记录续跑：agent() 中序号和提示词都没变的已完成调用直接返回保存的结果，从第一个变化、失败或被停的调用起重跑；model() 逐个比对，提示词与选项没变的已完成调用直接返回，失败或被停的重调；结束时宿主会通知你'
       }
     }
+  }
+
+  private async readForResume(record: WorkflowRecord, file: string) {
+    try {
+      const journal = await loadReplayJournal(file, !!record.journalChecked)
+      if (!record.journalChecked) {
+        const attempt = record.view.attempt
+        const agentSeqs = new Set<number>()
+        let settledModels = 0
+        for (const line of journal.lines) {
+          const entry = line as Partial<JournalEntry>
+          if (entry.attempt !== attempt || entry.status === undefined) continue
+          if (entry.kind === 'model') {
+            if (entry.status === 'done' || entry.status === 'failed') settledModels += 1
+          } else if (entry.seq !== undefined) agentSeqs.add(entry.seq)
+        }
+        const models = record.view.models
+        if (record.legacyJournalUncertain || record.view.agents.some((agent) =>
+          (agent.subagentId || agent.status === 'done' || agent.status === 'cached' || agent.status === 'failed' || agent.status === 'running') && !agentSeqs.has(agent.seq)
+        ) || (models && settledModels < models.done + models.cached + models.failed)) {
+          throw new Error('运行日志缺少上次调用记录')
+        }
+      }
+      return journal
+    } catch (error) {
+      return this.markJournalUnreadable(record, error)
+    }
+  }
+
+  private async markJournalUnreadable(record: WorkflowRecord, error: unknown): Promise<never> {
+    this.notifier.cancel(record.view.id)
+    const reason = `工作流不可恢复：无法校验运行日志，禁止续跑以免重复执行（${error instanceof Error ? error.message : String(error)}）`
+    record.view.status = 'failed'
+    record.view.endedAt ??= this.now()
+    record.view.hasResult = false
+    record.view.error = reason
+    record.view.resumeError = reason
+    record.notified = false
+    await this.writeResult(record, { ok: false, error: reason, resumeError: reason, attempt: record.view.attempt, endedAt: record.view.endedAt })
+      .catch((error: unknown) => console.warn('[workflow] 保存恢复失败原因失败', error))
+    await this.persist(record, true).catch(() => undefined)
+    this.schedulePush(record, true)
+    this.notifier.notify(record)
+    throw new CapabilityCommandError('workflow_journal_unrecoverable', reason)
   }
 
   private commandList(context: WorkflowContext): CapabilityCommandResult {
@@ -684,9 +805,13 @@ export class WorkflowService {
     }
   }
 
-  private async readResult(record: WorkflowRecord): Promise<{ ok?: boolean; result?: unknown; error?: string } | null> {
+  private writeResult(record: WorkflowRecord, payload: object): Promise<void> {
+    return atomicWriteFile(join(record.view.dir, RESULT_FILE), JSON.stringify(payload, null, 2), { durable: true, syncDir: true })
+  }
+
+  private async readResult(record: WorkflowRecord): Promise<{ ok?: boolean; result?: unknown; error?: string; resumeError?: string; attempt?: number } | null> {
     try {
-      return JSON.parse(await readFile(join(record.view.dir, RESULT_FILE), 'utf8')) as { ok?: boolean; result?: unknown; error?: string }
+      return JSON.parse(await readFile(join(record.view.dir, RESULT_FILE), 'utf8'))
     } catch {
       return null
     }
@@ -695,7 +820,7 @@ export class WorkflowService {
   private async commandGet(record: WorkflowRecord): Promise<CapabilityCommandResult> {
     const view = this.viewOf(record)
     const totals = workflowTotals(view)
-    const saved = view.status === 'done' || view.status === 'failed' ? await this.readResult(record) : null
+    const saved = view.status === 'done' && view.hasResult !== false ? await this.readResult(record) : null
     const shown = saved?.ok ? preview(saved.result) : null
     return {
       data: { ...view, ...(saved?.ok ? { result: saved.result } : {}) },
@@ -728,7 +853,7 @@ export class WorkflowService {
 
   private async noticeText(record: WorkflowRecord): Promise<string> {
     const view = this.viewOf(record)
-    const saved = view.status === 'done' ? await this.readResult(record) : null
+    const saved = view.status === 'done' && view.hasResult !== false ? await this.readResult(record) : null
     const worktrees: WorkflowWorktree[] = []
     const seen = new Set<string>()
     for (const agent of view.agents) {

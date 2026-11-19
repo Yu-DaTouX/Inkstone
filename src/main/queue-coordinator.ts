@@ -6,7 +6,7 @@ import { isHostTextNotice } from '../shared/host-notice-text'
 import type { PiRpc } from './protocol'
 import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
 import { applyQueueRewrite, planQueueEditOp, type QueueRewritePort, type QueueRewriteResult } from './queue-edit'
-import { clearQueueFile, keepReclaimedQueue, loadQueue, MAX_QUEUE_ITEMS_PER_KIND, saveQueue, type PersistedQueueItem } from './queue-persistence'
+import { clearQueueFile, loadQueue, MAX_QUEUE_ITEMS_PER_KIND, saveQueue, type PersistedQueueItem } from './queue-persistence'
 
 export interface QueueOwner {
   rpc: PiRpc | null
@@ -56,6 +56,12 @@ export class QueueCoordinator {
   pendingUpdate?: QueueUpdate
   consumedEmpty = { steering: 0, followUp: 0 }
   written: Promise<void> = Promise.resolve()
+  private saving = false
+  private saveFailed = false
+
+  needsSaveCheck(): boolean {
+    return this.saving || this.saveFailed || !this.isEmpty()
+  }
   private sequence = 0
   private consumed = new Set<string>()
   private removed: QueueItem[] = []
@@ -137,7 +143,7 @@ export class QueueCoordinator {
     }
     this.state = next
     this.deps.push({ ch: 'queue', payload: { steering: visible(next.steering), followUp: visible(next.followUp) } })
-    this.written = this.persist().catch(() => undefined)
+    this.saveInBackground()
     return next
   }
 
@@ -181,18 +187,44 @@ export class QueueCoordinator {
   }
 
   clearSaved(): void {
-    this.written = this.written.then(() => this.persist()).catch(() => undefined)
+    this.saveInBackground()
+  }
+
+  private saveInBackground(): void {
+    const sessionId = this.deps.owner().sessionId
+    const task = this.persist()
+    this.saving = true
+    this.written = task
+    void task.then(() => {
+      if (task !== this.written) return
+      this.saving = this.saveFailed = false
+    }, () => {
+      if (task !== this.written) return
+      this.saving = false
+      if (this.saveFailed) return
+      this.saveFailed = true
+      this.warnSave(sessionId, pick('排队消息尚未保存，请勿退出；可收回草稿或检查磁盘后重试。', 'The message queue was not saved. Keep the app open; reclaim your drafts or check the disk and retry.'))
+    })
+  }
+
+  private warnSave(sessionId: string | undefined, message: string): void {
+    if (sessionId !== this.deps.owner().sessionId) return
+    this.deps.push({ ch: 'notify', payload: { id: `queue-save-${sessionId}`, method: 'notify', notifyType: 'warning', message } })
   }
 
   async flush(): Promise<void> {
     await this.written.catch(() => undefined)
-    await this.persist().catch(() => undefined)
+    this.saveInBackground()
+    await this.written
   }
 
   async reclaimSaved(): Promise<void> {
     const sessionId = this.deps.owner().sessionId
     if (!sessionId || !this.isEmpty()) return
-    const saved = await loadQueue(sessionId).catch(() => null)
+    const saved = await loadQueue(sessionId, { onArchiveFailure: () => {
+      this.saveFailed = true
+      this.warnSave(sessionId, pick('排队草稿无法归档；原恢复文件已保留。', 'Queued drafts could not be archived. The recovery file was kept.'))
+    } }).catch(() => null)
     if (!saved) return
     const items: QueueState = {
       steering: saved.items.steering.map(item => this.newItem(item.text, item.images)),
@@ -204,7 +236,6 @@ export class QueueCoordinator {
     if (saved.lostImages) {
       this.deps.push({ ch: 'notify', payload: { id: `queue-lost-images-${Date.now()}`, method: 'notify', notifyType: 'warning', message: pick(`旧版本保存的排队消息里有 ${saved.lostImages} 张图片没能保存，需要重新添加。`, `${saved.lostImages} image(s) in queued messages saved by an older version could not be kept. Add them again.`) } })
     }
-    await keepReclaimedQueue(sessionId).catch(() => undefined)
   }
 
   payload(item: Pick<QueueItem, 'text' | 'images'>): Record<string, unknown> {

@@ -2,7 +2,7 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -37,7 +37,7 @@ await build({
   logLevel: 'silent'
 })
 const queue = await import(pathToFileURL(outfile).href)
-const { QUEUE_RECOVERY_DIR, saveQueue, loadQueue, clearQueueFile, keepReclaimedQueue, pruneReclaimedQueues, RECLAIMED_QUEUE_MAX_AGE_MS } = queue
+const { QUEUE_RECOVERY_DIR, saveQueue, loadQueue, clearQueueFile, pruneReclaimedQueues, RECLAIMED_QUEUE_MAX_AGE_MS } = queue
 const fileOf = (sessionId) => join(QUEUE_RECOVERY_DIR, `${sessionId}.json`)
 
 process.stdout.write('▌排队消息落盘与读回\n')
@@ -125,10 +125,35 @@ await check('旧版 v1 文件仍能读回，并报告当时没存下的图片数
 
 await check('回填后留一份 .reclaimed 备份，不再重复回填', async () => {
   await saveQueue({ sessionId: 'session-reclaim', steering: ['回填我'], followUp: [] })
-  await keepReclaimedQueue('session-reclaim')
+  assert.deepEqual((await loadQueue('session-reclaim', { onArchiveFailure: assert.fail })).steering, ['回填我'])
   assert.equal(existsSync(fileOf('session-reclaim')), false)
   assert.equal(existsSync(`${fileOf('session-reclaim')}.reclaimed`), true)
   assert.equal(await loadQueue('session-reclaim'), null)
+})
+
+await check('归档失败保留源，后续清除不覆盖唯一副本，修复后可重试', async () => {
+  const id = 'session-archive-fault'
+  const archive = `${fileOf(id)}.reclaimed`
+  await saveQueue({ sessionId: id, followUp: ['保留'] })
+  await mkdir(archive)
+  let warned = false
+  assert.deepEqual((await loadQueue(id, { onArchiveFailure: () => { warned = true } })).followUp, ['保留'])
+  assert.equal(warned, true)
+  await assert.rejects(clearQueueFile(id))
+  await assert.rejects(saveQueue({ sessionId: id, followUp: ['替换'] }))
+  assert.deepEqual((await loadQueue(id)).followUp, ['保留'])
+  await rm(archive, { recursive: true })
+  await clearQueueFile(id)
+  assert.deepEqual(JSON.parse(await readFile(archive, 'utf8')).followUp, ['保留'])
+})
+
+await check('回收与同时到达的新快照不串：归档旧草稿，保留新快照', async () => {
+  const id = 'session-reclaim-race'
+  await saveQueue({ sessionId: id, followUp: ['旧'] })
+  const [saved] = await Promise.all([loadQueue(id, { onArchiveFailure: assert.fail }), saveQueue({ sessionId: id, followUp: ['新'] })])
+  assert.deepEqual(saved.followUp, ['旧'])
+  assert.deepEqual(JSON.parse(await readFile(`${fileOf(id)}.reclaimed`, 'utf8')).followUp, ['旧'])
+  assert.deepEqual((await loadQueue(id)).followUp, ['新'])
 })
 
 process.stdout.write('\n▌坏文件自愈\n')

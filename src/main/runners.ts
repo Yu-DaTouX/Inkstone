@@ -66,6 +66,7 @@ interface StoppingRunner {
   sessionId?: string
   sessionFile?: string
   done: Promise<void>
+  error?: Error
   finish: () => void
 }
 
@@ -455,7 +456,9 @@ export class RunnerRegistry {
   private async runStop(runner: Runner, entry: StoppingRunner, automatic = false): Promise<void> {
     try {
       await runner.agent.stop({ keepDescendants: automatic })
-    } catch {
+    } catch (error) {
+      entry.error = error instanceof Error ? error : new Error(String(error))
+      console.warn('[runners] stop failed', entry.id, entry.error)
     } finally {
       this.stopping.delete(entry)
       entry.finish()
@@ -964,6 +967,7 @@ export class RunnerRegistry {
     if (this.activeId === id && !preserveSelection) this.activeId = null
     await this.runStop(r, entry, automatic)
     this.opts.onChanged?.()
+    if (entry.error) throw entry.error
     return true
   }
 
@@ -1002,6 +1006,16 @@ export class RunnerRegistry {
     else for (const { runner, entry } of all) await this.runStop(runner, entry)
     await Promise.all(earlier.map((entry) => entry.done))
     this.opts.onChanged?.()
+    const failed = [...earlier, ...all.map(({ entry }) => entry)].find(entry => entry.error)
+    if (failed?.error) throw failed.error
+  }
+
+  needsQueueSaveCheck(): boolean {
+    return [...this.runners.values()].some(({ agent }) => agent.needsQueueSaveCheck())
+  }
+
+  async flushQueuesBeforeExit(): Promise<void> {
+    await Promise.all([...this.runners.values()].filter(({ agent }) => agent.needsQueueSaveCheck()).map(({ agent }) => agent.flushQueue()))
   }
 
   hasBusy(): boolean {

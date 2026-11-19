@@ -3259,6 +3259,14 @@ export class AgentController extends EventEmitter {
     })
   }
 
+  needsQueueSaveCheck(): boolean {
+    return this.queue.needsSaveCheck()
+  }
+
+  flushQueue(): Promise<void> {
+    return this.queue.flush()
+  }
+
   queueSnapshot(): QueueSnapshot {
     return this.queue.snapshot()
   }

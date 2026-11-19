@@ -144,7 +144,7 @@ import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, remot
 import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
-import { prepareUpdateAfterWriters } from './shutdown-update'
+import { createQuitAfterShutdown, prepareUpdateAfterWriters } from './shutdown-update'
 import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
@@ -1228,15 +1228,20 @@ let shuttingDown = false
 const stopMaintenance: Array<() => void> = []
 let releaseDesktopDataRoot: (() => Promise<void>) | undefined
 let shutdownTask: Promise<void> | null = null
-let shutdownFinished = false
+let installPrepared = false
+let relaunching = false
 function shutdown(): Promise<void> {
   shutdownTask ??= runShutdown().catch((error) => {
+    updateControl?.cancelInstallPreparation()
     console.error('[shutdown] 退出清理失败', error)
-  }).finally(() => {
-    shutdownFinished = true
   })
   return shutdownTask
 }
+const quitAfterShutdown = createQuitAfterShutdown(
+  shutdown,
+  () => !relaunching && installPrepared && updateControl?.installAfterShutdown() === true,
+  () => app.quit()
+)
 
 async function runShutdown(): Promise<void> {
   shuttingDown = true
@@ -1272,24 +1277,26 @@ async function runShutdown(): Promise<void> {
     ],
     (outcome) => reportMainError(`shutdown-${outcome.name}`, outcome.timedOut ? new Error('退出步骤超时') : outcome.error)
   )
+  let prepared = false
   try {
     const control = updateControl
-    await prepareUpdateAfterWriters(
-      outcomes,
-      control
-        ? {
-            prepare: (options) => control.prepareAutomaticInstallOnQuit(options),
-            cancel: () => control.cancelAutomaticInstallPreparation()
-          }
-        : null
-    )
+    if (control && !relaunching) {
+      const result = await prepareUpdateAfterWriters(outcomes, {
+        prepare: (options) => control.prepareInstallOnQuit(options),
+        cancel: () => control.cancelInstallPreparation()
+      })
+      prepared = result.install
+    }
   } finally {
     try {
       await releaseDesktopDataRoot?.()
     } catch (error) {
+      prepared = false
+      updateControl?.cancelInstallPreparation()
       reportMainError('data-root-unlock', error)
     }
   }
+  installPrepared = prepared
 }
 
 type ExitResult = { action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting' }
@@ -1427,7 +1434,7 @@ async function dispatchControlCommand(command: ControlCommand): Promise<void> {
   }
 }
 
-function requestExit(options: { relaunch?: boolean; source?: string } = {}): Promise<ExitResult> {
+function requestExit(options: { relaunch?: boolean; source?: string; installUpdate?: boolean } = {}): Promise<ExitResult> {
   if (isQuitting) return Promise.resolve({ action: 'already-exiting' })
   if (exitRequestInFlight) return exitRequestInFlight
   exitSource = options.source ?? 'unknown'
@@ -1456,7 +1463,15 @@ function requestExit(options: { relaunch?: boolean; source?: string } = {}): Pro
     }
     if (!choice) choice = 'save'
     if (choice === 'cancel') return { action: 'cancelled' }
+    try {
+      await runners?.flushQueuesBeforeExit()
+    } catch (error) {
+      reportMainError('queue-save-before-exit', error)
+      dialog.showErrorBox(pick('排队消息未保存', 'Message queue not saved'), pick('本次退出已取消。请检查磁盘或收回排队消息后再退出。', 'Quit was canceled. Check the disk or reclaim your queued messages before quitting.'))
+      return { action: 'cancelled' }
+    }
 
+    if (options.installUpdate && quitReasons(quitActivity()).length > 0) return { action: 'cancelled' }
     isQuitting = true
     exitReason = choice === 'save' ? 'user-save-and-exit' : 'user-interrupt-exit'
     const mode = choice === 'save' ? 'save' : 'interrupt'
@@ -1464,8 +1479,11 @@ function requestExit(options: { relaunch?: boolean; source?: string } = {}): Pro
       console.error('[exit-snapshot] 写入失败：', error)
     })
     const action: 'save-and-exit' | 'interrupt-exit' = choice === 'save' ? 'save-and-exit' : 'interrupt-exit'
-    if (options.relaunch) app.relaunch()
-    void shutdown().then(() => app.quit())
+    if (options.relaunch) {
+      relaunching = true
+      app.relaunch()
+    }
+    void quitAfterShutdown.request()
     return { action }
   })()
 
@@ -2566,7 +2584,11 @@ function registerIpc(): void {
     return resolved.context.cwd
   })
 
-  updateControl = registerAppUpdate(ipc, () => quitReasons(quitActivity()).length > 0)
+  updateControl = registerAppUpdate(ipc, () => quitReasons(quitActivity()).length > 0, async (source) => {
+    if (isQuitting || shuttingDown || exitRequestInFlight) return false
+    const exit = await requestExit({ source: `update-${source}`, installUpdate: true })
+    return exit.action === 'save-and-exit' || exit.action === 'interrupt-exit'
+  })
   registerVoiceIpc(ipc, {
     plugins: bundledPlugins,
     window: () => win,
@@ -3192,23 +3214,21 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  void shutdown().then(() => {
-    if (process.platform !== 'darwin') app.quit()
-  })
+  if (process.platform === 'darwin') void shutdown()
+  else void quitAfterShutdown.request()
 })
 
 app.on('before-quit', (e) => {
-  if (!shuttingDown && needsQuitConfirm({ quitting: isQuitting, reasons: quitReasons(quitActivity()), hasWindow: !!win && !win.isDestroyed() })) {
-    e.preventDefault()
+  if (quitAfterShutdown.allowQuit()) return
+  e.preventDefault()
+  if (exitRequestInFlight) return
+  if (!shuttingDown && !isQuitting && (runners?.needsQueueSaveCheck() || needsQuitConfirm({ quitting: isQuitting, reasons: quitReasons(quitActivity()), hasWindow: !!win && !win.isDestroyed() }))) {
     void requestExit({ source: 'before-quit' })
     return
   }
   isQuitting = true
   exitReason = exitReason ?? 'app-quit'
-  if (shutdownFinished) return
-  e.preventDefault()
-  if (shuttingDown) return
-  void shutdown().then(() => app.quit())
+  void quitAfterShutdown.request()
 })
 
 app.on('child-process-gone', (_event, details) => {

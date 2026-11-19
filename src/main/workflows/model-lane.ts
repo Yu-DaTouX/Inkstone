@@ -176,8 +176,9 @@ export class WorkflowModelLane {
       this.mark(index, 'cached')
       this.counts.cached += 1
       this.move({ phase }, null, 'done')
-      void this.opts.journal.append({ ...hit, kind: 'model', seq, attempt: this.opts.attempt, at: this.opts.now(), cached: true, index, ...(options.label ? { label: options.label } : {}), ...(phase ? { phase } : {}) })
-      this.opts.reply(seq, { ok: true, json: JSON.stringify(hit.result ?? null) })
+      void this.opts.journal.append({ ...hit, kind: 'model', seq, attempt: this.opts.attempt, at: this.opts.now(), cached: true, index, ...(options.label ? { label: options.label } : {}), ...(phase ? { phase } : {}) }).then((saved) => {
+        if (saved) this.opts.reply(seq, { ok: true, json: JSON.stringify(hit.result ?? null) })
+      })
       this.opts.onChange()
       return
     }
@@ -186,11 +187,11 @@ export class WorkflowModelLane {
     this.counts.queued += 1
     this.move(job, null, 'queued')
     if (!this.opts.host) {
-      this.settle(job, 'failed', { error: pick('这个运行没有接上直接模型调用', 'This run has no direct model call host') })
+      void this.settle(job, 'failed', { error: pick('这个运行没有接上直接模型调用', 'This run has no direct model call host') })
       return
     }
     if (!model) {
-      this.settle(job, 'failed', { error: pick('没有可用的模型：发起工作流的会话没有当前模型，给 model() 传 model 选项（例如 provider/model-id）', 'No model available: the session that started the workflow had no current model; pass the model option to model() (for example provider/model-id)') })
+      void this.settle(job, 'failed', { error: pick('没有可用的模型：发起工作流的会话没有当前模型，给 model() 传 model 选项（例如 provider/model-id）', 'No model available: the session that started the workflow had no current model; pass the model option to model() (for example provider/model-id)') })
       return
     }
     this.queue.push(job)
@@ -222,7 +223,7 @@ export class WorkflowModelLane {
     this.opts.onChange()
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<boolean> {
     for (const job of this.queue.splice(0)) {
       job.status = 'stopped'
       this.mark(job.index, 'stopped')
@@ -232,14 +233,15 @@ export class WorkflowModelLane {
     }
     const live = [...this.inflight.entries()]
     let timer: ReturnType<typeof setTimeout> | undefined
-    await Promise.race([
-      Promise.allSettled(live.map(([, run]) => run)),
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, STOP_GRACE_MS)
+    const stopped = await Promise.race([
+      Promise.allSettled(live.map(([, run]) => run)).then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), STOP_GRACE_MS)
       })
     ])
     clearTimeout(timer)
-    for (const [job] of live) this.settle(job, 'stopped', { error: pick('已停止', 'Stopped') })
+    await Promise.all(live.map(([job]) => this.settle(job, 'stopped', { error: pick('已停止', 'Stopped') })))
+    return stopped
   }
 
   private entry(job: ModelJob, extra: Partial<JournalEntry> & Pick<JournalEntry, 'status'>): JournalEntry {
@@ -257,7 +259,7 @@ export class WorkflowModelLane {
     }
   }
 
-  private settle(job: ModelJob, status: 'done' | 'failed' | 'stopped', detail: { result?: unknown; error?: string; usage?: unknown; stopReason?: string; model?: string }): void {
+  private async settle(job: ModelJob, status: 'done' | 'failed' | 'stopped', detail: { result?: unknown; error?: string; usage?: unknown; stopReason?: string; model?: string }): Promise<void> {
     if (job.status === 'done' || job.status === 'failed' || job.status === 'stopped') return
     if (job.status === 'running') this.counts.running -= 1
     else this.counts.queued -= 1
@@ -273,14 +275,14 @@ export class WorkflowModelLane {
     else if (status === 'failed' && this.failures.length < WORKFLOW_LIMITS.modelFailuresShown) this.failures.push({ index: job.index, ...(job.options.label ? { label: job.options.label } : {}), error: shown ?? '' })
     const where = job.options.label ? `"${job.options.label}"` : `#${job.seq}`
     const error = detail.error ? (status === 'failed' ? pick(`model() 调用 ${where} 失败：${detail.error}`, `model() call ${where} failed: ${detail.error}`) : detail.error) : undefined
-    void this.opts.journal.append(this.entry(job, {
+    if (!await this.opts.journal.append(this.entry(job, {
       status,
       ...(status === 'done' ? { result: detail.result ?? null } : {}),
       ...(error ? { error: shownModelError(error) } : {}),
       ...(detail.usage ? { usage: detail.usage } : {}),
       ...(detail.stopReason ? { stopReason: detail.stopReason } : {}),
       ...(detail.model ? { model: detail.model } : {})
-    }))
+    }))) return
     if (status === 'done') this.opts.reply(job.seq, { ok: true, json: JSON.stringify(detail.result ?? null) })
     else if (status === 'stopped') this.opts.reply(job.seq, { ok: false, stopped: true, error: error ?? pick('已停止', 'Stopped') })
     else this.opts.reply(job.seq, { ok: false, error: error ?? pick('model() 调用失败', 'model() call failed') })
@@ -333,6 +335,7 @@ export class WorkflowModelLane {
     for (;;) {
       await this.holdFor(job.model)
       if (signal.aborted) return this.settle(job, 'stopped', { error: pick('已停止', 'Stopped') })
+      if (!await this.opts.journal.append(this.entry(job, { status: 'running' })) || signal.aborted) return
       let result: ModelCallResult
       try {
         result = await host.call({
@@ -364,6 +367,7 @@ export class WorkflowModelLane {
         }
         return this.settle(job, 'failed', { error: shown })
       }
+      if (signal.aborted) return this.settle(job, 'stopped', { error: pick('已停止', 'Stopped') })
       const meta = { ...(result.usage ? { usage: result.usage } : {}), ...(result.stopReason ? { stopReason: result.stopReason } : {}), ...(result.model ? { model: result.model } : {}) }
       if (!schema) return this.settle(job, 'done', { result: result.text, ...meta })
       const extracted = extractJson(result.text)

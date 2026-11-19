@@ -201,8 +201,6 @@ globalThis.__yanUpdater = autoUpdater
   ]
 })
 const { registerAppUpdate } = await import(`data:text/javascript;base64,${Buffer.from(updateBuild.outputFiles[0].text).toString('base64')}`)
-let prepareAutomaticInstallOnQuit = null
-
 const handlers = new Map()
 const factory = { mode: 'ok', delayMs: 0, onRun: null }
 const backupFactory = async (interactive) => {
@@ -213,9 +211,13 @@ const backupFactory = async (interactive) => {
   if (factory.mode === 'fail') throw new Error('no space left')
   return { path: join(model.directory, 'auto-backups', 'x'), createdAt: new Date().toISOString(), files: 1, bytes: 10 }
 }
-const control = registerAppUpdate({ handle: (channel, fn) => handlers.set(channel, fn) }, () => model.busy, backupFactory)
-prepareAutomaticInstallOnQuit = control.prepareAutomaticInstallOnQuit
-const cancelAutomaticInstallPreparation = control.cancelAutomaticInstallPreparation
+const exits = []
+let acceptExit = false
+const control = registerAppUpdate({ handle: (channel, fn) => handlers.set(channel, fn) }, () => model.busy, async (source) => {
+  exits.push(source)
+  return acceptExit
+}, backupFactory)
+const { prepareInstallOnQuit, cancelInstallPreparation, installAfterShutdown } = control
 const run = (name, ...args) => handlers.get(`yan:update:${name}`)(...args)
 
 try {
@@ -227,23 +229,27 @@ try {
     assert.equal((await run('status')).phase, 'downloaded', '自动更新应当已下载')
     await wait(80)
     assert.equal(factory.runs, 0, '下载完成不应预先备份')
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false, '退出前准备之前不允许自动安装')
+    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false, '下载后不注册更新器的隐式退出安装')
+    assert.equal(model.installs, 0)
   })
 
-  await check('退出准备时做真实备份，成功才放行原生退出安装', async () => {
+  await check('退出准备完成备份，只授权清理之后显式安装一次', async () => {
     factory.mode = 'ok'
     factory.runs = 0
-    const result = await prepareAutomaticInstallOnQuit()
+    const result = await prepareInstallOnQuit()
     assert.equal(factory.runs, 1, '退出前应当备份一次')
     assert.equal(result.install, true)
     assert.equal(result.reason, 'backed-up')
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, true)
+    assert.equal(model.installs, 0, '准备阶段不启动安装器')
+    assert.equal(installAfterShutdown(), true)
+    assert.equal(installAfterShutdown(), false)
+    assert.equal(model.installs, 1)
   })
 
   await check('并发调用退出准备只备份一次', async () => {
     factory.runs = 0
     factory.delayMs = 30
-    const [a, b] = await Promise.all([prepareAutomaticInstallOnQuit(), prepareAutomaticInstallOnQuit()])
+    const [a, b] = await Promise.all([prepareInstallOnQuit(), prepareInstallOnQuit()])
     factory.delayMs = 0
     assert.equal(factory.runs, 1)
     assert.equal(a.install, true)
@@ -253,11 +259,11 @@ try {
   await check('关掉自动更新时退出准备不备份也不安装', async () => {
     await run('automatic', false)
     factory.runs = 0
-    const result = await prepareAutomaticInstallOnQuit()
+    const result = await prepareInstallOnQuit()
     assert.equal(result.install, false)
     assert.equal(result.reason, 'disabled')
     assert.equal(factory.runs, 0)
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false)
+    assert.equal(installAfterShutdown(), false)
     await run('automatic', true)
   })
 
@@ -265,23 +271,26 @@ try {
     factory.mode = 'fail'
     model.answer = 1
     model.dialogs = []
-    const result = await prepareAutomaticInstallOnQuit()
+    const result = await prepareInstallOnQuit()
     assert.equal(result.install, false)
     assert.equal(result.reason, 'cancelled')
     assert.equal(model.dialogs.length, 1, '应当询问用户')
     assert.equal(model.dialogWindows?.at(-1), 'main', '对话框挂在主窗口上')
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false)
+    assert.equal(installAfterShutdown(), false)
     assert.match((await run('status')).error ?? '', /备份/)
     model.answer = 1
   })
 
-  await check('备份失败但用户选择继续安装：放行原生退出安装', async () => {
+  await check('备份失败但用户选择继续安装：只授权显式安装', async () => {
     factory.mode = 'fail'
     model.answer = 0
-    const result = await prepareAutomaticInstallOnQuit()
+    const before = model.installs
+    const result = await prepareInstallOnQuit()
     assert.equal(result.install, true)
     assert.equal(result.reason, 'accepted-without-backup')
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, true)
+    assert.equal(model.installs, before)
+    assert.equal(installAfterShutdown(), true)
+    assert.equal(model.installs, before + 1)
     model.answer = 1
     factory.mode = 'ok'
   })
@@ -290,11 +299,11 @@ try {
     globalThis.__yanUpdater.emit('error', new Error('simulated'))
     assert.equal((await run('status')).phase, 'error')
     factory.runs = 0
-    const result = await prepareAutomaticInstallOnQuit()
+    const result = await prepareInstallOnQuit()
     assert.equal(result.install, false)
     assert.equal(result.reason, 'no-update')
     assert.equal(factory.runs, 0)
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false)
+    assert.equal(installAfterShutdown(), false)
     globalThis.__yanUpdater.emit('update-downloaded')
     assert.equal((await run('status')).phase, 'downloaded')
   })
@@ -304,15 +313,15 @@ try {
     factory.delayMs = 40
     factory.runs = 0
     model.dialogs = []
-    const pending = prepareAutomaticInstallOnQuit()
+    const pending = prepareInstallOnQuit()
     await wait(10)
-    cancelAutomaticInstallPreparation()
+    cancelInstallPreparation()
     const result = await pending
     factory.delayMs = 0
     assert.equal(result.install, false)
     assert.equal(result.reason, 'aborted')
     await wait(80)
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false, '晚到的成功不能重新放行')
+    assert.equal(installAfterShutdown(), false, '晚到的成功不能重新放行')
     assert.equal(model.dialogs.length, 0, '取消后不再弹框')
   })
 
@@ -321,7 +330,7 @@ try {
     factory.delayMs = 40
     model.dialogs = []
     const controller = new AbortController()
-    const pending = prepareAutomaticInstallOnQuit({ signal: controller.signal })
+    const pending = prepareInstallOnQuit({ signal: controller.signal })
     await wait(10)
     controller.abort()
     const result = await pending
@@ -330,7 +339,7 @@ try {
     assert.equal(result.reason, 'aborted')
     await wait(30)
     assert.equal(model.dialogs.length, 0)
-    assert.equal(globalThis.__yanUpdater.autoInstallOnAppQuit, false)
+    assert.equal(installAfterShutdown(), false)
     factory.mode = 'ok'
   })
 
@@ -338,7 +347,7 @@ try {
     factory.runs = 0
     const controller = new AbortController()
     controller.abort()
-    const result = await prepareAutomaticInstallOnQuit({ signal: controller.signal })
+    const result = await prepareInstallOnQuit({ signal: controller.signal })
     assert.equal(result.install, false)
     assert.equal(result.reason, 'aborted')
     assert.equal(factory.runs, 0)
@@ -346,7 +355,7 @@ try {
 
   assert.equal((await run('status')).phase, 'downloaded', '测试前置：进入待重启状态')
 
-  await check('安装前先做备份，成功后才重启', async () => {
+  await check('安装前先做备份，成功后只请求退出', async () => {
     factory.mode = 'ok'
     model.installs = 0
     factory.interactive = []
@@ -355,7 +364,8 @@ try {
     assert.deepEqual(factory.interactive, [true], '手动重启安装走带确认弹窗的备份')
     assert.ok(result.backup, '返回备份摘要')
     await wait(400)
-    assert.equal(model.installs, 1)
+    assert.deepEqual(exits.splice(0), ['manual'])
+    assert.equal(model.installs, 0)
   })
 
   await check('备份失败时对话框默认取消，不安装且解锁可重试', async () => {
@@ -372,7 +382,8 @@ try {
     const retry = await run('install')
     assert.equal(retry.ok, true, '失败后不应一直锁着')
     await wait(400)
-    assert.equal(model.installs, 1)
+    assert.deepEqual(exits.splice(0), ['manual'])
+    assert.equal(model.installs, 0)
   })
 
   await check('备份失败但用户选择继续安装时才安装', async () => {
@@ -382,7 +393,8 @@ try {
     const result = await run('install')
     assert.equal(result.ok, true)
     await wait(400)
-    assert.equal(model.installs, 1)
+    assert.deepEqual(exits.splice(0), ['manual'])
+    assert.equal(model.installs, 0)
     model.answer = 1
   })
 
@@ -399,7 +411,8 @@ try {
     const retry = await run('install')
     assert.equal(retry.ok, true)
     await wait(400)
-    assert.equal(model.installs, 1)
+    assert.deepEqual(exits.splice(0), ['manual'])
+    assert.equal(model.installs, 0)
   })
 
   await check('备份期间来了新工作就取消这次重启', async () => {
@@ -432,38 +445,27 @@ try {
     assert.match((await run('status')).error ?? '', /任务/)
     model.busy = false
   })
-await check('手动安装已经备份过，退出准备不再备份第二次', async () => {
-  factory.mode = 'ok'
-  factory.runs = 0
-  model.installs = 0
-  const manual = await run('install')
-  assert.equal(manual.ok, true)
-  await wait(400)
-  assert.equal(model.installs, 1)
-  const afterManual = factory.runs
-  const prepared = await prepareAutomaticInstallOnQuit()
-  assert.equal(prepared.install, true)
-  assert.equal(prepared.reason, 'backed-up')
-  assert.equal(factory.runs, afterManual, '手动安装刚备份过，不应再备份')
-})
-
-await check('手动安装选择不备份继续时，退出准备沿用这个决定', async () => {
-  globalThis.__yanUpdater.emit('update-downloaded')
-  factory.mode = 'fail'
-  model.answer = 0
-  model.installs = 0
-  const manual = await run('install')
-  assert.equal(manual.ok, true)
-  await wait(400)
-  assert.equal(model.installs, 1)
-  model.answer = 1
-  factory.mode = 'ok'
-  const afterManual = factory.runs
-  const prepared = await prepareAutomaticInstallOnQuit()
-  assert.equal(prepared.install, true)
-  assert.equal(prepared.reason, 'accepted-without-backup')
-  assert.equal(factory.runs, afterManual)
-})
+  await check('手动安装选择不备份继续时，清理后的安装沿用这个决定', async () => {
+    acceptExit = true
+    factory.mode = 'fail'
+    model.answer = 0
+    model.installs = 0
+    const manual = await run('install')
+    assert.equal(manual.ok, true)
+    await wait(400)
+    assert.deepEqual(exits.splice(0), ['manual'])
+    assert.equal(model.installs, 0)
+    model.answer = 1
+    factory.mode = 'ok'
+    const afterManual = factory.runs
+    const prepared = await prepareInstallOnQuit()
+    assert.equal(prepared.install, true)
+    assert.equal(prepared.reason, 'accepted-without-backup')
+    assert.equal(factory.runs, afterManual)
+    assert.equal(installAfterShutdown(), true)
+    assert.equal(installAfterShutdown(), false)
+    assert.equal(model.installs, 1)
+  })
 } finally {
   delete globalThis.__yanUpdateModel
   delete globalThis.__yanUpdater

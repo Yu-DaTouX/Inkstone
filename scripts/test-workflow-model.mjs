@@ -160,7 +160,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(runner.models.done === 1 && runner.models.total === 1 && runner.agents.length === 0, 'model() 计数单独统计，不进 agent 列表', JSON.stringify(runner.models))
       ok(runner.models.phases?.length === 1 && runner.models.phases[0].title === '译' && runner.models.phases[0].done === 1, 'model() 按阶段计数', JSON.stringify(runner.models.phases))
       const journal = await lines(file)
-      const entry = journal.find((line) => line.kind === 'model')
+      const [intent, entry] = journal.filter((line) => line.kind === 'model' && line.seq === 0)
+      ok(intent?.status === 'running' && intent.hash === entry?.hash, 'model() 同一序号先记录派活意图，再写终态', JSON.stringify(intent))
       ok(entry?.status === 'done' && entry.result === '译:你好' && entry.seq === 0 && /^[0-9a-f]{16}$/.test(entry.hash) && entry.label === '甲' && entry.phase === '译' && entry.usage?.totalTokens === 15 && entry.model === 'fake/default', 'journal 记下 model() 的序号、哈希、结果与用量', JSON.stringify(entry))
     }
 
@@ -334,7 +335,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(result.status === 'done' && value.files.length === 5 && value.files[0] === 'segments/000.txt', 'listFiles 返回项目相对路径、按名称排序', result.json)
       ok((await readFile(join(root, 'out', '003.txt'), 'utf8')) === 'Paragraph 3', 'readText → model() → writeText 写出结果（自动建父目录）')
       const journal = await lines(file)
-      const models = journal.filter((line) => line.kind === 'model').sort((a, b) => a.seq - b.seq)
+      const models = journal.filter((line) => line.kind === 'model' && line.status === 'done').sort((a, b) => a.seq - b.seq)
       ok(models.map((line) => line.label).join() === value.files.join(), 'pipeline 里 readText 后的 model() 序号与文件顺序一致（续跑可重放）', models.map((line) => line.label).join())
       const io = journal.filter((line) => line.kind === 'io')
       ok(io.filter((line) => line.op === 'read').length === 5 && io.filter((line) => line.op === 'write').length === 5 && io.some((line) => line.op === 'list' && line.count === 5), 'readText / writeText / listFiles 记进 journal', JSON.stringify(io.slice(0, 3)))

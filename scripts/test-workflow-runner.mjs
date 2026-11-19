@@ -94,7 +94,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   await buildTest('src/main/workflows/worker.ts', workerPath)
 
   let journals = 0
-  const start = ({ body, fake, slots, previous = new Map(), attempt = 1, concurrency = 8, journalFile, argsJson, schemaRetries }) => {
+  const start = ({ body, fake, slots, previous = new Map(), attempt = 1, concurrency = 8, journalFile, argsJson, schemaRetries, stopGraceMs }) => {
     const checked = checkWorkflowScript(META + body)
     if (!checked.ok) throw new Error(checked.error)
     const file = journalFile ?? join(dir, `journal-${++journals}.jsonl`)
@@ -113,6 +113,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       host: fake.host,
       slots: gate,
       schemaRetries,
+      stopGraceMs,
       requeueDelayMs: 5,
       onChange: () => undefined,
       onFinish: (result) => finish(result)
@@ -264,9 +265,44 @@ await runSuite(import.meta.url, async (ok, compile) => {
 
     {
       const fake = fakeController({ answer: () => 'hang' })
-      const { outcome } = await start({ fake, body: `agent('不等它')\nreturn 'early'` })
+      const slots = new SlotGate({ capacity: 1, running: () => 1, pollMs: 20 })
+      const { outcome, runner } = start({ fake, slots, body: `agent('不等它')\nreturn 'early'` })
       const result = await outcome
-      ok(result.status === 'done' && result.json === '"early"' && fake.stopped.length === 1, '脚本先结束时，没等的子代理会被停掉', JSON.stringify({ result, stopped: fake.stopped }))
+      ok(result.status === 'done' && result.json === '"early"' && runner.agents[0]?.status === 'stopped' && !fake.started.length && !fake.stopped.length, '脚本先结束时取消尚未派活的子代理，不调用 host.stop', JSON.stringify({ result, started: fake.started, stopped: fake.stopped }))
+    }
+
+    for (const timeout of [false, true]) {
+      const fake = fakeController({ answer: () => 'hang' })
+      const hostStart = fake.host.start
+      const hostStop = fake.host.stop
+      let entered, release, childStopped
+      const starting = new Promise((resolve) => { entered = resolve })
+      const releaseId = new Promise((resolve) => { release = resolve })
+      const stoppedId = new Promise((resolve) => { childStopped = resolve })
+      fake.host.start = async (params) => {
+        const id = await hostStart(params)
+        entered(id)
+        await releaseId
+        return id
+      }
+      fake.host.stop = async (id) => {
+        await hostStop(id)
+        childStopped(id)
+      }
+      const { runner, outcome } = start({ fake, stopGraceMs: timeout ? 30 : 2000, body: `return await agent('晚返回')` })
+      const id = await starting
+      const stopping = runner.stop()
+      if (timeout) {
+        await stopping
+        const result = await outcome
+        ok(result.status === 'failed' && /未确认停止/.test(result.resumeError) && !fake.stopped.length, 'start 挂起时停止有时限，终态禁止续跑', JSON.stringify(result))
+      } else {
+        ok(!fake.stopped.length, '已经派活但 ID 未返回时，停止不把其他子代理当成目标')
+      }
+      release()
+      ok(await stoppedId === id && fake.stopped.length === 1, 'ID 迟到后停止实际派出的子代理，且只停一次', JSON.stringify(fake.stopped))
+      await stopping
+      if (!timeout) ok((await outcome).status === 'stopped', '宽限期内可以确认停止，保留正常续跑')
     }
 
     {

@@ -1,10 +1,15 @@
 import './lib/test-isolate.mjs'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildTest, runSuite } from './lib/test-suite.mjs'
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const barrier = () => {
+  let release
+  const done = new Promise((resolve) => { release = resolve })
+  return { done, release }
+}
 
 function fakeSubagents(service) {
   const runs = new Map()
@@ -55,11 +60,19 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const target = { getState: () => ({ isAgentRunning: busy }), holdsNotices: () => false, send: async (text, _images, mode) => (sent.push({ text, mode }), { ok: true }) }
   let service
   const fake = fakeSubagents(() => service)
+  let lookup = async (id) => fake.runs.get(id)
+  const modelCalls = []
+  let modelGate
   const make = () => new WorkflowService({
     root,
     workerPath,
     subagentCommand: fake.command,
-    getSubagent: async (id) => fake.runs.get(id),
+    getSubagent: (id) => lookup(id),
+    modelHost: { call: async (req) => {
+      modelCalls.push(req.prompt)
+      if (modelGate) await modelGate.done
+      return { text: req.prompt, model: req.model, stopReason: 'stop', durationMs: 1 }
+    } },
     runningSubagents: fake.running,
     findTarget: (view) => (view.sessionId === 's1' ? target : null),
     push: (view) => pushes.push(view),
@@ -90,7 +103,6 @@ await runSuite(import.meta.url, async (ok, compile) => {
 
   try {
     await writeFile(join(dir, 'placeholder'), '')
-    const { mkdir } = await import('node:fs/promises')
     await mkdir(project, { recursive: true })
     const script = `export const meta = { name: '三阶段', description: '测试', phases: ['甲', '乙'] }
 phase('甲')
@@ -201,6 +213,98 @@ return { a, rest }
     service.adoptSessions([{ runId: 'run-9', generation: 2, sessionId: 's1' }])
     await waitFor(() => (service.retryNotices(), sent.length === 6), '会话确定后投递')
     ok((await service.run('workflow.get', { id: early }, ctx)).summary.id === early, '会话确定后归属转给真实会话')
+
+    fake.hang = true
+    const entered = barrier()
+    const readGate = barrier()
+    lookup = async (subagentId) => {
+      entered.release()
+      await readGate.done
+      return fake.runs.get(subagentId)
+    }
+    const firstResume = service.run('workflow.resume', { id: early, file: 'slow.js' }, ctx)
+    await entered.done
+    const rejected = await fails(service.run('workflow.resume', { id: early, file: 'slow.js' }, ctx), /正在准备续跑/)
+    readGate.release()
+    ok((await firstResume).summary.attempt === 2 && rejected, '并发 resume 仅一个请求取得同 ID 的启动权')
+    lookup = async (subagentId) => fake.runs.get(subagentId)
+    await waitFor(() => fake.running() === 2, '唯一一个续跑派出两个子代理')
+    ok((await service.control(early, 'stop')).run.status === 'stopped' && fake.running() === 0, '停止后同 ID 不遗留被覆盖 runner 的子代理')
+
+    const enteredAgain = barrier()
+    const readAgain = barrier()
+    lookup = async (subagentId) => {
+      enteredAgain.release()
+      await readAgain.done
+      return fake.runs.get(subagentId)
+    }
+    const cancelled = fails(service.run('workflow.resume', { id: early }, ctx), /续跑已被停止/)
+    await enteredAgain.done
+    const stoppingResume = service.control(early, 'stop')
+    await delay(0)
+    readAgain.release()
+    ok(await cancelled && (await stoppingResume).run.attempt === 2 && fake.running() === 0, 'stop 取消尚在读档的续跑，不派活、不增加 attempt')
+    lookup = async (subagentId) => fake.runs.get(subagentId)
+    fake.hang = false
+
+    const resultWrite = service.writeResult.bind(service)
+    const finishing = barrier()
+    const writeGate = barrier()
+    service.writeResult = async (record, payload) => {
+      service.writeResult = resultWrite
+      finishing.release()
+      await writeGate.done
+      await resultWrite(record, payload)
+    }
+    const handoff = (await service.run('workflow.run', { file: 'quick.js' }, ctx)).summary.id
+    await finishing.done
+    const duringFinish = service.run('workflow.resume', { id: handoff }, ctx)
+    const secondDuringFinish = await fails(service.run('workflow.resume', { id: handoff }, ctx), /正在准备续跑/)
+    writeGate.release()
+    const resumedHandoff = await duringFinish
+    ok(secondDuringFinish && resumedHandoff.summary.attempt === 2 && resumedHandoff.summary.savedResults === 1, '终态写完再交接给唯一的续跑者')
+    await waitFor(async () => (await service.list()).find((item) => item.id === handoff)?.status === 'done', '交接后的续跑完成')
+
+    await writeFile(join(project, 'paid.js'), `export const meta = { name: 'paid', description: '仅假模型' }\nreturn await model('paid', { model: 'fake/model' })`)
+    const get = (runId) => service.run('workflow.get', { id: runId }, ctx)
+    const resume = (runId) => service.run('workflow.resume', { id: runId }, ctx)
+    const faultGate = barrier()
+    modelGate = faultGate
+    const failedRun = (await service.run('workflow.run', { file: 'paid.js' }, ctx)).data
+    await waitFor(() => modelCalls.length === 1, '假模型已经派出，等终态写入')
+    const journalFile = join(failedRun.dir, 'journal.jsonl')
+    const beforeFailure = await readFile(journalFile)
+    await rm(journalFile)
+    await mkdir(journalFile)
+    modelGate = undefined
+    faultGate.release()
+    const failureSaved = await waitFor(async () => {
+      const saved = JSON.parse(await readFile(join(failedRun.dir, 'run.json'), 'utf8'))
+      return saved.view.status === 'failed' && saved.view.resumeError
+    }, 'journal 写失败的终态已落盘')
+    const failedPayload = JSON.parse(await readFile(join(failedRun.dir, 'result.json'), 'utf8'))
+    const failedGet = await get(failedRun.id)
+    ok(failureSaved && failedPayload.ok === false && /不可恢复/.test(failedPayload.error) && !failedGet.data.hasResult, '调用虽返回但无法写 journal 时不报告成功，终态含失败原因')
+    await rm(journalFile, { recursive: true })
+    await writeFile(journalFile, beforeFailure)
+    service = make()
+    ok(await fails(resume(failedRun.id), /不可恢复/) && modelCalls.length === 1, '日志路径恢复并重启后仍拒绝静默重放')
+
+    for (const corruption of ['missing', 'unreadable', 'truncated']) {
+      const paid = (await service.run('workflow.run', { file: 'paid.js' }, ctx)).data
+      await waitFor(async () => (await get(paid.id)).data.status === 'done', '故障注入前已完成')
+      const path = join(paid.dir, 'journal.jsonl')
+      const raw = await readFile(path, 'utf8')
+      if (corruption === 'truncated') await writeFile(path, raw.slice(0, raw.indexOf('\n') + 1))
+      else {
+        await rm(path)
+        if (corruption === 'unreadable') await mkdir(path)
+      }
+      const before = modelCalls.length
+      const refused = await fails(resume(paid.id), /不可恢复/)
+      const result = await get(paid.id)
+      ok(refused && result.data.status === 'failed' && result.data.attempt === 1 && modelCalls.length === before, `日志 ${corruption} 时不启动付费调用且明确失败`, JSON.stringify(result.summary))
+    }
   } finally {
     service = null
     await rm(dir, { recursive: true, force: true })

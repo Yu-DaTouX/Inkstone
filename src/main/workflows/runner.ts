@@ -20,7 +20,7 @@ export interface WorkflowSubagentHost {
 
 export type WorkflowOutcome =
   | { status: 'done'; json: string }
-  | { status: 'failed'; error: string }
+  | { status: 'failed'; error: string; resumeError?: string }
   | { status: 'stopped' }
 
 export interface WorkflowRunnerOptions {
@@ -28,6 +28,7 @@ export interface WorkflowRunnerOptions {
   code: string
   argsJson?: string
   journalFile: string
+  journalStart?: Buffer
   attempt: number
   concurrency: number
   previous: Map<number, JournalEntry>
@@ -44,8 +45,9 @@ export interface WorkflowRunnerOptions {
   maxItems?: number
   schemaRetries?: number
   requeueDelayMs?: number
+  stopGraceMs?: number
   onChange(): void
-  onFinish(outcome: WorkflowOutcome): void
+  onFinish(outcome: WorkflowOutcome): void | Promise<void>
   now?(): number
 }
 
@@ -61,6 +63,7 @@ interface Job {
 const CAPACITY_ERROR = /同时最多运行|At most \d+ subagents can run/
 const MAX_REQUEUES = 50
 const MAX_LOG_CHARS = 500
+const STOP_GRACE_MS = 5000
 
 function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -91,6 +94,7 @@ export class WorkflowRunner {
   private worker: Worker | null = null
   private readonly queue: Job[] = []
   private readonly inflight = new Map<number, Job>()
+  private readonly executions = new Map<Job, Promise<void>>()
   private readonly subagents = new Map<number, string>()
   private readonly abort = new AbortController()
   private readonly journal: JournalWriter
@@ -101,7 +105,9 @@ export class WorkflowRunner {
   private readonly lane: WorkflowModelLane
 
   constructor(private readonly opts: WorkflowRunnerOptions) {
-    this.journal = new JournalWriter(opts.journalFile)
+    this.journal = new JournalWriter(opts.journalFile, opts.journalStart, () => {
+      void this.end({ status: 'failed', error: this.journal.failure! })
+    })
     this.replay = new Replay(opts.previous)
     this.now = opts.now ?? Date.now
     this.lane = new WorkflowModelLane({
@@ -142,6 +148,14 @@ export class WorkflowRunner {
   }
 
   start(): void {
+    try {
+      this.startWorker()
+    } catch (error) {
+      void this.end({ status: 'failed', error: `脚本运行环境出错：${error instanceof Error ? error.message : String(error)}` })
+    }
+  }
+
+  private startWorker(): void {
     const worker = new Worker(this.opts.workerPath, {
       workerData: {
         code: this.opts.code,
@@ -260,8 +274,9 @@ export class WorkflowRunner {
     if ('hit' in decision) {
       view.status = 'cached'
       if (decision.hit.subagentId) view.subagentId = decision.hit.subagentId
-      void this.journal.append({ ...decision.hit, attempt: this.opts.attempt, at: this.now(), cached: true, ...(view.label ? { label: view.label } : {}), ...(view.phase ? { phase: view.phase } : {}) })
-      this.reply(seq, { ok: true, json: JSON.stringify(decision.hit.result ?? null) })
+      void this.journal.append({ ...decision.hit, attempt: this.opts.attempt, at: this.now(), cached: true, ...(view.label ? { label: view.label } : {}), ...(view.phase ? { phase: view.phase } : {}) }).then((saved) => {
+        if (saved) this.reply(seq, { ok: true, json: JSON.stringify(decision.hit.result ?? null) })
+      })
       this.opts.onChange()
       return
     }
@@ -275,10 +290,14 @@ export class WorkflowRunner {
     while (!this.finished && !this.paused && this.queue.length && this.inflight.size < this.opts.concurrency) {
       const job = this.queue.shift()!
       this.inflight.set(job.seq, job)
-      void this.execute(job).catch((error: unknown) => this.settleAgent(job, 'failed', { error: error instanceof Error ? error.message : String(error) })).finally(() => {
-        if (this.inflight.get(job.seq) === job) this.inflight.delete(job.seq)
+      const run = this.execute(job).catch((error: unknown) => {
+        if (!this.finished) return this.settleAgent(job, 'failed', { error: error instanceof Error ? error.message : String(error) })
+      }).finally(() => {
+        this.executions.delete(job)
+        if (!this.finished && this.inflight.get(job.seq) === job) this.inflight.delete(job.seq)
         this.pump()
       })
+      this.executions.set(job, run)
     }
   }
 
@@ -296,11 +315,11 @@ export class WorkflowRunner {
     }
   }
 
-  private settleAgent(job: Job, status: 'done' | 'failed' | 'stopped', detail: { result?: unknown; error?: string }): void {
+  private async settleAgent(job: Job, status: 'done' | 'failed' | 'stopped', detail: { result?: unknown; error?: string }): Promise<void> {
     if (job.view.status === 'done' || job.view.status === 'failed' || job.view.status === 'stopped') return
     job.view.status = status
     if (detail.error) job.view.error = detail.error.slice(0, 300)
-    void this.journal.append(this.entry(job, { status, ...(status === 'done' ? { result: detail.result ?? null } : {}), ...(detail.error ? { error: detail.error } : {}) }))
+    if (!await this.journal.append(this.entry(job, { status, ...(status === 'done' ? { result: detail.result ?? null } : {}), ...(detail.error ? { error: detail.error } : {}) }))) return
     if (status === 'done') this.reply(job.seq, { ok: true, json: JSON.stringify(detail.result ?? null) })
     else if (status === 'stopped') this.reply(job.seq, { ok: false, stopped: true, error: detail.error ?? '已停止' })
     else this.reply(job.seq, { ok: false, error: detail.error ?? '子代理失败' })
@@ -314,7 +333,7 @@ export class WorkflowRunner {
       const release = await this.opts.slots.acquire(signal)
       if (!release) return
       try {
-        if (this.finished) return
+        if (this.finished || !await this.journal.append(this.entry(job, { status: 'running' })) || this.finished) return
         id = await this.opts.host.start(subagentStartParams(job.prompt, job.options))
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -325,22 +344,16 @@ export class WorkflowRunner {
           await pause(this.opts.requeueDelayMs ?? 2000, signal)
           continue
         }
-        this.settleAgent(job, 'failed', { error: message })
-        return
+        return this.settleAgent(job, 'failed', { error: message })
       } finally {
         release()
       }
     }
     this.subagents.set(job.seq, id)
     job.view.subagentId = id
-    if (this.finished) {
-      job.view.status = 'stopped'
-      await this.opts.host.stop(id).catch(() => undefined)
-      await this.journal.append(this.entry(job, { status: 'stopped' }))
-      return
-    }
+    if (this.finished) return
+    if (!await this.journal.append(this.entry(job, { status: 'running' })) || this.finished) return
     job.view.status = 'running'
-    void this.journal.append(this.entry(job, { status: 'running' }))
     this.opts.onChange()
     const schema = job.options.schema
     const maxRetries = this.opts.schemaRetries ?? WORKFLOW_LIMITS.schemaRetries
@@ -351,27 +364,22 @@ export class WorkflowRunner {
       if (!run || this.finished) return
       after = run.endedAt ?? this.now()
       if (run.status === 'cancelled') {
-        this.settleAgent(job, 'stopped', { error: '子代理被停止' })
-        return
+        return this.settleAgent(job, 'stopped', { error: '子代理被停止' })
       }
       if (run.status !== 'done') {
-        this.settleAgent(job, 'failed', { error: run.error?.trim() || '子代理失败' })
-        return
+        return this.settleAgent(job, 'failed', { error: run.error?.trim() || '子代理失败' })
       }
       const text = finalMessage(run)
       if (!schema) {
-        this.settleAgent(job, 'done', { result: text })
-        return
+        return this.settleAgent(job, 'done', { result: text })
       }
       const extracted = extractJson(text)
       const errors = extracted.ok ? validateJson(extracted.value, schema) : [extracted.error]
       if (!errors.length && extracted.ok) {
-        this.settleAgent(job, 'done', { result: extracted.value })
-        return
+        return this.settleAgent(job, 'done', { result: extracted.value })
       }
       if (retries >= maxRetries) {
-        this.settleAgent(job, 'failed', { error: `续接 ${retries} 次后仍没通过 schema 校验：${errors.join('；')}` })
-        return
+        return this.settleAgent(job, 'failed', { error: `续接 ${retries} 次后仍没通过 schema 校验：${errors.join('；')}` })
       }
       retries += 1
       job.view.retries = retries
@@ -379,10 +387,10 @@ export class WorkflowRunner {
       const release = await this.opts.slots.acquire(signal)
       if (!release) return
       try {
-        if (this.finished) return
+        if (this.finished || !await this.journal.append(this.entry(job, { status: 'running' })) || this.finished) return
         await this.opts.host.send(id, schemaCorrection(errors, schema, job.prompt))
       } catch (error) {
-        this.settleAgent(job, 'failed', { error: `续接子代理失败：${error instanceof Error ? error.message : String(error)}` })
+        if (!this.finished) return this.settleAgent(job, 'failed', { error: `续接子代理失败：${error instanceof Error ? error.message : String(error)}` })
         return
       } finally {
         release()
@@ -390,31 +398,60 @@ export class WorkflowRunner {
     }
   }
 
+  private async stopAgents(live: Job[]): Promise<boolean> {
+    let expired = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const jobs = live.filter((job) => job.view.status === 'running' || job.view.status === 'queued')
+    const cleanup = Promise.all(jobs.map(async (job) => {
+      await this.executions.get(job)
+      const id = this.subagents.get(job.seq)
+      let stopped = true
+      if (id) {
+        try {
+          await this.opts.host.stop(id)
+        } catch (error) {
+          stopped = false
+          if (expired) console.warn('[workflow] 停止迟到的子代理失败', error)
+        }
+      }
+      if (!expired) await this.settleAgent(job, 'stopped', {})
+      return stopped
+    }))
+    const stopped = await Promise.race([
+      cleanup.then((results) => results.every(Boolean)),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => {
+          expired = true
+          resolve(false)
+        }, this.opts.stopGraceMs ?? STOP_GRACE_MS)
+      })
+    ])
+    clearTimeout(timer)
+    if (expired) {
+      for (const job of jobs) if (job.view.status === 'running' || job.view.status === 'queued') job.view.status = 'stopped'
+    }
+    return stopped
+  }
+
   private end(outcome: WorkflowOutcome): Promise<void> {
     if (this.stopping) return this.stopping
     this.finished = true
     const queued = this.queue.splice(0)
     const live = [...this.inflight.values()]
-    this.inflight.clear()
-    this.abort.abort()
     const worker = this.worker
     this.worker = null
-    this.stopping = (async () => {
-      if (worker) await worker.terminate().catch(() => undefined)
-      await this.lane.stop()
+    this.stopping = Promise.resolve().then(async () => {
+      this.abort.abort()
+      const workerDone = worker?.terminate().catch(() => undefined)
       for (const job of queued) job.view.status = 'stopped'
-      await Promise.all(live.map(async (job) => {
-        const id = this.subagents.get(job.seq)
-        if (id) await this.opts.host.stop(id).catch(() => undefined)
-        if (job.view.status === 'running' || job.view.status === 'queued') {
-          job.view.status = 'stopped'
-          if (id) await this.journal.append(this.entry(job, { status: 'stopped' }))
-        }
-      }))
+      const [, modelsSettled, agentsSettled] = await Promise.all([workerDone, this.lane.stop(), this.stopAgents(live)])
+      this.inflight.clear()
       await this.journal.flush()
+      const resumeError = this.journal.failure ?? (modelsSettled && agentsSettled
+        ? undefined : '工作流不可恢复：上次子代理或模型调用未确认停止，禁止续跑以免重复执行')
       this.opts.onChange()
-      this.opts.onFinish(outcome)
-    })()
+      await this.opts.onFinish(resumeError ? { status: 'failed', error: resumeError, resumeError } : outcome)
+    })
     return this.stopping
   }
 }

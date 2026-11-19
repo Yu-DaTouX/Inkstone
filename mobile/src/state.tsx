@@ -1,6 +1,6 @@
 import { pick } from '../../src/shared/ui-lang'
 import { AppState } from 'react-native'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RemoteEventEnvelope, RemoteNotice, RemotePendingQuestion, RemoteInfo, RemoteModel, RemoteSessionStats } from '../../src/shared/remote-protocol'
 import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type RemoteProject, type SessionListItem, type StreamState } from './api/client'
 import { deviceInfo, readMarks, writeMarks, type ReadMark } from './device'
@@ -110,23 +110,34 @@ export function RemoteProvider({
     void writeMarks(markScope, next).catch(() => undefined)
   }, [markScope])
 
+  const activeClient = useRef<RemoteClient | null>(null)
+  const latest = useRef({ status: 0, info: 0, questions: 0 })
+  useLayoutEffect(() => {
+    activeClient.current = client
+    return () => { activeClient.current = null }
+  }, [client])
   const guard = useCallback(
-    async (task: () => Promise<void>): Promise<void> => {
+    async (kind: keyof typeof latest.current, task: (current: () => boolean) => Promise<void>): Promise<void> => {
+      if (activeClient.current !== client) return
+      const request = ++latest.current[kind]
+      const current = () => activeClient.current === client && latest.current[kind] === request
       try {
-        await task()
-        setError(null)
+        await task(current)
+        if (current()) setError(null)
       } catch (err) {
+        if (!current()) return
         if (err instanceof RemoteHttpError && err.status === 401) onUnauthorized()
         else setError(err instanceof Error ? err.message : pick('请求失败', 'Request failed'))
       }
     },
-    [onUnauthorized]
+    [client, onUnauthorized]
   )
 
   const refreshStatus = useCallback(
     () =>
-      guard(async () => {
+      guard('status', async (current) => {
         const snapshot = await client.status()
+        if (!current()) return
         const agent = snapshot.agent as { runners?: RunnerInfo[]; activeSessionId?: string | null } | undefined
         setRunners(agent?.runners ?? [])
         setActiveSessionId(agent?.activeSessionId ?? null)
@@ -137,10 +148,14 @@ export function RemoteProvider({
     [client, guard]
   )
 
-  const refreshInfo = useCallback(() => guard(async () => {
+  const refreshInfo = useCallback(() => guard('info', async (current) => {
     const next = await client.info()
+    if (!current()) return
     if (next.capabilities.includes('device-name') && next.device && ['我的手机', '未命名设备'].includes(next.device.name)) {
-      next.device = await client.renameDevice((await deviceInfo()).name)
+      const device = await deviceInfo()
+      if (!current()) return
+      next.device = await client.renameDevice(device.name)
+      if (!current()) return
     }
     setInfo(next)
     if (next.computer?.name || next.device?.name) await saveConnection({ ...connection, computerName: next.computer?.name ?? connection.computerName, deviceName: next.device?.name ?? connection.deviceName })
@@ -171,7 +186,10 @@ export function RemoteProvider({
     return () => { cancelled = true; if (retry) clearTimeout(retry) }
   }, [client, sessions, previewTick])
 
-  const refreshQuestions = useCallback(() => guard(async () => setQuestions(await client.questions())), [client, guard])
+  const refreshQuestions = useCallback(() => guard('questions', async (current) => {
+    const next = await client.questions()
+    if (current()) setQuestions(next)
+  }), [client, guard])
 
   const refresh = useCallback(async () => {
     const overview = Promise.all([refreshStatus(), refreshQuestions(), refreshInfo()])
@@ -260,6 +278,9 @@ export function RemoteProvider({
       debounce('questions', () => void refreshQuestions())
     })
     return () => {
+      latest.current.status++
+      latest.current.info++
+      latest.current.questions++
       if (streamTimer) clearTimeout(streamTimer)
       resume.remove()
       events.stop()

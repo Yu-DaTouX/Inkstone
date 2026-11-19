@@ -4,7 +4,7 @@ import { build } from '../node_modules/esbuild/lib/main.js'
 
 const result = await build({
   stdin: {
-    contents: `export { runShutdownSteps } from './src/main/shutdown.ts'\nexport { prepareUpdateAfterWriters, UPDATE_WRITER_STEPS } from './src/main/shutdown-update.ts'`,
+    contents: `export { runShutdownSteps } from './src/main/shutdown.ts'\nexport { createQuitAfterShutdown, prepareUpdateAfterWriters, UPDATE_WRITER_STEPS } from './src/main/shutdown-update.ts'`,
     resolveDir: process.cwd(),
     loader: 'ts'
   },
@@ -14,7 +14,7 @@ const result = await build({
   format: 'esm',
   logLevel: 'silent'
 })
-const { runShutdownSteps, prepareUpdateAfterWriters, UPDATE_WRITER_STEPS } = await import(
+const { runShutdownSteps, createQuitAfterShutdown, prepareUpdateAfterWriters, UPDATE_WRITER_STEPS } = await import(
   `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
 )
 
@@ -114,6 +114,48 @@ console.log('▌没有更新控制：直接跳过')
   const result = await prepareUpdateAfterWriters(outcomes, null)
   ok(result.install === false && result.skipped === 'no-control', '没有控制器时不安装', result)
   ok(UPDATE_WRITER_STEPS.join(',') === 'runners,subagents,terminals', '写入者步骤名单固定')
+}
+
+console.log('▌退出收尾：清理完成后显式安装一次，无法退出时兜底')
+{
+  const order = []
+  let releaseDataRoot
+  let unlocked
+  const unlocking = new Promise((resolve) => { unlocked = resolve })
+  const coordinator = createQuitAfterShutdown(async () => {
+    order.push('writers', 'preflight')
+    await new Promise((resolve) => { releaseDataRoot = resolve; unlocked() })
+    order.push('unlocked')
+  }, () => { order.push('install'); return true }, () => { order.push('plain quit') }, 20)
+  const request = coordinator.request()
+  await unlocking
+  ok(coordinator.request() === request && !coordinator.allowQuit(), '并发退出合并，释放数据锁前不能退出')
+  ok(order.join('>') === 'writers>preflight', '清理未完成时不能开始安装', order)
+  releaseDataRoot()
+  await request
+  ok(order.join('>') === 'writers>preflight>unlocked>install', '清理及数据锁释放后只尝试一次安装', order)
+  ok(coordinator.allowQuit(), '允许更新器随后发起的退出')
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  ok(!order.includes('plain quit'), '更新器已发起退出时取消兜底')
+}
+{
+  let installs = 0
+  let quits = 0
+  let notifyQuit
+  const quit = new Promise((resolve) => { notifyQuit = resolve })
+  const coordinator = createQuitAfterShutdown(async () => {}, () => { installs += 1; return true }, () => { quits += 1; notifyQuit() }, 20)
+  await coordinator.request()
+  ok(installs === 1 && quits === 0, '安装器没有同步报错时先等其发起退出')
+  await quit
+  await coordinator.request()
+  ok(installs === 1 && quits === 1 && coordinator.allowQuit(), '安装器没有发起退出时兜底只退出、不重试安装')
+}
+{
+  let quits = 0
+  const coordinator = createQuitAfterShutdown(async () => {}, () => false, () => { quits += 1 }, 20)
+  await coordinator.request()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  ok(quits === 1, '不安装或安装同步失败时直接退出，不再触发兜底')
 }
 
 console.log(`退出前更新备份顺序与超时：${pass} 项通过`)

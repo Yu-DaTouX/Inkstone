@@ -35,6 +35,7 @@ export interface QueueToPersist {
 }
 
 const chains = new Map<string, Promise<unknown>>()
+const unarchived = new Set<string>()
 const pendingSaves = new Map<string, { record: PersistedQueue; done: Promise<void> }>()
 
 function queueFile(sessionId: string): string {
@@ -99,12 +100,13 @@ export function saveQueue(input: QueueToPersist): Promise<void> {
   pendingSaves.set(sessionId, entry)
   entry.done = serialize(sessionId, async () => {
     if (pendingSaves.get(sessionId) === entry) pendingSaves.delete(sessionId)
+    if (unarchived.has(sessionId)) await archiveReclaimed(sessionId)
     await atomicWriteFile(queueFile(sessionId), `${JSON.stringify(entry.record)}\n`)
   }, true)
   return entry.done
 }
 
-export function loadQueue(sessionId: string): Promise<PersistedQueue | null> {
+export function loadQueue(sessionId: string, reclaim?: { onArchiveFailure(): void }): Promise<PersistedQueue | null> {
   if (!sessionId) return Promise.resolve(null)
   return serialize(sessionId, async () => {
     const target = queueFile(sessionId)
@@ -130,6 +132,7 @@ export function loadQueue(sessionId: string): Promise<PersistedQueue | null> {
     const followUp = cleanItems(source.version === 2 ? source.items?.followUp : source.followUp)
     const lostImages = source.version === 1 && typeof source.images === 'number' && Number.isSafeInteger(source.images) && source.images > 0 ? source.images : 0
     if (!hasContent(steering) && !hasContent(followUp) && !lostImages) return null
+    if (reclaim) await archiveReclaimed(sessionId).catch(() => reclaim.onArchiveFailure())
     return {
       version: 2,
       sessionId,
@@ -144,7 +147,10 @@ export function loadQueue(sessionId: string): Promise<PersistedQueue | null> {
 
 export function clearQueueFile(sessionId: string): Promise<void> {
   if (!sessionId) return Promise.resolve()
-  return serialize(sessionId, () => rm(queueFile(sessionId), { force: true }))
+  return serialize(sessionId, async () => {
+    if (unarchived.has(sessionId)) await archiveReclaimed(sessionId)
+    await rm(queueFile(sessionId), { force: true })
+  })
 }
 
 export const RECLAIMED_QUEUE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
@@ -162,10 +168,13 @@ export async function pruneReclaimedQueues(now = Date.now()): Promise<number> {
   return removed
 }
 
-export function keepReclaimedQueue(sessionId: string): Promise<void> {
-  if (!sessionId) return Promise.resolve()
-  return serialize(sessionId, async () => {
-    const target = queueFile(sessionId)
-    await rename(target, `${target}.reclaimed`).catch(() => rm(target, { force: true }))
-  })
+async function archiveReclaimed(sessionId: string): Promise<void> {
+  const target = queueFile(sessionId)
+  unarchived.add(sessionId)
+  try {
+    await rename(target, `${target}.reclaimed`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  unarchived.delete(sessionId)
 }

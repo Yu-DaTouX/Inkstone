@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { escapeHtml } from '../shared/escape'
 import { ELECTRON_USER_DATA_DIR } from './paths'
-import { hasPendingStorageMove, runPendingStorageMove, type StorageMoveProgress, type StorageMoveResult } from './storage-move'
+import { assertStorageStartupSafe, hasPendingStorageMove, runPendingStorageMove, type StorageMoveProgress, type StorageMoveResult } from './storage-move'
 
 interface MoveText {
   title: string
@@ -20,7 +20,7 @@ const ZH: MoveText = {
   scan: '正在统计文件…',
   copy: (files, totalFiles, bytes, totalBytes) => `已复制 ${files} / ${totalFiles} 个文件 · ${bytes} / ${totalBytes}`,
   verify: '正在核对复制结果…',
-  cleanup: '正在清理旧目录…',
+  cleanup: '正在完成切换（保留旧数据）…',
   failed: '数据迁移没有完成',
   leftover: (path) => `数据完整保存在：${path}`
 }
@@ -31,7 +31,7 @@ const EN: MoveText = {
   scan: 'Counting files…',
   copy: (files, totalFiles, bytes, totalBytes) => `Copied ${files} / ${totalFiles} files · ${bytes} / ${totalBytes}`,
   verify: 'Verifying the copy…',
-  cleanup: 'Removing the old folder…',
+  cleanup: 'Finishing the switch and keeping the backup…',
   failed: 'Data move did not complete',
   leftover: (path) => `Your data is intact at: ${path}`
 }
@@ -149,6 +149,9 @@ async function moveWithProgressWindow(): Promise<void> {
 if (ELECTRON_USER_DATA_DIR) app.setPath('userData', ELECTRON_USER_DATA_DIR)
 
 export const storageMoveReady: Promise<void> =
-  app.requestSingleInstanceLock() && hasPendingStorageMove()
-    ? app.whenReady().then(moveWithProgressWindow).catch(() => {})
+  app.requestSingleInstanceLock()
+    ? app.whenReady().then(async () => {
+      if (hasPendingStorageMove()) await moveWithProgressWindow()
+      assertStorageStartupSafe()
+    })
     : Promise.resolve()

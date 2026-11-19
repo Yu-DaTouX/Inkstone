@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import './lib/test-isolate.mjs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -164,6 +164,19 @@ try {
       await queue.written
       ok(!existsSync(file), '清空并清除保存后恢复文件被删除')
       ok(pushes.at(-1).ch === 'queue' && pushes.at(-1).payload.followUp.length === 0, 'reset(true) 推送空队列')
+    }
+
+    {
+      const { queue, pushes } = harness({ sessionId: 'write-fault' })
+      const target = join(dataDir, 'queue-recovery', 'write-fault.json')
+      await mkdir(target, { recursive: true })
+      queue.publishItems({ steering: [], followUp: [{ id: 'one', text: 'keep', images: [red] }] })
+      const failure = await queue.flush().then(() => null, error => error)
+      ok(failure && queue.needsSaveCheck() && queue.state.followUp[0].images[0].data === red.data, '最终写入失败向上返回且内存文本和附件保留')
+      ok(pushes.filter(p => p.ch === 'notify').length === 1, '连续写入失败只提醒一次')
+      await rm(target, { recursive: true })
+      await queue.flush()
+      ok(JSON.parse(await readFile(target, 'utf8')).items.followUp[0].images[0].data === red.data, '磁盘恢复后可以重试保存原附件')
     }
 
     {

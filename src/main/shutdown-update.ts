@@ -13,6 +13,34 @@ export interface UpdatePreflightResult {
   writers: string[]
 }
 
+export function createQuitAfterShutdown(shutdown: () => Promise<void>, install: () => boolean, quit: () => void, fallbackMs = 5_000) {
+  let task: Promise<void> | null = null
+  let ready = false
+  let fallback: ReturnType<typeof setTimeout> | undefined
+  const clearFallback = (): void => {
+    if (fallback) clearTimeout(fallback)
+    fallback = undefined
+  }
+  return {
+    allowQuit: (): boolean => {
+      if (!ready) return false
+      clearFallback()
+      return true
+    },
+    request: (): Promise<void> => {
+      task ??= shutdown().then(() => {
+        ready = true
+        fallback = setTimeout(quit, fallbackMs)
+        if (!install()) {
+          clearFallback()
+          quit()
+        }
+      })
+      return task
+    }
+  }
+}
+
 export async function prepareUpdateAfterWriters(
   outcomes: readonly ShutdownOutcome[],
   control: UpdatePreflightControl | null,
@@ -26,7 +54,7 @@ export async function prepareUpdateAfterWriters(
   if (!control) return { install: false, skipped: 'no-control', writers }
   if (writers.length) {
     control.cancel()
-    warn(`[update] skipping pre-quit backup: ${writers.join(', ')}; writers did not confirm stop, automatic install on quit stays disabled`)
+    warn(`[update] skipping pre-quit backup: ${writers.join(', ')}; writers did not confirm stop, update will not install on this quit`)
     return { install: false, skipped: 'writers-unconfirmed', writers }
   }
   const controller = new AbortController()
@@ -42,7 +70,7 @@ export async function prepareUpdateAfterWriters(
     if (result === timedOut) {
       controller.abort()
       control.cancel()
-      warn('[update] pre-quit backup timed out; automatic install on quit was canceled')
+      warn('[update] pre-quit backup timed out; update install was canceled')
       return { install: false, skipped: 'timeout', writers }
     }
     if (result.install) log(`[update] pre-quit backup finished (${result.reason})`)
@@ -50,7 +78,7 @@ export async function prepareUpdateAfterWriters(
   } catch (error) {
     controller.abort()
     control.cancel()
-    warn(`[update] pre-quit preparation failed; automatic install on quit stays disabled: ${error instanceof Error ? error.message : String(error)}`)
+    warn(`[update] pre-quit preparation failed; update will not install on this quit: ${error instanceof Error ? error.message : String(error)}`)
     return { install: false, skipped: 'failed', writers }
   } finally {
     if (timer) clearTimeout(timer)

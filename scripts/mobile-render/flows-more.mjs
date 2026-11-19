@@ -98,6 +98,43 @@ export function moreFlows({ boot, openSession, check, env }) {
     }
   }
 
+  async function flowStatusOrder() {
+    let hold, captured = false, returned = false
+    const ctx = await boot({ desktop: { tweak(handlers, state) {
+      state.running = true
+      const snapshot = handlers.snapshot
+      handlers.snapshot = async () => {
+        const result = await snapshot()
+        if (hold) {
+          const delay = hold
+          hold = null
+          captured = true
+          await delay
+          returned = true
+        }
+        return result
+      }
+    } } })
+    const { desk, h } = ctx
+    let release = () => {}
+    try {
+      await h.waitFor(() => h.matchLabel(/已连接/).length, '状态逆序：已连接')
+      await openSession(h, '第一个会话')
+      await h.waitFor(() => h.byLabel('停止当前运行').length, '状态逆序：初始运行中')
+      const refresh = () => desk.server.publish({ ch: 'state', payload: {}, runtime: { sessionId: 's-1' } })
+      hold = new Promise(resolve => { release = resolve })
+      refresh()
+      await h.waitFor(() => captured, '旧运行状态在途')
+      desk.state.running = false
+      refresh()
+      await h.waitFor(() => !h.byLabel('停止当前运行').length, '较新的空闲状态先显示')
+      release()
+      await h.waitFor(() => returned, '旧快照返回')
+      await h.settle(100)
+      check(!h.byLabel('停止当前运行').length, '晚到的旧状态不再恢复停止按钮')
+    } finally { release(); await ctx.close() }
+  }
+
   async function flowSettingsPair() {
     const tag = '[设置与配对]'
     const ctx = await boot()
@@ -155,6 +192,7 @@ export function moreFlows({ boot, openSession, check, env }) {
 
   return [
     ['断线重同步', flowResync],
+    ['状态回包逆序', flowStatusOrder],
     ['归档与置顶', flowArchive],
     ['子代理 zh-CN', () => flowSubagents('zh-CN')],
     ['子代理 en-US', () => flowSubagents('en-US')],

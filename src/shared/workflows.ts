@@ -93,6 +93,7 @@ export interface WorkflowRunView {
   error?: string
   dir: string
   hasResult?: boolean
+  resumeError?: string
 }
 
 export interface WorkflowPhaseStat {

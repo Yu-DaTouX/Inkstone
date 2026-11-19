@@ -92,6 +92,22 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(registry.size === 0 && !registry.hasBusyCwd('C:/p/b'), '全部结束后释放占位')
   }
 
+  {
+    const { registry, agents } = harness()
+    await registry.select({ cwd: 'C:/p/a', sessionFile: 'C:/s/a.jsonl' })
+    await registry.select({ cwd: 'C:/p/b', sessionFile: 'C:/s/b.jsonl' })
+    agents.forEach((agent, index) => {
+      agent.needsQueueSaveCheck = () => index === 0
+      agent.flushQueue = async () => { throw new Error('queue save failed') }
+    })
+    ok(registry.needsQueueSaveCheck(), '活动实例需要退出前队列检查')
+    const failure = await registry.flushQueuesBeforeExit().then(() => '', error => error.message)
+    ok(failure === 'queue save failed' && registry.size === 2 && agents.every(a => !a.calls.stop), '预检失败时两个实例均未开始关闭，可继续收回草稿')
+    agents[0].stop = async () => { throw new Error('final flush failed') }
+    const stopped = await registry.stopAll({ parallel: true }).then(() => '', error => error.message)
+    ok(stopped === 'final flush failed' && agents[1].calls.stop === 1, '最后一次写入失败传给退出协调器，其他实例仍清理')
+  }
+
   console.log('同目录与预览')
   {
     const { registry, agents } = harness()

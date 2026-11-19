@@ -36,9 +36,12 @@ export interface AutomaticInstallPreparationOptions {
   signal?: AbortSignal
 }
 
+type InstallExitSource = 'manual' | 'startup'
+
 export interface AppUpdateControl {
-  prepareAutomaticInstallOnQuit(options?: AutomaticInstallPreparationOptions): Promise<AutomaticInstallPreparation>
-  cancelAutomaticInstallPreparation(): void
+  prepareInstallOnQuit(options?: AutomaticInstallPreparationOptions): Promise<AutomaticInstallPreparation>
+  cancelInstallPreparation(): void
+  installAfterShutdown(): boolean
 }
 
 function messageWindow(): BrowserWindow | null {
@@ -46,7 +49,12 @@ function messageWindow(): BrowserWindow | null {
   return windows.find((win) => !win.isDestroyed()) ?? null
 }
 
-export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup?: (interactive?: boolean) => Promise<BackupSummary>): AppUpdateControl {
+export function registerAppUpdate(
+  ipc: IpcRegistrar,
+  busy: () => boolean,
+  requestInstallExit: (source: InstallExitSource) => Promise<boolean>,
+  backup?: (interactive?: boolean) => Promise<BackupSummary>
+): AppUpdateControl {
   const runBackup = backup ?? (async (interactive?: boolean) => {
     const input = { userData: app.getPath('userData'), sessions: SESSIONS_DIR, yan: YAN_DIR }
     const summary = await createUpdateAutoBackup(input, interactive ? { confirmSkip: (info) => askSkipLargeParts(messageWindow(), info, 'update') } : {})
@@ -78,7 +86,22 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
   const savePrefs = (): Promise<void> => writePrefs().catch(() => undefined)
   let preparing: Promise<AutomaticInstallPreparation> | null = null
   let prepareAbort: AbortController | null = null
-  let manualInstall: { reason: 'backed-up' | 'accepted-without-backup'; backup?: BackupSummary } | null = null
+  let intent: { source: InstallExitSource; backup?: BackupSummary } | null = null
+  let approval: { restart: boolean; requiresAutomatic: boolean } | null = null
+  const requestRestart = async (source: InstallExitSource, backup?: BackupSummary): Promise<boolean> => {
+    const next = { source, backup }
+    intent = next
+    let accepted = false
+    try {
+      accepted = await requestInstallExit(source)
+      return accepted
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : String(error)
+      return false
+    } finally {
+      if (!accepted && intent === next) intent = null
+    }
+  }
   const askWithoutBackup = async (reason: string): Promise<boolean> => {
     const options = {
       type: 'warning' as const,
@@ -94,12 +117,11 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     const answer = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
     return answer.response === 0
   }
-  const prepareAutomaticInstallOnQuit = (input: AutomaticInstallPreparationOptions = {}): Promise<AutomaticInstallPreparation> => {
+  const prepareInstallOnQuit = (input: AutomaticInstallPreparationOptions = {}): Promise<AutomaticInstallPreparation> => {
     if (preparing) {
-      if (input.signal) {
-        if (input.signal.aborted) prepareAbort?.abort()
-        else input.signal.addEventListener('abort', () => prepareAbort?.abort(), { once: true })
-      }
+      const controller = prepareAbort
+      if (input.signal?.aborted) controller?.abort()
+      else input.signal?.addEventListener('abort', () => controller?.abort(), { once: true })
       return preparing
     }
     const controller = new AbortController()
@@ -109,17 +131,20 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
       else input.signal.addEventListener('abort', () => controller.abort(), { once: true })
     }
     const aborted = (): boolean => controller.signal.aborted
+    const requested = intent
+    const requiresAutomatic = requested?.source !== 'manual'
+    approval = null
     preparing = (async (): Promise<AutomaticInstallPreparation> => {
-      autoUpdater.autoInstallOnAppQuit = false
-      if (manualInstall) return { install: true, reason: manualInstall.reason, ...(manualInstall.backup ? { backup: manualInstall.backup } : {}) }
       if (aborted()) return { install: false, reason: 'aborted' }
       if (state.phase !== 'downloaded') return { install: false, reason: 'no-update' }
-      if (!app.isPackaged || !state.automatic) return { install: false, reason: 'disabled' }
+      if (!app.isPackaged || (requiresAutomatic && !state.automatic)) return { install: false, reason: 'disabled' }
+      if (requested) return requested.backup
+        ? { install: true, reason: 'backed-up', backup: requested.backup }
+        : { install: true, reason: 'accepted-without-backup' }
       try {
         const summary = await runBackup()
         if (aborted()) return { install: false, reason: 'aborted' }
         if (!state.automatic) return { install: false, reason: 'disabled' }
-        autoUpdater.autoInstallOnAppQuit = true
         state.error = undefined
         return { install: true, reason: 'backed-up', backup: summary }
       } catch (error) {
@@ -129,16 +154,17 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
         const proceed = await askWithoutBackup(reason)
         if (aborted()) return { install: false, reason: 'aborted' }
         if (!state.automatic) return { install: false, reason: 'disabled' }
-        if (proceed) {
-          autoUpdater.autoInstallOnAppQuit = true
-          return { install: true, reason: 'accepted-without-backup' }
-        }
+        if (proceed) return { install: true, reason: 'accepted-without-backup' }
         state.error = pick('安装前自动备份失败，这次退出不安装更新', 'The pre-install backup failed; the update will not be installed on this quit')
         return { install: false, reason: 'cancelled' }
       }
     })()
+      .then((result): AutomaticInstallPreparation => {
+        if (aborted() || intent !== requested) return { install: false, reason: 'aborted' }
+        if (result.install) approval = { restart: requested !== null, requiresAutomatic }
+        return result
+      })
       .catch((error) => {
-        autoUpdater.autoInstallOnAppQuit = false
         if (!aborted()) state.error = pick(`退出前准备安装失败：${error instanceof Error ? error.message : String(error)}`, `Preparing the install before quitting failed: ${error instanceof Error ? error.message : String(error)}`)
         return { install: false, reason: aborted() ? 'aborted' as const : 'failed' as const }
       })
@@ -148,13 +174,34 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
       })
     return preparing
   }
-  const cancelAutomaticInstallPreparation = (): void => { prepareAbort?.abort() }
+  const cancelInstallPreparation = (): void => {
+    prepareAbort?.abort()
+    intent = null
+    approval = null
+  }
+  const installAfterShutdown = (): boolean => {
+    const prepared = approval
+    cancelInstallPreparation()
+    if (!prepared || state.phase !== 'downloaded' || (prepared.requiresAutomatic && !state.automatic)) return false
+    let failed = false
+    const onError = (): void => { failed = true }
+    autoUpdater.once('error', onError)
+    try {
+      autoUpdater.quitAndInstall(true, prepared.restart)
+      return !failed
+    } catch (error) {
+      console.warn('[update] could not launch installer', error)
+      return false
+    } finally {
+      autoUpdater.removeListener('error', onError)
+    }
+  }
   const launchedAt = Date.now()
   let launchPending: string | undefined
   autoUpdater.on('update-downloaded', (info?: { version?: string }) => {
     state.phase = 'downloaded'
     state.percent = 100
-    manualInstall = null
+    cancelInstallPreparation()
     const version = info?.version ?? state.latest
     if (latestNotes) prefs.notes = latestNotes
     if (version) prefs.pending = version
@@ -197,7 +244,6 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
   ipc.handle('yan:update:automatic', async (enabled: boolean) => {
     state.automatic = enabled === true
     prefs.automatic = state.automatic
-    autoUpdater.autoInstallOnAppQuit = false
     await writePrefs()
     if (state.phase === 'available' && state.automatic) startDownload()
     return { ...state }
@@ -266,19 +312,19 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
         state.error = pick('备份期间有新任务开始，已取消这次重启安装', 'A task started during the backup; this restart was canceled')
         return { ok: false, error: state.error }
       }
-      manualInstall = backup ? { reason: 'backed-up', backup } : { reason: 'accepted-without-backup' }
       scheduled = true
       setTimeout(() => {
         if (busy()) {
           installing = false
-          manualInstall = null
-          state.phase = 'downloaded'
           state.error = pick('备份之后又有任务开始，暂时不重启安装；等任务结束后再点安装', 'A task started after the backup; not restarting to install yet. Try again when the task finishes')
           return
         }
+        if (state.phase !== 'downloaded') {
+          installing = false
+          return
+        }
         state.error = undefined
-        installing = false
-        autoUpdater.quitAndInstall(true, true)
+        void requestRestart('manual', backup ?? undefined).then((accepted) => { if (!accepted) installing = false })
       }, 300)
       return { ok: true, ...(backup ? { backup } : {}) }
     } finally {
@@ -293,9 +339,7 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     try {
       const summary = await runBackup().catch(() => null)
       if (!summary || !state.automatic || busy() || state.phase !== 'downloaded') return
-      manualInstall = { reason: 'backed-up', backup: summary }
-      scheduled = true
-      autoUpdater.quitAndInstall(true, true)
+      scheduled = await requestRestart('startup', summary)
     } finally {
       if (!scheduled) installing = false
     }
@@ -308,10 +352,9 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     }
     launchPending = prefs.pending
     state.automatic = prefs.automatic !== false
-    autoUpdater.autoInstallOnAppQuit = false
     if (!app.isPackaged) return
     if (state.automatic) void check()
     setInterval(() => { if (state.automatic) void check() }, BACKGROUND_CHECK_MS).unref()
   })
-  return { prepareAutomaticInstallOnQuit, cancelAutomaticInstallPreparation }
+  return { prepareInstallOnQuit, cancelInstallPreparation, installAfterShutdown }
 }

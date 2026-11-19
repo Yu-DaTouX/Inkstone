@@ -12,7 +12,7 @@ const host = {
       loader: 'js',
       contents: path === 'electron'
         ? `const m=globalThis.__startupUpdate;export const app={getVersion:()=>m.current,getPath:()=>m.directory,get isPackaged(){return true}};export const net={fetch:async()=>({ok:true,json:async()=>m.release})};export class BrowserWindow{static getAllWindows(){return []}};export const dialog={showMessageBox:async()=>({response:1}),showErrorBox(){}}`
-        : `import {EventEmitter} from 'node:events';const m=globalThis.__startupUpdate;export const autoUpdater=new EventEmitter();autoUpdater.setFeedURL=()=>{};autoUpdater.checkForUpdates=async()=>({updateInfo:{version:m.release.tag_name.slice(1)}});autoUpdater.downloadUpdate=async()=>{autoUpdater.emit('update-downloaded',{version:m.release.tag_name.slice(1)})};autoUpdater.quitAndInstall=(...args)=>m.installs.push(args);`
+        : `import {EventEmitter} from 'node:events';const m=globalThis.__startupUpdate;export const autoUpdater=new EventEmitter();autoUpdater.setFeedURL=()=>autoUpdater.removeAllListeners();autoUpdater.checkForUpdates=async()=>({updateInfo:{version:m.release.tag_name.slice(1)}});autoUpdater.downloadUpdate=async()=>{autoUpdater.emit('update-downloaded',{version:m.release.tag_name.slice(1)})};autoUpdater.quitAndInstall=(...args)=>m.installs.push(args);`
     }))
   }
 }
@@ -44,15 +44,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
       if (backupFails) throw new Error('disk full')
       return { file: 'b.zip' }
     }
+    const exits = []
+    const requestExit = async (source) => { exits.push(source); return true }
     const launch = async (busy = false) => {
       const handlers = new Map()
-      mod.registerAppUpdate({ handle: (channel, fn) => handlers.set(channel, fn) }, () => busy, backup)
+      const control = mod.registerAppUpdate({ handle: (channel, fn) => handlers.set(channel, fn) }, () => busy, requestExit, backup)
       const call = (name, ...args) => handlers.get(`yan:update:${name}`)(...args)
       const deadline = Date.now() + 20_000
       for (let status = await call('status'); Date.now() < deadline && status.automatic && !settledPhases.has(status.phase); status = await call('status')) await wait(10)
       await wait(20)
       await call('automatic', (await call('status')).automatic)
-      return call
+      return { call, control }
     }
     const prefsWhen = async (accept) => {
       const deadline = Date.now() + 20_000
@@ -64,23 +66,27 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
 
     await launch()
-    ok(model.installs.length === 0, '第一次发现并下载完更新时不安装')
+    ok(exits.length === 0 && model.installs.length === 0, '第一次发现并下载完更新时不请求退出安装')
     ok((await prefsWhen((prefs) => prefs.pending === '0.3.3')).pending === '0.3.3', '记下已下载待装的版本')
 
     model.installs = []
     await launch(true)
-    ok(model.installs.length === 0, '下次启动时有任务在跑就不装，留到退出时')
+    ok(exits.length === 0 && model.installs.length === 0, '下次启动时有任务在跑就不装，留到退出时')
 
     model.installs = []
     backupFails = true
     const before = backups
     await launch()
-    ok(model.installs.length === 0 && backups === before + 1, '启动时备份失败不安装')
+    ok(exits.length === 0 && model.installs.length === 0 && backups === before + 1, '启动时备份失败不退出安装')
     backupFails = false
 
     model.installs = []
-    await launch()
-    ok(model.installs.length === 1 && model.installs[0][0] === true && model.installs[0][1] === true, '下次启动时备份后静默安装并重新打开')
+    const resumed = await launch()
+    ok(exits.join(',') === 'startup' && model.installs.length === 0, '下次启动时备份后只请求协调退出')
+    const backupCount = backups
+    const preparedStartup = await resumed.control.prepareInstallOnQuit()
+    ok(preparedStartup.install && backups === backupCount, '启动续装预检复用成功备份，不重复备份')
+    ok(resumed.control.installAfterShutdown() && !resumed.control.installAfterShutdown() && JSON.stringify(model.installs) === '[[true,true]]', '启动续装完成清理后显式安装一次并重新打开')
 
     model.installs = []
     model.current = '0.3.3'
@@ -94,7 +100,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     let finishBackup
     let signalBackup
     const backupStarted = new Promise((resolve) => { signalBackup = resolve })
-    const control = mod.registerAppUpdate({ handle: (name, fn) => handlers.set(name, fn) }, () => false, () => new Promise((finish) => {
+    const control = mod.registerAppUpdate({ handle: (name, fn) => handlers.set(name, fn) }, () => false, requestExit, () => new Promise((finish) => {
       finishBackup = finish
       signalBackup()
     }))
@@ -102,22 +108,29 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await handlers.get('yan:update:automatic')(false)
     finishBackup({ file: 'b.zip' })
     await wait(20)
-    ok(model.installs.length === 0, '启动备份期间关闭自动更新，备份完成后不调用安装器')
+    ok(exits.length === 1 && model.installs.length === 0, '启动备份期间关闭自动更新，备份完成后不请求安装退出')
 
     await handlers.get('yan:update:automatic')(true)
     finishBackup = undefined
-    const preparing = control.prepareAutomaticInstallOnQuit()
+    const preparing = control.prepareInstallOnQuit()
     if (!finishBackup) throw Error('quit backup did not begin')
     await handlers.get('yan:update:automatic')(false)
     finishBackup({ file: 'b.zip' })
     const prepared = await preparing
     ok(!prepared.install && prepared.reason === 'disabled', '退出备份期间关闭自动更新，不授权退出安装')
 
+    await handlers.get('yan:update:automatic')(true)
+    const preparingAgain = control.prepareInstallOnQuit()
+    finishBackup({ file: 'b.zip' })
+    ok((await preparingAgain).install, '自动退出安装已完成预检')
+    await handlers.get('yan:update:automatic')(false)
+    ok(!control.installAfterShutdown() && model.installs.length === 0, '通过预检后关闭自动更新，仍然不启动安装器')
+
     await writeFile(prefsFile, JSON.stringify({ automatic: false, pending: '0.3.4' }))
     model.release = { ...model.release, tag_name: 'v0.3.4' }
     model.installs = []
-    const run = await launch()
-    await run('download')
+    const { call } = await launch()
+    await call('download')
     ok(model.installs.length === 0, '关了自动更新时启动不安装')
   } finally {
     delete globalThis.__startupUpdate

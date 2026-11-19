@@ -2,6 +2,7 @@ import { pick } from '../shared/ui-lang'
 import {
   createReadStream,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -25,6 +26,7 @@ function controlDir(): string {
 const PENDING_FILE = (): string => join(controlDir(), 'storage-move.json')
 const RESULT_FILE = (): string => join(controlDir(), 'storage-move-result.json')
 const LOCK_FILE = (): string => join(controlDir(), 'storage-move.lock')
+const SWITCH_FILE = (): string => join(controlDir(), 'storage-move-switch.json')
 
 export interface StorageMoveResult {
   ok: boolean
@@ -115,7 +117,7 @@ async function tally(dir: string): Promise<{ files: number; bytes: number; lates
     }
   }
   await walk(dir)
-  return { files, bytes, latestMtime, content: JSON.stringify(entries.sort((a, b) => a[0].localeCompare(b[0]))) }
+  return { files, bytes, latestMtime, content: JSON.stringify(entries.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) }
 }
 
 function isJunction(p: string): boolean {
@@ -164,74 +166,222 @@ export function checkTarget(from: string, to: string): string | undefined {
   const back = relative(to, from)
   if (!back || (back !== '..' && !back.startsWith(`..${sep}`) && !isAbsolute(back))) return pick('不能迁移到包含原数据目录的文件夹', 'Cannot move into a folder that contains the original data folder')
   try {
-    if (existsSync(to) && readdirSync(to).length > 0) return pick('目标文件夹不是空的，请选一个空文件夹或新建一个', 'The target folder is not empty. Choose an empty folder or create one')
+    if (existsSync(to) && readdirSync(to).length > 0) return targetNotEmpty(to)
   } catch {
     return pick('无法读取目标文件夹（可能没有访问权限）', 'Cannot read the target folder (access may be denied)')
   }
   return undefined
 }
 
-function isPlainDirectory(path: string): boolean {
+function targetNotEmpty(to: string): string {
+  return pick(`目标目录 ${to} 不是空文件夹，已有内容已保留。请另选一个空文件夹或新建一个。`, `The destination ${to} is not empty. Its existing contents were kept. Choose a different empty folder or create one.`)
+}
+
+function entry(path: string) {
   try {
-    const info = lstatSync(path)
-    return info.isDirectory() && !info.isSymbolicLink()
-  } catch {
-    return false
+    return lstatSync(path, { bigint: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return undefined
   }
 }
 
-function findBackup(from: string): string | undefined {
+function directoryId(path: string): string | undefined {
+  const info = entry(path)
+  if (info?.isDirectory() && !info.isSymbolicLink() && info.ino !== 0n) return `${info.dev}:${info.ino}`
+  return undefined
+}
+
+function canonicalPath(path: string): string {
+  if (entry(path)) return realpathSync.native(path)
+  const parent = dirname(path)
+  if (parent === path) return realpathSync.native(path)
+  return join(canonicalPath(parent), basename(path))
+}
+
+function inside(root: string, path: string): boolean {
+  const rel = relative(root, path)
+  return !rel || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+function overlaps(a: string, b: string): boolean {
+  return inside(a, b) || inside(b, a)
+}
+
+const backupPrefix = (from: string): string => `${basename(from)}.迁移前备份-`
+const SWITCH_BACKUP_SUFFIX = /^\d{13}-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+function backupSuffix(from: string, name: string): string | undefined {
+  const prefix = backupPrefix(from)
+  return name.toLowerCase().startsWith(prefix.toLowerCase()) ? name.slice(prefix.length) : undefined
+}
+
+function backupPaths(from: string): string[] {
+  const parent = dirname(from)
+  if (!entry(parent)) return []
+  return readdirSync(parent).sort().reverse().flatMap((name) => {
+    const suffix = backupSuffix(from, name)
+    if (!suffix || (!/^\d{13}$/.test(suffix) && !SWITCH_BACKUP_SUFFIX.test(suffix))) return []
+    const path = join(parent, name)
+    const info = entry(path)
+    return info?.isDirectory() && !info.isSymbolicLink() ? [path] : []
+  })
+}
+
+function findBackup(from: string, active?: string): string | undefined {
   try {
-    const prefix = `${basename(from)}.迁移前备份-`
-    const name = readdirSync(dirname(from)).filter((n) => n.startsWith(prefix) && isPlainDirectory(join(dirname(from), n))).sort().pop()
-    return name ? join(dirname(from), name) : undefined
+    return backupPaths(from).find((path) => !active || !overlaps(realpathSync.native(path), active))
   } catch {
     return undefined
   }
 }
 
+interface StorageSwitch {
+  version: 1
+  from: string
+  parent: string
+  to: string
+  backup: string
+  sourceId: string
+  targetId: string
+  digest: string
+}
+
+function switchBlocked(from: string, detail: string): Error {
+  return new Error(pick(
+    `无法确认数据迁移状态，已阻止启动。请保留原目录、迁移前备份和目标数据，不要覆盖或删除任何一份。\n原位置：${from}\n${detail}`,
+    `Inkstone cannot verify the data move and will not start. Keep the original folder, backup and destination; do not overwrite or delete any copy.\nOriginal location: ${from}\n${detail}`
+  ))
+}
+
+function validateTargetLocation(from: string, to: string): boolean {
+  if (!isAbsolute(to) || /^[\\/]{2}/.test(to) || to !== resolve(to)) return false
+  const actual = canonicalPath(to)
+  const original = join(realpathSync.native(dirname(from)), basename(from))
+  const control = canonicalPath(resolve(controlDir()))
+  return !relative(actual, to) && !overlaps(original, actual) && !overlaps(control, actual) &&
+    !isBackupLocation(original, actual)
+}
+
+function isBackupLocation(from: string, to: string): boolean {
+  const rel = relative(dirname(from), to)
+  return rel.split(sep)[0].toLowerCase().startsWith(backupPrefix(from).toLowerCase())
+}
+
+function publishSwitch(move: StorageSwitch): void {
+  const file = SWITCH_FILE()
+  const temp = `${file}.${randomUUID()}.tmp`
+  writeFileSync(temp, JSON.stringify(move), { flag: 'wx', flush: true })
+  try {
+    linkSync(temp, file)
+  } finally {
+    rmSync(temp, { force: true })
+  }
+}
+
+const contentDigest = (content: string): string => createHash('sha256').update(content).digest('hex')
+
+function expectSwitched(move: StorageSwitch): void {
+  if (!entry(move.from)?.isSymbolicLink() || relative(realpathSync.native(move.from), move.to) ||
+    directoryId(move.to) !== move.targetId || directoryId(move.backup) !== move.sourceId) {
+    throw switchBlocked(move.from, `${move.backup}\n${move.to}\n${SWITCH_FILE()}`)
+  }
+}
+
+async function recoverSwitch(from: string): Promise<StorageMoveResult> {
+  const record = entry(SWITCH_FILE())?.isFile() ? readJson<Partial<StorageSwitch>>(SWITCH_FILE()) : undefined
+  if (!record || record.version !== 1 || record.from !== from || record.parent !== realpathSync.native(dirname(from)) ||
+    typeof record.backup !== 'string' || dirname(record.backup) !== dirname(from) ||
+    !SWITCH_BACKUP_SUFFIX.test(backupSuffix(from, basename(record.backup)) ?? '') ||
+    typeof record.to !== 'string' || !isAbsolute(record.to) ||
+    typeof record.sourceId !== 'string' || typeof record.targetId !== 'string' || record.sourceId === record.targetId ||
+    typeof record.digest !== 'string' || !/^[\da-f]{64}$/.test(record.digest)) {
+    throw switchBlocked(from, SWITCH_FILE())
+  }
+  const move = record as StorageSwitch
+  const fail = (): Error => switchBlocked(from, `${move.backup}\n${move.to}\n${SWITCH_FILE()}`)
+  if (!entry(move.backup) && directoryId(from) === move.sourceId) {
+    rmSync(SWITCH_FILE())
+    return saveMoveResult(from, move.to, { ok: false, error: pick('迁移在切换前中断，仍使用原目录。目标副本已保留。', 'The move stopped before switching. The original folder is still in use, and the destination copy was kept.') })
+  }
+  const intactPaths = (): boolean => move.parent === realpathSync.native(dirname(from)) && validateTargetLocation(from, move.to) &&
+    directoryId(move.backup) === move.sourceId && directoryId(move.to) === move.targetId
+  if (!intactPaths()) throw fail()
+  if (entry(from)) expectSwitched(move)
+  const copies = await Promise.all([tally(move.backup), tally(move.to)])
+  if (copies.some(({ content }) => contentDigest(content) !== move.digest) || !intactPaths()) throw fail()
+  if (!entry(from)) symlinkSync(move.to, from, 'junction')
+  expectSwitched(move)
+  const result = saveMoveResult(from, move.to, { ok: true, leftover: move.backup })
+  rmSync(SWITCH_FILE())
+  return result
+}
+
+export function assertStorageStartupSafe(): void {
+  if (!storageMovable()) return
+  const from = defaultAgentDir()
+  if (entry(SWITCH_FILE())) throw switchBlocked(from, SWITCH_FILE())
+  const original = entry(from)
+  if (original?.isSymbolicLink()) {
+    if (!existsSync(from) || !directoryId(realpathSync.native(from))) throw switchBlocked(from, from)
+  } else {
+    if (original && !original.isDirectory()) throw switchBlocked(from, from)
+    if (!original || !readdirSync(from).length) {
+      const backups = backupPaths(from)
+      if (backups.length) throw switchBlocked(from, backups.join('\n'))
+    }
+  }
+}
+
 export function hasPendingStorageMove(): boolean {
-  return !!readJson<{ target?: string }>(PENDING_FILE())?.target
+  return storageMovable() && (!!entry(SWITCH_FILE()) || !!readJson<{ target?: unknown }>(PENDING_FILE())?.target)
+}
+
+function saveMoveResult(from: string, to: string, result: Omit<StorageMoveResult, 'at' | 'from' | 'to'>): StorageMoveResult {
+  const value = { ...result, at: Date.now(), from, to }
+  try {
+    mkdirSync(controlDir(), { recursive: true })
+    writeFileSync(RESULT_FILE(), JSON.stringify(value, null, 2))
+  } catch {
+  }
+  return value
 }
 
 export async function runPendingStorageMove(onProgress?: (progress: StorageMoveProgress) => void): Promise<StorageMoveResult | undefined> {
-  const pending = readJson<{ target?: string }>(PENDING_FILE())
-  if (!pending?.target) return undefined
-  const from = defaultAgentDir()
-  const to = resolve(pending.target)
+  if (!hasPendingStorageMove()) return undefined
+  mkdirSync(controlDir(), { recursive: true })
+  if (abandonedMoveLock(LOCK_FILE())) rmSync(LOCK_FILE(), { force: true })
+  writeFileSync(LOCK_FILE(), String(process.pid), { flag: 'wx' })
+  try {
+    const from = defaultAgentDir()
+    if (entry(SWITCH_FILE())) return await recoverSwitch(from)
+    assertStorageStartupSafe()
+    const pending = readJson<{ target?: unknown }>(PENDING_FILE())
+    rmSync(PENDING_FILE(), { force: true })
+    if (typeof pending?.target !== 'string' || !isAbsolute(pending.target)) return undefined
+    return await copyAndSwitch(from, resolve(pending.target), onProgress)
+  } finally {
+    rmSync(LOCK_FILE(), { force: true })
+  }
+}
+
+async function copyAndSwitch(from: string, to: string, onProgress?: (progress: StorageMoveProgress) => void): Promise<StorageMoveResult> {
   let copyStarted = false
   const write = (r: Omit<StorageMoveResult, 'at' | 'from' | 'to'>): StorageMoveResult => {
     const retained = !r.ok && copyStarted
       ? pick(` 目标目录 ${to} 的内容已保留；重试请选另一个空文件夹。`, ` Contents at ${to} were left in place. Choose a different empty folder to retry.`)
       : ''
-    const result = { ...r, ...(retained ? { error: `${r.error ?? ''}${retained}` } : {}), at: Date.now(), from, to }
-    try {
-      mkdirSync(controlDir(), { recursive: true })
-      writeFileSync(RESULT_FILE(), JSON.stringify(result, null, 2))
-    } catch {
-    }
-    return result
+    return saveMoveResult(from, to, { ...r, ...(retained ? { error: `${r.error ?? ''}${retained}` } : {}) })
   }
-  if (!storageMovable()) {
-    rmSync(PENDING_FILE(), { force: true })
-    return write({ ok: false, error: pick('便携版或测试环境的数据位置由启动方式决定，不能在这里迁移', 'The data location of portable or test builds is set by how they start. It cannot be moved here') })
-  }
-  try {
-    mkdirSync(controlDir(), { recursive: true })
-    if (abandonedMoveLock(LOCK_FILE())) rmSync(LOCK_FILE(), { force: true })
-    writeFileSync(LOCK_FILE(), String(process.pid), { flag: 'wx' })
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      return write({ ok: false, error: pick('另一次数据位置迁移正在进行，请等它结束后重试', 'Another data move is in progress. Retry after it finishes') })
-    }
-    return write({ ok: false, error: pick(`无法创建迁移标记文件：${error instanceof Error ? error.message : String(error)}`, `Cannot create the move marker file: ${error instanceof Error ? error.message : String(error)}`) })
-  }
-  rmSync(PENDING_FILE(), { force: true })
   try {
     if (isJunction(from)) return write({ ok: false, error: pick('数据目录已经迁移过了', 'The data folder has already been moved') })
-    if (!existsSync(from)) return write({ ok: false, error: pick('原数据目录不存在', 'The original data folder does not exist') })
+    const sourceId = directoryId(from)
+    if (!sourceId) return write({ ok: false, error: pick('原数据目录不存在或不是普通目录', 'The original data folder is missing or is not a regular directory') })
+    const parent = realpathSync.native(dirname(from))
     const bad = checkTarget(from, to)
     if (bad) return write({ ok: false, error: bad })
+    const badLocation = pick('无法确认目标是独立的普通文件夹，请另选位置', 'Cannot verify that the destination is a separate regular folder. Choose a different location.')
+    if (!validateTargetLocation(from, to)) return write({ ok: false, error: badLocation })
     const progress: StorageMoveProgress = { phase: 'scan', files: 0, bytes: 0, totalFiles: 0, totalBytes: 0 }
     const report = (patch: Partial<StorageMoveProgress>): void => {
       Object.assign(progress, patch)
@@ -241,6 +391,9 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
     const before = await tally(from)
     report({ phase: 'copy', totalFiles: before.files, totalBytes: before.bytes })
     mkdirSync(to, { recursive: true })
+    const targetId = directoryId(to)
+    if (!targetId || targetId === sourceId || !validateTargetLocation(from, to)) return write({ ok: false, error: badLocation })
+    if (readdirSync(to).length) return write({ ok: false, error: targetNotEmpty(to) })
     copyStarted = true
     for (const name of await readdir(from)) {
       await cp(join(from, name), join(to, name), {
@@ -265,30 +418,30 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
     if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime || recheck.content !== before.content) {
       return write({ ok: false, error: pick('迁移期间原目录仍在被写入（可能还有别的 pi 或砚在运行），未切换数据目录', 'The original data folder was still being written during the move (another pi or Inkstone may be running). The data location was not switched.') })
     }
-    const backup = `${from}.迁移前备份-${Date.now()}-${randomUUID()}`
+    const backup = join(dirname(from), `${backupPrefix(from)}${Date.now()}-${randomUUID()}`)
+    if (directoryId(from) !== sourceId || directoryId(to) !== targetId ||
+      parent !== realpathSync.native(dirname(from)) || !validateTargetLocation(from, to) || entry(backup)) {
+      return write({ ok: false, error: badLocation })
+    }
+    const move: StorageSwitch = { version: 1, from, parent, to, backup, sourceId, targetId, digest: contentDigest(after.content) }
+    publishSwitch(move)
     try {
+      if (entry(backup) || directoryId(from) !== sourceId || parent !== realpathSync.native(dirname(from))) throw new Error(badLocation)
       renameSync(from, backup)
-    } catch (e) {
-      return write({ ok: false, error: pick(`原目录被占用，无法切换（请关掉终端里的 pi 后重试）：${e instanceof Error ? e.message : String(e)}`, `The original folder is in use and cannot be switched (close pi in terminals and retry): ${e instanceof Error ? e.message : String(e)}`) })
+    } catch (error) {
+      if (!entry(backup) && directoryId(from) === sourceId) rmSync(SWITCH_FILE())
+      throw error
     }
-    try {
-      symlinkSync(to, from, 'junction')
-    } catch (e) {
-      const why = e instanceof Error ? e.message : String(e)
-      try {
-        renameSync(backup, from)
-      } catch (e2) {
-        return write({ ok: false, leftover: backup, error: pick(`无法建立联接，也无法自动恢复原目录。你的数据完整保存在：${backup}（把它改回「agent」即可恢复）。${why}；${e2 instanceof Error ? e2.message : String(e2)}`, `Cannot create the junction or restore the original folder. Your data is intact at: ${backup} (rename it back to "agent" to restore). ${why}; ${e2 instanceof Error ? e2.message : String(e2)}`) })
-      }
-      return write({ ok: false, error: pick(`无法在原位置建立联接，已恢复原状：${why}`, `Cannot create a junction at the original location. Restored: ${why}`) })
-    }
+    if (directoryId(backup) !== sourceId || directoryId(to) !== targetId || !validateTargetLocation(from, to)) throw new Error(badLocation)
+    symlinkSync(to, from, 'junction')
+    expectSwitched(move)
     report({ phase: 'cleanup' })
-    return write({ ok: true, leftover: backup })
-  } catch (e) {
-    const stranded = !existsSync(from) ? findBackup(from) : undefined
-    return write({ ok: false, ...(stranded ? { leftover: stranded } : {}), error: e instanceof Error ? e.message : String(e) })
-  } finally {
-    rmSync(LOCK_FILE(), { force: true })
+    const result = write({ ok: true, leftover: backup })
+    rmSync(SWITCH_FILE())
+    return result
+  } catch (error) {
+    if (entry(SWITCH_FILE())) throw switchBlocked(from, `${SWITCH_FILE()}\n${to}\n${error instanceof Error ? error.message : String(error)}`)
+    return write({ ok: false, error: error instanceof Error ? error.message : String(error) })
   }
 }
 
@@ -296,11 +449,11 @@ export function storageInfo(): StorageInfo {
   const agentDir = storageMovable() ? defaultAgentDir() : PI_AGENT_DIR
   let realDir = agentDir
   try {
-    realDir = realpathSync(agentDir)
+    realDir = realpathSync.native(agentDir)
   } catch {
   }
   const relocated = isJunction(agentDir)
-  const oldCopy = relocated ? findBackup(agentDir) : undefined
+  const oldCopy = relocated && !entry(SWITCH_FILE()) && existsSync(agentDir) ? findBackup(agentDir, realDir) : undefined
   return {
     agentDir,
     realDir,
@@ -315,11 +468,13 @@ export function storageInfo(): StorageInfo {
 
 export async function trashOldStorageCopy(path: string, trash: (path: string) => Promise<void>): Promise<{ ok: boolean; error?: string }> {
   const info = storageInfo()
-  if (!info.oldCopy || !path || resolve(path).toLowerCase() !== resolve(info.oldCopy).toLowerCase() || resolve(info.oldCopy).toLowerCase() === resolve(info.realDir).toLowerCase()) {
+  if (!info.oldCopy || !path || relative(info.oldCopy, resolve(path))) {
     return { ok: false, error: pick('这不是迁移前的旧数据目录', 'This is not the pre-move data folder') }
   }
-  if (!isPlainDirectory(info.oldCopy)) return { ok: false, error: pick('旧数据不是普通文件夹，已拒绝处理', 'The old data is not a regular folder; refused') }
   try {
+    if (!directoryId(info.oldCopy) || overlaps(realpathSync.native(info.oldCopy), realpathSync.native(info.agentDir))) {
+      return { ok: false, error: pick('无法确认这是独立的旧数据目录，已拒绝处理', 'Cannot verify that this is a separate old data folder; refused') }
+    }
     await trash(info.oldCopy)
     return { ok: true }
   } catch (error) {
