@@ -123,12 +123,13 @@ export async function clearExitSnapshot(): Promise<void> {
   await rm(EXIT_SNAPSHOT_FILE, { force: true })
 }
 
+function restoreCandidates(snapshot: ExitSnapshot): ExitSnapshot['runners'] {
+  return snapshot.runners.filter((runner) => runner.sessionFile)
+    .sort((a, b) => Number(b.running) - Number(a.running) || b.lastActiveAt - a.lastActiveAt)
+}
+
 export function pickRestoreRunner(snapshot: ExitSnapshot): ExitSnapshot['runners'][number] | undefined {
-  const usable = snapshot.runners.filter((runner) => runner.sessionFile)
-  if (!usable.length) return undefined
-  const interrupted = usable.filter((runner) => runner.running)
-  if (interrupted.length) return interrupted.sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0]
-  return [...usable].sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0]
+  return restoreCandidates(snapshot)[0]
 }
 
 export interface SessionRestore {
@@ -157,20 +158,25 @@ async function usableSessionFile(sessionFile: string | undefined): Promise<strin
 async function restoreFromExitSnapshot(): Promise<SessionRestore | undefined> {
   const snapshot = await readExitSnapshot().catch(() => null)
   if (!snapshot) return undefined
-  const runner = pickRestoreRunner(snapshot)
+  for (const runner of restoreCandidates(snapshot)) {
+    const sessionFile = await usableSessionFile(runner.sessionFile)
+    if (!sessionFile) continue
+    await clearExitSnapshot().catch(() => undefined)
+    return { sessionFile, interrupted: runner.running || (await turnsWereInterrupted(sessionFile)) }
+  }
   await clearExitSnapshot().catch(() => undefined)
-  const sessionFile = await usableSessionFile(runner?.sessionFile)
-  if (!sessionFile) return undefined
-  return { sessionFile, interrupted: runner?.running === true || (await turnsWereInterrupted(sessionFile)) }
+  return undefined
 }
 
 async function restoreLastSession(): Promise<SessionRestore | undefined> {
   const layout = await getSessionLayout().catch(() => null)
   const candidates = (layout?.entries ?? []).filter((entry) => !!entry.sessionFile && !entry.archivedAt)
-  const latest = candidates.sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))[0]
-  const sessionFile = await usableSessionFile(latest?.sessionFile)
-  if (!sessionFile) return undefined
-  return { sessionFile, interrupted: await turnsWereInterrupted(sessionFile) }
+  candidates.sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))
+  for (const entry of candidates) {
+    const sessionFile = await usableSessionFile(entry.sessionFile)
+    if (sessionFile) return { sessionFile, interrupted: await turnsWereInterrupted(sessionFile) }
+  }
+  return undefined
 }
 
 export async function restorePreviousSession(): Promise<SessionRestore | undefined> {

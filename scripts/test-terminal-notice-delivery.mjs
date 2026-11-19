@@ -32,7 +32,7 @@ try {
         ownerKeys: () => env.keys,
         steer: async (text) => { env.calls.push(['steer', text]); return env.steerResult },
         followUp: async (text) => { env.calls.push(['followUp', text]); return env.followUpResult },
-        submitHeld: async (text) => { env.calls.push(['held', text]) },
+        submitHeld: async (text) => { env.calls.push(['held', text]); return { success: true } },
         wait: async () => { env.waits += 1; env.onWait?.(env.waits) }
       })
       return { delivery, env }
@@ -69,6 +69,25 @@ try {
       for (let i = 0; i < 12; i++) await delivery.deliver(`n${i}`, owned, false)
       await delivery.flushHeld()
       ok(env.calls.length === 10 && env.calls[0][1] === 'n2' && env.calls.at(-1)[1] === 'n11', '留存的通知只保留最近 10 条')
+    }
+
+    {
+      let attempts = 0
+      const delivery = new TerminalNoticeDelivery({
+        session: () => ({ ready: true, stopping: false, running: false }), ownerKeys: () => ['s1'],
+        steer: async () => ({ ok: true }), followUp: async () => ({ ok: true }),
+        submitHeld: async (text) => {
+          attempts++
+          if (text === 'unknown') throw new Error('connection lost')
+          return { success: attempts > 1 }
+        }
+      })
+      await delivery.deliver('retry', owned, false)
+      await delivery.deliver('unknown', owned, false)
+      await delivery.flushHeld()
+      await delivery.flushHeld()
+      await delivery.flushHeld()
+      ok(attempts === 3, '明确拒绝后补发一次，结果未知不重发')
     }
 
     {

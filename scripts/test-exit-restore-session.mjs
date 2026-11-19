@@ -51,7 +51,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
   await mod.writeExitSnapshot('save', [status(outside, true)])
   ok((await mod.restorePreviousSession()) === undefined && mod.takeRestoreNotice() === undefined, '会话目录外的文件不恢复')
 
+  const missing = join(dir, 'missing.jsonl')
+  await mod.writeExitSnapshot('save', [status(done, false), { ...status(missing, true), lastActiveAt: 10 }])
+  const second = await mod.restorePreviousSession()
+  ok(second?.sessionFile === done && second.interrupted === false, '退出快照首选缺失时恢复下一可用会话')
+
   await mod.rememberSession({ sessionId: 'layout-1', sessionFile: done, cwd: 'C:/work' })
+  await mod.rememberSession({ sessionId: 'layout-2', sessionFile: missing, cwd: 'C:/work', opened: true })
   const fromLayout = await mod.restorePreviousSession()
   ok(fromLayout?.sessionFile === done && fromLayout.interrupted === false, '没有快照时按最近打开的会话恢复')
 })

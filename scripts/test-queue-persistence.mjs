@@ -101,7 +101,7 @@ await check('只有图片没有文本的排队项也完整保存', async () => {
   assert.deepEqual(saved.items.followUp, [{ text: '', images: [png] }])
 })
 
-await check('长文本不再截断，条数上限仍生效', async () => {
+await check('旧超限队列完整读写，不截断长文本或末尾条目', async () => {
   const long = 'x'.repeat(30_000)
   await saveQueue({
     sessionId: 'session-long',
@@ -109,7 +109,8 @@ await check('长文本不再截断，条数上限仍生效', async () => {
     followUp: []
   })
   const saved = await loadQueue('session-long')
-  assert.equal(saved.steering.length, 200)
+  assert.equal(saved.steering.length, 210)
+  assert.equal(saved.steering.at(-1), `${long}-209`)
   assert.equal(saved.steering[0], `${long}-0`)
 })
 

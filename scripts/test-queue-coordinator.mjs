@@ -111,6 +111,18 @@ try {
     }
 
     {
+      const rpc = fakeRpc(() => ({ success: true, data: { disposition: 'queued' } }))
+      const { queue } = harness({ rpc })
+      queue.publish([], Array.from({ length: 199 }, (_, i) => `queued-${i}`))
+      const submit = (text) => queue.run(() => queue.submit('follow_up', text, undefined, 'followUp', { message: text }))
+      ok((await submit('第 200 条')).success, '允许队列达到 200 条')
+      const result = await submit('第 201 条')
+      ok(!result.success && /200/.test(result.error) && rpc.calls.length === 1 && queue.state.followUp.length === 200, '超限先拒绝，不调用 RPC，不改已有队列')
+      ok((await queue.run(() => queue.submit('steer', '插话', undefined, 'steering', { message: '插话' }))).success, '插话与排队分别计数')
+      await queue.flush()
+    }
+
+    {
       const rpc = fakeRpc(() => ({ success: false, error: 'rejected' }))
       const { queue } = harness({ rpc })
       const res = await queue.run(() => queue.submit('follow_up', 'x', [red], 'followUp', queue.payload({ text: 'x', images: [red] })))

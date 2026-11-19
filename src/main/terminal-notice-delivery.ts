@@ -17,13 +17,13 @@ export interface TerminalNoticeDeliveryDeps {
   ownerKeys(): string[]
   steer(text: string): Promise<{ ok: boolean }>
   followUp(text: string): Promise<{ ok: boolean }>
-  submitHeld(text: string): Promise<unknown>
+  submitHeld(text: string): Promise<{ success: boolean }>
   wait?(ms: number): Promise<void>
 }
 
 export class TerminalNoticeDelivery {
   private pending = 0
-  private held: { text: string; stillOwner: () => boolean }[] = []
+  private held: { text: string; stillOwner: () => boolean; failures?: number }[] = []
 
   constructor(private readonly deps: TerminalNoticeDeliveryDeps) {}
 
@@ -56,7 +56,15 @@ export class TerminalNoticeDelivery {
     this.held = []
     for (const item of held) {
       if (!item.stillOwner()) continue
-      await this.deps.submitHeld(item.text).catch(() => undefined)
+      try {
+        const result = await this.deps.submitHeld(item.text)
+        if (result.success || !item.stillOwner()) continue
+        const failures = (item.failures ?? 0) + 1
+        if (failures < MAX_FAILURES) this.held = [...this.held, { ...item, failures }].slice(-HELD_TERMINAL_NOTICES_MAX)
+        else console.warn('[agent] Background terminal notice retry limit reached')
+      } catch {
+        console.warn('[agent] Background terminal notice delivery is unknown; not retrying')
+      }
     }
   }
 

@@ -118,14 +118,17 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
       try {
         const summary = await runBackup()
         if (aborted()) return { install: false, reason: 'aborted' }
+        if (!state.automatic) return { install: false, reason: 'disabled' }
         autoUpdater.autoInstallOnAppQuit = true
         state.error = undefined
         return { install: true, reason: 'backed-up', backup: summary }
       } catch (error) {
         if (aborted()) return { install: false, reason: 'aborted' }
+        if (!state.automatic) return { install: false, reason: 'disabled' }
         const reason = error instanceof Error ? error.message : String(error)
         const proceed = await askWithoutBackup(reason)
         if (aborted()) return { install: false, reason: 'aborted' }
+        if (!state.automatic) return { install: false, reason: 'disabled' }
         if (proceed) {
           autoUpdater.autoInstallOnAppQuit = true
           return { install: true, reason: 'accepted-without-backup' }
@@ -289,7 +292,7 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean, backup
     let scheduled = false
     try {
       const summary = await runBackup().catch(() => null)
-      if (!summary || busy() || state.phase !== 'downloaded') return
+      if (!summary || !state.automatic || busy() || state.phase !== 'downloaded') return
       manualInstall = { reason: 'backed-up', backup: summary }
       scheduled = true
       autoUpdater.quitAndInstall(true, true)

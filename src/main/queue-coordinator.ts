@@ -6,7 +6,7 @@ import { isHostTextNotice } from '../shared/host-notice-text'
 import type { PiRpc } from './protocol'
 import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
 import { applyQueueRewrite, planQueueEditOp, type QueueRewritePort, type QueueRewriteResult } from './queue-edit'
-import { clearQueueFile, keepReclaimedQueue, loadQueue, saveQueue, type PersistedQueueItem } from './queue-persistence'
+import { clearQueueFile, keepReclaimedQueue, loadQueue, MAX_QUEUE_ITEMS_PER_KIND, saveQueue, type PersistedQueueItem } from './queue-persistence'
 
 export interface QueueOwner {
   rpc: PiRpc | null
@@ -214,6 +214,9 @@ export class QueueCoordinator {
   }
 
   async submit(command: 'prompt' | 'steer' | 'follow_up', text: string, images: QueueImages, kind: QueueKind, payload: Record<string, unknown>) {
+    if (this.state[kind].length >= MAX_QUEUE_ITEMS_PER_KIND) {
+      return { success: false, error: pick(`这类排队消息已达到 ${MAX_QUEUE_ITEMS_PER_KIND} 条上限，请先处理已排队的消息。`, `This queue has reached its ${MAX_QUEUE_ITEMS_PER_KIND}-message limit. Process some queued messages first.`) }
+    }
     const item = this.newItem(text, images)
     const rpc = this.requireRpc()
     this.state = { ...this.state, [kind]: [...this.state[kind], item] }

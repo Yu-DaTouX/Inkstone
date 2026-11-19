@@ -88,6 +88,31 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const cleared = await prefsWhen((prefs) => prefs.pending === undefined)
     ok(model.installs.length === 0 && cleared.pending === undefined, '装好后启动清掉待装记录，不重复安装', `installs=${model.installs.length} prefs=${JSON.stringify(cleared)}`)
 
+    await writeFile(prefsFile, JSON.stringify({ automatic: true, pending: '0.3.4' }))
+    model.release = { ...model.release, tag_name: 'v0.3.4' }
+    const handlers = new Map()
+    let finishBackup
+    let signalBackup
+    const backupStarted = new Promise((resolve) => { signalBackup = resolve })
+    const control = mod.registerAppUpdate({ handle: (name, fn) => handlers.set(name, fn) }, () => false, () => new Promise((finish) => {
+      finishBackup = finish
+      signalBackup()
+    }))
+    await Promise.race([backupStarted, wait(2000).then(() => { if (!finishBackup) throw Error('startup backup did not begin') })])
+    await handlers.get('yan:update:automatic')(false)
+    finishBackup({ file: 'b.zip' })
+    await wait(20)
+    ok(model.installs.length === 0, '启动备份期间关闭自动更新，备份完成后不调用安装器')
+
+    await handlers.get('yan:update:automatic')(true)
+    finishBackup = undefined
+    const preparing = control.prepareAutomaticInstallOnQuit()
+    if (!finishBackup) throw Error('quit backup did not begin')
+    await handlers.get('yan:update:automatic')(false)
+    finishBackup({ file: 'b.zip' })
+    const prepared = await preparing
+    ok(!prepared.install && prepared.reason === 'disabled', '退出备份期间关闭自动更新，不授权退出安装')
+
     await writeFile(prefsFile, JSON.stringify({ automatic: false, pending: '0.3.4' }))
     model.release = { ...model.release, tag_name: 'v0.3.4' }
     model.installs = []

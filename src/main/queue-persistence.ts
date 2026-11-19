@@ -5,7 +5,7 @@ import { atomicWriteFile } from './atomic-write'
 
 export const QUEUE_RECOVERY_DIR = join(YAN_DIR, 'queue-recovery')
 
-const MAX_ITEMS = 200
+export const MAX_QUEUE_ITEMS_PER_KIND = 200
 
 export interface PersistedQueueImage {
   data: string
@@ -60,7 +60,6 @@ function cleanItems(value: unknown): PersistedQueueItem[] {
       return images.length ? { text, images } : { text }
     })
     .filter((item): item is PersistedQueueItem => item !== null)
-    .slice(0, MAX_ITEMS)
 }
 
 const textsOf = (items: PersistedQueueItem[]): string[] => items.map((item) => item.text).filter((text) => text.trim().length > 0)
