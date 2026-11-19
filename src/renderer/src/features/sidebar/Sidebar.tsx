@@ -4,6 +4,7 @@ import { useNavigationMotionHold } from './use-navigation-motion-hold'
 import './Sidebar.css'
 
 interface Props {
+  inert?: boolean
   onClose?: () => void
   onArtifacts?: () => void
   onSettings?: () => void

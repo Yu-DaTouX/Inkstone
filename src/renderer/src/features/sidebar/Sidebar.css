@@ -101,7 +101,10 @@
     width: var(--side-panel-w);
     opacity: 0;
     transform: translateX(-100%);
-    transition: opacity var(--panel-dur, var(--dur-base)) var(--ease), transform var(--panel-dur, var(--dur-base)) var(--ease), visibility 0s linear var(--panel-dur, var(--dur-base));
+    transition: opacity var(--panel-dur, var(--dur-sheet)) var(--ease), transform var(--panel-dur, var(--dur-sheet)) var(--ease), visibility 0s linear var(--panel-dur, var(--dur-sheet));
+  }
+  .v3-root[data-narrow='1'][data-side='closed']:not(:has(> .v3-scrim)) .v3-side {
+    transition: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .v3-side, .v3-side > *, .v3-root[data-side='closed'] .v3-side { transition: none; }

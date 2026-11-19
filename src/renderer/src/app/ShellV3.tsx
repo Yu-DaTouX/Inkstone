@@ -572,20 +572,22 @@ export default function ShellV3(): ReactElement {
   }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab, lang, stepSessionSwitcher])
 
   const drawerOpen = sidebarCompact && sidebarOpen
-  const drawerWasOpen = useRef(false)
-  useEffect(() => {
-    const was = drawerWasOpen.current
-    drawerWasOpen.current = drawerOpen
-    if (drawerOpen === was) return
-    if (drawerOpen) {
+  const drawerPresence = usePresence(drawerOpen, { animate: sidebarCompact && panelMotionMs > 0, exit: panelMotionMs })
+  const sideState = drawerOpen ? 'drawer' : sidebarOpen ? 'docked' : drawerPresence.present ? 'closing' : 'closed'
+  const lastSideState = useRef(sideState)
+  useLayoutEffect(() => {
+    const was = lastSideState.current
+    lastSideState.current = sideState
+    if (sideState === was) return
+    if (sideState === 'drawer') {
       document.querySelector<HTMLElement>('.v3-side')?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')?.focus({ preventScroll: true })
       return
     }
-    if (!sidebarCompact) return
+    if (sideState !== 'closed') return
     const active = document.activeElement
     if (active && active !== document.body && !active.closest('.v3-side')) return
     document.querySelector<HTMLElement>('[data-testid="v3-rail-toggle"]')?.focus({ preventScroll: true })
-  }, [drawerOpen, sidebarCompact])
+  }, [sideState])
 
   const sidebarActions = useMemo(() => ({
     onClose: () => useUiV3.getState().setSidebarOpen(false),
@@ -604,15 +606,15 @@ export default function ShellV3(): ReactElement {
   return (
     <V3ErrorBoundary>
       <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}>
-        {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} /> : null}
+        {!sidebarOpen && !drawerPresence.present ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} /> : null}
         <FocusScope contain={drawerOpen}>
-          <Sidebar {...sidebarActions} />
+          <Sidebar {...sidebarActions} inert={!sidebarOpen || sidebarDragHidden} />
         </FocusScope>
         {(sidebarOpen || sidebarDragHidden) && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} largeStep={SIDEBAR_WIDTH_STEP_LARGE} collapseBelow={SIDEBAR_DRAG_COLLAPSE} onCollapse={() => useUiV3.getState().setSidebarOpen(false)} onDragHide={setSidebarDragHidden} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={draftSidebarWidth} /> : null}
-        {sidebarCompact && sidebarOpen ? (
+        {drawerPresence.present ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
-        <main className="v3-main" inert={drawerOpen}>
+        <main className="v3-main" inert={drawerPresence.present}>
           <Header
             narrow={narrow}
             sidebarOverlay={sidebarCompact}
@@ -667,6 +669,7 @@ export default function ShellV3(): ReactElement {
         </main>
         {route.name === 'chat' ? (
           <RightPanelT3
+            panelMotionMs={panelMotionMs}
             owner={owner.key ? owner : null}
             mode={panelMode}
             room={panelRoomWidth}

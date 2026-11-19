@@ -42,6 +42,7 @@ export interface SheetChrome {
 }
 
 export interface PanelFrameProps {
+  inlineExitMs?: number;
   mode: PanelMode;
   open: boolean;
   maximized?: boolean;

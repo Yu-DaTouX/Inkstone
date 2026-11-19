@@ -27,7 +27,7 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
     sheet,
     testId = "rp",
   } = props;
-  const presence = usePresence(open, { animate: mode === "inline" && !maximized, exit: "sheet" });
+  const presence = usePresence(open, { animate: mode === "inline" && !maximized && props.inlineExitMs !== 0, exit: props.inlineExitMs ?? "sheet" });
   const sheetOpen = mode === "sheet" && open;
 
   useEffect(() => {

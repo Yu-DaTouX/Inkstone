@@ -24,11 +24,7 @@
     flex: none;
     width: min(var(--rp-w), var(--rp-dock, var(--rp-w)));
   }
-  .t3-rp--collapsible {
-    transition: width var(--panel-dur, var(--dur-sheet));
-  }
   .t3-rp--collapsed {
-    width: 0;
     pointer-events: none;
   }
   .t3-rp > .t3-rp__resize {

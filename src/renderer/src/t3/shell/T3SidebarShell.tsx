@@ -75,6 +75,7 @@ const SHELF_PAGE_SIZE = 10
 const PROJECT_FILTER_KEY = 'inkstone.v3.sidebarProjectFilter'
 
 export interface T3SidebarShellProps {
+  inert?: boolean
   onClose?: () => void
   onArtifacts?: () => void
   onSettings?: () => void
@@ -513,7 +514,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const closeLabel = text.toggleSidebar
 
   return (
-    <aside ref={asideRef} className="v3-side" aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="comfortable">
+    <aside ref={asideRef} inert={props.inert} className="v3-side" aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="comfortable">
       <div
         data-slot="sidebar-wrapper"
         data-sidebar-state="open"

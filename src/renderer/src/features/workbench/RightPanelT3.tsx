@@ -27,6 +27,7 @@ import { baseName } from '../../t3/adapters/surfaces'
 export type RightPanelMode = 'inline' | 'sheet'
 
 export interface RightPanelProps {
+  panelMotionMs: number
   owner: WorkspaceOwner | null
   mode: RightPanelMode
   room: number
@@ -58,7 +59,7 @@ export function requestNewPanelMenu(): void {
   useNewPanelRequest.getState().request()
 }
 
-export function RightPanelT3({ owner, mode, room, dock, span, panes, windowControls, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
+export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotionMs, windowControls, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
   const { lang } = useI18n()
   const text = workbenchText(lang)
   const panel = rightPanelText(lang)
@@ -217,7 +218,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
           <div className="rp-surfaces">
             {group.surfaces
               .filter((item) => visitedIds.has(item.id) || item.id === group.active)
-              .map((surface) => renderSurface(surface, entry.open && surface.id === group.active))}
+              .map((surface) => renderSurface(surface, surface.id === group.active))}
           </div>
         </section>
       ])}
@@ -261,13 +262,14 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
     columns
   ) : owner ? (
     <div className="rp-surfaces" key={owner.key}>
-      {mounted.map((surface) => renderSurface(surface, entry.open && surface.id === entry.active))}
+      {mounted.map((surface) => renderSurface(surface, (mode === 'inline' || entry.open) && surface.id === entry.active))}
     </div>
   ) : null
 
   return (
     <>
       <RightPanelFrame
+        inlineExitMs={panelMotionMs}
         mode={mode}
         open={entry.open}
         maximized={adapter.maximized}
