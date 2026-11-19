@@ -237,6 +237,20 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
 
     {
+      const body = `return await parallel([agent('A'), agent('B'), agent('C')])`
+      const fake = fakeController({ answer: (run) => run.params.task === 'A' ? 'hang' : { text: `首跑:${run.params.task}`, delay: run.params.task === 'B' ? 25 : 1 } })
+      const first = start({ fake, body })
+      for (let i = 0; i < 300 && first.runner.agents.filter(agent => agent?.status === 'done').length < 2; i++) await delay(5)
+      await first.runner.stop()
+      const stopped = await first.outcome
+      const previous = await journalOf(first.file)
+      ok(stopped.status === 'stopped' && previous.get(0)?.status === 'stopped' && previous.get(1)?.result === '首跑:B' && previous.get(2)?.result === '首跑:C', 'A 未完成时停止，较后的两个并行结果仍按原调用归档')
+      const again = fakeController({ answer: run => ({ text: `恢复:${run.params.task}`, delay: run.params.task === 'C' ? 25 : 1 }) })
+      const resumed = await start({ fake: again, body, previous, attempt: 2, journalFile: first.file }).outcome
+      ok(resumed.status === 'done' && resumed.json === '["恢复:A","恢复:B","恢复:C"]' && again.started.map(run => run.params.task).join() === 'A,B,C', '恢复从第一处中断调用重跑其后分支，不会把旧结果接给别的调用', resumed.json)
+    }
+
+    {
       const fake = fakeController({ answer: () => ({ text: 'x', delay: 20 }) })
       const run = start({ fake, concurrency: 1, body: `const out = []\nfor (const t of ['a', 'b', 'c']) out.push(await agent(t))\nreturn out.length` })
       while (fake.started.length < 1) await delay(2)

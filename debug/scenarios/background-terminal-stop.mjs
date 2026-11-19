@@ -12,7 +12,7 @@ const SHAPE = `(() => {
   return { messages: s.messages.length, running: !!(s.session?.isStreaming || s.session?.isAgentRunning), roles: s.messages.map((m) => m.role) }
 })()`
 
-export default async function run({ cdp, fake, box, check, report, sleep, shot, log, newSession, turn }) {
+export default async function run({ cdp, fake, box, check, report, sleep, shot, log, newSession, turn, state, waitFor }) {
   const ev = (expr) => cdp.evaluate(expr)
   await newSession(box.project)
   await turn('BGTERMINAL BGSECONDS600 后台服务', { timeout: 60000 })
@@ -22,6 +22,11 @@ export default async function run({ cdp, fake, box, check, report, sleep, shot, 
   check('回合收尾时后台命令还在运行', !!job, jobs)
 
   const before = await ev(SHAPE)
+  const source = await state('s.session.sessionFile')
+  await newSession(box.projects[1] ?? box.project)
+  await turn('另一个会话：保持空闲', { timeout: 60000 })
+  const other = await state('s.session.sessionFile')
+  const otherBefore = await ev(SHAPE)
   const requestsBefore = fake.requests.length
   const stopped = await ev(`window.yan.terminal.stopJob(${JSON.stringify(job?.id ?? '')})`)
   let after = []
@@ -33,6 +38,11 @@ export default async function run({ cdp, fake, box, check, report, sleep, shot, 
   check('用户停止后任务记为 stopped', stopped === true && after.find((item) => item.id === job?.id)?.state === 'stopped', after)
 
   await sleep(9000)
+  const otherAfter = await ev(SHAPE)
+  const otherNotices = await ev(NOTICES)
+  check('后台任务属于来源会话，不写入当前查看的另一会话', other !== source && await state('s.session.sessionFile') === other && otherAfter.messages === otherBefore.messages && otherNotices.length === 0, { otherBefore, otherAfter, otherNotices })
+  await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(source)})`)
+  await waitFor(`s.session?.sessionFile===${JSON.stringify(source)} && !s.historyLoading && !s.switchLoading && s.messages.length>=${before.messages}`)
   const idle = await ev(SHAPE)
   const idleNotices = await ev(NOTICES)
   report.idle = { before, idle, requests: fake.requests.length - requestsBefore, notices: idleNotices.length }

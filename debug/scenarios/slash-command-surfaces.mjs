@@ -89,6 +89,15 @@ export default async function run({ cdp, box, newSession, turn, waitFor, state, 
     await cancel('export-cancel', '覆盖导出文件')
     if (readFileSync(file, 'utf8') !== before) throw Error('取消后文件发生改变')
   })
+  await step('/export HTML 落盘且保留合成会话正文', async () => {
+    const htmlPath = join(box.project, 'slash fixture.html')
+    await command(`/export "${htmlPath}"`)
+    for (let i = 0; i < 50 && !existsSync(htmlPath); i++) await sleep(100)
+    const html = readFileSync(htmlPath, 'utf8')
+    const data = /<script\b[^>]*\bid="session-data"[^>]*>([\s\S]*?)<\/script>/i.exec(html)?.[1]
+    if (!data || !Buffer.from(data.trim(), 'base64').toString('utf8').includes('SlashSurfaceMarker')) throw Error('HTML 载荷缺少合成会话正文')
+    if (await readPath() !== original) throw Error('HTML 导出切换了当前会话')
+  })
   await step('/trust 确认在模态内且可取消', async () => {
     await command('/trust')
     await wait(visible('native-trust-state'))

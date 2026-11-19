@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 
 export const meta = { description: '工具行无箭头、收起竖线不残留、@菜单不跟随鼠标、更改卡文件可点击；仅隔离合成数据' }
 
-export default async function run({ cdp, box, newSession, sleep, check, shot, report, waitFor }) {
+export default async function run({ cdp, box, newSession, sleep, check, shot, report, waitFor, state, turn }) {
   const ev = (code) => cdp.evaluate(code)
   await newSession()
   await ev(`window.__yanStore.getState().patchSettings({theme:'dark',lang:'zh-CN',rightPanelOpen:false,promptSuggestions:false,reduceMotion:false})`)
@@ -140,4 +140,25 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
   check('点击改动卡通过宿主读文件并显示预览正文', realFile && await ev(`window.__yanStore.getState().filePreview?.data?.ok===true&&document.querySelector('[data-testid="v3-preview-text"]')?.textContent.includes('four-preview-content')`))
   await sleep(600)
   await shot('changes-real-preview-light')
+
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1210, height: 900, deviceScaleFactor: 1, mobile: false })
+  const tiles = []
+  for (const project of [box.projects[1] ?? box.project, box.project]) {
+    await newSession(project)
+    await turn('分屏改动卡夹具')
+    tiles.push({ sessionId: await state('s.session.sessionId'), path: await state('s.session.sessionFile') })
+  }
+  await ev(`window.__yanRightPanel.getState().setOpen(false);window.__yanSplit.getState().apply({tiles:${JSON.stringify(tiles)},live:1})`)
+  const activePane = `[data-tile-key="${tiles[1].sessionId}"]`
+  await waitFor(`document.querySelectorAll('[data-tile-key]').length===2 && !!document.querySelector(${JSON.stringify(activePane)})`)
+  await showChanges([longPath])
+  await waitFor(`document.querySelector(${JSON.stringify(`${activePane} [data-testid="v3-turn-changes-ignored"]`)})?.textContent==='Git 已忽略'`)
+  const split = await ev(`(()=>{
+    const pane=document.querySelector(${JSON.stringify(activePane)}),card=pane.querySelector('[data-testid="v3-turn-changes"]'),rect=card.getBoundingClientRect();
+    const fields=['v3-turn-changes-label','v3-turn-changes-summary','v3-turn-changes-ignored','v3-turn-change-file'];
+    const visible=fields.every(testid=>{const node=card.querySelector('[data-testid="'+testid+'"]'),range=document.createRange();range.selectNodeContents(node);const parts=[...range.getClientRects()];return parts.length>0&&parts.every(r=>r.left>=rect.left-1&&r.right<=rect.right+1)});
+    return {width:Math.round(rect.width),visible,filename:card.querySelector('.v3-chg-base')?.textContent,otherHasCard:!!document.querySelector(${JSON.stringify(`[data-tile-key="${tiles[0].sessionId}"] [data-testid="v3-turn-changes"]`)})};
+  })()`)
+  check('窄分屏中改动卡信息可读，未串入另一格', split.width < 550 && split.visible && split.filename === '双端对比.md' && !split.otherHasCard, split)
+  await shot('changes-light-split-ignored')
 }

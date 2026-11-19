@@ -1,7 +1,7 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { parseHTML } from 'linkedom'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const stubs = {

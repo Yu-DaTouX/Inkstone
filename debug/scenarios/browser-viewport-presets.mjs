@@ -26,7 +26,7 @@ export default async function run({ cdp, newSession, check, waitFor, shot, runDi
     }
     const active = `s.browserState.tabs.find(tab => tab.id === s.browserState.activeTabId)`
     const first = await ev(`window.__yanStore.getState().browserState.activeTabId`)
-    for (const [name, expected] of [['mobile-wide', '430×932:touch'], ['tablet-landscape', '1024×768:mouse'], ['desktop-wide', '1440×900:mouse']]) {
+    for (const [name, expected] of [['mobile-wide', '430×932:touch'], ['tablet', '768×1024:mouse'], ['tablet-landscape', '1024×768:mouse'], ['desktop', '1280×800:mouse'], ['desktop-wide', '1440×900:mouse']]) {
       await choose(name)
       await waitFor(`${active}?.viewport === ${JSON.stringify(name)} && s.browserState.title === ${JSON.stringify('probe:' + expected)}`, 15000)
       check(`${name} 页面实际尺寸与输入模式正确`, true, expected)
@@ -43,6 +43,7 @@ export default async function run({ cdp, newSession, check, waitFor, shot, runDi
     check('新标签不继承预设，原标签维持原设置', await ev(`(() => { const s = window.__yanStore.getState(); return !${active}?.viewport && s.browserState.tabs.find(t => t.id === ${JSON.stringify(first)})?.viewport === 'desktop-wide' })()`))
     await choose('mobile')
     await waitFor(`s.browserState.title === 'probe:375×812:touch'`)
+    check('mobile 页面实际尺寸与触屏正确', true, '375×812:touch')
     await choose('responsive')
     await waitFor(`${active}?.viewport === 'responsive' && s.browserState.title?.endsWith(':mouse') && s.browserState.title !== 'probe:375×812:mouse'`)
     check('回到自适应后清除固定尺寸与触屏', true)
