@@ -56,6 +56,48 @@ export function moreFlows({ boot, openSession, check, env }) {
     await ctx.close()
   }
 
+  async function flowResync() {
+    const tag = '[回连补齐]'
+    let gate = null
+    const ctx = await boot({ desktop: { tweak(handlers) {
+      handlers.questions = async () => { if (gate) await gate.promise; return [] }
+    } } })
+    const { desk, h } = ctx
+    try {
+      await h.waitFor(() => h.matchLabel(/已连接/).length, `${tag} 已连接`)
+      desk.state.running = true
+      desk.state.queue = { 's-1': { steering: [], followUp: ['旧队列'] } }
+      desk.state.subagents = [{ id: 'sub-resync', title: '旧子代理名', task: '夹具', status: 'running', startedAt: Date.now(), toolCalls: 1 }]
+      await openSession(h, '第一个会话')
+      desk.server.publish({ ch: 'state', payload: {}, runtime: { sessionId: 's-1' } })
+      await h.waitFor(() => h.byLabel('停止当前运行').length, `${tag} 断线前已显示运行中`)
+      await h.pressLabel('打开会话详情')
+      await h.waitFor(() => h.has('旧子代理名') && h.has('旧队列'), `${tag} 初始会话资料`)
+
+      const historyReads = () => desk.calls.filter(([op, id, limit]) => op === 'history' && id === 's-1' && limit > 12).length
+      const before = historyReads()
+      desk.server.publish({ ch: 'stats', payload: desk.state.stats, runtime: { sessionId: 's-2' } })
+      await h.settle(150)
+      desk.server.disconnectAll()
+      desk.state.running = false
+      desk.state.messages.push({ id: 'resync-reply', role: 'assistant', text: '断线期间的新正文', timestamp: Date.now() })
+      desk.state.queue = {}
+      desk.state.subagents = [{ ...desk.state.subagents[0], title: '更新后的子代理', status: 'done', endedAt: Date.now() }]
+      let release
+      gate = { promise: new Promise(resolve => { release = resolve }), release }
+      for (let i = 0; i < 1001; i++) desk.server.publish({ ch: 'stats', payload: desk.state.stats, runtime: { sessionId: 's-2' } })
+      try {
+        await h.waitFor(() => !h.byLabel('停止当前运行').length, `${tag} 运行状态已更新`, 5000)
+        await h.waitFor(() => h.has('断线期间的新正文') && h.has('更新后的子代理') && !h.has('旧队列'), `${tag} 待审批接口未返回时，当前页仍补齐正文、队列和子代理`, 3000)
+        check(historyReads() > before && h.byLabel('消息内容').length === 1, `${tag} 仍在原会话且重新读取正文`)
+      } finally {
+        gate.release()
+      }
+    } finally {
+      await ctx.close()
+    }
+  }
+
   async function flowSettingsPair() {
     const tag = '[设置与配对]'
     const ctx = await boot()
@@ -112,6 +154,7 @@ export function moreFlows({ boot, openSession, check, env }) {
   }
 
   return [
+    ['断线重同步', flowResync],
     ['归档与置顶', flowArchive],
     ['子代理 zh-CN', () => flowSubagents('zh-CN')],
     ['子代理 en-US', () => flowSubagents('en-US')],

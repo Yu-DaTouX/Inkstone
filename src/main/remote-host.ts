@@ -449,18 +449,21 @@ export function remoteQueueOf(
   const clipText = (text: string) => text.length > QUEUE_TEXT_MAX ? `${text.slice(0, QUEUE_TEXT_MAX)}…` : text
   const notice = hidden ?? ((text: string) => text.trimStart().startsWith('<subagent-notification'))
   if (state) {
-    const pickItems = (list: QueueItem[]) => list
-      .filter((item) => (item.text.trim() || item.images?.length) && !notice(item.text))
-      .slice(0, QUEUE_ITEMS_MAX)
+    const visible = (list: QueueItem[]) => list.filter((item) => (item.text.trim() || item.images?.length) && !notice(item.text))
+    const steeringItems = visible(state.steering)
+    const followUpItems = visible(state.followUp)
+    const pickItems = (list: QueueItem[]) => list.slice(0, QUEUE_ITEMS_MAX)
       .map((item) => ({ id: item.id, text: clipText(item.text), ...(digest ? { digest: digest(item.text) } : {}), ...(item.images?.length ? { images: item.images.length } : {}) }))
-    const steering = pickItems(state.steering)
-    const followUp = pickItems(state.followUp)
+    const steering = pickItems(steeringItems)
+    const followUp = pickItems(followUpItems)
     if (!steering.length && !followUp.length) return undefined
-    return { steering: steering.map((item) => item.text), followUp: followUp.map((item) => item.text), items: { steering, followUp } }
+    return { steering: steering.map((item) => item.text), followUp: followUp.map((item) => item.text), items: { steering, followUp }, total: steeringItems.length + followUpItems.length }
   }
   if (!snapshot) return undefined
-  const clip = (list: string[]) => list.filter((text) => text.trim() && !notice(text)).slice(0, QUEUE_ITEMS_MAX).map(clipText)
-  const queue = { steering: clip(snapshot.steering), followUp: clip(snapshot.followUp) }
+  const steering = snapshot.steering.filter((text) => text.trim() && !notice(text))
+  const followUp = snapshot.followUp.filter((text) => text.trim() && !notice(text))
+  const clip = (list: string[]) => list.slice(0, QUEUE_ITEMS_MAX).map(clipText)
+  const queue = { steering: clip(steering), followUp: clip(followUp), total: steering.length + followUp.length }
   return queue.steering.length || queue.followUp.length ? queue : undefined
 }
 

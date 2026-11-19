@@ -56,6 +56,8 @@ export function QueuedMessages({ queue, onOp }: { queue: RemoteQueue | undefined
   if (!rows.length) return null
   const shown = all ? rows : rows.slice(0, SHOWN)
   const more = rows.length - shown.length
+  const total = Math.max(queue?.total ?? rows.length, rows.length)
+  const omitted = total - rows.length
   const editable = !!onOp
   const run = async (op: RemoteQueueOp | null) => {
     if (!op || !onOp || busy) return
@@ -70,12 +72,13 @@ export function QueuedMessages({ queue, onOp }: { queue: RemoteQueue | undefined
   }
   const withdrawAll = editable ? withdrawAllOp(rows) : null
   const withdrawCount = withdrawAll?.op === 'clear' ? withdrawAll.items.length : 0
+  const withdrawLabel = pick(`撤回这 ${withdrawCount} 条`, `Withdraw these ${withdrawCount}`)
   const clearAll = () => Alert.alert(pick('撤回这些排队消息？', 'Withdraw these queued messages?'), pick(`这 ${withdrawCount} 条还没发出的消息会撤回；子代理和系统的自动通知不受影响。`, `These ${withdrawCount} unsent messages will be withdrawn; automatic subagent and system notices are kept.`), [
     { text: pick('取消', 'Cancel'), style: 'cancel' },
     { text: pick('撤回', 'Withdraw'), style: 'destructive', onPress: () => void run(withdrawAll) }
   ])
   return (
-    <View accessibilityLabel={pick(`${rows.length} 条消息等待发送`, `${rows.length} messages waiting to send`)} style={[styles.box, { backgroundColor: p.bg3 }]}>
+    <View accessibilityLabel={pick(`${total} 条消息等待发送`, `${total} messages waiting to send`)} style={[styles.box, { backgroundColor: p.bg3 }]}>
       {shown.map((row, index) => {
         const actions = queueRowActions(row, editable)
         const key = row.id ?? `${row.kind}:${index}`
@@ -93,9 +96,10 @@ export function QueuedMessages({ queue, onOp }: { queue: RemoteQueue | undefined
           </View>
         )
       })}
+      {omitted > 0 ? <Text style={[styles.link, { color: p.fgMute, fontSize: font.xs }]}>{pick(`还有 ${omitted} 条未显示`, `${omitted} more not shown`)}</Text> : null}
       {more > 0 || withdrawCount > 1 ? <View style={styles.foot}>
         {more > 0 ? <Pressable accessibilityRole="button" onPress={() => setAll(true)} style={styles.link}><Text style={{ color: p.fgMute, fontSize: font.xs }}>{pick(`还有 ${more} 条`, `${more} more`)}</Text></Pressable> : all && rows.length > SHOWN ? <Pressable accessibilityRole="button" onPress={() => setAll(false)} style={styles.link}><Text style={{ color: p.fgMute, fontSize: font.xs }}>{pick('收起', 'Collapse')}</Text></Pressable> : <View />}
-        {withdrawCount > 1 ? <Pressable accessibilityRole="button" accessibilityLabel={pick('清空排队消息', 'Clear queued messages')} disabled={busy} onPress={clearAll} style={styles.link}><Text style={{ color: p.err, fontSize: font.xs }}>{pick('全部撤回', 'Withdraw all')}</Text></Pressable> : null}
+        {withdrawCount > 1 ? <Pressable accessibilityRole="button" accessibilityLabel={withdrawLabel} disabled={busy} onPress={clearAll} style={styles.link}><Text style={{ color: p.err, fontSize: font.xs }}>{withdrawLabel}</Text></Pressable> : null}
       </View> : null}
       {error ? <Text accessibilityLiveRegion="polite" style={{ color: p.err, fontSize: font.xs }}>{error}</Text> : null}
       <EditSheet row={editing} onClose={() => setEditing(null)} onSave={async (text) => {

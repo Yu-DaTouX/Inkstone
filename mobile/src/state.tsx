@@ -174,9 +174,10 @@ export function RemoteProvider({
   const refreshQuestions = useCallback(() => guard(async () => setQuestions(await client.questions())), [client, guard])
 
   const refresh = useCallback(async () => {
-    await Promise.all([refreshStatus(), refreshQuestions(), refreshInfo()])
+    const overview = Promise.all([refreshStatus(), refreshQuestions(), refreshInfo()])
     const all = new Set<SessionEventKind>(['messages', 'subagents'])
     for (const set of listeners.current.values()) for (const listener of set) listener(all)
+    await overview
   }, [refreshStatus, refreshQuestions, refreshInfo])
 
   const debounce = useCallback((key: string, run: () => void) => {

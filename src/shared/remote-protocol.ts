@@ -202,6 +202,7 @@ export interface RemoteQueueItem {
 }
 
 export interface RemoteQueue {
+  total?: number
   steering: string[]
   followUp: string[]
   items?: { steering: RemoteQueueItem[]; followUp: RemoteQueueItem[] }

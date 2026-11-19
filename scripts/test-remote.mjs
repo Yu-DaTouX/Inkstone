@@ -12,6 +12,7 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
   const http = await import('node:http')
   const scratch = await mkdtemp(join(tmpdir(), 'yan-remote-server-test-'))
   const bigFile = join(scratch, 'big.bin')
+  let holdSend
   await writeFile(bigFile, Buffer.alloc(8 * 1024 * 1024, 7))
   const server = new RemoteServer({
     host: '127.0.0.1',
@@ -45,6 +46,10 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
       },
       async command(command) {
         calls.push(command)
+        if (holdSend && command.action === 'send' && command.text === '丢失发送回执') {
+          holdSend.accepted()
+          await holdSend.result
+        }
         return { ok: true, data: command }
       }
     }
@@ -145,6 +150,31 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
         calls.at(-1).text === '远程消息',
       '远程 messages 将稳定 sessionId 与文本一起传递，不要求切换桌面视图'
     )
+
+    {
+      let accepted, release
+      const admitted = new Promise(resolve => { accepted = resolve })
+      holdSend = { accepted, result: new Promise(resolve => { release = resolve }) }
+      const controller = new AbortController()
+      const send = (signal) => json('/remote/v1/sessions/s-1/messages', {
+        method: 'POST', signal,
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'send-lost-ack-0001' },
+        body: JSON.stringify({ text: '丢失发送回执' })
+      })
+      try {
+        const first = send(controller.signal).catch(error => error.name)
+        await admitted
+        controller.abort()
+        ok(await first === 'AbortError', '宿主接到发送后，手机在回执前掉线')
+        const retry = send()
+        release()
+        const result = await retry
+        ok(result.response.status === 200 && result.body.data.text === '丢失发送回执' && calls.filter(c => c.action === 'send' && c.text === '丢失发送回执').length === 1, '同幂等键重试返回原结果，宿主只接收一次')
+      } finally {
+        release()
+        holdSend = undefined
+      }
+    }
 
     const renamed = await json('/remote/v1/sessions/s-1/rename', {
       method: 'POST',

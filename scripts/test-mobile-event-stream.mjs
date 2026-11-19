@@ -46,9 +46,11 @@ const M = await import(`data:text/javascript;base64,${Buffer.from(built.outputFi
 const now = { value: 1_000_000, now() { return this.value } }
 const states = []
 const events = []
+const resyncs = []
+const frame = (seq) => `id: ${seq}\nevent: state\ndata: ${JSON.stringify({ seq, channel: 'state', payload: {} })}\n\n`
 const stream = new M.RemoteEventStream(
   { baseUrl: 'http://pc:1', token: 't', deviceId: 'd' },
-  { onEvent: (event) => events.push(event.seq), onResync() {}, onState: (state) => states.push(state), onUnauthorized() {} },
+  { onEvent: (event) => events.push(event.seq), onResync: (event) => resyncs.push(event), onState: (state) => states.push(state), onUnauthorized() {} },
   now
 )
 stream.start()
@@ -66,7 +68,8 @@ stream.wake()
 assert.equal(opened.length, 2, '后台挂起很久后回到前台立即重连')
 assert.ok(opened[0].aborted, '旧连接被中止')
 assert.ok(opened[1].url.endsWith('since=1'), '从上次的序号继续')
-opened[1].reply(200)
+opened[1].reply(200, frame(1) + frame(2) + frame(2) + frame(3))
+assert.deepEqual(events, [1, 2, 3], '短断线的重复事件只处理一次')
 assert.equal(states.at(-1), 'open')
 assert.equal(opened.length, 2, '被中止的旧连接不会再触发第二次重连')
 
@@ -81,6 +84,10 @@ assert.equal(opened.length, 3, '断线后先等退避，不立刻重连')
 stream.wake()
 assert.equal(opened.length, 4, '回到前台跳过退避立即重连')
 
+assert.ok(opened[3].url.endsWith('since=3'), '重连以最后接收的序号为准')
+opened[3].reply(200, 'event: resync\ndata: {"reason":"server_restarted","latestSeq":0}\n\n' + frame(1))
+assert.deepEqual(resyncs, [{ reason: 'server_restarted', latestSeq: 0 }])
+assert.deepEqual(events, [1, 2, 3, 1], '明确收到服务器重启回执后才接受新的序号')
 stream.stop()
 assert.ok(opened[3].aborted)
-console.log('mobile-event-stream: 后台恢复与空闲重连通过')
+console.log('mobile-event-stream: 后台恢复、回放去重与重启游标通过')

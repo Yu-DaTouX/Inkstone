@@ -55,10 +55,11 @@ export function liveFlows({ boot, openSession, check, env }) {
     check(h.has('做完顺便跑一下测试') && h.has('插话') && h.has('排队'), `${tag} 插话与排队分别标出`)
     check(h.matchLabel(/2 条消息等待发送/).length === 1, `${tag} 读屏说明等待条数`)
     check(h.has('顺手清了缓存') && !h.text().includes('*顺手清了缓存*') && !h.text().includes('**还没推送**'), `${tag} 附带说明与需要注意不再显示星号`, h.text().slice(-200))
-    desk.state.queue = { 's-1': { steering: [], followUp: ['做完顺便跑一下测试'] } }
+    desk.state.queue = { 's-1': { steering: [], followUp: ['做完顺便跑一下测试'], total: 21 } }
     desk.server.publish({ ch: 'queue', payload: {}, runtime: { sessionId: 's-1' } })
     await h.waitFor(() => !h.has('先停一下，改用 pnpm'), `${tag} 插话被消费后由 queue 推送刷新掉`)
     check(h.has('做完顺便跑一下测试'), `${tag} 剩下的排队仍在`)
+    check(h.matchLabel(/21 条消息等待发送/).length === 1 && h.has('还有 20 条未显示'), `${tag} 总数与未显示条数分开呈现`)
     desk.state.queue = {}
     desk.server.publish({ ch: 'queue', payload: {}, runtime: { sessionId: 's-1' } })
     await h.waitFor(() => !h.has('做完顺便跑一下测试') && !h.matchLabel(/条消息等待发送/).length, `${tag} 队列清空后整块消失`)
