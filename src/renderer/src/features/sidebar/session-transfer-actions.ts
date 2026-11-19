@@ -1,11 +1,8 @@
+import { errorMessage } from '../../../../shared/ipc-error'
 import { useStore } from '../../state/store'
 import type { TFunc } from '../../i18n'
 import type { SessionExportFormat } from '../../../../shared/session-transfer'
 import { sessionHtmlDocument } from './session-export-html'
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 export async function exportSessionFromMenu(path: string, format: SessionExportFormat, title: string, lang: string, t: TFunc): Promise<void> {
   const store = useStore.getState()
@@ -23,6 +20,6 @@ export async function exportSessionFromMenu(path: string, format: SessionExportF
     if (result.ok && result.path) store.notify('info', t('rail.exportDone', { path: result.path }))
     else if (!result.cancelled) store.notify('error', result.error || t('rail.transferFailed'))
   } catch (error) {
-    store.notify('error', describe(error))
+    store.notify('error', errorMessage(error))
   }
 }

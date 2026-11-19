@@ -1,9 +1,6 @@
+import { errorMessage } from '../../../../shared/ipc-error'
 import { useStore } from '../../state/store'
 import type { TFunc } from '../../i18n'
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 export async function importSessionBundles(t: TFunc, filePaths: readonly string[], cwd?: string): Promise<void> {
   const store = useStore.getState()
@@ -14,7 +11,7 @@ export async function importSessionBundles(t: TFunc, filePaths: readonly string[
       if (result.ok && result.path) last = result.path
       else if (!result.cancelled) store.notify('error', result.error || t('rail.transferFailed'))
     } catch (error) {
-      store.notify('error', describe(error))
+      store.notify('error', errorMessage(error))
     }
   }
   if (!last) return

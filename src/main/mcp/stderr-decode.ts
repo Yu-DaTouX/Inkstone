@@ -45,10 +45,6 @@ export function systemOemCodePage(): number | null {
   return cachedOemCodePage
 }
 
-export function resetOemCodePageCache(): void {
-  cachedOemCodePage = undefined
-}
-
 function legacyDecoder(codePage: number | null): { decode(input: Uint8Array): string } | null {
   const label = codePage ? OEM_ENCODINGS[codePage] : undefined
   if (!label) return null

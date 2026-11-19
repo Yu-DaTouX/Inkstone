@@ -3,6 +3,7 @@ import { basename, isAbsolute } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import { exportSession, importSession, SESSION_TRANSFER_MAX_BYTES, sessionTooLargeError } from '../session-transfer'
 import { atomicWriteFile } from '../atomic-write'
+import { errorMessage } from '../../shared/ipc-error'
 import { pick } from '../../shared/ui-lang'
 import { sessionMarkdown } from '../../shared/session-markdown'
 import type { UIMessage } from '../../shared/ui-message'
@@ -19,10 +20,6 @@ export interface SessionTransferIpcDeps {
   readMessages?(sessionPath: string): Promise<{ messages: UIMessage[]; cwd?: string } | null>
   reveal?(path: string): void
   now?: () => number
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 const exportFailed = (reason: string): string => pick(`导出会话失败：${reason}`, `Could not export the session: ${reason}`)
@@ -61,7 +58,7 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
       const markdown = await markdownOf(sessionPath, title || basename(sessionPath).replace(/\.jsonl$/i, ''))
       return markdown === null ? { ok: false, error: unreadable() } : { ok: true, markdown }
     } catch (error) {
-      return { ok: false, error: exportFailed(describe(error)) }
+      return { ok: false, error: exportFailed(errorMessage(error)) }
     }
   })
 
@@ -99,7 +96,7 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
       if (done.ok && done.path && options.reveal === true) deps.reveal?.(done.path)
       return done
     } catch (error) {
-      return { ok: false, error: exportFailed(describe(error)) }
+      return { ok: false, error: exportFailed(errorMessage(error)) }
     }
   })
 
@@ -120,7 +117,7 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
       const result = await importSession(bundle, sessionsDir, cwd ? { cwd } : {})
       return result.ok ? { ok: true, path: result.path, sessionId: result.sessionId } : { ok: false, error: importFailed(result.error) }
     } catch (error) {
-      return { ok: false, error: importFailed(describe(error)) }
+      return { ok: false, error: importFailed(errorMessage(error)) }
     }
   })
 }

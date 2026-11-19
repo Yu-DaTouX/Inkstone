@@ -1,3 +1,4 @@
+import { escapeRegExp } from "../../../../../shared/escape";
 import type { ProviderDriverKind } from "../../adapters/contracts";
 
 export type ModelEsque = {
@@ -12,10 +13,6 @@ export type ModelEsque = {
   isUnavailable?: boolean | undefined;
   contextWindow?: number | undefined;
 };
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function stripLeadingQualifier(value: string, qualifier: string | null | undefined): string {
   const trimmedQualifier = qualifier?.trim();

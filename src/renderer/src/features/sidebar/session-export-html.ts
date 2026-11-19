@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { escapeHtml } from '../../../../shared/escape'
 
 const STYLE = [
   ':root{color-scheme:light dark;--ink:#1b1b1f;--muted:#6b6b76;--line:#e2e2e8;--soft:#f5f5f8;--page:#fff}',
@@ -20,10 +21,6 @@ const STYLE = [
   'th,td{border:1px solid var(--line);padding:6px 10px;text-align:left}',
   'hr{border:0;border-top:1px solid var(--line);margin:32px 0 14px}'
 ].join('\n')
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
 
 export async function sessionHtmlDocument(markdown: string, title: string, lang: string): Promise<string> {
   const { renderToStaticMarkup } = await import('react-dom/server')

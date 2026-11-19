@@ -2,6 +2,7 @@ import { appendFile, chmod, mkdir, open as openFile, readdir, readFile, rm, stat
 import { createHash, randomBytes } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { basename, dirname, join } from 'node:path'
+import { escapeRegExp } from '../shared/escape'
 import { pick } from '../shared/ui-lang'
 import { CREDENTIAL_VAULT_ERROR } from '../shared/credential-vault'
 import { atomicWriteFile } from './atomic-write'
@@ -234,10 +235,6 @@ async function readState(dir: string): Promise<VaultState> {
   } catch {
   }
   return { version: 1, files: {} }
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 export async function legacyCopiesOf(file: string): Promise<string[]> {

@@ -1,3 +1,4 @@
+import { errorMessage } from '../shared/ipc-error'
 import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, stat } from 'node:fs/promises'
@@ -46,7 +47,7 @@ export async function exportSession(
     if ((await stat(sessionFilePath)).size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: sessionTooLargeError() }
     content = await readFile(sessionFilePath, 'utf8')
   } catch (error) {
-    return { ok: false, error: pick(`读取会话失败：${describe(error)}`, `Failed to read session: ${describe(error)}`) }
+    return { ok: false, error: pick(`读取会话失败：${errorMessage(error)}`, `Failed to read session: ${errorMessage(error)}`) }
   }
   const sourceSessionId = readSessionId(content)
   const bundle: SessionBundle = {
@@ -63,7 +64,7 @@ export async function exportSession(
     if (Buffer.byteLength(serialized, 'utf8') > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: sessionTooLargeError() }
     await atomicWriteFile(file, serialized)
   } catch (error) {
-    return { ok: false, error: pick(`写出会话包失败：${describe(error)}`, `Failed to write session bundle: ${describe(error)}`) }
+    return { ok: false, error: pick(`写出会话包失败：${errorMessage(error)}`, `Failed to write session bundle: ${errorMessage(error)}`) }
   }
   return { ok: true, path: file, bytes: Buffer.byteLength(content, 'utf8'), ...(sourceSessionId ? { sourceSessionId } : {}) }
 }
@@ -84,7 +85,7 @@ export async function importSession(
   try {
     bundle = JSON.parse(await readFile(bundlePath, 'utf8')) as SessionBundle
   } catch (error) {
-    return { ok: false, error: pick(`会话包解析失败：${describe(error)}`, `Failed to parse session bundle: ${describe(error)}`) }
+    return { ok: false, error: pick(`会话包解析失败：${errorMessage(error)}`, `Failed to parse session bundle: ${errorMessage(error)}`) }
   }
   if (
     !bundle ||
@@ -116,7 +117,7 @@ export async function importSession(
     await mkdir(sessionsDir, { recursive: true })
     await atomicWriteFile(file, content)
   } catch (error) {
-    return { ok: false, error: pick(`写出会话失败：${describe(error)}`, `Failed to write session: ${describe(error)}`) }
+    return { ok: false, error: pick(`写出会话失败：${errorMessage(error)}`, `Failed to write session: ${errorMessage(error)}`) }
   }
   return { ok: true, path: file, sessionId, ...(originalId ? { renamedFrom: originalId } : {}) }
 }
@@ -148,8 +149,4 @@ function findSessionHeader(content: string): SessionHeader | undefined {
     }
   }
   return header
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

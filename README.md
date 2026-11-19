@@ -2,66 +2,44 @@
   <img src="assets/inkstone/hero-paper-ink.png" alt="Inkstone · 砚 — 纸墨与砚台品牌横幅" width="1280">
 </p>
 
-<h1 align="center">让想法成形。</h1>
-<p align="center">砚（Inkstone）是基于 pi 的个人全能 Agent。把事情交给它，它自己动手做完：写代码、查资料、操作网页和文件，每一步都看得见，做完把结果说清楚。</p>
+<h1 align="center">砚 · Inkstone</h1>
+<p align="center">基于 pi 的个人 AI 工作台。把代码、文件、网页和终端放在同一个会话里，让 Agent 动手，也让你看见它做了什么。</p>
 
 <p align="center">
-  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载</b></a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载 Windows x64</b></a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/tag/v0.16.0#assets">下载 Android 测试版</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases">更新日志</a> ·
-  <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a>
+  <a href="https://github.com/Yu-DaTouX/Inkstone/issues">问题反馈</a>
 </p>
-<p align="center">
-  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><img src="https://img.shields.io/github/v/release/Yu-DaTouX/Inkstone?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="最新版本"></a>
-  <img src="https://img.shields.io/badge/Windows-x64-0078D4" alt="Windows x64">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"></a>
-</p>
-
-<br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-0.15.0-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-0.15.0-light.png">
-  <img src="assets/inkstone/workspace-0.15.0-light.png" alt="Inkstone 0.15.0：左栏按项目整理会话，中间是回复与改动摘要，右栏查看更改并提交。" width="1280">
+  <img src="assets/inkstone/workspace-0.15.0-light.png" alt="左侧是项目与会话，中间是回复与改动摘要，右侧是文件更改。" width="1280">
 </picture>
 
-<p align="center"><sub>0.15.0 版界面 · 图中会话、模型与文件均为演示数据</sub></p>
+<p align="center"><sub>桌面 0.15.0 界面示意，使用演示数据。</sub></p>
 
-## 它能帮你做什么
+## 下载与上手
 
-- **把任务交给 AI**：贴图片、用 `@` 引用文件、用 `/` 调命令。正文保持连续阅读，思考与工具步骤按需展开；计划和排队消息收在输入框附近，待办可标「进行中」或「受阻」，全部做完留一条完成回执。
-- **按项目整理会话**：在左栏切换项目和会话，查看运行状态、置顶、归档或全文搜索；多个会话可以并排分屏，同一文件夹的多个会话直接并行，Git 项目的新会话可打开「工作树」开关，发第一条消息时才创建。`Ctrl+K` 打开搜索与命令面板。
-- **长会话不迷路**：小地图加远跳，可以直接跳到长回复的任意位置；过程区可在最近过程与全部过程之间切换。
-- **边做边看成果**：HTML 页面可以直接预览，文件、PDF、代码和改动差异都能在会话旁查看；改动、文件、浏览器、终端、Pull 请求等以标签形式在右栏打开，最多可分 3 列、拖动调宽或最大化，窄屏时变为抽屉，每个会话记住自己的布局。Agent 也能读取和操作会话终端，写入同样走审批。
-- **浏览器操作**：Agent 操作的网页直接显示在砚的侧栏，支持多步脚本、下载和用户接管，无需额外浏览器；标签竖排在左侧，视口可切换自适应、手机、平板、桌面；每个会话的标签互不干扰，Agent 起的本地服务可以一键停止。点击「一键导入登录态」，可从默认 Chrome / Edge 当前档案导入网站 Cookie；首次需按提示安装配套扩展。不迁移密码、通行密钥或完整浏览器设置，部分网站仍需重新登录。
-- **让子 Agent 分头做事**：为子任务指定模型，在后台并行处理；运行中可直接向子代理插话。会话中汇总进度，打开右侧工作区即可读完整转录。
-- **自己决定操作权限**：「自动批准」下，常规操作直接执行，危险操作与项目外写入先确认；可以允许一次、在本会话允许，或附理由拒绝。「不受限制」按 pi 原生行为执行。符合条件的项目还会在发送前保存本地快照，方便预览和回退。
-- **模型、技能和 MCP**：在设置里登录模型服务或填入 API Key，随时切换模型与思考档位；思考行旁的「译」按钮可以把思考译成中文，服务可选 Bing、Google 或模型；技能和 MCP 可按全局或当前项目配置。输入框显示上下文占用，会话栏展示用量与速度，支持的服务可查看额度窗口。
-- **用量看得见**：新标签页把最近两周的用量画成字符山水，悬停可看单日；当前项目收成输入框上方的一行。
-- **长任务继续聊**：接近设定的上下文上限时自动压缩，保留摘要和可查回的原文快照；不裁剪正常发给模型的历史工具内容。
-- **预测下一句**：回复结束后，输入框用灰字预测你可能要说的话，Tab 填入、Esc 关闭。
-- **手机端**：Android 客户端配对电脑后，可看进度、回复和审批，切换模型与思考档位，重命名、置顶、归档、压缩、切分支或删除会话，按内容搜索会话，查看用量与更改，停止子代理；折叠屏自动切换双栏，界面跟随系统语言，也可在设置里切换。
-- **中文与英文界面**：电脑端和手机端都可在设置里切换界面语言。
-- **更多工作方式**：语音输入、桌宠、ComfyUI 等在插件市场按需安装；ComfyUI 插件可让模型查询节点、自行拼装并运行工作流，支持出图与视频生成；另有 [Minecraft 模组开发](https://github.com/Yu-DaTouX/inkstone-minecraft-plugin)（独立仓库，按需从 GitHub 下载安装）。
+| 平台 | 从哪里下载 | 如何开始 |
+| --- | --- | --- |
+| Windows x64 | [桌面发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)的 `*-setup.exe`；免安装选 `*-portable.exe` | 在 **设置 → 模型** 登录或配置 API Key，新建会话并选好项目文件夹。 |
+| Android（测试） | [桌面 0.16.0 的发布附件](https://github.com/Yu-DaTouX/Inkstone/releases/tag/v0.16.0#assets)中的 `Inkstone-mobile-0.3.3.apk` | 在电脑端 **设置 → 手机与远程** 显示配对码，用手机扫码连接。 |
 
-## 平台
+Windows 安装包未签名，可能出现「未知发布者」提示，请从本仓库 Releases 下载。macOS、Linux 和 iOS 尚未交付；源码中的改动不一定已进入发布包。
 
-桌面端只交付和验证 Windows（x64）。macOS 和 Linux 是规划中的目标，现在还不能视为已支持。Android 客户端的安装包在发布页附件里，可在 **设置 → 手机与远程** 扫码配对电脑（仍在测试）；iOS 尚未交付。开发版的改动不一定包含在已发布的安装包里。
+## 你可以用它做什么
 
-## 开始使用
+- **在项目里做事**：用 `@` 引用文件、拖入图片，用 `/` 找命令；思考与工具步骤可展开，结果可与文件、PDF、Git 差异和终端并排查看。
+- **同时跟进多个任务**：按项目整理、置顶与全文搜索会话；用分屏对照不同会话，或让子 Agent 在后台分工。读长回复时，可用小地图定位。
+- **在工作台内操作网页**：内置浏览器展示 Agent 正在操作的页面；需要时你可以接管。不同会话的浏览器标签分开管理。
+- **从手机继续**：Android 测试版连接电脑后，可以看进度、回复、处理审批并查看更改。
+- **按需要配置**：支持中文与英文界面，可切换模型和思考档位，按项目或全局配置技能、MCP，并从插件市场安装语音输入等扩展。
 
-1. 到[发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)下载安装包并安装，之后软件会在后台下载更新，重启时自动装好；也有免安装的便携版，更新需手动下载。
-2. 打开砚，在 **设置 → 模型** 里登录，或填入 API Key。
-3. 新建会话，在输入框底栏选好项目文件夹，说出要做的事。
+## 数据与权限
 
-安装包还没有数字签名，Windows 可能会弹出「未知发布者」提示，请只从本页下载。
-
-## 需要知道的
-
-- 聊天记录和设置都存在你自己的电脑上。发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
-- 换电脑或换版本前，先备份砚的数据目录。
-- Hermes 可以通过 `integrations/hermes-inkstone/` 下的独立插件查看会话、选择模型、提交任务，并批准待审批的操作。
-
-遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，请写上版本号和操作步骤；截图时记得遮住密钥。
+会话与设置保存在本机；发送给模型的数据会交给你选的模型服务，费用由该服务收取。常规操作可自动批准，危险操作和项目外写入会按权限设置确认；「不受限制」档仍会确认部分关键操作。换电脑或迁移前，建议先备份数据。提交 Issue 时请附上版本号、操作步骤，遮住密钥和私人内容。
 
 ## 与 pi 的关系
 
