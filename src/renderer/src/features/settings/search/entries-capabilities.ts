@@ -54,18 +54,9 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     id: 'caps-mcp-native-status',
     section: 'capabilities',
     tab: 'mcp',
-    zh: '查看原生服务器状态',
-    en: 'View native server status',
+    zh: '检查当前会话的 MCP 状态',
+    en: 'Check MCP status in this session',
     keywords: ['/mcp', 'MCP 状态', 'mcp status', '连接状态']
-  },
-  {
-    id: 'caps-mcp-legacy',
-    section: 'capabilities',
-    tab: 'mcp',
-    zh: '砚连接的旧服务',
-    en: 'Legacy Inkstone servers',
-    keywords: ['mcp-servers.json', 'legacy'],
-    more: true
   },
   {
     id: 'caps-mcp-app-snapshot',

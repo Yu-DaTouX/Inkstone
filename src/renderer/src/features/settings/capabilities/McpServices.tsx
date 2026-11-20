@@ -121,7 +121,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     }
     await change({ context: snapshot.context, revision: snapshot.revision, scope: target, key: service.key, action })
   }
-  const check = async (service: McpSettingsService): Promise<void> => {
+  const check = async (service?: McpSettingsService): Promise<void> => {
     const view = viewKey()
     setBusy(true)
     setNotice('')
@@ -129,7 +129,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     setError('')
     setErrorDetail('')
     try {
-      if (service.backend === 'native') {
+      if (!service) {
         const state = useStore.getState()
         if (!state.session?.sessionId || state.session.isAgentRunning || state.session.isStreaming || state.session.isCompacting || !runtime?.nativeMcpAvailable) throw new Error(text.busy)
         const request = { sessionId: state.session.sessionId, pending: true, text: '' }
@@ -165,12 +165,16 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     } catch (cause) { if (view === viewKey()) setError(cause instanceof Error ? cause.message : text.failed) }
     finally { if (view === viewKey()) setBusy(false) }
   }
-  const services = snapshot ? scope === 'global' ? snapshot.global : snapshot.projectServices : []
+  const services = snapshot ? scope === 'global' ? snapshot.global.filter((service) => !service.pluginManaged || service.conflict) : snapshot.projectServices : []
+  const session = useStore.getState().session
+  const previewing = !!useStore.getState().peekedPath || !!useStore.getState().peekedSessionId
+  const sessionToolsDisabled = busy || loading || runtimeBusy || !runtime?.nativeMcpAvailable || !session?.sessionId || previewing
   return <Panel label={text.title}>
     <Group title={text.title} settingId="caps-mcp-servers" actions={<>
       <Button variant="primary" isDisabled={!snapshot || busy || loading} onPress={() => setAdding((value) => !value)} data-testid="mcp-add">{text.add}</Button>
       <Button isPending={loading} isDisabled={busy} onPress={() => void refresh()} data-testid="caps-mcp-reload">{text.refresh}</Button>
-      <Button isDisabled={busy || loading || runtimeBusy || !runtime?.nativeMcpAvailable || !useStore.getState().session?.sessionId || !!useStore.getState().peekedPath || !!useStore.getState().peekedSessionId} onPress={() => void apply()} data-testid="mcp-apply">{text.apply}</Button>
+      <Button isDisabled={sessionToolsDisabled || !!nativeStatus?.pending} onPress={() => void check()} data-setting-id="caps-mcp-native-status" data-testid="caps-native-mcp">{text.checkSession}</Button>
+      <Button isDisabled={sessionToolsDisabled} onPress={() => void apply()} data-testid="mcp-apply">{text.apply}</Button>
     </>}>
       {snapshot?.project ? <SegmentedControl className="mcp-scope-seg" label={text.scopeLabel} value={scope} onChange={(value) => { setScope(value); setAdding(false); setNotice(''); setWarning('') }} isDisabled={busy || loading} options={[
         { value: 'global', label: text.global, testId: 'mcp-scope-global' },
@@ -216,18 +220,17 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
   const text = mcpServicesText(lang)
   const [details, setDetails] = useState(false)
   const sessionBusy = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting)
-  const pendingStatus = useStore((s) => !!s.nativeMcpStatus?.pending)
   const actual = runtime?.servers.find((item) => item.id === service.name)
   const status = service.backend === 'native'
     ? service.scope === 'project' && !snapshot.projectTrusted ? text.untrusted : snapshot.nativeConfigChanged === true ? text.configChanged : snapshot.nativeConfigChanged === false ? text.configRead : text.configUnknown
     : actual ? summarizeMcpStatus(actual).detail : text.configUnknown
   const locked = busy || !!service.conflict || scope === 'project' && !snapshot.projectTrusted || service.backend === 'host' && snapshot.busy
-  const checkDisabled = busy || !!service.conflict || !service.enabled || sessionBusy || (service.scope === 'project' && !snapshot.projectTrusted) || (service.backend === 'native' && (!runtime?.nativeMcpAvailable || pendingStatus))
+  const checkDisabled = locked || !service.enabled || sessionBusy
   return <Entry testId="mcp-service" name={service.special ? text.computer : service.title} badge={<Badge>{service.scope === 'project' ? text.projectOnly : service.inherited ? text.inherited : text.allSessions}</Badge>}
     control={service.special ? undefined : <Switch aria-label={`${service.title} · ${scope === 'global' ? text.allSessions : text.projectOnly}`} isSelected={service.enabled} isDisabled={locked} onChange={(value) => void onMutate(service, value ? 'enable' : 'disable')} data-testid="mcp-service-toggle" />}
     meta={[service.owner === 'pi' ? text.piNote : text.hostNote, service.enabled ? text.enabled : text.disabled, service.overridden ? service.enabled ? text.projectOn : text.projectOff : null]}
     actions={service.special ? <Button onPress={() => useStore.getState().openSettings('tools')}>{text.openTools}</Button> : <>
-      <Button isDisabled={checkDisabled} tooltip={text.loaded} onPress={() => void onCheck(service)}>{service.backend === 'native' ? text.checkSession : text.check}</Button>
+      {service.backend === 'host' ? <Button isDisabled={checkDisabled} tooltip={text.loaded} onPress={() => void onCheck(service)}>{text.check}</Button> : null}
       {scope === 'project' && service.inherited && service.overridden ? <Button isDisabled={locked} onPress={() => void onMutate(service, 'inherit')}>{text.inherit}</Button> : null}
       <Button variant="ghost" aria-expanded={details} onPress={() => setDetails((value) => !value)}>{text.details}</Button>
     </>}>
@@ -237,10 +240,10 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
     {details ? <div className="mcp-service-details">
       <Meta>{text.source}：{service.source}</Meta>
       <Meta>{text.connection}：{service.connection || service.transport}</Meta>
-      <div className="caps-actions">
+      {service.pluginManaged ? null : <div className="caps-actions">
         {snapshot.project && snapshot.projectTrusted ? <Button isDisabled={locked} onPress={() => void onMutate(service, 'move', service.scope === 'global' ? 'project' : 'global')}>{service.scope === 'global' ? text.moveProject : text.moveGlobal}</Button> : null}
         {!service.inherited ? <Button variant="danger" isDisabled={locked} onPress={() => void onMutate(service, 'remove')}>{text.remove}</Button> : null}
-      </div>
+      </div>}
     </div> : null}
   </Entry>
 }

@@ -3895,13 +3895,7 @@ async function settingsReview2({ S, ev, sleep, report, go, into, scrollTo, modal
       if (label === 'wide') {
         await openAdvanced()
         await sleep(900)
-        await shoot('mcp-legacy', async () => [
-          await fh('[data-setting-id="caps-mcp-native-status"]', `(s) => s.findIndex((v, i) => (v === null || (v && typeof v === 'object' && 'servers' in v)) && (s[i + 1] === null || typeof s[i + 1] === 'string'))`, { skills: [], configWarning: false, nativeMcpAvailable: true, servers: [
-            { id: 'legacy-filesystem', title: 'legacy-filesystem', transport: 'stdio', enabled: true, effect: 'write', projectScoped: false, status: 'ready', toolCount: 14, ownedBy: 'inkstone' },
-            { id: 'remote-search-with-a-long-server-identifier', title: 'remote-search-with-a-long-server-identifier', transport: 'http', enabled: true, effect: 'read', projectScoped: true, endpointOrigin: 'https://search.example.com', status: 'needs-auth', toolCount: null, ownedBy: 'inkstone' },
-            { id: 'old-tool', title: 'old-tool', transport: 'stdio', enabled: false, effect: 'external-action', projectScoped: false, status: 'error', toolCount: 0, ownedBy: 'inkstone' }
-          ] })
-        ], '[data-setting-id="caps-mcp-native-status"]')
+        await shoot('mcp-app-tools', async () => [], '[data-testid="v3-mcp-app-refresh"]')
       }
 
       await go('caps-tab-tools')

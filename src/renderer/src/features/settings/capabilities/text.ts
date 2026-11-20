@@ -4,7 +4,6 @@ type CapsTextKey =
   | 'extensions'
   | 'prompts'
   | 'sectionReload'
-  | 'mcpNativeUnavailable'
   | 'tabSkills'
   | 'tabMcp'
   | 'tabTools'
@@ -45,18 +44,11 @@ type CapsTextKey =
   | 'installedNotLoaded'
   | 'loadFailed'
   | 'reloaded'
-  | 'mcpListTitle'
-  | 'mcpListDesc'
-  | 'mcpDirectBadge'
-  | 'mcpDirectNote'
-  | 'mcpDirectOff'
   | 'mcpToggleLabel'
   | 'mcpRemove'
   | 'mcpRemoveTitle'
   | 'mcpRemoveBody'
   | 'mcpSaved'
-  | 'mcpLegacyTitle'
-  | 'mcpLegacyDesc'
   | 'codegraphTitle'
   | 'codegraphGuide'
   | 'voiceSetupTitle'
@@ -66,8 +58,6 @@ const ZH: Record<CapsTextKey, string> = {
   extensions: '扩展',
   prompts: '提示词模板',
   sectionReload: '重新读取',
-  mcpNativeUnavailable:
-    '当前无法读取 pi 原生 MCP 状态。',
   tabSkills: '技能与扩展',
   tabMcp: 'MCP',
   tabTools: '本机工具',
@@ -110,18 +100,11 @@ const ZH: Record<CapsTextKey, string> = {
   installedNotLoaded: '已安装，尚未加载',
   loadFailed: '读取失败',
   reloaded: '已重新读取',
-  mcpListTitle: 'MCP 服务',
-  mcpListDesc: '停用、启用和删除会写回对应 mcp.json，新会话生效。',
-  mcpDirectBadge: '砚直连',
-  mcpDirectNote: '电脑操作由砚直连；开关在「本机工具 → 电脑操作」。',
-  mcpDirectOff: '未开启',
   mcpToggleLabel: '启用 {name}',
   mcpRemove: '删除',
   mcpRemoveTitle: '删除 MCP 服务「{name}」',
   mcpRemoveBody: '从 {path} 移除，不能撤销；新会话生效。',
   mcpSaved: '已写入 {path}，新会话生效。',
-  mcpLegacyTitle: '砚连接的旧服务',
-  mcpLegacyDesc: '写在砚的 mcp-servers.json 里，由砚连接。',
   codegraphTitle: 'CodeGraph',
   codegraphGuide: '尚未加入 pi MCP；加入后可为项目建代码索引。',
   voiceSetupTitle: '转写程序与模型',
@@ -132,8 +115,6 @@ const EN: Record<CapsTextKey, string> = {
   extensions: 'Extensions',
   prompts: 'Prompt templates',
   sectionReload: 'Reload',
-  mcpNativeUnavailable:
-    'Native MCP status is unavailable.',
   tabSkills: 'Skills & extensions',
   tabMcp: 'MCP',
   tabTools: 'Local tools',
@@ -176,18 +157,11 @@ const EN: Record<CapsTextKey, string> = {
   installedNotLoaded: 'Installed, not loaded',
   loadFailed: 'Load failed',
   reloaded: 'Reloaded',
-  mcpListTitle: 'MCP servers',
-  mcpListDesc: 'Changes are written to the owning mcp.json; new sessions apply.',
-  mcpDirectBadge: 'Inkstone direct',
-  mcpDirectNote: 'Computer use is direct; toggle it under Local tools.',
-  mcpDirectOff: 'Off',
   mcpToggleLabel: 'Enable {name}',
   mcpRemove: 'Delete',
   mcpRemoveTitle: 'Delete MCP server “{name}”',
   mcpRemoveBody: 'Removed from {path}; cannot be undone.',
   mcpSaved: 'Written to {path}; applies to new sessions.',
-  mcpLegacyTitle: 'Legacy Inkstone servers',
-  mcpLegacyDesc: 'Listed in Inkstone mcp-servers.json; Inkstone connects.',
   codegraphTitle: 'CodeGraph',
   codegraphGuide: 'Not in pi MCP yet; add it to index projects.',
   voiceSetupTitle: 'Program & models',
