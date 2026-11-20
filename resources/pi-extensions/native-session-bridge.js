@@ -249,7 +249,7 @@ export default function nativeSessionBridge(pi) {
           reason,
           version: ENVELOPE_VERSION,
           command: NATIVE_COMMAND,
-          capabilities: ['navigate_tree', 'reload', 'scoped_models_read', 'scoped_models_set', 'trust_read', 'trust_save', 'navigate_tree_summary', 'set_label']
+          capabilities: ['navigate_tree', 'reload', 'scoped_models_read', 'scoped_models_set', 'trust_read', 'trust_save', 'navigate_tree_summary', 'set_label', 'append_antigravity_turn']
         }
       }),
       'info'
@@ -280,6 +280,32 @@ export default function nativeSessionBridge(pi) {
 
   async function dispatch(op, args, ctx) {
     switch (op) {
+      case 'append_antigravity_turn': {
+        const manager = ctx.sessionManager
+        const { sessionId, user, assistant, model, startedAt, endedAt, status, error, tools, thinking, timing, antigravity } = args
+        if (sessionId !== manager.getSessionId()) throw new Error('会话已经切换，未写入 Antigravity 回合')
+        if (typeof user !== 'string' || !user.trim() || typeof assistant !== 'string' || typeof model !== 'string' || !model || !Number.isFinite(startedAt) || !Number.isFinite(endedAt)) {
+          throw new Error('Antigravity 回合数据无效')
+        }
+        const before = manager.getLeafId()
+        const userId = manager.appendMessage({ role: 'user', content: [{ type: 'text', text: user }], timestamp: startedAt })
+        const assistantId = manager.appendMessage({
+          role: 'assistant', api: 'antigravity-acp', provider: 'antigravity', model,
+          content: assistant ? [{ type: 'text', text: assistant }] : [],
+          timestamp: endedAt, stopReason: status === 'error' ? 'error' : status === 'aborted' ? 'aborted' : 'stop',
+          ...(typeof error === 'string' && error ? { errorMessage: error } : {}),
+          ...(Array.isArray(tools) && tools.length ? { yanAntigravityTools: tools } : {}),
+          ...(typeof thinking === 'string' && thinking ? { yanAntigravityThinking: thinking } : {}),
+          ...(timing ? { yanAntigravityTiming: { ...timing, logicalTurnId: userId } } : {}),
+          ...(antigravity ? { yanAntigravityTurn: antigravity } : {}),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        })
+        if (before === null) manager.resetLeaf()
+        else manager.branch(before)
+        const outcome = await ctx.navigateTree(assistantId, { summarize: false })
+        if (outcome?.cancelled || manager.getLeafId() !== assistantId) throw new Error('回合已写入，但 Pi 未能同步该分支，请重新打开会话')
+        return { userId, assistantId }
+      }
       case 'navigate_tree': {
         const targetId = String(args?.targetId ?? '')
         if (!targetId) throw new Error('缺少 targetId')

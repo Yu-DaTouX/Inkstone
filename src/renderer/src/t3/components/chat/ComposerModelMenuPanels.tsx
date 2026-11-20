@@ -48,7 +48,7 @@ export function ComposerReasoningPanel({ traits }: { traits: ComposerTraitsAdapt
   const current = descriptor.currentValue ?? 'off'
   const labelOf = (level: string) =>
     descriptor.options.find((option) => option.id === level)?.label ?? levelFallbackLabel(level)
-  const blocked = traits.unsupportedReason !== null
+  const blocked = traits.busy || traits.unsupportedReason !== null
   const panelRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef({ levels, current, blocked, select: traits.select })
   stateRef.current = { levels, current, blocked, select: traits.select }
@@ -94,7 +94,7 @@ export function ComposerReasoningPanel({ traits }: { traits: ComposerTraitsAdapt
       data-orientation={narrow ? 'horizontal' : 'vertical'}
     >
       {narrow ? <FluidEffortSlider {...sliderProps} /> : <VerticalEffortSlider {...sliderProps} />}
-      {blocked ? <p className="composer-model-menu__note">{traits.unsupportedReason}</p> : null}
+      {traits.unsupportedReason ? <p className="composer-model-menu__note">{traits.unsupportedReason}</p> : null}
     </div>
   )
 }

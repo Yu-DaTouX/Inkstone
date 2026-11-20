@@ -6,6 +6,9 @@ type Arg<F, I extends number> = F extends (...args: infer A) => unknown ? A[I] :
 type Packed<F, Request> = { args: [request: Request]; result: Contract<F>['result'] }
 
 export interface IpcChannelMap {
+  'yan:antigravity:discover': Contract<B['antigravity']['discover']>
+  'yan:antigravity:quota': Contract<B['antigravity']['quota']>
+  'yan:antigravity:setMode': Contract<B['antigravity']['setMode']>
   'yan:git:state': Contract<B['git']['state']>
   'yan:git:refs': Contract<B['git']['refs']>
   'yan:git:action': Contract<B['git']['action']>

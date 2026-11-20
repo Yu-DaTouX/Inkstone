@@ -1,6 +1,7 @@
 import type { SessionStats, UIMessage, Usage } from './ipc'
 import { isSubagentNotice } from './subagent-notice'
 import { addUsage, cacheHitRate, hasUsageNumbers, waitSpansMs } from './turns'
+import { ANTIGRAVITY_PROVIDER, type AntigravityUsage } from './antigravity'
 
 export interface SessionMetrics {
   turns: number
@@ -33,6 +34,7 @@ export interface SessionMetrics {
 export interface SessionMetricsOptions {
   historyPartial?: boolean
   activeRunStartedAt?: number | null
+  antigravity?: boolean
 }
 
 function nonNegative(value: unknown): number {
@@ -110,6 +112,12 @@ export function latencyFloor(messages: readonly UIMessage[]): number | null {
 
 export function stepDecode(m: UIMessage, floor: number | null = null): StepDecode | null {
   if (m.role !== 'assistant') return null
+  if (m.model?.startsWith(ANTIGRAVITY_PROVIDER + '/')) {
+    const tokens = m.antigravity?.usage?.visibleOutput
+    const ms = m.antigravity?.outputSpanMs
+    return isNonNegative(tokens) && tokens > 0 && isNonNegative(ms) && ms >= MIN_DECODE_MS &&
+      tokens / (ms / 1000) <= MAX_PLAUSIBLE_TPS ? { tokens, ms } : null
+  }
   const gt = m.generationTiming
   const usage = sanitizeUsage(m.usage)
   if (floor !== null && firstTokenWait(m) !== null && gt) {
@@ -296,6 +304,8 @@ export function projectSessionMetrics(
   options?: SessionMetricsOptions
 ): SessionMetrics {
   const msgs = effectiveMessages(messages)
+  const external = options?.antigravity === true
+  if (external) stats = null
   const historyPartial = options?.historyPartial === true
   const { turns, steps } = turnCountsOf(msgs)
 
@@ -322,7 +332,7 @@ export function projectSessionMetrics(
   const derivedTotal = derived ? derived.input + derived.output + derived.cacheRead + derived.cacheWrite : 0
   const derivedPartial = observedUsage && missingUsage
 
-  const statsTokens = stats ? {
+  const statsTokens = stats?.tokens ? {
     input: nonNegative(stats.tokens.input) + (uncounted?.input ?? 0),
     output: nonNegative(stats.tokens.output) + (uncounted?.output ?? 0),
     cacheRead: nonNegative(stats.tokens.cacheRead) + (uncounted?.cacheRead ?? 0),
@@ -424,7 +434,7 @@ export function projectSessionMetrics(
   let toolTotal = 0
   for (const m of msgs) {
     for (const c of m.toolCalls ?? []) {
-      if (!c || c.serverSide || typeof c.id !== 'string' || toolIds.has(c.id)) continue
+      if (!c || (c.serverSide && !external) || typeof c.id !== 'string' || toolIds.has(c.id)) continue
       toolIds.add(c.id)
       toolTotal += 1
       if (isNonNegative(c.startedAt) && isNonNegative(c.endedAt) && c.endedAt >= c.startedAt) {
@@ -457,8 +467,35 @@ export function projectSessionMetrics(
 
   const activeRunStartedAt = options?.activeRunStartedAt
   const trailingUnmeasured = !!firstAssistant && (activeRunStartedAt == null || !isNonNegative(firstAssistant.timestamp) || firstAssistant.timestamp < activeRunStartedAt - 1000)
-  const cost = stats ? nonNegative(stats.cost) : null
+  let cost = stats?.cost === undefined ? null : nonNegative(stats.cost)
   const costEstimated = stats ? nonNegative(stats.costEstimated) : 0
+  let externalHit: number | null = null
+  if (external) {
+    const turns = msgs.filter((m) => m.role === 'assistant')
+    const sum = (key: keyof AntigravityUsage): number | null => {
+      const reported = turns.flatMap((m) => {
+        const value = m.antigravity?.usage?.[key]
+        return isNonNegative(value) ? [value] : []
+      })
+      if (reported.length && reported.length < turns.length) partial = true
+      return reported.length ? reported.reduce((total, value) => total + value, 0) : null
+    }
+    input = sum('input')
+    output = sum('output')
+    cacheRead = sum('cacheRead')
+    cacheWrite = sum('cacheWrite')
+    total = sum('totalTokens')
+    cost = sum('cost')
+    if ([input, output, cacheRead, cacheWrite, total, cost].some((value) => value !== null)) source = 'messages'
+    if (input !== null && cacheRead !== null && cacheWrite !== null && !partial && input + cacheRead + cacheWrite > 0) {
+      externalHit = cacheRead / (input + cacheRead + cacheWrite) * 100
+    }
+    const latest = turns.at(-1)?.antigravity?.usage
+    if (latest?.input !== undefined && latest.cacheRead !== undefined && latest.cacheWrite !== undefined && latest.input + latest.cacheRead + latest.cacheWrite > 0) {
+      latestHitRate = latest.cacheRead / (latest.input + latest.cacheRead + latest.cacheWrite) * 100
+    }
+    partial ||= historyPartial
+  }
   const costZero = cost === 0 && total !== null && total > 0
 
   return {
@@ -479,7 +516,7 @@ export function projectSessionMetrics(
     output,
     cacheRead,
     cacheWrite,
-    hitRate,
+    hitRate: external ? externalHit : hitRate,
     latestHitRate,
     overheadExcluded,
     partial,

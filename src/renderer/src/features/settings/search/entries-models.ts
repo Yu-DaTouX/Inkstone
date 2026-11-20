@@ -2,6 +2,13 @@ import type { SettingsSearchEntry } from './search-model'
 
 export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
+    id: 'models-antigravity',
+    section: 'models',
+    zh: 'Antigravity 反重力',
+    en: 'Antigravity',
+    keywords: ['Google', 'agy', 'ACP', 'CLI', '登录', '订阅']
+  },
+  {
     id: 'models-subscriptions',
     section: 'models',
     zh: '登录与订阅',

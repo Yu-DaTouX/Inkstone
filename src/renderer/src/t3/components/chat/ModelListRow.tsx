@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { ANTIGRAVITY_PROVIDER } from "../../../../../shared/antigravity";
 import { CheckIcon, StarIcon } from "../../../ui/icons";
 import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
 import { Badge, ComboboxItem, Focusable, IconButton, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
@@ -38,6 +39,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     subProvider: props.subProvider,
   };
   const providerLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
+  const showModelBot = props.driverKind === ANTIGRAVITY_PROVIDER;
 
   const row = (
     <ComboboxItem
@@ -51,6 +53,13 @@ export const ModelListRow = memo(function ModelListRow(props: {
     >
       <div className="t3-model-row__main">
         <div className="t3-model-row__title">
+          {showModelBot ? (
+            <ProviderInstanceIcon
+              driverKind={props.driverKind}
+              displayName={props.providerDisplayName}
+              model={model}
+            />
+          ) : null}
           <TooltipTrigger>
             <Focusable excludeFromTabOrder><div className="t3-model-row__name">
               {getDisplayModelName(model)}

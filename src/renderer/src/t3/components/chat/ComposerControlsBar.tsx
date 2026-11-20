@@ -1,9 +1,11 @@
-import { CircleAlertIcon } from '../../../ui/icons'
-import { useT } from '../../../i18n'
+import { CircleAlertIcon, ShieldCheckIcon } from '../../../ui/icons'
+import { useI18n, useT } from '../../../i18n'
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useComposerTraits } from '../../adapters/composer-thinking'
 import { usePermissionAdapter } from '../../adapters/composer-permissions'
 import { useStore } from '../../../state/store'
+import { sessionActionTarget } from '../../../state/slices/runtime'
+import { ListBoxItem, Select } from '../../../ui'
 import { fastModeSupported } from '../../../../../shared/fast-mode'
 import { UltracodeConfirmDialog } from '../../../patterns/UltracodeConfirmDialog'
 import { cx } from '../../../ui/cx'
@@ -36,6 +38,7 @@ export function ComposerControlsBar(props: {
   onOpenProviderSetup?: () => void
 }) {
   const t = useT()
+  const { lang } = useI18n()
   const traits = useComposerTraits()
   const permissions = usePermissionAdapter()
   const iconOnlyBlockCount = props.iconOnlyBlockCount
@@ -50,6 +53,28 @@ export function ComposerControlsBar(props: {
     setMenuOpen(true)
   }, [])
   const unrestricted = permissions.mode === 'all'
+  const antigravity = useStore((s) => s.session?.model?.provider === 'antigravity')
+  const acpMode = useStore((s) => s.session?.antigravity?.mode)
+  const acpModes = useStore((s) => s.session?.antigravity?.modes)
+  const acpModeBlocked = useStore((s) => s.switchLoading || !!s.session?.isAgentRunning || !!s.session?.isStreaming)
+  const [changingAcpMode, setChangingAcpMode] = useState(false)
+  const changeAcpMode = async (mode: string) => {
+    if (changingAcpMode || mode === acpMode) return
+    setChangingAcpMode(true)
+    try {
+      const target = await sessionActionTarget(useStore.getState)
+      if (!target) return
+      const result = await window.yan.antigravity.setMode(mode, target.expected)
+      if (!result.ok && target.current()) useStore.getState().notify('error', result.error ?? t('state.error.settingFailed'))
+    } catch (error) {
+      useStore.getState().notify('error', String(error))
+    } finally {
+      setChangingAcpMode(false)
+    }
+  }
+  const approvalLabel = acpMode === 'default'
+    ? lang === 'en-US' ? 'CLI default approval' : 'CLI 默认审批'
+    : acpModes?.options.find(({ id }) => id === acpMode)?.name ?? (lang === 'en-US' ? 'CLI approval' : 'CLI 审批')
   const fastSupported = useStore((s) => fastModeSupported(s.session?.model))
   const fastOn = useStore((s) => s.settings?.fastMode === true)
   const patchSettings = useStore((s) => s.patchSettings)
@@ -65,7 +90,17 @@ export function ComposerControlsBar(props: {
     onOpenChange: changeMenuOpen,
     aside: traits ? <ComposerReasoningPanel traits={traits} /> : null,
     badge: fastSupported && fastOn ? <FastBolt label={t('picker.speed.fast')} /> : null,
-    footer: (
+    footer: antigravity ? (
+      <div className="composer-model-menu__access-row" data-testid="antigravity-permission" data-permission-mode={acpMode}>
+        <span>{lang === 'en-US' ? 'Antigravity permissions' : 'Antigravity 权限'}</span>
+        {acpModes && acpModes.options.length > 1 ? (
+          <Select size="sm" aria-label={lang === 'en-US' ? 'Antigravity permission mode' : 'Antigravity 权限档'}
+            selectedKey={acpMode} isDisabled={acpModeBlocked || changingAcpMode} onSelectionChange={(key) => typeof key === 'string' && void changeAcpMode(key)}>
+            {acpModes.options.map(({ id, name }) => <ListBoxItem key={id} id={id}>{id === 'default' ? (lang === 'en-US' ? 'CLI default approval' : 'CLI 默认审批') : name}</ListBoxItem>)}
+          </Select>
+        ) : <span>{approvalLabel}</span>}
+      </div>
+    ) : (
       <ComposerAccessFooter
         speed={fastSupported ? { fast: fastOn, onChange: setFast } : null}
         mode={permissions.mode}
@@ -83,7 +118,7 @@ export function ComposerControlsBar(props: {
   } = resolveComposerControlsOwnership({
     matchesDefault: permissions.matchesDefault,
     hasTraits: traits !== null,
-    showMode: unrestricted,
+    showMode: antigravity || unrestricted,
     collapsed: props.collapsed,
     measuredHiddenBlockCount: props.measuredHiddenBlockCount
   })
@@ -112,7 +147,12 @@ export function ComposerControlsBar(props: {
       : [
           {
             id: 'mode',
-            content: (
+            content: antigravity ? (
+              <ComposerControl onPress={openMenu} size={size} aria-label={approvalLabel}>
+                <ShieldCheckIcon className="t3-icon--md" />
+                {approvalLabel}
+              </ComposerControl>
+            ) : (
               <ComposerFooterModeControls
                 runtimeMode={permissions.mode}
                 size={size}

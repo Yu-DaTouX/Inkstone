@@ -11,10 +11,11 @@ export async function readChainMessages(
   headFile: string,
   chains: SessionChainStore | null | undefined,
   hydrate?: HistorySegmentHydrator,
-  localizeImage?: HistoryImageLocalizer
+  localizeImage?: HistoryImageLocalizer,
+  fullText?: boolean
 ): Promise<ReadResult | null> {
   const readOne = async (file: string): Promise<ReadResult | null> => {
-    const result = await readSessionMessages(file, localizeImage ? { localizeImage } : undefined).catch(() => null)
+    const result = await readSessionMessages(file, { localizeImage, fullText }).catch(() => null)
     if (!result) return null
     const isolated = structuredClone(result.messages)
     let messages = hydrate
@@ -63,7 +64,7 @@ export async function readChainMessages(
     read += 1
   }
 
-  if (!read) return readOne(headFile)
+  if (!read) return fullText ? null : readOne(headFile)
   return {
     messages,
     total,

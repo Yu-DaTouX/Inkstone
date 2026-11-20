@@ -1,4 +1,6 @@
 import { pick } from '../shared/ui-lang'
+import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
+import { AntigravitySubagentRpc } from './antigravity-subagent-rpc'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { readFile, readdir, rm, stat } from 'node:fs/promises'
@@ -242,6 +244,7 @@ export function awaitApprovalAnswer(
 
 export interface SubagentContext {
   cwd: string
+  launchSignal?: AbortSignal
   parentSessionId?: string
   parentSessionFile?: string
   parentRunId?: string
@@ -265,6 +268,7 @@ export interface SubagentSendResult { ok: boolean; error?: string; run?: Subagen
 
 export interface SubagentOptions {
   cwd: string
+  launchSignal?: AbortSignal
   piBin?: string
   thinkingLevel?: string
   modelPinned?: boolean
@@ -283,6 +287,7 @@ export interface SubagentOptions {
     origin?: SubagentApprovalOrigin,
     signal?: AbortSignal
   ): Promise<boolean | SubagentDangerAnswer>
+  approveAntigravity?(request: { detail: string; title: string }, cwd: string, origin: SubagentApprovalOrigin, signal: AbortSignal): Promise<boolean>
   dangerPrefs?(): Promise<{ mode: 'danger' | 'all'; outsideWrites: boolean; allowRoots: string[] }>
   recordDangerReview?(review: ModelReviewReceiptInput, origin?: SubagentApprovalOrigin): void
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
@@ -684,7 +689,7 @@ export class SubagentController {
       result: this.resultFor(run),
       resumable: subagentResumability({
         status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
-        live: true, worktreeAlive: worktreeAlive(run), forkLaunchSaved: !!run.forkSource
+        model: run.model, live: true, worktreeAlive: worktreeAlive(run), forkLaunchSaved: !!run.forkSource
       })
     }
   }
@@ -860,7 +865,7 @@ export class SubagentController {
       ...run,
       resumable: subagentResumability({
         status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
-        live: false, worktreeAlive: (run.review === 'pending' || run.review === 'conflict') && !!keptWorktreeOf(record), forkLaunchSaved: !!record.resume?.forkLaunch
+        model: run.model, live: false, worktreeAlive: (run.review === 'pending' || run.review === 'conflict') && !!keptWorktreeOf(record), forkLaunchSaved: !!record.resume?.forkLaunch
       })
     }
   }
@@ -1000,7 +1005,7 @@ export class SubagentController {
     fork?: SubagentForkSource
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const id = `sub-${randomBytes(4).toString('hex')}`
-    const invalidated = (): boolean => generation !== this.launchGeneration
+    const invalidated = (): boolean => generation !== this.launchGeneration || ctx.launchSignal?.aborted === true
     let workspace: PreparedWorkspace
     try {
       const prepare = ctx.prepare ?? prepareWorkspace
@@ -1099,6 +1104,7 @@ export class SubagentController {
       run.latestActivity = pick('已启动', 'Started')
       await this.writeMetadata(run)
       if (run.status !== 'running') return this.startupAbort(run)
+      if (invalidated()) { await this.fail(id, pick('派发已取消', 'Delegation was cancelled'), 'startup'); return this.startupAbort(run) }
       this.emit(run)
 
       const res = await rpc.command('prompt', { message: fork?.sideQuestion ? sideQuestionPrompt(text) : fork ? forkPrompt(briefPrompt(brief, text)) : briefPrompt(brief, text) })
@@ -1151,6 +1157,10 @@ export class SubagentController {
     sessionFile?: string,
     fork?: SubagentForkSource
   ): Promise<SubagentRpc> {
+    if (model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) {
+      if (fork || sessionFile || isolation === 'controlled-cwd') throw new Error(pick('Antigravity 子代理不支持 fork、只读或原会话续接。', 'Antigravity subagents do not support forks, read-only mode, or resuming a native Pi session.'))
+      return new AntigravitySubagentRpc(cwd, model.slice(ANTIGRAVITY_PROVIDER.length + 1), (request, signal) => ctx.approveAntigravity?.(request, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }, signal) ?? Promise.resolve(false))
+    }
     if (fork) return this.createForkRpc(ctx, id, fork, sessionFile)
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
@@ -1335,6 +1345,7 @@ export class SubagentController {
         return { ok: false, error: pick('worktree 子 Agent的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
       }
       if (snapshot.launchFailed) return { ok: false, error: pick('这个子 Agent没有成功启动过，不能续接，请重新派一个', 'This subagent never started successfully and cannot be resumed; start a new one') }
+      if (snapshot.model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) return { ok: false, error: pick('Antigravity 子代理已结束。请新派任务并带上上次结论。', 'The Antigravity subagent ended. Delegate a new task with its prior result.') }
       const sessionFile = await latestSessionFile(this.sessionDir(id))
       if (abandoned()) return abandonedError()
       if (!sessionFile) return { ok: false, error: pick('找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'Its session record was not found, so it cannot be resumed; start a new one and include its findings') }

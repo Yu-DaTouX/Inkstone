@@ -59,18 +59,22 @@ function isOverride(raw: unknown): boolean {
   return Boolean(entry) && Object.keys(entry!).every((key) => OVERRIDE_KEYS.has(key))
 }
 
-export async function listNativeMcpServers(input: {
+export async function resolveNativeMcpServers(input: {
   agentDir: string
   projectCwd?: string
   projectTrusted?: boolean
-}): Promise<NativeMcpServerListView> {
+}) {
   const errors: string[] = []
   const servers = new Map<string, NativeMcpServerView>()
+  const entries = new Map<string, unknown>()
   const globalPath = join(input.agentDir, 'mcp.json')
   const globalDoc = await readNativeDocument(globalPath)
   if (globalDoc && 'error' in globalDoc) errors.push(globalDoc.error)
   else if (globalDoc) {
-    for (const [name, raw] of Object.entries(globalDoc.servers)) servers.set(name, describeEntry(name, raw, 'global', globalPath))
+    for (const [name, raw] of Object.entries(globalDoc.servers)) {
+      entries.set(name, raw)
+      servers.set(name, describeEntry(name, raw, 'global', globalPath))
+    }
   }
   let projectPath: string | undefined
   let projectSkipped = false
@@ -85,6 +89,8 @@ export async function listNativeMcpServers(input: {
           const base = servers.get(name)
           if (base && isOverride(raw)) {
             const patch = asRecord(raw)!
+            const original = asRecord(entries.get(name))
+            entries.set(name, { ...original, ...patch, ...(patch.toolExposure ? { toolExposure: { ...asRecord(original?.toolExposure), ...asRecord(patch.toolExposure) } } : {}) })
             servers.set(name, {
               ...base,
               ...(patch.enabled !== undefined ? { enabled: patch.enabled !== false } : {}),
@@ -92,6 +98,7 @@ export async function listNativeMcpServers(input: {
               overriddenBy: projectPath
             })
           } else {
+            entries.set(name, raw)
             servers.set(name, describeEntry(name, raw, 'project', projectPath))
           }
         }
@@ -99,10 +106,16 @@ export async function listNativeMcpServers(input: {
     }
   }
   return {
+    entries,
     servers: [...servers.values()],
     globalPath,
     ...(projectPath ? { projectPath } : {}),
     ...(projectSkipped ? { projectUntrusted: true } : {}),
     ...(errors.length ? { errors } : {})
   }
+}
+
+export async function listNativeMcpServers(input: Parameters<typeof resolveNativeMcpServers>[0]): Promise<NativeMcpServerListView> {
+  const { entries: _, ...view } = await resolveNativeMcpServers(input)
+  return view
 }

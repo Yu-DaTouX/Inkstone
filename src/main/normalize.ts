@@ -150,7 +150,14 @@ export function normalizeMessage(
       .map((c) => c.thinking ?? '')
       .join('')
 
+    const acpRecord = m.provider === 'antigravity' ? m as PiMessage & {
+      yanAntigravityTools?: UIToolCall[]
+      yanAntigravityThinking?: string
+      yanAntigravityTiming?: UIMessage['turnTiming']
+      yanAntigravityTurn?: UIMessage['antigravity']
+    } : undefined
     const toolCalls: UIToolCall[] = [
+      ...(Array.isArray(acpRecord?.yanAntigravityTools) ? acpRecord.yanAntigravityTools : []),
       ...serverSearchCalls(m as { yanWebSearch?: unknown; timestamp?: number }, id),
       ...blocks
         .filter((c) => c.type === 'toolCall' && c.id)
@@ -167,10 +174,12 @@ export function normalizeMessage(
       ...entry,
       role: 'assistant',
       text,
-      thinking: thinking || undefined,
+      thinking: typeof acpRecord?.yanAntigravityThinking === 'string' ? acpRecord.yanAntigravityThinking : thinking || undefined,
       ...(thinkingBlocks.length && !thinking.trim() ? { thinkingEmpty: true } : {}),
       toolCalls: toolCalls.length ? toolCalls : undefined,
-      usage: toUsage(m.usage, m.model),
+      usage: acpRecord ? undefined : toUsage(m.usage, m.model),
+      ...(acpRecord?.yanAntigravityTiming ? { turnTiming: acpRecord.yanAntigravityTiming } : {}),
+      ...(acpRecord?.yanAntigravityTurn ? { antigravity: acpRecord.yanAntigravityTurn } : {}),
       model: assistantModelIdentity(m),
       responseDetail: 'unknown',
       timestamp: m.timestamp,

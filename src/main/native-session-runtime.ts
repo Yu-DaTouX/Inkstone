@@ -293,6 +293,16 @@ export class NativeSessionRuntime {
     return receiptPromise
   }
 
+  async appendAntigravityTurn(args: Record<string, unknown>): Promise<{ userId: string; assistantId: string }> {
+    if (!this.capabilities.includes('append_antigravity_turn')) {
+      throw new NativeBridgeError(pick('当前 Pi 会话不能保存 Antigravity 回合。', 'This Pi session cannot save Antigravity turns.'), 'bridge_unavailable')
+    }
+    const receipt = await this.invoke('append_antigravity_turn', args, this.defaultTimeoutMs)
+    const { userId, assistantId } = receipt.result ?? {}
+    if (typeof userId !== 'string' || typeof assistantId !== 'string') throw new Error('Invalid Antigravity turn receipt')
+    return { userId, assistantId }
+  }
+
   async navigateTree(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
     const summarize = options?.summarize === true
     if (summarize && !this.capabilities.includes('navigate_tree_summary')) {

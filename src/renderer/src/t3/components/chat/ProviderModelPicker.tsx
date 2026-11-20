@@ -1,4 +1,5 @@
 import { memo, useRef, useState, type ReactNode } from "react";
+import { ANTIGRAVITY_PROVIDER } from "../../../../../shared/antigravity";
 import { Dialog, DialogTrigger } from "react-aria-components";
 import { BareButton, Badge, Focusable, Popover, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
 import { composerMenuClosed, composerFloatingLayerProps } from "./composerEventScope";
@@ -21,6 +22,7 @@ export function modelPickerTriggerClassName(size: ModelPickerSize, className?: s
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   activeInstanceId: ProviderInstanceId;
   model: string;
+  activeModelName?: string | undefined;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   favoriteKeys: ReadonlySet<string>;
@@ -53,7 +55,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const selectedInstanceOptions = props.modelOptionsByInstance.get(activeInstanceId) ?? [];
   const selectedModel =
     resolveModelPickerSelectedModel({ model: props.model, options: selectedInstanceOptions }) ??
-    selectedInstanceOptions[0];
+    (props.activeModelName ? { slug: props.model, name: props.activeModelName } : selectedInstanceOptions[0]);
   const triggerTitle = selectedModel
     ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
     : props.model || t("composer.t3.picker.chooseModel");
@@ -61,6 +63,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     ? `${getDisplayModelName(selectedModel)}${selectedModel.isUnavailable ? t("composer.t3.picker.unavailableSuffix") : ""}`
     : triggerTitle;
   const showInstanceBadge = activeEntry !== null && shouldShowInstanceBadge();
+  const antigravity = activeEntry?.driverKind === ANTIGRAVITY_PROVIDER;
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -106,7 +109,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         <span
           className={cx("t3-model-trigger__row", size === "xs" && "t3-model-trigger__row--xs")}
         >
-          {activeEntry && props.triggerLabel === undefined && !props.isComposerOwned ? (
+          {activeEntry && props.triggerLabel === undefined && (!props.isComposerOwned || antigravity) ? (
             <span data-chat-provider-model-picker-icon className="t3-model-trigger__icon">
               <ProviderInstanceIcon
                 driverKind={activeEntry.driverKind}

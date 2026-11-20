@@ -218,7 +218,7 @@ function joinNotes(notes: readonly string[]): string | null {
 }
 
 function buildTokens(metrics: SessionMetrics, input: RailStatsInput, notes: readonly string[]): RailTokens | null {
-  if (metrics.total === null) return null
+  if ([metrics.total, metrics.input, metrics.cacheRead, metrics.cacheWrite, metrics.output].every((value) => value === null)) return null
   const { t } = input
   const unit = t('tok.unit')
   const exact = (n: number | null): string => tokenText(n, unit)
@@ -227,7 +227,7 @@ function buildTokens(metrics: SessionMetrics, input: RailStatsInput, notes: read
     label,
     value: value ?? 0,
     tone: TONE[key],
-    text: steadyCount(value ?? 0),
+    text: value === null ? '—' : steadyCount(value),
     title: `${label} ${exact(value)}`
   })
   const segments = [
@@ -238,7 +238,7 @@ function buildTokens(metrics: SessionMetrics, input: RailStatsInput, notes: read
   ]
   const hit = hitText(metrics.hitRate)
   return {
-    total: steadyCount(metrics.total),
+    total: metrics.total === null ? '—' : steadyCount(metrics.total),
     unit,
     title: [`${t('sm.total')} ${exact(metrics.total)}`, ...notes].join('\n'),
     hit: hit === null ? null : t('sm.cacheHit', { pct: hit }),

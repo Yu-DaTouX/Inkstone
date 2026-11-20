@@ -149,6 +149,7 @@ export function createModelSlice({ set, get }: SliceContext): ModelSlice {
       return res
     }
     if (!target.current()) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
+    if (provider === 'antigravity') return res
     const selected = get().models.find(m => m.provider === provider && m.id === id)
     try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
     catch (error) { return { ok: false, error: uiText('state.error.modelPrefSaveFailed', { error: String(error) }) } }

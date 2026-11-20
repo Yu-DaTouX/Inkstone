@@ -43,6 +43,11 @@ const invoke = <C extends IpcChannel>(ch: C, ...args: IpcArgs<C>): Promise<IpcRe
 let rendererReadySent = false
 
 const api: YanBridge = {
+  antigravity: {
+    discover: (cwd) => invoke('yan:antigravity:discover', cwd),
+    quota: (force) => invoke('yan:antigravity:quota', force),
+    setMode: (mode, expected) => invoke('yan:antigravity:setMode', mode, expected)
+  },
   probeMode: process.argv.includes('--yan-isolated-probe'),
   windowMaterial: (process.argv.find((a) => a.startsWith('--yan-window-material=')) ?? '').slice('--yan-window-material='.length),
   pinnedNetwork: {

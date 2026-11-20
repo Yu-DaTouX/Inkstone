@@ -72,6 +72,8 @@ import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, qui
 import { runShutdownSteps } from './shutdown'
 import { piTreeRegistry } from './process-tree'
 import { createIpcRegistrar } from './ipc/registrar'
+import { registerAntigravityIpc } from './ipc/antigravity-ipc'
+import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerAgentIpc, type PinnedSendTarget } from './ipc/agent-ipc'
 import { registerSettingsIpc } from './ipc/settings-ipc'
@@ -421,6 +423,7 @@ const subagentService: SubagentService = new SubagentService({
   },
   previewHtml: (htmlPath, root, options) => captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
   resolveModelApi: async (label, origin) => {
+    if (label.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) return 'antigravity-acp'
     const parent = (origin.runId ? runners?.agentOf(origin.runId) : null) ??
       (origin.sessionId ? runners?.agentForSession(origin.sessionId) : null) ?? null
     if (!parent) throw new Error('来源会话已关闭，无法核对指定模型')
@@ -434,10 +437,16 @@ const subagentService: SubagentService = new SubagentService({
     const models = parent ? await parent.listModels().catch(() => []) : []
     const settings = await getSettings()
     const preferred = settings.subagentDefaultModel
-    return resolveSubagentModelPick(requested, models, context.model, {
+    const external = [requested, preferred && preferred !== 'follow' ? `${preferred.provider}/${preferred.id}` : ''].flatMap(label => label.startsWith(`${ANTIGRAVITY_PROVIDER}/`) ? [{ provider: ANTIGRAVITY_PROVIDER, id: label.slice(ANTIGRAVITY_PROVIDER.length + 1) }] : [])
+    if (context.fromAntigravity && !models.length) return { ok: false, error: 'Pi 没有可用模型，未派发子代理。' }
+    return resolveSubagentModelPick(requested, context.fromAntigravity ? models.filter(model => model.provider !== ANTIGRAVITY_PROVIDER) : [...models, ...external], context.model, {
       ...(preferred && preferred !== 'follow' ? { model: preferred } : {}),
       force: settings.subagentModelForce === true
     })
+  },
+  approveAntigravity: async (request, cwd, origin, signal) => {
+    const answer = await approvals.askTimed({ ...origin, kind: 'consent', tool: 'Antigravity', title: `Antigravity · ${request.title}`, detail: request.detail, cwd, reasons: [], canRemember: false, onTimeout: 'deny' }, DANGER_CONFIRM_TIMEOUT_MS, signal)
+    return answer !== 'timeout' && answer?.choice === 'once'
   },
   confirmDanger: async (params, cwd, origin) => {
     if ((await getSettings()).permissionMode === 'all' && params.critical !== true) return true
@@ -1901,7 +1910,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         ...yanThinExtensions(),
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
-        subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context) },
+        subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context, signal) },
         switchSpareAccount: switchToSpareAccount,
         activeAccountKey,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
@@ -1909,7 +1918,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         providerExtensions: launchResources().providers,
         bundledSkills: launchResources().skills,
         userSkills: () => userSkillPaths(),
-        readHistory: (sessionFile, liveRunId) => readHistoryWithArtifacts(sessionFile, liveRunId),
+        readHistory: (sessionFile, liveRunId, fullText) => fullText
+          ? readChainMessages(sessionFile, sessionChains, undefined, localizeHistoryImage, true)
+          : readHistoryWithArtifacts(sessionFile, liveRunId),
         capability: {
           sessionId: id ?? 'primary',
           runnerGeneration: generation ?? 1,
@@ -2270,6 +2281,12 @@ function registerIpc(): void {
 
   const isTrustedIpc = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean => !!win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
   const ipc = createIpcRegistrar(isTrustedIpc)
+  registerAntigravityIpc(ipc, async (cwd) => {
+    const settings = await getSettings()
+    const resolved = await resolveFileContext(settings, settings.cwd, { cwd })
+    if (!resolved.ok) throw new Error(resolved.error)
+    return resolved.context.cwd
+  })
 
   const syncCompactionLines = async (models: LineModel[]): Promise<void> => {
     const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS

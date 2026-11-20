@@ -128,6 +128,7 @@ export interface PiInfo {
 }
 
 export interface SessionState {
+  antigravity?: import('./antigravity').AntigravitySessionView
   conversationId?: string
   conversationFile?: string
   sessionId: string
@@ -387,14 +388,14 @@ export interface TokenCounts {
 }
 
 export interface SessionStats {
-  tokens: {
+  tokens?: {
     input: number
     output: number
     cacheRead: number
     cacheWrite: number
     total: number
   }
-  cost: number
+  cost?: number
   costEstimated?: number
   overheadUsage?: TokenCounts
   countedUntil?: number | null
@@ -1527,6 +1528,7 @@ export interface PinnedNetworkStatus {
 }
 
 export interface YanBridge {
+  antigravity: import('./antigravity').AntigravityBridge
   readonly probeMode: boolean
   readonly windowMaterial: string
   pinnedNetwork: {

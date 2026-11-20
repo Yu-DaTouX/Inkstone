@@ -321,7 +321,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const showCompaction = compactionSpot !== null && !compactionInProcess
   const failuresAlert = processFailuresAlert(sourceTurn, !!streaming)
   const turnElapsedMs = sourceTurn.elapsedMs ?? spanMs
-  const decision = !streaming && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
+  const decision = !streaming && answer !== undefined && split?.reply && !split.tail.length &&
+    !sourceTurn.model?.startsWith('antigravity/') ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0

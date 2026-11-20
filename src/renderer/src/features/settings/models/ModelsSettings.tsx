@@ -26,6 +26,7 @@ import { SettingsAdvanced, SettingsGroup, SettingsReveal, SettingsRow } from '..
 import { settingsText } from '../settings-text'
 import { PiThinkingLevelsGroup } from '../general/PiNativeSettings'
 import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
+import { AntigravitySettingsRow } from './AntigravitySettingsRow'
 import { ApiKeyList } from './ApiKeyList'
 import { SubscriptionAccountList } from './SubscriptionAccountList'
 import { supportsOAuthAccounts, type OAuthAccountPools, type OAuthAccountView } from '../../../../../shared/oauth-accounts'
@@ -617,16 +618,17 @@ export function ModelsSettings(): ReactElement {
         {authProviders.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('noAuthInfo')} /> : null}
       </div>
 
-      {subscriptions.length > 0 ? (
-        <SettingsGroup title={t('auth.subs')} settingId="models-subscriptions" className="ms-group" plain>
-          <div className={settingCardClass('rows', 'settings-rows ms-rows')}>
+      <SettingsGroup title={t('auth.subs')} settingId="models-subscriptions" className="ms-group" plain>
+        <div className={settingCardClass('rows', 'settings-rows ms-rows')}>
+          {subscriptions.length > 0 ? (
             <SettingsRow settingId="models-account-failover" label={text('accountFailover')} description={text('accountFailoverDesc')}>
               <Switch aria-label={text('accountFailover')} isSelected={accountFailover} onChange={(on) => void patchSettings({ accountFailover: on })} data-testid="ms-account-failover" />
             </SettingsRow>
-            {subscriptions.map(serviceRow)}
-          </div>
-        </SettingsGroup>
-      ) : null}
+          ) : null}
+          {subscriptions.map(serviceRow)}
+          <AntigravitySettingsRow />
+        </div>
+      </SettingsGroup>
 
       {keys.length > 0 ? (
         <SettingsGroup title={t('auth.keys')} settingId="models-api-keys" className="ms-group" plain>

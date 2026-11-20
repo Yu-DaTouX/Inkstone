@@ -33,7 +33,7 @@ export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
   const stats = useStore((s) => s.stats)
   const session = useStore((s) => s.session)
   if (!known) return null
-  const total = stats?.tokens.total ?? null
+  const total = stats?.tokens?.total ?? null
   const cost = stats && typeof stats.cost === 'number' && stats.cost > 0 ? stats.cost : null
   return {
     estimated: summary.estimated,
@@ -42,7 +42,7 @@ export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
     usedPercentage: percent,
     totalProcessedTokens: typeof total === 'number' && total > 0 ? total : null,
     cost: cost === null ? null : { amount: cost, currency: '$' },
-    compactsAutomatically: session?.autoCompactionEnabled !== false,
+    compactsAutomatically: session?.model?.provider !== 'antigravity' && session?.autoCompactionEnabled !== false,
     autoCompactThreshold: autoCompactLimit ?? null,
     modelWindow: summary.modelWindow > 0 ? summary.modelWindow : null,
     cappedByAutoCompact: summary.cappedByLimit,
@@ -68,7 +68,7 @@ export function useContextCompactAdapter(): ContextCompactAdapter {
     modelDisplayName: session?.model?.name ?? null,
     busy,
     onCompact: () => void compact(),
-    compactDisabled: !hasSession || busy || !session?.messageCount,
+    compactDisabled: !hasSession || busy || !session?.messageCount || session?.model?.provider === 'antigravity',
     compactDisabledReason: busy ? t('composer.t3.compactBusy') : null
   }
 }

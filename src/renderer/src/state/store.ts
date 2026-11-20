@@ -344,6 +344,7 @@ export type QuotaResumeWait = {
 
 export function currentThinkingLevels(state: Pick<Store, 'session' | 'thinkingLevels'>): string[] {
   const own = state.session?.availableThinkingLevels
+  if (state.session?.model?.provider === 'antigravity') return own ?? []
   return state.session?.thinkingLevelsStatus === 'known' && Array.isArray(own) ? own : state.thinkingLevels
 }
 

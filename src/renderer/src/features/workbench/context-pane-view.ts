@@ -79,17 +79,20 @@ export function contextUsageSummary(
 ): ContextUsageSummary {
   const usage = stats?.contextUsage
   const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
-  const matchesModel = !!usage && (!usage.modelKey || usage.modelKey === modelKey)
+  const external = session?.model?.provider === 'antigravity'
+  const matchesModel = !!usage && (external ? usage.modelKey === modelKey : !usage.modelKey || usage.modelKey === modelKey)
+  if (external) autoCompactLimit = undefined
   const reported = matchesModel ? usage?.contextWindow : undefined
   const modelWindow =
     typeof reported === 'number' && Number.isFinite(reported) && reported > 0
       ? reported
       : session?.model?.contextWindow ?? 0
-  const cappedByLimit = !!autoCompactLimit && modelWindow > 0 && autoCompactLimit < modelWindow
-  const windowSize = cappedByLimit ? autoCompactAt(autoCompactLimit, modelWindow) : modelWindow
+  const compactAt = autoCompactLimit && modelWindow > 0 ? autoCompactAt(autoCompactLimit, modelWindow) : null
+  const cappedByLimit = compactAt !== null && !!autoCompactLimit && autoCompactLimit < modelWindow
+  const windowSize = cappedByLimit ? compactAt : modelWindow
   const measuredTokens = matchesModel && typeof usage?.tokens === 'number' ? usage.tokens : undefined
   const last = session?.lastCompaction
-  const afterTokens = matchesModel && usage?.tokens === null && last?.status === 'completed' && !last.afterMeasured
+  const afterTokens = !external && matchesModel && usage?.tokens === null && last?.status === 'completed' && !last.afterMeasured
     ? last.afterTokens
     : undefined
   const estimate = typeof afterTokens === 'number' && Number.isFinite(afterTokens) && afterTokens >= 0 ? afterTokens : undefined
@@ -112,7 +115,7 @@ export function contextUsageSummary(
     windowAssumed: !cappedByLimit && !!session?.model?.contextWindowAssumed && windowSize === session.model.contextWindow,
     modelWindow,
     cappedByLimit,
-    compactAt: autoCompactLimit && modelWindow > 0 ? autoCompactAt(autoCompactLimit, modelWindow) : null
+    compactAt
   }
 }
 
@@ -191,13 +194,14 @@ export function largestToolCalls(
 }
 
 function contextRange(input: ContextPaneInput, usage: ContextUsageSummary): { settled: readonly UIMessage[]; inContext: readonly UIMessage[] } | null {
-  if (!usage.known) return null
+  if (!usage.known || input.session?.model?.provider === 'antigravity') return null
   const settled = settledMessages(input.session, input.messages)
   return { settled, inContext: inContextMessages(settled, contextFromOf(input.session)) }
 }
 
 export function contextPaneData(input: ContextPaneInput): ContextPaneData {
   const usage = contextUsageSummary(input.session, input.stats, input.autoCompactLimit)
+  if (input.session?.model?.provider === 'antigravity') return { usage, slices: [], parts: [], compacted: false, sources: null }
   const compacted = !!contextFromOf(input.session)
   const range = contextRange(input, usage)
   const sources = input.sources ?? null

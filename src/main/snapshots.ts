@@ -69,15 +69,26 @@ export function snapshotAfter(callId: string): FileDiff | null {
   if (!entry) return null
   pending.delete(callId)
   const after = captureSide(entry.readPath)
+  return compareFileSides(entry.path, entry.before, after)
+}
+
+export function reportedFileDiff(path: string, oldText: string | null, newText: string): FileDiff {
+  const side = (content: string | null): Side => content === null
+    ? { exists: false, size: 0 }
+    : { exists: true, size: Buffer.byteLength(content), content }
+  return compareFileSides(path, side(oldText), side(newText))
+}
+
+function compareFileSides(path: string, before: Side, after: Side): FileDiff {
   const status: FileDiff['status'] =
-    !entry.before.exists && after.exists
+    !before.exists && after.exists
       ? 'created'
-      : entry.before.exists && !after.exists
+      : before.exists && !after.exists
         ? 'deleted'
-        : !entry.before.exists && !after.exists
+        : !before.exists && !after.exists
           ? 'unchanged'
-          : entry.before.content !== undefined && after.content !== undefined
-          ? entry.before.content === after.content
+          : before.content !== undefined && after.content !== undefined
+          ? before.content === after.content
             ? 'unchanged'
             : 'modified'
           : 'unknown'
@@ -86,14 +97,14 @@ export function snapshotAfter(callId: string): FileDiff | null {
     status === 'created'
       ? createdStats(after.content)
       : status === 'deleted'
-        ? deletedStats(entry.before.content)
-        : !entry.before.exists && !after.exists
+        ? deletedStats(before.content)
+        : !before.exists && !after.exists
           ? { added: 0, removed: 0, patch: '' }
-          : diffStats(entry.before.content, after.content)
-  const beforeMeta = { ...entry.before, content: undefined }
+          : diffStats(before.content, after.content)
+  const beforeMeta = { ...before, content: undefined }
   const afterMeta = { ...after, content: undefined }
   return {
-    path: entry.path,
+    path,
     before: beforeMeta,
     after: afterMeta,
     added: stats.added,

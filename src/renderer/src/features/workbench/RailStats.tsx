@@ -46,37 +46,54 @@ function viewKey(s: Store): string {
   return sessionViewIdentity({ session: s.session, peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath }).key
 }
 
+function antigravityMessages(messages: readonly UIMessage[]): UIMessage[] {
+  const result: UIMessage[] = []
+  let user: UIMessage | undefined
+  for (const message of messages) {
+    if (message.role === 'user') user = message
+    else if (message.role === 'assistant' && message.model?.startsWith('antigravity/')) {
+      if (user) result.push(user)
+      result.push(message)
+      user = undefined
+    }
+  }
+  return result
+}
+
 export function useRailStats(enabled: boolean): RailStatsModel | null {
   const t = useT()
   const money = useMoney()
   const snapshot = useStreamingThrottledStore(railSnapshot, undefined, sameSnapshot)
   const stats = useStore((s) => s.stats)
+  const antigravity = useStore((s) => !s.peekedSessionId && s.session?.model?.provider === 'antigravity')
   const peekNote = useStore((s) => s.peekNote)
   const view = useStore(viewKey)
   const childTokens = useStore((s) => (enabled ? subagentTokens(viewSubagentRuns(s)) : 0))
   const childCost = useStore((s) => (enabled ? subagentCost(viewSubagentRuns(s)) : 0))
   const historyPartial = (peekNote?.truncated ?? 0) > 0
   const speedHold = useRef<RailSpeedHold | null>(null)
-  const countSource = useToolStructureMessages(snapshot.messages)
+  const messages = useMemo(() => antigravity ? antigravityMessages(snapshot.messages) : snapshot.messages, [antigravity, snapshot.messages])
+  const countSource = useToolStructureMessages(messages)
   const counts = useMemo(() => (enabled ? railOperationCounts(countSource) : null), [enabled, countSource])
   const history = useMemo(() => {
     if (!enabled) return null
-    const { messages, liveId, running, startedAt } = snapshot
+    const { liveId, running, startedAt } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
     const floor = latencyFloor(settled)
-    const reading = windowSpeed(settled, live, floor)
-    const identity = JSON.stringify([view, messages.findLast((message) => message.role === 'user')?.id])
+    const last = settled.findLast((message) => message.role === 'assistant')
+    const reading = antigravity ? (live || !last ? null : windowSpeed([last], null)) : windowSpeed(settled, live, floor)
+    const identity = JSON.stringify([view, antigravity, messages.findLast((message) => message.role === 'user')?.id])
     speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
     const heldReading = speedHold.current.sample
     return {
-      metrics: projectSessionMetrics(settled, stats, { historyPartial, activeRunStartedAt: startedAt }),
-      counts: counts ?? railOperationCounts(messages),
+      metrics: projectSessionMetrics(settled, stats, { historyPartial, activeRunStartedAt: startedAt, antigravity }),
+      counts: antigravity ? { turns: messages.filter((m) => m.role === 'user').length, steps: messages.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0) } : counts ?? railOperationCounts(messages),
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
       heldReading,
       running,
       liveSince: startedAt !== null && settled.some((m) => m.turnTiming?.startedAt === startedAt) ? null : startedAt
     }
-  }, [enabled, snapshot, stats, historyPartial, view, counts])
+  }, [enabled, snapshot, messages, stats, historyPartial, view, counts, antigravity])
   return useMemo(() => {
     if (!history) return null
     const { metrics, counts, speeds, heldReading, running, liveSince } = history
@@ -84,8 +101,8 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
       metrics,
       counts,
       historyPartial,
-      subagentTokens: childTokens,
-      subagentCost: childCost,
+      subagentTokens: antigravity ? 0 : childTokens,
+      subagentCost: antigravity ? 0 : childCost,
       speeds,
       latestSpeed: heldReading?.speed ?? null,
       latestSpeedEstimated: heldReading?.estimated ?? false,
@@ -95,7 +112,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
       money,
       t
     })
-  }, [history, historyPartial, childTokens, childCost, money, t])
+  }, [history, historyPartial, childTokens, childCost, money, t, antigravity])
 }
 
 function useLiveClock(active: boolean): number {

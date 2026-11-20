@@ -273,6 +273,9 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('SUBSTORM')) {
       if (done < Number(/SUBSTEPS(\d+)/.exec(text)?.[1] ?? 40)) await stormStep('sub', stormTag(text, 'SUBSTORM'), done, 60)
       else await streamText('子任务四十步完成。', 20, 10)
+    } else if (text.includes('ACPDELEGATE')) {
+      if (done < 1) await callTool('bash', { command: 'yan subagent start --task "ACP_CHILD_FIXTURE" --model antigravity/pro', description: 'delegate to Antigravity fixture' })
+      else await streamText('Pi 已派发 Antigravity 子代理。', 24, 10)
     } else if (text.includes('SUBAGENTS')) {
       const count = Number(/SUBAGENTS(\d+)/.exec(text)?.[1] ?? 4)
       const pad = Number(/SUBPAD(\d+)/.exec(text)?.[1] ?? 0)
@@ -525,6 +528,13 @@ export function startFakeModel(port = 0) {
       }
       const input = Array.isArray(json.input) ? json.input : []
       const text = lastUserText(input)
+      if (text === '切回 pi 后接着聊') {
+        const priorAcp = input.some(item => item.role === 'assistant' && JSON.stringify(item.content).includes('上下文收到 · pro'))
+        requests.push({ at: Date.now(), text, priorAcp })
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        void respond(res, text, 0, requests.length)
+        return
+      }
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
       requests.push({ at: Date.now(), text: text.slice(0, 40), usage: usageFromText(text), done, tools: (json.tools ?? []).length, toolChoice: json.tool_choice, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })

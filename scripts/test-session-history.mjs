@@ -162,6 +162,11 @@ export async function runSessionHistoryTests(ok, history, chainService) {
       '图片元数据保留、图片本身不被截断（完整本地化）'
     )
 
+    const complete = await history.readChainMessages(imgB, chains, undefined, localizer, true)
+    const uiAgain = await history.readChainMessages(imgB, chains, undefined, localizer)
+    ok(complete?.truncated === 0 && complete.messages.length === 2 && complete.messages.every(m => m.text === bigText) &&
+      uiAgain?.messages[0].text === localized.messages[0].text, '完整历史按段读取原文，不污染界面的限长缓存')
+
     const rawInline = await history.readChainMessages(imgB, chains)
     const rawImages = rawInline?.messages.flatMap((m) => m.images ?? []) ?? []
     ok(rawImages.length === 8, `未传 localizer 时仍读到 8 张图片（实际 ${rawImages.length}）`)

@@ -106,7 +106,7 @@ export function leafBranch(entries: readonly LinkedEntry[], linked = true): Link
   return all.filter((entry) => entry.id !== undefined && onPath.has(entry.id))
 }
 
-type ReadOptions ={ localizeImage?: (mimeType: string, data: string) => string }
+type ReadOptions = { localizeImage?: (mimeType: string, data: string) => string; fullText?: boolean }
 const inFlight = new Map<string, Promise<ReadResult | null>>()
 const localizers = new WeakMap<NonNullable<ReadOptions['localizeImage']>, number>()
 let localizerSeq = 0
@@ -193,6 +193,7 @@ export async function readSessionMessages(path: string, opts?: ReadOptions): Pro
   try {
     const canonical = await realpath(path)
     const version = await stat(path, { bigint: true })
+    if (opts?.fullText) return (await readStable(path, opts))?.result ?? null
     let localizer = 0
     if (opts?.localizeImage) {
       localizer = localizers.get(opts.localizeImage) ?? ++localizerSeq
@@ -268,7 +269,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
               linkedEntry = linkOf(entry)
               const message = entryMessage(entry)
               if (message) {
-                const result = truncateDeep(message)
+                const result = opts?.fullText ? { value: message, cut: 0 } : truncateDeep(message)
                 linkedEntry.value = result.value; truncated += result.cut; total++
               }
             } catch { }

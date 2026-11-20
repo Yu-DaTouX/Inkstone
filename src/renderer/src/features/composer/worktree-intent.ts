@@ -30,6 +30,16 @@ export async function materializeWorktreeIntent(t: HostT): Promise<'none' | 'cre
   const gate = nav.gate
   const created = await creating
   if (!created.ok || gate !== nav.gate || !isCreatedWorktreeView(created)) return 'failed'
+  const model = before.session?.model
+  if (model?.provider === 'antigravity') {
+    const selected = await useStore.getState().setModel(model.provider, model.id)
+    if (!selected.ok || gate !== nav.gate || !isCreatedWorktreeView(created)) return 'failed'
+    const effort = before.session?.antigravity?.thinking?.current
+    if (effort && useStore.getState().session?.thinkingLevel !== effort) {
+      await useStore.getState().setThinking(effort)
+      if (gate !== nav.gate || !isCreatedWorktreeView(created) || useStore.getState().session?.thinkingLevel !== effort) return 'failed'
+    }
+  }
   saveDraft(key, { text: '', attachments: [] })
   if (key) useStore.getState().setSessionDraft('', key)
   if (attachments.length) useStore.setState({ attachments })

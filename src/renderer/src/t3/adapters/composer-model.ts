@@ -1,12 +1,14 @@
 import { useCallback, useMemo } from 'react'
+import { ANTIGRAVITY_PROVIDER } from '../../../../shared/antigravity'
 import type { AuthProviderInfo, ModelInfo } from '../../../../shared/ipc'
 import { modelKey, type ModelChoice } from '../../../../shared/model-selection'
 import {
   sortByProviderThenNewest,
   toggleFavorite as toggleFavoriteChoice
 } from '../../features/settings/models/models-model'
-import { useT } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useAntigravityDiscovery } from '../../state/antigravity-discovery'
 import type { ProviderInstanceEntry, ProviderInstanceId } from './contracts'
 import { providerInstanceEntries } from './providers'
 import type { ModelEsque } from '../components/chat/providerIconUtils'
@@ -65,48 +67,66 @@ export function sortProviderModelItems<T extends { instanceId: ProviderInstanceI
 export interface ComposerModelAdapter {
   activeInstanceId: ProviderInstanceId
   model: string
+  activeModelName?: string
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>
   favorites: ReadonlyArray<ModelChoice>
   favoriteKeys: ReadonlySet<string>
   select: (provider: ProviderInstanceId, model: string) => void
   toggleFavorite: (provider: ProviderInstanceId, model: string) => void
-  openProviderSetup: () => void
+  openProviderSetup: (provider?: ProviderInstanceId) => void
+  discoverAntigravity: () => void
 }
 
 const EMPTY_MODELS: ReadonlyArray<ModelInfo> = []
 const EMPTY_PROVIDERS: ReadonlyArray<AuthProviderInfo> = []
 const EMPTY_CHOICES: ReadonlyArray<ModelChoice> = []
 const EMPTY_ORDER: ReadonlyArray<string> = []
-const EMPTY_OPTIONS: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>> = new Map()
 
 export function useComposerModelAdapter(): ComposerModelAdapter {
   const t = useT()
+  const { lang } = useI18n()
+  const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd)
+  const { discovery: external, discover: discoverAntigravity } = useAntigravityDiscovery(cwd)
   const models = useStore((s) => s.models) ?? EMPTY_MODELS
   const providers = useStore((s) => s.authProviders) ?? EMPTY_PROVIDERS
   const remembered = useStore((s) => (s.session ? '' : s.sessions.find((item) => item.id === s.peekedSessionId)?.model ?? ''))
   const split = remembered.indexOf('/')
   const provider = useStore((s) => s.session?.model?.provider ?? '') || (split > 0 ? remembered.slice(0, split) : '')
   const id = useStore((s) => s.session?.model?.id ?? '') || (split > 0 ? remembered.slice(split + 1) : '')
+  const activeModelName = useStore((s) => s.session?.model?.provider === ANTIGRAVITY_PROVIDER ? s.session.model.name : undefined)
   const favorites = useStore((s) => s.settings?.modelFavorites) ?? EMPTY_CHOICES
   const hidden = useStore((s) => s.settings?.modelHidden) ?? EMPTY_CHOICES
   const order = useStore((s) => s.settings?.modelProviderOrder) ?? EMPTY_ORDER
 
   const instanceEntries = useMemo(
-    () =>
-      instanceEntriesFromModels(models, order, providers, (kind) =>
-        t(kind === 'signIn' ? 'composer.t3.picker.needsSignIn' : 'composer.t3.picker.needsApiKey'),
-      ),
-    [models, order, providers, t],
+    () => {
+      const ready = !!external?.models?.length
+      return [
+        ...instanceEntriesFromModels(models, order, providers, (kind) =>
+          t(kind === 'signIn' ? 'composer.t3.picker.needsSignIn' : 'composer.t3.picker.needsApiKey'),
+        ).filter((entry) => entry.instanceId !== ANTIGRAVITY_PROVIDER),
+        {
+          instanceId: ANTIGRAVITY_PROVIDER, driverKind: ANTIGRAVITY_PROVIDER, displayName: 'Antigravity',
+          enabled: true, installed: ready, isAvailable: ready, status: ready ? 'ready' as const : 'warning' as const,
+          needsSetup: !ready,
+          snapshot: { message: external?.error ?? (external?.models?.length === 0
+            ? lang === 'en-US' ? 'No models returned by the CLI.' : 'CLI 没有返回可用模型。'
+            : lang === 'en-US' ? 'Checking Antigravity CLI…' : '正在查找 Antigravity CLI 模型…') },
+        },
+      ]
+    },
+    [models, order, providers, external, lang, t],
   )
   const modelOptionsByInstance = useMemo(() => {
-    if (models.length === 0) return EMPTY_OPTIONS
     const map = new Map<ProviderInstanceId, ReadonlyArray<ModelEsque>>()
     for (const entry of instanceEntries) {
-      map.set(entry.instanceId, modelOptionsForProvider(models, entry.instanceId, order, hidden))
+      map.set(entry.instanceId, entry.instanceId === ANTIGRAVITY_PROVIDER
+        ? (external?.models ?? []).map(({ id, name }) => ({ slug: id, name }))
+        : modelOptionsForProvider(models, entry.instanceId, order, hidden))
     }
     return map
-  }, [models, hidden, instanceEntries, order])
+  }, [models, external, hidden, instanceEntries, order])
   const favoriteKeys = useMemo(
     () => new Set(favorites.map((choice) => providerModelKey(choice.provider, choice.id))),
     [favorites],
@@ -136,6 +156,7 @@ export function useComposerModelAdapter(): ComposerModelAdapter {
   return {
     activeInstanceId: provider,
     model: id,
+    activeModelName,
     instanceEntries,
     modelOptionsByInstance,
     favorites,
@@ -143,5 +164,6 @@ export function useComposerModelAdapter(): ComposerModelAdapter {
     select,
     toggleFavorite,
     openProviderSetup,
+    discoverAntigravity,
   }
 }

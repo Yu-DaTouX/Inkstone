@@ -202,6 +202,7 @@ export function registerAgentIpc(ipc: IpcRegistrar, deps: AgentIpcDeps): void {
     async (provider: string, modelId: string, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setModel(provider, modelId) ?? { ok: false, error: sessionActionChanged() }
   )
   handle('yan:setThinking', async (level: string, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setThinking(level) ?? { ok: false, error: sessionActionChanged() })
+  handle('yan:antigravity:setMode', async (mode, expected) => requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setAntigravityMode(mode) ?? { ok: false, error: sessionActionChanged() })
   handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
   handle('yan:setUltracode', async (on: boolean, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setUltracode(!!on) ?? { ok: false, error: sessionActionChanged() })
   handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())

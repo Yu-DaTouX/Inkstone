@@ -56,6 +56,7 @@ import { showPreview } from './preview-bindings'
 import { BackgroundTasks, useViewTerminalJobs } from './BackgroundTasks'
 import { isLiveTerminalJob } from '../../../../shared/terminal-jobs'
 import { useMcpConnections } from './McpConnections'
+import { AntigravityQuotaDetails, antigravityQuotaSummary, useAntigravityQuota } from './AntigravityQuota'
 import './workbench.css'
 
 export interface OverviewPaneProps {
@@ -774,6 +775,9 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const peekedPath = useStore((s) => s.peekedPath)
   const agentRunning = session?.isAgentRunning === true || session?.isStreaming === true
   const provider = session?.model?.provider ?? ''
+  const antigravity = provider === 'antigravity'
+  const unreported = lang === 'en-US' ? 'Not reported' : '未上报'
+  const acpUsage = antigravity ? messages.findLast((message) => message.model?.startsWith('antigravity/') && message.antigravity?.usage)?.antigravity?.usage : undefined
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const foldKey = view.key || 'none'
@@ -797,8 +801,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const changesCount = sessionChanges.files
   const lineTotals = sessionChanges
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
-  const changesSummary = !repo ? undefined : changesCount === 0 ? (
-    <RailValue value={rail.changesNone} />
+  const changesSummary = !repo && !antigravity ? undefined : changesCount === 0 ? (
+    <RailValue value={antigravity ? unreported : rail.changesNone} />
   ) : lineTotals.added >= 0 && lineTotals.removed >= 0 ? (
     <span className="wb-rail-headline" data-testid="wb-rail-changes-total" title={`${text.changesFiles(changesCount)}\n${rail.linesChanged(lineTotals.added, lineTotals.removed)}`}>
       <RailValue
@@ -849,7 +853,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     <RailValue
       glyph={{ kind: 'ring', percent: contextKnown ? usage.percent : null, label: rail.sections.context }}
       tone={contextKnown ? glyphTone(usage.tone) : undefined}
-      value={contextKnown ? `${usage.estimated ? '≈' : ''}${Math.round(usage.percent ?? 0)}%` : '—'}
+      value={contextKnown ? `${usage.estimated ? '≈' : ''}${Math.round(usage.percent ?? 0)}%` : antigravity ? unreported : '—'}
       digits={usage.estimated ? 5 : 4}
     />
   )
@@ -871,9 +875,21 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
 
   const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
-  const mcp = useMcpConnections(owner, agentRunning)
+  const piMcp = useMcpConnections(antigravity ? null : owner, agentRunning)
+  const bridgeConfigured = session?.antigravity?.bridgeConfigured
+  const acpMcpServers = session?.antigravity?.mcpServers ?? []
+  const configured = lang === 'en-US' ? 'Configured' : '已配置'
+  const mcp = antigravity ? {
+    visible: true,
+    summary: <RailValue value={acpMcpServers.length ? `${acpMcpServers.length + Number(!!bridgeConfigured)} ${configured}` : bridgeConfigured ? configured : unreported} />,
+    body: bridgeConfigured || acpMcpServers.length ? <ul className="wb-ov-items" data-testid="rail-antigravity-mcp">
+      {bridgeConfigured ? <RailRow label={lang === 'en-US' ? 'Inkstone subagent bridge' : '砚子代理桥'} value={configured} /> : null}
+      {acpMcpServers.map((server) => <RailRow key={server} label={server} value={configured} />)}
+    </ul> : null
+  } : piMcp
 
-  const quota = useQuotaTile(provider, agentRunning, t, text)
+  const quota = useQuotaTile(antigravity ? '' : provider, agentRunning, t, text)
+  const antigravityQuota = useAntigravityQuota(antigravity && !isRailSectionHidden({ hidden }, 'usage'), agentRunning)
   const deepseek = modelBrand({ id: session?.model?.id }) === 'deepseek' || modelBrand(session?.model) === 'deepseek'
   const peakPrice = deepseek && deepseekPricePeriod(quota.now) === 'peak'
   const quotaModel = quota.model
@@ -987,10 +1003,10 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
         </ul>
       )
     },
-    stats: statsModel || agentRunning
+    stats: statsModel || agentRunning || antigravity
       ? {
           summary: !statsModel ? (
-            <RailValue value="—" />
+            <RailValue value={antigravity ? unreported : '—'} />
           ) : isOpen('stats') ? (
             <span className="wb-rail-headline" data-testid="wb-rail-stats-headline" title={[statsModel.headline, statsModel.headlineTitle].filter(Boolean).join('\n')}>
               <RailValue value={statsModel.headline} />
@@ -1008,14 +1024,24 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ) : contextSummary,
       summaryWhenOpen: true,
       tone: contextKnown ? glyphTone(usage.tone) : undefined,
-      onOpenView: () => onOpenView('context'),
-      body: contextData && usage.known ? (
+      onOpenView: antigravity ? undefined : () => onOpenView('context'),
+      body: antigravity ? (contextKnown ? (
+        <div className="wb-ov-ctx">
+          <RailBar label={rail.sections.context} used={usage.percent ?? 0} />
+          <span>{shortTokens(usage.tokens)} / {shortTokens(usage.windowSize)}</span>
+        </div>
+      ) : null) : contextData && usage.known ? (
         <ContextDetail data={contextData} rail={rail} />
       ) : (
         <div className="wb-ov-ctx"><RailBar label={rail.sections.context} used={0} /></div>
       )
     },
-    ...(quotaModel || peakPrice
+    ...(antigravity
+      ? { usage: {
+          summary: <RailValue value={antigravityQuotaSummary(antigravityQuota.snapshot, session?.model, lang) ?? (antigravityQuota.loading ? (lang === 'en-US' ? 'Reading…' : '查询中…') : unreported)} />,
+          body: <AntigravityQuotaDetails quota={antigravityQuota} turnTokens={acpUsage?.totalTokens === undefined ? undefined : shortTokens(acpUsage.totalTokens)} lang={lang} />
+        } }
+      : quotaModel || peakPrice
       ? {
           usage: {
             summary: quotaSummary,
@@ -1029,6 +1055,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ? {
           connectors: {
             summary: mcp.summary,
+            summaryWhenOpen: antigravity,
             body: mcp.body
           }
         }
@@ -1041,7 +1068,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
           }
         }
       : {}),
-    ...(repo
+    ...(repo || antigravity
       ? {
           changes: {
             summary: changesSummary,
@@ -1049,7 +1076,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
             body:
               changesCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
                 <ChangedRows files={lineTotals.entries} text={rail} onOpen={(path) => openOutput(/^(?:[a-zA-Z]:[\\/]|[\\/])/.test(path) || !cwd ? path : `${cwd.replace(/[\\/]+$/, '')}/${path}`)} />
-              ) : (
+              ) : repo ? (
                 <ul className="wb-ov-items">
                   {([
                     [text.changesStaged, repo.stagedCount],
@@ -1061,7 +1088,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
                       <RailRow key={label} label={label} icon={<FileDiff size={14} aria-hidden />} value={String(count)} />
                     ))}
                 </ul>
-              )
+              ) : null
           }
         }
       : {}),

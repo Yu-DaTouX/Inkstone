@@ -95,7 +95,7 @@ function sameConnectionConfig(a: McpServerConfig, b: McpServerConfig): boolean {
   return (
     a.transport === b.transport &&
     a.command === b.command &&
-    a.url === b.url &&
+    a.url === b.url && a.cwd === b.cwd && JSON.stringify(a.headers ?? null) === JSON.stringify(b.headers ?? null) &&
     (a.enabled !== false) === (b.enabled !== false) &&
     JSON.stringify(a.args ?? null) === JSON.stringify(b.args ?? null) &&
     JSON.stringify(a.env ?? null) === JSON.stringify(b.env ?? null)
@@ -324,14 +324,15 @@ export class McpConnectionManager {
       return new StdioTreeClientTransport({
         command: config.command,
         args: config.args ?? [],
-        env
+        env,
+        cwd: config.cwd
       }, undefined, undefined, undefined, {
         secretValues: Object.values(config.env ?? {}).filter((value): value is string => typeof value === 'string'),
         ...(config.id === WINDOWS_MCP_SERVER_ID ? { keep: windowsMcpKeepsProcess } : {})
       })
     }
     if (!config.url) throw new Error(pick(`MCP 服务 ${config.id} 缺少 url`, `MCP service ${config.id} is missing url`))
-    return new StreamableHTTPClientTransport(new URL(config.url))
+    return new StreamableHTTPClientTransport(new URL(config.url), config.headers ? { requestInit: { headers: config.headers, redirect: 'error' } } : undefined)
   }
 
   private require(serverId: string): Connection {

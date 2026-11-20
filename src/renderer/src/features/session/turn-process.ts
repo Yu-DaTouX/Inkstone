@@ -641,6 +641,7 @@ export function turnSpanMs(messages: readonly RunMessage[], sourceIds: readonly 
 
 export function turnChangeSet(turn: AssistantTurn, cwd?: string): TurnChanges | null {
   const collected = collectTurnChanges(turn.tools, cwd)
+  if (turn.model?.startsWith('antigravity/')) return collected
   if (collected || !turn.segments.length || turn.tools.some((tool) => tool.status === 'running')) return collected
   const summary = processSummary(turn.segments)
   const rows = (list: readonly ProcessFileChange[], status: TurnFileStatus): TurnFileChange[] => list

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { findGitRoot, hasGitCommit, outputBytesText } from './subagent-isolation'
 import { outputsTreeBytes, subagentOutputsPolicy } from './subagent-prune'
-import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentExtensionSkip, type SubagentQuotaWatch } from './subagents'
+import { SubagentController, type SubagentOptions, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentExtensionSkip, type SubagentQuotaWatch } from './subagents'
 import type { ModelReviewReceiptInput } from './approval-log'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
@@ -117,6 +117,7 @@ export interface SubagentServiceDeps {
   sideQuestionExtension?(): string | undefined
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   previewHtml?(htmlPath: string, root: string, options?: { at?: number[] }): Promise<unknown>
+  approveAntigravity?: SubagentOptions['approveAntigravity']
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   resolveModelLabel?(requested: string, context: SubagentCommandContext): Promise<ModelLabelResolution>
   confirmDanger?(
@@ -201,6 +202,7 @@ export class SubagentService {
       confirmDanger: (params, cwd, origin, signal) => this.deps.confirmDanger?.(params, cwd, origin, signal) ?? Promise.resolve(false),
       dangerPrefs: () => dangerGuardPrefs(),
       recordDangerReview: (review, origin) => this.deps.recordDangerReview?.(review, origin),
+      approveAntigravity: this.deps.approveAntigravity,
       ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),
       ...(this.deps.quotaWatch ? { quotaWatch: this.deps.quotaWatch } : {}),
       onChange: (run, patch) => this.deps.onChange(run, patch),
@@ -260,7 +262,7 @@ export class SubagentService {
     run: (command, params, context) => this.run(command, params, context)
   }
 
-  private async run(...[command, params, context]: Parameters<SubagentCommandHost['run']>): ReturnType<SubagentCommandHost['run']> {
+  private async run(...[command, params, context, signal]: Parameters<SubagentCommandHost['run']>): ReturnType<SubagentCommandHost['run']> {
     const ctrl = await this.get()
     ctrl.setContext(context)
 
@@ -296,12 +298,14 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
+      if (signal?.aborted) throw new CapabilityCommandError('cancelled', '父会话已停止，未派发子代理')
+      if (context.fromAntigravity && model?.startsWith('antigravity/')) throw new CapabilityCommandError('subagent_model_invalid', 'Antigravity 只可从此入口派发 Pi 子代理')
       const extensionSkip = this.deps.extensionSkip?.(context) ?? null
-      const startContext = { ...context, ...(model ? { modelPinned: true } : {}), ...(thinkingLevel ? { thinkingLevel } : {}), ...(extensionSkip ? { extensionSkip } : {}) }
+      const startContext = { ...context, ...(context.fromAntigravity && signal ? { launchSignal: signal } : {}), ...(model ? { modelPinned: true } : {}), ...(thinkingLevel ? { thinkingLevel } : {}), ...(extensionSkip ? { extensionSkip } : {}) }
       const autoIsolate = !readOnly && !isolation && (params.isolation === undefined || params.isolation === null || params.isolation === '')
       const started = autoIsolate
-        ? await this.startDefaultWriter(ctrl, context.cwd, (choice) => ctrl.start(task, model ?? context.model, choice, briefInput, undefined, startContext))
-        : { result: await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, startContext) }
+        ? await this.startDefaultWriter(ctrl, context.cwd, (choice) => ctrl.start(task, model ?? (context.fromAntigravity ? undefined : context.model), choice, briefInput, undefined, startContext))
+        : { result: await ctrl.start(task, model ?? (context.fromAntigravity ? undefined : context.model), readOnly ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, startContext) }
       const result = started.result
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(

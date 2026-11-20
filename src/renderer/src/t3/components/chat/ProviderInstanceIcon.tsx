@@ -1,6 +1,8 @@
 import { memo } from "react";
 
+import { ANTIGRAVITY_PROVIDER } from "../../../../../shared/antigravity";
 import type { ProviderDriverKind } from "../../adapters/contracts";
+import type { ModelEsque } from "./providerIconUtils";
 import { cx } from "../../../ui/cx";
 import { ModelBot } from "../../../patterns/ModelBot";
 import { brandOfModel } from "../../../patterns/model-vendor";
@@ -18,6 +20,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   driverKind: ProviderDriverKind;
   displayName: string;
   local?: boolean | undefined;
+  model?: Pick<ModelEsque, 'slug' | 'name'> | undefined;
   showBadge?: boolean;
   className?: string;
   iconClassName?: string;
@@ -25,16 +28,22 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   indicatorBackground?: string;
   iconSize?: number;
 }) {
-  const brand = brandOfModel({ provider: props.driverKind, id: props.driverKind });
+  const antigravity = props.driverKind === ANTIGRAVITY_PROVIDER;
+  const model = antigravity ? props.model : undefined;
+  const id = model?.slug ?? props.driverKind;
+  const identified = brandOfModel({ provider: props.driverKind, id });
+  const brand = model && identified === "pi"
+    ? brandOfModel({ provider: props.driverKind, id: model.name })
+    : identified;
   const iconSize = props.iconSize ?? 16;
-  const favicon = providerFavicon(props.driverKind, props.local === true);
+  const favicon = model ? null : providerFavicon(props.driverKind, props.local === true);
   return (
     <span
       className={cx(
         "t3-provider-icon",
         props.className,
       )}
-      data-provider-brand={brand}
+      data-provider-brand={antigravity && !model ? ANTIGRAVITY_PROVIDER : brand}
     >
       {favicon ? (
         <img

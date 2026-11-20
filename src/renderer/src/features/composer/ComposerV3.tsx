@@ -114,6 +114,7 @@ const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element
           <ProviderModelPicker
             activeInstanceId={model.activeInstanceId}
             model={model.model}
+            activeModelName={model.activeModelName}
             instanceEntries={model.instanceEntries}
             modelOptionsByInstance={model.modelOptionsByInstance}
             favoriteKeys={model.favoriteKeys}
@@ -122,7 +123,10 @@ const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element
             onOpenProviderSetup={model.openProviderSetup}
             isComposerOwned
             open={menu.open}
-            onOpenChange={menu.onOpenChange}
+            onOpenChange={(open) => {
+              if (open) model.discoverAntigravity()
+              menu.onOpenChange(open)
+            }}
             aside={menu.aside}
             triggerBadge={menu.badge}
             footer={menu.footer}
@@ -252,6 +256,7 @@ export function ComposerV3(): JSX.Element {
     })
   )
   const compacting = useStore((s) => !!s.session?.isCompacting)
+  const antigravity = useStore((s) => s.session?.model?.provider === 'antigravity')
 
   const armStrayEnter = useCallback((): void => {
     strayEnterUntil.current = Date.now() + STRAY_ENTER_MS
@@ -411,14 +416,15 @@ export function ComposerV3(): JSX.Element {
   const suggestion = visibleSuggestion({
     suggestion: suggestionStatus,
     dismissed: dismissedSuggestion,
-    enabled: suggestionsEnabled,
+    enabled: suggestionsEnabled && !antigravity,
     running: roundRunning || submitAdapter.isSendBusy,
     answering: answering !== null,
     value,
     attachmentCount: attachments.count,
     composing
   })
-  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
+  const runningPlaceholder = antigravity ? lang === 'en-US' ? 'Draft your next message' : '可以先写下一条消息' : t('composer.phRunning')
+  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? runningPlaceholder : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))
@@ -730,7 +736,7 @@ export function ComposerV3(): JSX.Element {
               canInterrupt={submitAdapter.canInterrupt}
               isSendBusy={submitAdapter.isSendBusy}
               sendDisabledReason={submitAdapter.sendDisabledReason}
-              hasSendableContent={submitAdapter.hasSendableContent}
+              hasSendableContent={submitAdapter.hasSendableContent && !(antigravity && roundRunning)}
               preserveComposerFocusOnPointerDown
               onSubmitMessage={(mode) => void submitMessage(mode)}
               onInterrupt={submitAdapter.interrupt}

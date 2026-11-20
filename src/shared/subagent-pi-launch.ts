@@ -1,6 +1,8 @@
 import { agentOwnedPiArgs } from './agent-context'
+import { ANTIGRAVITY_PROVIDER } from './antigravity'
 
 export function subagentModelError(model: string | undefined, readOnly: boolean): string | undefined {
+  if (readOnly && model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) return 'Antigravity CLI 不提供砚的只读工具边界，未启动子任务。'
   if (readOnly && model?.startsWith('claude-bridge/')) {
     return 'Claude 订阅模型暂不支持只读子任务：只读执行禁用 Provider 扩展。请选择当前文件夹执行，或选择原生 pi 模型。'
   }

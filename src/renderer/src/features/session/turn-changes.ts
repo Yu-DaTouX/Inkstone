@@ -146,23 +146,27 @@ export function collectTurnChanges(tools: readonly UIToolCall[], cwd?: string): 
   let countable = true
   for (const call of tools) {
     if (!settled(call)) continue
-    const diff = readFileDiff(call.details)
-    if (!diff || diff.status === 'unchanged') continue
-    const path = diff.path || callPath(call) || call.id
-    if (!isInsideCwd(path, cwd)) continue
-    const known = diff.added >= 0 && diff.removed >= 0
-    if (!known) countable = false
-    const prev = byPath.get(path)
-    const status: TurnFileStatus = diff.status === 'created' || diff.status === 'deleted'
-      ? diff.status
-      : prev?.status === 'created' ? 'created' : 'modified'
-    const row: TurnFileChange = prev ?? { path, status, added: 0, removed: 0 }
-    row.status = status
-    if (known) {
-      row.added += diff.added
-      row.removed += diff.removed
+    const acp = call.details as { antigravity?: boolean; antigravityDiffs?: FileDiff[] } | undefined
+    const fileDiff = readFileDiff(call.details)
+    const diffs = acp?.antigravity && call.status === 'ok' && Array.isArray(acp.antigravityDiffs) ? acp.antigravityDiffs : fileDiff ? [fileDiff] : []
+    for (const diff of diffs) {
+      if (!diff || diff.status === 'unchanged') continue
+      const path = diff.path || callPath(call) || call.id
+      if (!isInsideCwd(path, cwd)) continue
+      const known = diff.added >= 0 && diff.removed >= 0
+      if (!known) countable = false
+      const prev = byPath.get(path)
+      const status: TurnFileStatus = diff.status === 'created' || diff.status === 'deleted'
+        ? diff.status
+        : prev?.status === 'created' ? 'created' : 'modified'
+      const row: TurnFileChange = prev ?? { path, status, added: 0, removed: 0 }
+      row.status = status
+      if (known) {
+        row.added += diff.added
+        row.removed += diff.removed
+      }
+      byPath.set(path, row)
     }
-    byPath.set(path, row)
   }
   if (!byPath.size) return null
   const files = [...byPath.values()]

@@ -1,4 +1,5 @@
 import { pick } from '../shared/ui-lang'
+import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
 import { createHash } from 'node:crypto'
 import type { SubagentForkSource } from './subagent-fork'
 import type { PreparedWorkspace } from './subagent-isolation'
@@ -34,6 +35,7 @@ export interface Resumability {
 }
 
 export interface ResumabilityInput {
+  model?: string
   status: string
   isolation: string
   review?: string
@@ -63,6 +65,7 @@ export function resolveResumeLaunch(
 
 export function subagentResumability(input: ResumabilityInput): Resumability {
   if (input.status === 'running' || input.status === 'starting') return { ok: false, reason: pick('子 Agent仍在运行', 'Subagent is still running') }
+  if (input.model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) return { ok: false, reason: pick('Antigravity 子代理已结束；请新派任务并带上上次结论。', 'Start a new Antigravity subagent and include the previous result.') }
   if (input.launchFailed) return { ok: false, reason: pick('这个子 Agent没有成功启动过', 'This subagent never started successfully') }
   if (input.isolation === 'worktree' && !input.worktreeAlive) {
     return { ok: false, reason: pick('worktree 已合并、放弃或归档清理，原工作树不在了；需要继续时重新派一个，并附上它的结论', 'The worktree was merged, discarded or cleaned up; start a new subagent and include its conclusion') }

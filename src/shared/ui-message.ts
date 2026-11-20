@@ -1,4 +1,5 @@
 import type { ApprovalReceipt } from './approval'
+import type { AntigravityTurnData } from './antigravity'
 
 export type CapabilityStatus = 'known' | 'unsupported' | 'unknown'
 
@@ -102,6 +103,7 @@ export interface UIMessage {
   elapsedMs?: number
   generationTiming?: GenerationTiming
   turnTiming?: TurnTimingMeta
+  antigravity?: AntigravityTurnData
   responseDetail?: ResponseDetail
   model?: string
   timestamp?: number
