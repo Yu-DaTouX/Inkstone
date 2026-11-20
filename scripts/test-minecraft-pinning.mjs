@@ -62,7 +62,7 @@ const ok = (condition, message, detail) => {
   assert.ok(condition, `${message}${detail === undefined ? '' : `: ${detail}`}`)
   checks++
 }
-const pinFor = (body, version = '0.1.0') => {
+const pinFor = (body, version = '0.1.2') => {
   const bytes = Buffer.from(body)
   return { version, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length }
 }
@@ -89,10 +89,10 @@ try {
     runtime: 'C:/Inkstone/Inkstone.exe',
     tempDir: join(root, 'yan', 'tmp')
   }
-  ok(mc.MINECRAFT_PLUGIN_PIN.version === '0.1.1', '固定版本与已核验发布一致')
+  ok(mc.MINECRAFT_PLUGIN_PIN.version === '0.1.1', '最低版本与历史已核验发布一致')
   ok(mc.MINECRAFT_PLUGIN_PIN.size === 1_392_640, '固定包大小与已核验发布一致')
   ok(mc.MINECRAFT_PLUGIN_PIN.sha256 === '09b1caa5b07442884ddab2578a4c025089af6a8b863d9634d1eeb8cfd043a9f4', '固定摘要与已核验发布元数据一致')
-  ok(mc.MINECRAFT_PLUGIN_ARCHIVE === 'https://github.com/Yu-DaTouX/inkstone-minecraft-plugin/releases/download/v0.1.1/inkstone-minecraft-plugin.zip', '默认下载地址指向固定版本，而不是 latest')
+  ok(mc.MINECRAFT_PLUGIN_ARCHIVE === 'https://github.com/Yu-DaTouX/inkstone-minecraft-plugin/releases/download/v0.1.1/inkstone-minecraft-plugin.zip', '历史锚点的下载地址指向精确标签')
 
   const seen = []
   const serve = (body, status = 200, headers = {}) => async (url) => {
@@ -101,21 +101,36 @@ try {
   }
   const has = (name) => readFile(join(paths.pluginDir, name), 'utf8').then(() => true, () => false)
   const archive = zipArchive(Object.entries({
-    'package.json': JSON.stringify({ name: 'inkstone-minecraft-plugin', version: '0.1.0' }),
+    'package.json': JSON.stringify({ name: 'inkstone-minecraft', version: '0.1.2' }),
     'mcp/server.ts': 'server',
     'skills/inkstone-fabric-dev/SKILL.md': 'skill'
   }))
 
+  const metadataUrl = 'https://api.github.com/repos/Yu-DaTouX/inkstone-minecraft-plugin/releases/latest'
+  const release = (pin) => ({ tag_name: `v${pin.version}`, draft: false, prerelease: false, assets: [{ name: 'inkstone-minecraft-plugin.zip', digest: `sha256:${pin.sha256}`, state: 'uploaded', size: pin.size, browser_download_url: mc.minecraftArchiveUrl(pin.version) }] })
+  const fixture = pinFor(archive)
+  const fetchUpdate = (meta, bytes = archive) => async url => {
+    seen.push(url)
+    if (url === metadataUrl) return Response.json(meta)
+    assert.equal(url, mc.minecraftArchiveUrl(fixture.version))
+    return new Response(bytes)
+  }
   {
     const result = await mc.installMinecraftPlugin(paths, { fetch: serve(archive, 404) })
-    ok(!result.ok && seen.at(-1) === mc.MINECRAFT_PLUGIN_ARCHIVE && /HTTP 404/.test(result.error), '默认安装只请求固定版本地址', result.error)
+    ok(!result.ok && seen.at(-1) === metadataUrl && /HTTP 404/.test(result.error), '更新信息不可用时不回退到旧包', result.error)
     ok(!result.status.installed, '下载失败不留下插件目录')
   }
-
   {
-    const result = await mc.installMinecraftPlugin(paths, { fetch: serve(archive), pin: pinFor(archive) })
-    ok(result.ok, '摘要正确时合成包安装成功', result.error)
-    ok(seen.at(-1) === 'https://github.com/Yu-DaTouX/inkstone-minecraft-plugin/releases/download/v0.1.0/inkstone-minecraft-plugin.zip', '安装地址由固定版本决定')
+    const payload = release(fixture)
+    const candidate = await mc.latestMinecraftPlugin(fetchUpdate(payload))
+    assert.deepEqual(candidate, fixture)
+    const noConfirmation = await mc.installMinecraftPlugin(paths, { fetch: fetchUpdate(payload) })
+    ok(!noConfirmation.ok && seen.at(-1) === metadataUrl, '未确认时不下载插件包')
+    const changed = await mc.installMinecraftPlugin(paths, { fetch: fetchUpdate(release({ ...fixture, sha256: '0'.repeat(64) })), expectedRelease: mc.minecraftReleaseKey(candidate) })
+    ok(!changed.ok && seen.at(-1) === metadataUrl, '用户确认后同标签摘要变化也拒绝下载')
+    const result = await mc.installMinecraftPlugin(paths, { fetch: fetchUpdate(payload), expectedRelease: mc.minecraftReleaseKey(candidate) })
+    ok(result.ok, '确认的稳定版和摘要一致时安装成功', result.error)
+    ok(seen.at(-1) === mc.minecraftArchiveUrl('0.1.2'), '下载锁定到确认的版本标签')
     ok(await has('mcp/server.ts'), '摘要通过后解包出插件文件')
     ok((await readdir(paths.tempDir)).length === 0, '安装完清理临时目录')
   }
@@ -144,10 +159,30 @@ try {
   }
 
   {
-    await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: {} }))
-    const result = await mc.installMinecraftPlugin(paths, { fetch: serve(archive), pin: { ...pinFor(archive), version: '9.9.9' } })
-    ok(result.ok && seen.at(-1).includes('/download/v9.9.9/'), '升级固定版本时地址随固定版本变化', result.error)
-    ok(JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft'], '成功后登记 MCP 服务')
+    const cfg = join(agentDir, 'mcp.json')
+    const document = JSON.parse(await readFile(cfg, 'utf8'))
+    const entry = document.mcpServers['inkstone-minecraft']
+    entry.env.SCENE3D_BLENDER = 'C:/Tools/blender.exe'
+    entry.enabled = false
+    document.mcpServers['unrelated'] = { command: 'keep' }
+    await writeFile(cfg, JSON.stringify(document))
+    const result = await mc.installMinecraftPlugin(paths, { fetch: fetchUpdate(release(fixture)), expectedRelease: mc.minecraftReleaseKey(fixture) })
+    ok(result.ok, '保留配置的同版修复成功', result.error)
+    assert.deepEqual(JSON.parse(await readFile(cfg, 'utf8')), document)
+    const older = await mc.installMinecraftPlugin(paths, { fetch: serve(archive), pin: mc.MINECRAFT_PLUGIN_PIN })
+    ok(!older.ok && /拒绝降级/.test(older.error), '伪旧版不能覆盖已安装新版')
+    const badVersion = await mc.installMinecraftPlugin(paths, { fetch: serve(archive), pin: pinFor(archive, '9.9.9') })
+    ok(!badVersion.ok && /版本不匹配/.test(badVersion.error) && badVersion.status.installedVersion === '0.1.2', '压缩包声明版本不符时保留旧版')
+    for (const invalid of [
+      { ...release(fixture), draft: true },
+      { ...release(fixture), prerelease: true },
+      { ...release(fixture), tag_name: 'v0.1.3-rc.1' },
+      { ...release(fixture), assets: [] },
+      release({ ...fixture, version: '0.1.1' }),
+      { ...release(fixture), assets: release(fixture).assets.map(a => ({ ...a, digest: null })) },
+      { ...release(fixture), assets: release(fixture).assets.map(a => ({ ...a, browser_download_url: 'https://example.com/bad.zip' })) }
+    ]) await assert.rejects(() => mc.latestMinecraftPlugin(fetchUpdate(invalid)))
+    ok(mc.compareMinecraftVersions('0.1.10', '0.1.9') > 0, '版本排序按数值计算')
   }
 
   console.log(`minecraft-pinning: ${checks} assertions passed (synthetic archives, no network)`)

@@ -19,7 +19,7 @@ import { builtinCapabilities } from '../extensions-inventory'
 import type { AppSettings, PromptTemplateDirectories } from '../../shared/ipc'
 import type { AgentController } from '../agent'
 import type { RunnerRegistry } from '../runners'
-import { PI_AGENT_DIR } from '../paths'
+import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { mergeCommandDescriptors } from '../command-registry'
 import { listNativeMcpServers } from '../mcp/native-list'
 import { manageNativeMcpServer } from '../mcp/native-manage'
@@ -143,7 +143,7 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     }) ?? false
     if (context !== mcpContext()) throw new Error(pick('当前会话或项目已切换，请重新读取', 'Session or project changed; reload'))
     return {
-      agentDir: PI_AGENT_DIR, context,
+      agentDir: PI_AGENT_DIR, context, minecraftPluginDir: join(YAN_DIR, 'plugins', 'inkstone-minecraft'),
       project: project && runner ? { id: project.id, name: project.name, cwd: runner.cwd } : null,
       projectTrusted, projects: st.projects, nativeConfigChanged,
       busy: busy(), isBusy: busy,

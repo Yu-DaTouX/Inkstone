@@ -7,13 +7,14 @@ import { smokeInstalledPiPackage } from '../capabilities/pi-package-smoke'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
-import { installMinecraftPlugin, MINECRAFT_PLUGIN_PIN, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type FetchLike, type MinecraftPluginPaths } from '../minecraft-plugin'
+import { compareMinecraftVersions, installMinecraftPlugin, latestMinecraftPlugin, minecraftReleaseKey, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, setMinecraftDevEnabled, type FetchLike, type MinecraftPluginPaths } from '../minecraft-plugin'
 import { ensureNodeLauncher, nodeLauncherPath } from '../yan-cli'
-import type { MinecraftPluginStatus } from '../../shared/plugin-market'
+import type { MinecraftPluginResult, MinecraftPluginStatus } from '../../shared/plugin-market'
 import { app, dialog, net } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
 import { pick } from '../../shared/ui-lang'
+import { serializedWrite } from '../mcp/write-queue'
 
 const ANTHROPIC_OVERRIDE_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']
 
@@ -37,15 +38,19 @@ async function minecraftPaths(): Promise<MinecraftPluginPaths> {
 
 const pluginFetch: FetchLike = (url, init) => net.fetch(url, init)
 
-async function minecraftStatus(paths: MinecraftPluginPaths): Promise<MinecraftPluginStatus> {
-  const status = await minecraftPluginStatus(paths)
-  return { ...status, latestVersion: MINECRAFT_PLUGIN_PIN.version }
+async function checkMinecraftUpdate(status: MinecraftPluginStatus): Promise<MinecraftPluginResult> {
+  try {
+    const pin = await latestMinecraftPlugin(pluginFetch)
+    return { ok: true, status: { ...status, latestVersion: pin.version, releaseKey: minecraftReleaseKey(pin), updateAvailable: status.installed && !!status.installedVersion && compareMinecraftVersions(pin.version, status.installedVersion) > 0 } }
+  } catch (error) {
+    return { ok: false, status, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 let minecraftQueue: Promise<unknown> = Promise.resolve()
 
 function queueMinecraft<T>(task: () => Promise<T>): Promise<T> {
-  const next = minecraftQueue.then(task, task)
+  const next = minecraftQueue.then(() => serializedWrite(task))
   minecraftQueue = next.catch(() => undefined)
   return next
 }
@@ -92,17 +97,22 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   })
 
-  handle('yan:packages:minecraft', async (action: unknown) => {
+  handle('yan:packages:minecraft', async (action: unknown, expectedRelease: unknown, keepDev: unknown) => {
     const paths = await minecraftPaths()
-    if (action === 'install') {
-      const result = await queueMinecraft(() => installMinecraftPlugin(paths, { fetch: pluginFetch }))
-      return { ...result, status: await minecraftStatus(paths) }
+    if (action === 'status') return checkMinecraftUpdate(await minecraftPluginStatus(paths))
+    if (action === 'remove' || action === 'enable-dev' || action === 'disable-dev') return queueMinecraft(() => {
+      if (hasAnyBusy?.()) return Promise.resolve({ ok: false, error: pick('请等待当前任务结束再修改 Minecraft 插件', 'Wait for running tasks before changing the Minecraft plugin') })
+      return action === 'remove' ? removeMinecraftPlugin(paths) : setMinecraftDevEnabled(paths, action === 'enable-dev')
+    })
+    if (action !== 'install' || typeof expectedRelease !== 'string' || expectedRelease.length > 120) {
+      return { ok: false, error: pick('请先检查并确认 Minecraft 插件版本', 'Check and confirm the Minecraft plugin version first') }
     }
-    if (action === 'remove') {
-      const result = await queueMinecraft(() => removeMinecraftPlugin(paths))
-      return { ...result, status: await minecraftStatus(paths) }
-    }
-    return { ok: true, status: await minecraftStatus(paths) }
+    return queueMinecraft(async () => {
+      if (hasAnyBusy?.()) return { ok: false, error: pick('请等待当前任务结束再更新 Minecraft 插件', 'Wait for running tasks before updating the Minecraft plugin') }
+      const result = await installMinecraftPlugin(paths, { fetch: pluginFetch, expectedRelease, keepDev: keepDev === true })
+      if (!result.ok || !result.status) return result
+      return { ...result, status: { ...result.status, latestVersion: result.status.installedVersion } }
+    })
   })
 
   handle('yan:packages:codegraphStatus', async (cwd: unknown) =>

@@ -6,6 +6,7 @@ import { atomicWrite, nativeMcpTextFingerprint } from './config-write'
 import { mcpServersFile, parseMcpServersDocument } from './config'
 import { serializedWrite } from './write-queue'
 import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
+import { isInstalledMinecraftService } from '../minecraft-plugin'
 
 type ObjectValue = Record<string, unknown>
 type Document = { path: string; text: string | null; value: ObjectValue; servers: ObjectValue }
@@ -13,6 +14,7 @@ type Document = { path: string; text: string | null; value: ObjectValue; servers
 export interface McpSettingsHost {
   agentDir: string
   hostFile?: string
+  minecraftPluginDir?: string
   context: string
   project: McpSettingsSnapshot['project']
   projectTrusted: boolean
@@ -106,6 +108,7 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
     const entry = object(raw)
     if (!entry) { errors.push(pick(`服务 ${name} 的配置格式有误`, `Invalid config format for service ${name}`)); continue }
     const base = nativeService(name, entry, data.global, 'global')
+    if (host.minecraftPluginDir && isInstalledMinecraftService(name, entry, host.minecraftPluginDir)) base.pluginManaged = true
     global.push(base)
     if (host.project) {
       const patch = object(data.project?.servers[name])
@@ -239,6 +242,7 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
       const snapshot = await listMcpServiceSettings(host)
       const service = [...snapshot.global, ...snapshot.projectServices].find((item) => item.key === input.key)
       if (!service || service.conflict || service.special) throw new Error(pick('服务不可修改，请重新读取列表或前往本机工具配置', 'This service cannot be modified. Reload the list or use local tools'))
+      if (service.pluginManaged && (input.action === 'remove' || input.action === 'move')) throw new Error(pick('请在插件市场管理此插件', 'Manage this plugin in the Plugin Marketplace'))
       if (input.scope === 'global' && service.scope === 'project' && input.action !== 'move') throw new Error(pick('项目服务只能从项目入口修改', 'Project services can only be changed from the project'))
       if (service.backend === 'host') {
         if (host.isBusy?.() ?? host.busy) throw new Error(pick('有任务正在运行，任务结束后可调整此服务', 'A task is running. Adjust this service after it finishes'))

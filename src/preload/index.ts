@@ -313,7 +313,7 @@ const api: YanBridge = {
     catalog: (refresh) => invoke('yan:packages:catalog', refresh === true),
     exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
     addMcp: (id) => invoke('yan:packages:addMcp', id),
-    minecraft: (action) => invoke('yan:packages:minecraft', action),
+    minecraft: (action, expectedRelease, keepDev) => invoke('yan:packages:minecraft', action, expectedRelease, keepDev),
     codegraphStatus: (cwd) => invoke('yan:packages:codegraphStatus', cwd),
     codegraphIndex: (cwd) => invoke('yan:packages:codegraphIndex', cwd),
     anthropicEnv: () => invoke('yan:packages:anthropicEnv'),

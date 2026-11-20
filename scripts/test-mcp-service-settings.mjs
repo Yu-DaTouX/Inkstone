@@ -86,6 +86,25 @@ ok(!(await invoke({ action: 'add', name: 'app-ui', config: { command: 'node' } }
 ok(!(await invoke({ action: 'add', name: '__proto__', config: { command: 'node' } })).ok, 'reserved object keys rejected')
 ok(!(await invoke({ action: 'add', name: 'bad', config: { url: 'file:///private' } })).ok, 'invalid protocol rejected')
 ok(!(await invoke({ action: 'add', name: 'codegraph', config: { command: 'node' } })).ok, 'duplicate names never overwrite credentials')
+const managedPluginDir = join(dir, 'plugins', 'inkstone-minecraft')
+const managedScript = join(managedPluginDir, 'mcp', 'server.ts')
+const pluginHost = { ...host, minecraftPluginDir: managedPluginDir }
+const pluginConfig = JSON.parse(await readFile(globalPath, 'utf8'))
+pluginConfig.mcpServers['inkstone-minecraft'] = { command: 'node', args: ['custom/server.ts'] }
+await writeFile(globalPath, JSON.stringify(pluginConfig))
+const minecraft = (snapshot) => snapshot.global.find((s) => s.name === 'inkstone-minecraft')
+ok(!minecraft(await list(pluginHost)).pluginManaged, 'manual same-name service stays in MCP settings')
+pluginConfig.mcpServers['inkstone-minecraft'].args = [managedScript]
+await writeFile(globalPath, JSON.stringify(pluginConfig))
+ok(!minecraft(await list(pluginHost)).pluginManaged, 'missing plugin entry remains visible for repair or removal')
+await mkdir(join(managedPluginDir, 'mcp'), { recursive: true })
+await writeFile(managedScript, '')
+ok(minecraft(await list(pluginHost)).pluginManaged, 'only installed plugin registration is labeled as managed')
+const pluginKey = 'native:global:inkstone-minecraft'
+ok(!(await invoke({ scope: 'global', key: pluginKey, action: 'remove' }, pluginHost)).ok, 'managed registration is not removed through MCP settings')
+ok((await invoke({ key: pluginKey, action: 'disable' }, pluginHost)).ok, 'project override for the managed plugin still works')
+snapshot = await list(pluginHost)
+ok(minecraft(snapshot).enabled && snapshot.projectServices.some(s => s.key === pluginKey && s.overridden && !s.enabled), 'plugin global state is separate from the project override')
 const stale = await list(host)
 await writeFile(hostFile, (await readFile(hostFile, 'utf8')) + '\n')
 ok(!(await change(host, { context: stale.context, revision: stale.revision, scope: 'global', action: 'disable', key: 'native:global:codegraph' })).ok, 'external file changes invalidate stale operation')

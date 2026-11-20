@@ -22,11 +22,17 @@ export interface CodegraphStatus {
 export interface MinecraftPluginStatus {
   installed: boolean
   configured: boolean
+  registered?: boolean
   conflict: boolean
   skill: boolean
+  split?: boolean
+  devEnabled?: boolean
+  devConflict?: boolean
   pluginDir: string
   installedVersion?: string
   latestVersion?: string
+  releaseKey?: string
+  updateAvailable?: boolean
 }
 export interface MinecraftPluginResult {
   ok: boolean

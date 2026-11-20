@@ -1240,7 +1240,7 @@ export interface PackagesBridge {
   catalog(refresh?: boolean): Promise<import('./plugin-catalog').PluginCatalogView>
   exportPlugin(id: string): Promise<import('./plugin-market').PluginExportResult>
   addMcp(id: string): Promise<import('./plugin-market').PluginExportResult>
-  minecraft(action: 'status' | 'install' | 'remove'): Promise<import('./plugin-market').MinecraftPluginResult>
+  minecraft(action: 'status' | 'install' | 'remove' | 'enable-dev' | 'disable-dev', expectedRelease?: string, keepDev?: boolean): Promise<import('./plugin-market').MinecraftPluginResult>
   codegraphStatus(cwd: string): Promise<import('./plugin-market').CodegraphStatus>
   codegraphIndex(cwd: string): Promise<{ ok: boolean; error?: string; log?: string }>
   anthropicEnv(): Promise<string[]>

@@ -16,6 +16,7 @@ export interface McpSettingsService {
   connection: string
   special?: boolean
   conflict?: boolean
+  pluginManaged?: boolean
 }
 
 export interface McpSettingsSnapshot {

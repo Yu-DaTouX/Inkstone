@@ -15,6 +15,7 @@ interface ConfirmOptions {
   title: string
   body?: string
   detail?: string
+  extra?: ReactNode
   confirmLabel: string
   cancelLabel?: string
   tone?: 'default' | 'danger'
@@ -93,6 +94,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
         >
           {pending.body ? <p className="settings-confirm-desc caps-confirm-body">{pending.body}</p> : null}
           {pending.detail ? <pre className="caps-confirm-detail">{pending.detail}</pre> : null}
+          {pending.extra}
           {error ? (
             <Notice tone="fail" compact>
               {error}
