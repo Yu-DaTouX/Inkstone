@@ -46,7 +46,7 @@ const LEGACY_ROW_KEY = "__legacy__";
 const OTHERS_GROUP_KEY = "__others__";
 
 type ModelPickerListEntry =
-  | { kind: "header"; key: string; label: string; vendorKey: string | null; favorites?: boolean }
+  | { kind: "header"; key: string; label: string; vendorKey: string | null; favorites?: boolean; local?: boolean }
   | { kind: "model"; model: ModelPickerItem }
   | { kind: "legacy"; count: number };
 
@@ -65,27 +65,38 @@ function buildGroupedEntries(input: {
     (slug) => rest.some((model) => model.slug === slug && input.isActive(model)),
   );
   const current = rest.filter((model) => !legacy.has(model.slug));
-  const groups = new Map<string, { label: string; vendorKey: string | null; models: ModelPickerItem[] }>();
-  for (const model of current) {
-    const vendor = modelVendor(model.slug);
-    const key = vendor?.key ?? "";
-    const group = groups.get(key);
-    if (group) group.models.push(model);
-    else
-      groups.set(key, {
-        label: vendor?.label ?? model.instanceDisplayName,
-        vendorKey: vendor?.key ?? null,
-        models: [model],
-      });
-  }
-  const singles = [...groups].filter(([, group]) => group.models.length === 1);
-  if (singles.length > 1 && singles.length < groups.size) {
-    for (const [key] of singles) groups.delete(key);
-    groups.set(OTHERS_GROUP_KEY, {
-      label: input.othersLabel,
+  const allLocal = current.length > 0 && current.every((model) => model.local);
+  const groups = new Map<string, { label: string; vendorKey: string | null; local?: boolean; models: ModelPickerItem[] }>();
+  if (allLocal && current.length <= 6) {
+    groups.set("", {
+      label: current[0]!.instanceDisplayName,
       vendorKey: null,
-      models: singles.flatMap(([, group]) => group.models),
+      local: true,
+      models: [...current],
     });
+  } else {
+    for (const model of current) {
+      const vendor = modelVendor(model.slug);
+      const key = vendor?.key ?? "";
+      const group = groups.get(key);
+      if (group) group.models.push(model);
+      else
+        groups.set(key, {
+          label: vendor?.label ?? model.instanceDisplayName,
+          vendorKey: vendor?.key ?? null,
+          ...(model.local ? { local: true } : {}),
+          models: [model],
+        });
+    }
+    const singles = [...groups].filter(([, group]) => group.models.length === 1);
+    if (singles.length > 1 && singles.length < groups.size) {
+      for (const [key] of singles) groups.delete(key);
+      groups.set(OTHERS_GROUP_KEY, {
+        label: input.othersLabel,
+        vendorKey: null,
+        models: singles.flatMap(([, group]) => group.models),
+      });
+    }
   }
   const withHeaders = groups.size > 1;
   const entries: ModelPickerListEntry[] = [];
@@ -95,7 +106,7 @@ function buildGroupedEntries(input: {
     for (const model of favorites) entries.push({ kind: "model", model });
   }
   for (const [key, group] of groups) {
-    if (withHeaders) entries.push({ kind: "header", key, label: group.label, vendorKey: group.vendorKey });
+    if (withHeaders) entries.push({ kind: "header", key, label: group.label, vendorKey: group.vendorKey, ...(group.local ? { local: true } : {}) });
     for (const model of group.models) entries.push({ kind: "model", model });
   }
   const legacyModels = rest.filter((model) => legacy.has(model.slug));
@@ -503,6 +514,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                           ) : (
                             <ProviderInstanceIcon
                               driverKind={entry.vendorKey ?? ""}
+                              local={entry.vendorKey ? undefined : entry.local}
                               displayName={entry.label}
                               iconSize={14}
                             />

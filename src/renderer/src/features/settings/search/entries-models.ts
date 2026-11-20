@@ -57,7 +57,7 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     section: 'models',
     zh: '本地模型',
     en: 'Local models',
-    keywords: ['启动脚本', '启动命令', '自动启动', 'start script', 'launch', 'auto-start', 'bat', '改名', '重命名', '模型名称', 'rename', 'model name', '卸载', '停止命令', '显存', 'unload', 'stop command', 'local model']
+    keywords: ['启动脚本', '启动命令', '自动启动', '切换模型', '多模型', '添加模型', 'start script', 'launch', 'auto-start', 'switch model', 'add model', 'bat', '改名', '重命名', '模型名称', 'rename', 'model name', '卸载', '停止命令', '显存', 'unload', 'stop command', 'local model']
   },
   {
     id: 'models-claude-code',

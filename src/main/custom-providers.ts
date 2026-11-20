@@ -6,6 +6,7 @@ import { atomicWriteFile } from './atomic-write'
 import { noteModelsWritten } from './models-watch'
 import {
   describeDiscoveredModels,
+  hasExecutablePrefix,
   mergeCustomProviders,
   modelsWriteRisk,
   parseModelEntries,
@@ -16,7 +17,8 @@ import {
   validateCustomProvider,
   type CustomProviderInput,
   type CustomProviderTestResult,
-  type CustomProviderView
+  type CustomProviderView,
+  type LocalModelInput
 } from '../shared/custom-provider'
 import { readPiModelCatalog } from './pi-model-catalog'
 
@@ -134,6 +136,64 @@ export async function renameProviderModel(provider: string, modelId: string, nam
     else delete model.name
     const nextModels = [...models]
     nextModels[index] = model
+    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
+    return { ok: true }
+  })
+}
+
+export async function addProviderModel(provider: string, input: LocalModelInput): Promise<{ ok: boolean; error?: string }> {
+  const id = String(input.id ?? '').trim()
+  if (!id) return { ok: false, error: pick('模型 ID 不能为空', 'Model ID is required') }
+  if (hasExecutablePrefix(id)) return { ok: false, error: pick(`模型 ID「${id}」不能以 ! 开头`, `Model ID "${id}" cannot start with !`) }
+  const name = String(input.name ?? '').replace(/\s+/g, ' ').trim()
+  if (name.length > MODEL_NAME_MAX) return { ok: false, error: pick(`名称最多 ${MODEL_NAME_MAX} 个字符`, `Name can be at most ${MODEL_NAME_MAX} characters`) }
+  return serializeModels(async () => {
+    const raw = await readRaw()
+    if (!raw.ok) return { ok: false, error: raw.error }
+    const base = (raw.json && typeof raw.json === 'object' ? raw.json : {}) as Json
+    const providers = base.providers && typeof base.providers === 'object' ? (base.providers as Json) : {}
+    const entry = providers[provider]
+    if (!entry || typeof entry !== 'object') return { ok: false, error: pick(`models.json 里没有服务商 ${provider}`, `Provider ${provider} is not in models.json`) }
+    const models = Array.isArray((entry as Json).models) ? ((entry as Json).models as unknown[]) : []
+    if (models.some((m) => !!m && typeof m === 'object' && (m as Json).id === id)) {
+      return { ok: false, error: pick(`模型「${id}」已存在`, `Model "${id}" already exists`) }
+    }
+    const next: Json = { id }
+    if (name) next.name = name
+    if (typeof input.contextWindow === 'number' && Number.isFinite(input.contextWindow) && input.contextWindow > 0) {
+      next.contextWindow = Math.round(input.contextWindow)
+    }
+    if (typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0) {
+      next.maxTokens = Math.round(input.maxTokens)
+    }
+    if (input.reasoning === true) {
+      next.reasoning = true
+      const template = models.find((m): m is Json => !!m && typeof m === 'object' && !!((m as Json).thinkingLevelMap && typeof (m as Json).thinkingLevelMap === 'object'))
+      if (template) next.thinkingLevelMap = { ...(template.thinkingLevelMap as Json) }
+    }
+    if (Array.isArray(input.input)) {
+      const kinds = [...new Set(input.input.filter((kind): kind is 'text' | 'image' => kind === 'text' || kind === 'image'))]
+      if (kinds.includes('image') && !kinds.includes('text')) kinds.unshift('text')
+      if (kinds.length) next.input = kinds
+    }
+    const nextModels = [...models, next]
+    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
+    return { ok: true }
+  })
+}
+
+export async function removeProviderModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
+  return serializeModels(async () => {
+    const raw = await readRaw()
+    if (!raw.ok) return { ok: false, error: raw.error }
+    const base = (raw.json && typeof raw.json === 'object' ? raw.json : {}) as Json
+    const providers = base.providers && typeof base.providers === 'object' ? (base.providers as Json) : {}
+    const entry = providers[provider]
+    const models = entry && typeof entry === 'object' && Array.isArray((entry as Json).models) ? ((entry as Json).models as unknown[]) : []
+    const index = models.findIndex((m) => !!m && typeof m === 'object' && (m as Json).id === modelId)
+    if (index < 0) return { ok: false, error: pick(`models.json 里没有模型 ${provider}/${modelId}`, `Model ${provider}/${modelId} is not in models.json`) }
+    if (models.length <= 1) return { ok: false, error: pick('至少要保留一个模型', 'At least one model must be kept') }
+    const nextModels = models.filter((_, i) => i !== index)
     await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
     return { ok: true }
   })

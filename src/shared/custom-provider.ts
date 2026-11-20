@@ -443,6 +443,16 @@ export interface LocalModelServer {
   installDir?: string
 }
 
+export interface LocalLauncherModelView {
+  id: string
+  name?: string
+  command: string
+  contextWindow?: number
+  maxTokens?: number
+  reasoning?: boolean
+  input?: Array<'text' | 'image'>
+}
+
 export interface LocalLauncherView {
   provider: string
   name: string
@@ -450,13 +460,25 @@ export interface LocalLauncherView {
   command: string
   stopCommand: string
   idleUnload: boolean
-  models: Array<{ id: string; name?: string }>
+  models: LocalLauncherModelView[]
 }
 
 export interface LocalLauncherInput {
-  command: string
+  command?: string
   stopCommand?: string
   idleUnload?: boolean
+  modelId?: string
+  modelCommand?: string
+}
+
+export interface LocalModelInput {
+  id: string
+  name?: string
+  contextWindow?: number
+  maxTokens?: number
+  reasoning?: boolean
+  input?: Array<'text' | 'image'>
+  command?: string
 }
 
 export interface LocalLauncherSaveResult {
@@ -467,6 +489,7 @@ export interface LocalLauncherSaveResult {
 export interface LocalLauncherDetectResult {
   ok: boolean
   command?: string
+  models?: DiscoveredModel[]
   message: string
 }
 

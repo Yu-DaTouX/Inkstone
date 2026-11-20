@@ -5,9 +5,18 @@ import { connect } from 'node:net'
 import { basename, dirname, extname } from 'node:path'
 import { pick } from '../shared/ui-lang'
 import { isLocalBaseUrl } from '../shared/model-capabilities'
-import type { LocalLauncherDetectResult, LocalLauncherInput, LocalLauncherSaveResult, LocalLauncherView } from '../shared/custom-provider'
+import {
+  parseModelEntries,
+  type DiscoveredModel,
+  type LocalLauncherDetectResult,
+  type LocalLauncherInput,
+  type LocalLauncherModelView,
+  type LocalLauncherSaveResult,
+  type LocalLauncherView,
+  type LocalModelInput
+} from '../shared/custom-provider'
 import { atomicWriteFile } from './atomic-write'
-import { MODELS_FILE, renameProviderModel } from './custom-providers'
+import { addProviderModel, MODELS_FILE, removeProviderModel, renameProviderModel } from './custom-providers'
 import { LOCAL_MODELS_CONFIG } from './local-models'
 
 const PROBE_TIMEOUT_MS = 1_500
@@ -15,6 +24,7 @@ const POLL_MS = 1_000
 const STOP_TIMEOUT_MS = 30_000
 const PORT_CLOSE_WAIT_MS = 10_000
 const LAUNCH_TIMEOUT_MS = 180_000
+const MISMATCH_LIMIT = 3
 export const LOCAL_IDLE_UNLOAD_MS = 10 * 60_000
 const IDLE_SCAN_MS = 60_000
 
@@ -34,6 +44,19 @@ interface LauncherConfig {
   command: string
   stopCommand: string
   idleUnload: boolean
+  models: Record<string, { command: string }>
+}
+
+function modelLauncherMap(raw: unknown): Record<string, { command: string }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, { command: string }> = {}
+  for (const [id, entry] of Object.entries(raw as Json)) {
+    const value = (entry ?? {}) as { command?: unknown }
+    if (typeof value.command === 'string' && value.command.trim()) {
+      out[id] = { command: value.command.trim() }
+    }
+  }
+  return out
 }
 
 function launcherMap(config: Json): Record<string, LauncherConfig> {
@@ -41,22 +64,46 @@ function launcherMap(config: Json): Record<string, LauncherConfig> {
   if (!raw || typeof raw !== 'object') return {}
   const out: Record<string, LauncherConfig> = {}
   for (const [provider, entry] of Object.entries(raw as Json)) {
-    const value = (entry ?? {}) as { command?: unknown; stopCommand?: unknown; idleUnload?: unknown }
-    if (typeof value.command !== 'string' || !value.command.trim()) continue
+    const value = (entry ?? {}) as { command?: unknown; stopCommand?: unknown; idleUnload?: unknown; models?: unknown }
+    const command = typeof value.command === 'string' ? value.command.trim() : ''
+    const models = modelLauncherMap(value.models)
+    if (!command && !Object.keys(models).length) continue
     out[provider] = {
-      command: value.command.trim(),
+      command,
       stopCommand: typeof value.stopCommand === 'string' ? value.stopCommand.trim() : '',
-      idleUnload: value.idleUnload !== false
+      idleUnload: value.idleUnload !== false,
+      models
     }
   }
   return out
+}
+
+function hasAnyCommand(launcher: LauncherConfig | undefined): boolean {
+  if (!launcher) return false
+  return !!launcher.command || Object.keys(launcher.models).length > 0
+}
+
+function commandFor(launcher: LauncherConfig | undefined, modelId?: string): string {
+  if (!launcher) return ''
+  if (modelId && launcher.models[modelId]?.command) return launcher.models[modelId]!.command
+  return launcher.command
+}
+
+interface LocalProviderModel {
+  id: string
+  name?: string
+  baseUrl?: string
+  contextWindow?: number
+  maxTokens?: number
+  reasoning?: boolean
+  input?: Array<'text' | 'image'>
 }
 
 interface LocalProvider {
   provider: string
   name: string
   baseUrl: string
-  models: Array<{ id: string; name?: string; baseUrl?: string }>
+  models: LocalProviderModel[]
 }
 
 export function localProvidersOf(modelsJson: unknown): LocalProvider[] {
@@ -66,9 +113,22 @@ export function localProvidersOf(modelsJson: unknown): LocalProvider[] {
   for (const [provider, raw] of Object.entries(providers as Json)) {
     const entry = (raw ?? {}) as Json
     const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl.trim() : ''
-    const models = (Array.isArray(entry.models) ? entry.models : [])
+    const models: LocalProviderModel[] = (Array.isArray(entry.models) ? entry.models : [])
       .filter((m): m is Json => !!m && typeof m === 'object' && typeof (m as Json).id === 'string')
-      .map((m) => ({ id: m.id as string, ...(typeof m.name === 'string' && m.name.trim() ? { name: m.name.trim() } : {}), ...(typeof m.baseUrl === 'string' && m.baseUrl.trim() ? { baseUrl: m.baseUrl.trim() } : {}) }))
+      .map((m) => {
+        const input = Array.isArray(m.input)
+          ? [...new Set(m.input.filter((kind): kind is 'text' | 'image' => kind === 'text' || kind === 'image'))]
+          : undefined
+        return {
+          id: m.id as string,
+          ...(typeof m.name === 'string' && m.name.trim() ? { name: m.name.trim() } : {}),
+          ...(typeof m.baseUrl === 'string' && m.baseUrl.trim() ? { baseUrl: m.baseUrl.trim() } : {}),
+          ...(typeof m.contextWindow === 'number' && Number.isFinite(m.contextWindow) && m.contextWindow > 0 ? { contextWindow: Math.round(m.contextWindow) } : {}),
+          ...(typeof m.maxTokens === 'number' && Number.isFinite(m.maxTokens) && m.maxTokens > 0 ? { maxTokens: Math.round(m.maxTokens) } : {}),
+          ...(m.reasoning === true ? { reasoning: true } : {}),
+          ...(input?.length ? { input } : {})
+        }
+      })
     if (!isLocalBaseUrl(baseUrl) && !models.some((m) => isLocalBaseUrl(m.baseUrl))) continue
     out.push({ provider, name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : provider, baseUrl, models })
   }
@@ -82,15 +142,27 @@ function providerBaseUrl(item: LocalProvider): string {
 export async function listLocalLaunchers(): Promise<LocalLauncherView[]> {
   const [models, config] = await Promise.all([readJson(MODELS_FILE), readJson(LOCAL_MODELS_CONFIG)])
   const launchers = launcherMap(config)
-  return localProvidersOf(models).map((item) => ({
-    provider: item.provider,
-    name: item.name,
-    baseUrl: providerBaseUrl(item),
-    command: launchers[item.provider]?.command ?? '',
-    stopCommand: launchers[item.provider]?.stopCommand ?? '',
-    idleUnload: launchers[item.provider]?.idleUnload ?? true,
-    models: item.models.map((m) => ({ id: m.id, ...(m.name ? { name: m.name } : {}) }))
-  }))
+  return localProvidersOf(models).map((item) => {
+    const launcher = launchers[item.provider]
+    const list: LocalLauncherModelView[] = item.models.map((m) => ({
+      id: m.id,
+      ...(m.name ? { name: m.name } : {}),
+      command: launcher?.models[m.id]?.command ?? '',
+      ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+      ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
+      ...(m.reasoning ? { reasoning: true } : {}),
+      ...(m.input?.length ? { input: m.input } : {})
+    }))
+    return {
+      provider: item.provider,
+      name: item.name,
+      baseUrl: providerBaseUrl(item),
+      command: launcher?.command ?? '',
+      stopCommand: launcher?.stopCommand ?? '',
+      idleUnload: launcher?.idleUnload ?? true,
+      models: list
+    }
+  })
 }
 
 export async function renameLocalModel(provider: string, modelId: string, name: string): Promise<LocalLauncherView[]> {
@@ -128,23 +200,98 @@ function missingFileError(command: string, label: string): string | null {
   return pick(`${label}里的文件不存在：${file}`, `File in the ${label} does not exist: ${file}`)
 }
 
+function stopScriptWarning(command: string): string | undefined {
+  if (!command || !looksLikeStopScript(command)) return undefined
+  const name = basename(commandFile(command) ?? command)
+  return pick(`启动命令「${name}」看起来是停止脚本；发消息时会运行它，请确认选的是启动脚本`, `The start command "${name}" looks like a stop script; it will run when you send a message, so make sure it is the start script`)
+}
+
+function serializeLauncher(entry: LauncherConfig): Json | null {
+  const modelEntries = Object.entries(entry.models).filter(([, item]) => !!item.command)
+  if (!entry.command && !modelEntries.length) return null
+  const out: Json = {}
+  if (entry.command) out.command = entry.command
+  if (entry.stopCommand) out.stopCommand = entry.stopCommand
+  if (entry.idleUnload === false) out.idleUnload = false
+  if (modelEntries.length) out.models = Object.fromEntries(modelEntries.map(([id, item]) => [id, { command: item.command }]))
+  return out
+}
+
 export async function saveLocalLauncher(provider: string, input: LocalLauncherInput): Promise<LocalLauncherSaveResult> {
-  const known = localProvidersOf(await readJson(MODELS_FILE)).some((item) => item.provider === provider)
-  if (!known) throw new Error(pick(`「${provider}」不是本地模型服务`, `"${provider}" is not a local model service`))
-  const command = String(input.command ?? '').trim()
-  const stopCommand = String(input.stopCommand ?? '').trim()
-  const missing = missingFileError(command, pick('启动命令', 'start command')) ?? missingFileError(stopCommand, pick('停止命令', 'stop command'))
-  if (missing) throw new Error(missing)
+  const item = localProvidersOf(await readJson(MODELS_FILE)).find((entry) => entry.provider === provider)
+  if (!item) throw new Error(pick(`「${provider}」不是本地模型服务`, `"${provider}" is not a local model service`))
+
   const config = await readJson(LOCAL_MODELS_CONFIG)
+  const existing = launcherMap(config)[provider] ?? { command: '', stopCommand: '', idleUnload: true, models: {} }
+  const nextModels: Record<string, { command: string }> = { ...existing.models }
+  let warning: string | undefined
+
+  let command = existing.command
+  let stopCommand = existing.stopCommand
+  let idleUnload = existing.idleUnload
+
+  if (typeof input.modelId === 'string' && input.modelId.trim()) {
+    const modelId = input.modelId.trim()
+    if (!item.models.some((m) => m.id === modelId)) {
+      throw new Error(pick(`「${provider}」里没有模型 ${modelId}`, `Model "${modelId}" is not in "${provider}"`))
+    }
+    const modelCommand = String(input.modelCommand ?? input.command ?? '').trim()
+    const missing = missingFileError(modelCommand, pick('启动命令', 'start command'))
+    if (missing) throw new Error(missing)
+    if (modelCommand) nextModels[modelId] = { command: modelCommand }
+    else delete nextModels[modelId]
+    warning = stopScriptWarning(modelCommand)
+  } else {
+    if (input.command !== undefined) command = String(input.command).trim()
+    if (input.stopCommand !== undefined) stopCommand = String(input.stopCommand).trim()
+    else if (input.command !== undefined) stopCommand = ''
+    if (input.idleUnload !== undefined) idleUnload = input.idleUnload !== false
+    const missing = missingFileError(command, pick('启动命令', 'start command')) ?? missingFileError(stopCommand, pick('停止命令', 'stop command'))
+    if (missing) throw new Error(missing)
+    warning = stopScriptWarning(command)
+  }
+
   const launchers = { ...((config.launchers && typeof config.launchers === 'object' ? config.launchers : {}) as Json) }
-  if (command) launchers[provider] = { command, ...(stopCommand ? { stopCommand } : {}), ...(input.idleUnload === false ? { idleUnload: false } : {}) }
+  const serialized = serializeLauncher({ command, stopCommand, idleUnload, models: nextModels })
+  if (serialized) launchers[provider] = serialized
   else delete launchers[provider]
   await mkdir(dirname(LOCAL_MODELS_CONFIG), { recursive: true })
   await atomicWriteFile(LOCAL_MODELS_CONFIG, `${JSON.stringify({ ...config, launchers }, null, 2)}\n`)
-  const warning = command && looksLikeStopScript(command)
-    ? pick(`启动命令「${basename(commandFile(command) ?? command)}」看起来是停止脚本；发消息时会运行它，请确认选的是启动脚本`, `The start command "${basename(commandFile(command) ?? command)}" looks like a stop script; it will run when you send a message, so make sure it is the start script`)
-    : undefined
   return { launchers: await listLocalLaunchers(), ...(warning ? { warning } : {}) }
+}
+
+export async function addLocalModel(provider: string, input: LocalModelInput): Promise<LocalLauncherSaveResult> {
+  const known = localProvidersOf(await readJson(MODELS_FILE)).some((item) => item.provider === provider)
+  if (!known) throw new Error(pick(`「${provider}」不是本地模型服务`, `"${provider}" is not a local model service`))
+  const command = String(input.command ?? '').trim()
+  const missing = missingFileError(command, pick('启动命令', 'start command'))
+  if (missing) throw new Error(missing)
+  const added = await addProviderModel(provider, input)
+  if (!added.ok) throw new Error(added.error)
+  if (command) {
+    return saveLocalLauncher(provider, { modelId: String(input.id).trim(), modelCommand: command })
+  }
+  return { launchers: await listLocalLaunchers() }
+}
+
+export async function removeLocalModel(provider: string, modelId: string): Promise<LocalLauncherView[]> {
+  const known = localProvidersOf(await readJson(MODELS_FILE)).some((item) => item.provider === provider)
+  if (!known) throw new Error(pick(`「${provider}」不是本地模型服务`, `"${provider}" is not a local model service`))
+  const removed = await removeProviderModel(provider, modelId)
+  if (!removed.ok) throw new Error(removed.error)
+  const config = await readJson(LOCAL_MODELS_CONFIG)
+  const existing = launcherMap(config)[provider]
+  if (existing && modelId in existing.models) {
+    const nextModels = { ...existing.models }
+    delete nextModels[modelId]
+    const launchers = { ...((config.launchers && typeof config.launchers === 'object' ? config.launchers : {}) as Json) }
+    const serialized = serializeLauncher({ ...existing, models: nextModels })
+    if (serialized) launchers[provider] = serialized
+    else delete launchers[provider]
+    await mkdir(dirname(LOCAL_MODELS_CONFIG), { recursive: true })
+    await atomicWriteFile(LOCAL_MODELS_CONFIG, `${JSON.stringify({ ...config, launchers }, null, 2)}\n`)
+  }
+  return listLocalLaunchers()
 }
 
 function probeUrls(baseUrl: string): string[] {
@@ -152,16 +299,28 @@ function probeUrls(baseUrl: string): string[] {
   return /\/v1$/.test(root) ? [`${root}/models`] : [`${root}/models`, `${root}/v1/models`]
 }
 
-export async function localServing(baseUrl: string): Promise<boolean> {
+export async function localServingModels(baseUrl: string): Promise<{ ok: boolean; models: DiscoveredModel[] }> {
   for (const url of probeUrls(baseUrl)) {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
-      if (response.ok) return true
+      if (!response.ok) continue
+      const body = await response.json().catch(() => null)
+      return { ok: true, models: parseModelEntries(body) }
     } catch {
       continue
     }
   }
-  return false
+  return { ok: false, models: [] }
+}
+
+export async function localServing(baseUrl: string): Promise<boolean> {
+  return (await localServingModels(baseUrl)).ok
+}
+
+function servesModel(probe: { ok: boolean; models: DiscoveredModel[] }, modelId: string): 'match' | 'other' | 'down' {
+  if (!probe.ok) return 'down'
+  if (!modelId || probe.models.length === 0) return 'match'
+  return probe.models.some((m) => m.id === modelId) ? 'match' : 'other'
 }
 
 function hostPort(baseUrl: string): { host: string; port: number } | null {
@@ -172,6 +331,11 @@ function hostPort(baseUrl: string): { host: string; port: number } | null {
   } catch {
     return null
   }
+}
+
+function endpointKey(baseUrl: string, fallback: string): string {
+  const target = hostPort(baseUrl)
+  return target ? `${target.host}:${target.port}` : fallback
 }
 
 export function portOpen(baseUrl: string): Promise<boolean> {
@@ -250,14 +414,22 @@ async function killTree(pid: number): Promise<void> {
   }
 }
 
-const inflight = new Map<string, Promise<{ ok: boolean; error?: string }>>()
+const inflight = new Map<string, { modelId: string; promise: Promise<{ ok: boolean; error?: string }> }>()
 const unloading = new Map<string, Promise<boolean>>()
 const launched = new Map<string, ChildProcess>()
 const lastUsed = new Map<string, number>()
+let busyChecker: ((provider: string) => boolean) | null = null
+
+export function setLocalModelBusyChecker(checker: ((provider: string) => boolean) | null): void {
+  busyChecker = checker
+}
 
 interface Target {
+  provider: string
   name: string
+  displayName: string
   baseUrl: string
+  command: string
   launcher: LauncherConfig
 }
 
@@ -271,65 +443,112 @@ async function targetOf(provider: string, modelId?: string): Promise<Target | nu
     return null
   }
   const launcher = launcherMap(config)[provider]
-  if (!launcher) return null
+  if (!hasAnyCommand(launcher)) return null
   const item = localProvidersOf(models).find((entry) => entry.provider === provider)
   if (!item) return null
-  const baseUrl = (modelId ? item.models.find((m) => m.id === modelId)?.baseUrl : undefined) ?? providerBaseUrl(item)
+  const model = modelId ? item.models.find((m) => m.id === modelId) : undefined
+  const baseUrl = model?.baseUrl ?? providerBaseUrl(item)
   if (!isLocalBaseUrl(baseUrl)) return null
-  return { name: item.name, baseUrl, launcher }
+  const command = commandFor(launcher, modelId)
+  const displayName = model?.name || (item.models.length > 1 && modelId ? modelId : item.name)
+  return { provider, name: item.name, displayName, baseUrl, command, launcher: launcher! }
 }
 
 export interface EnsureLocalModelOptions {
   onStarting?: (name: string) => void
+  onSwitching?: (name: string) => void
   timeoutMs?: number
   pollMs?: number
+  mismatchLimit?: number
+  busy?: (provider: string) => boolean
+  unload?: (provider: string) => Promise<boolean>
   run?: (command: string) => ChildProcess | void
 }
 
 export async function ensureLocalModelReady(provider: string, modelId: string, options: EnsureLocalModelOptions = {}): Promise<{ ok: boolean; error?: string; started?: boolean }> {
   const target = await targetOf(provider, modelId)
-  if (!target) return { ok: true }
+  if (!target || !target.command) return { ok: true }
+  const key = endpointKey(target.baseUrl, provider)
   lastUsed.set(provider, Date.now())
-  await unloading.get(provider)
-  const pending = inflight.get(provider)
-  if (pending) return { ...(await pending), started: true }
-  if (await portOpen(target.baseUrl)) return { ok: true }
-  const again = inflight.get(provider)
-  if (again) return { ...(await again), started: true }
+  await unloading.get(key)
+  const pending = inflight.get(key)
+  if (pending) {
+    if (pending.modelId === modelId) return { ...(await pending.promise), started: true }
+    await pending.promise
+    await unloading.get(key)
+  }
+  let switching = false
+  if (await portOpen(target.baseUrl)) {
+    const probe = await localServingModels(target.baseUrl)
+    const state = servesModel(probe, modelId)
+    if (state !== 'other') return { ok: true }
+    const busy = options.busy ?? busyChecker
+    if (busy?.(provider)) {
+      return { ok: false, error: pick(`本地服务「${target.name}」正在为其他会话生成，请等完成后再切换到「${target.displayName}」，消息未发送，草稿已保留。`, `Local service "${target.name}" is busy with another session; wait for it to finish before switching to "${target.displayName}". Message not sent, draft kept.`) }
+    }
+    switching = true
+  }
+  const again = inflight.get(key)
+  if (again) {
+    if (again.modelId === modelId) return { ...(await again.promise), started: true }
+    await again.promise
+  }
   const task = (async () => {
-    options.onStarting?.(target.name)
+    if (switching) {
+      if (options.onSwitching) options.onSwitching(target.displayName)
+      else options.onStarting?.(target.displayName)
+      const stopped = await (options.unload ? options.unload(provider) : unloadLocalModel(provider))
+      if (!stopped && (await portOpen(target.baseUrl))) {
+        return { ok: false, error: pick(`切换本地模型到「${target.displayName}」前未能停止当前运行的服务，消息未发送，草稿已保留。请检查停止命令或手动关闭后重试。`, `Could not stop the currently running local service before switching to "${target.displayName}"; message not sent, draft kept. Check the stop command or close it manually.`) }
+      }
+    } else {
+      options.onStarting?.(target.displayName)
+    }
     let exitCode: number | null | undefined
     try {
-      const child = (options.run ?? launch)(target.launcher.command)
+      const child = (options.run ?? launch)(target.command)
       if (child) {
-        launched.set(provider, child)
+        launched.set(key, child)
         child.once('exit', (code) => {
           exitCode = code
         })
       }
     } catch (error) {
-      return { ok: false, error: pick(`本地模型「${target.name}」的启动命令没能运行：${error instanceof Error ? error.message : String(error)}`, `Could not run the start command for local model "${target.name}": ${error instanceof Error ? error.message : String(error)}`) }
+      return { ok: false, error: pick(`本地模型「${target.displayName}」的启动命令没能运行：${error instanceof Error ? error.message : String(error)}`, `Could not run the start command for local model "${target.displayName}": ${error instanceof Error ? error.message : String(error)}`) }
     }
     const timeout = options.timeoutMs ?? LAUNCH_TIMEOUT_MS
     const deadline = Date.now() + timeout
+    const maxMismatch = Math.max(1, options.mismatchLimit ?? MISMATCH_LIMIT)
+    let mismatchCount = 0
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? POLL_MS))
-      if (await localServing(target.baseUrl)) {
+      const probe = await localServingModels(target.baseUrl)
+      const state = servesModel(probe, modelId)
+      if (state === 'match') {
         lastUsed.set(provider, Date.now())
         return { ok: true }
       }
+      if (state === 'other') {
+        mismatchCount += 1
+        if (mismatchCount >= maxMismatch) {
+          const running = probe.models.map((m) => m.id).join('、')
+          return { ok: false, error: pick(`本地模型「${target.displayName}」启动后，服务返回的是「${running}」，不包含「${modelId}」；消息未发送，草稿已保留。请在设置里检查该模型的启动命令或模型 ID。`, `After starting "${target.displayName}", the service reported "${probe.models.map((m) => m.id).join(', ')}" instead of "${modelId}"; message not sent, draft kept. Check its start command or model ID in Settings.`) }
+        }
+      } else {
+        mismatchCount = 0
+      }
       if (typeof exitCode === 'number' && exitCode !== 0) {
-        return { ok: false, error: pick(`本地模型「${target.name}」的启动命令出错退出（代码 ${exitCode}），消息未发送，草稿已保留。请在设置里检查启动命令。`, `The start command for local model "${target.name}" exited with code ${exitCode}; message not sent, draft kept. Check the start command in Settings.`) }
+        return { ok: false, error: pick(`本地模型「${target.displayName}」的启动命令出错退出（代码 ${exitCode}），消息未发送，草稿已保留。请在设置里检查启动命令。`, `The start command for local model "${target.displayName}" exited with code ${exitCode}; message not sent, draft kept. Check the start command in Settings.`) }
       }
     }
     const seconds = Math.round(timeout / 1000)
-    return { ok: false, error: pick(`本地模型「${target.name}」启动后 ${seconds} 秒内没有就绪，消息未发送，草稿已保留。请查看它的启动窗口。`, `Local model "${target.name}" was not ready within ${seconds}s of starting; message not sent, draft kept. Check its startup window.`) }
+    return { ok: false, error: pick(`本地模型「${target.displayName}」启动后 ${seconds} 秒内没有就绪，消息未发送，草稿已保留。请查看它的启动窗口。`, `Local model "${target.displayName}" was not ready within ${seconds}s of starting; message not sent, draft kept. Check its startup window.`) }
   })()
-  inflight.set(provider, task)
+  inflight.set(key, { modelId, promise: task })
   try {
     return { ...(await task), started: true }
   } finally {
-    inflight.delete(provider)
+    if (inflight.get(key)?.promise === task) inflight.delete(key)
   }
 }
 
@@ -358,7 +577,8 @@ async function listenerPid(port: number): Promise<number | null> {
 export async function unloadLocalModel(provider: string, options: UnloadOptions = {}): Promise<boolean> {
   const target = await targetOf(provider)
   if (!target) return false
-  const current = unloading.get(provider)
+  const key = endpointKey(target.baseUrl, provider)
+  const current = unloading.get(key)
   if (current) return current
   const task = (async () => {
     const kill = options.kill ?? killTree
@@ -368,9 +588,9 @@ export async function unloadLocalModel(provider: string, options: UnloadOptions 
       const pid = port ? await (options.listener ?? listenerPid)(port) : null
       if (pid) await kill(pid)
     }
-    const child = launched.get(provider)
+    const child = launched.get(key)
     if (child?.pid && child.exitCode === null && child.signalCode === null) await kill(child.pid)
-    launched.delete(provider)
+    launched.delete(key)
     const deadline = Date.now() + (options.closeWaitMs ?? PORT_CLOSE_WAIT_MS)
     while (await portOpen(target.baseUrl)) {
       if (Date.now() >= deadline) return false
@@ -379,11 +599,11 @@ export async function unloadLocalModel(provider: string, options: UnloadOptions 
     lastUsed.delete(provider)
     return true
   })()
-  unloading.set(provider, task)
+  unloading.set(key, task)
   try {
     return await task
   } finally {
-    unloading.delete(provider)
+    if (unloading.get(key) === task) unloading.delete(key)
   }
 }
 
@@ -409,12 +629,14 @@ export async function scanIdleLocalModels(options: IdleUnloadOptions): Promise<s
   const unloaded: string[] = []
   for (const item of localProvidersOf(models)) {
     const launcher = launchers[item.provider]
-    if (!launcher?.idleUnload || inflight.has(item.provider) || unloading.has(item.provider)) continue
+    const baseUrl = providerBaseUrl(item)
+    const key = endpointKey(baseUrl, item.provider)
+    if (!hasAnyCommand(launcher) || !launcher?.idleUnload || inflight.has(key) || unloading.has(key)) continue
     if (options.busy(item.provider)) {
       lastUsed.set(item.provider, now)
       continue
     }
-    if (!(await portOpen(providerBaseUrl(item)))) {
+    if (!(await portOpen(baseUrl))) {
       lastUsed.delete(item.provider)
       continue
     }
@@ -457,12 +679,14 @@ export function launcherFromProcess(info: { command?: string | null; parent?: st
 }
 
 export async function detectLocalLauncher(provider: string): Promise<LocalLauncherDetectResult> {
-  if (process.platform !== 'win32') return { ok: false, message: pick('目前只支持在 Windows 上自动识别', 'Auto-detection currently works on Windows only') }
   const target = (await listLocalLaunchers()).find((item) => item.provider === provider)
   if (!target) return { ok: false, message: pick(`「${provider}」不是本地模型服务`, `"${provider}" is not a local model service`) }
+  const probe = await localServingModels(target.baseUrl)
+  const models = probe.models.length ? probe.models : undefined
+  if (process.platform !== 'win32') return { ok: false, ...(models ? { models } : {}), message: pick('目前只支持在 Windows 上自动识别', 'Auto-detection currently works on Windows only') }
   const port = hostPort(target.baseUrl)?.port ?? 0
   const pid = port ? await listenerPid(port) : null
-  if (!pid) return { ok: false, message: pick(`端口 ${port} 上没有正在运行的服务；先手动启动一次再识别`, `Nothing is listening on port ${port}; start it once manually, then detect`) }
+  if (!pid) return { ok: false, ...(models ? { models } : {}), message: pick(`端口 ${port} 上没有正在运行的服务；先手动启动一次再识别`, `Nothing is listening on port ${port}; start it once manually, then detect`) }
   const script = `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; $q = if ($p) { Get-CimInstance Win32_Process -Filter ("ProcessId=" + $p.ParentProcessId) }; [Console]::OutputEncoding = [Text.Encoding]::UTF8; @{ command = $p.CommandLine; parent = $q.CommandLine } | ConvertTo-Json -Compress`
   let info: { command?: string | null; parent?: string | null } = {}
   try {
@@ -471,6 +695,6 @@ export async function detectLocalLauncher(provider: string): Promise<LocalLaunch
     info = {}
   }
   const command = launcherFromProcess(info)
-  if (!command) return { ok: false, message: pick('没能读取启动它的程序', 'Could not read the program that started it') }
-  return { ok: true, command, message: pick('已按正在运行的服务填好启动命令，确认后保存', 'Filled in from the running service; review and save') }
+  if (!command) return { ok: false, ...(models ? { models } : {}), message: pick('没能读取启动它的程序', 'Could not read the program that started it') }
+  return { ok: true, command, ...(models ? { models } : {}), message: pick('已按正在运行的服务填好启动命令，确认后保存', 'Filled in from the running service; review and save') }
 }

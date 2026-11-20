@@ -16,11 +16,11 @@ function freePort() {
   })
 }
 
-function serve(port) {
+function serve(port, modelId = 'qwen') {
   return new Promise((resolve) => {
     const server = createServer((req, res) => {
       res.writeHead(req.url === '/v1/models' ? 200 : 404, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ data: [{ id: 'qwen' }] }))
+      res.end(JSON.stringify({ data: [{ id: modelId }] }))
     })
     server.listen(port, '127.0.0.1', () => resolve(server))
   })
@@ -192,6 +192,116 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const line = api.launchLine(`"${script}"`)
     ok(line.line === `"${script}"` && line.cwd === dir, '脚本路径带空格时加引号并在脚本目录运行')
     ok(api.launchLine('ollama serve').line === 'ollama serve' && !api.launchLine('ollama serve').cwd, '完整命令原样运行')
+
+    const scarletBat = join(dir, '启动-ScarletKc2.bat')
+    await writeFile(scarletBat, '@echo off\r\n')
+    const added = await api.addLocalModel('ninfer', {
+      id: 'scarletkc-2.0',
+      name: 'ScarletKc2',
+      contextWindow: 49152,
+      maxTokens: 8192,
+      reasoning: true,
+      input: ['text', 'image'],
+      command: scarletBat
+    })
+    const ninferAfterAdd = added.launchers.find((item) => item.provider === 'ninfer')
+    ok(ninferAfterAdd?.models.length === 2, '添加第二个本地模型后返回两个模型')
+    const scarletView = ninferAfterAdd?.models.find((m) => m.id === 'scarletkc-2.0')
+    ok(scarletView?.name === 'ScarletKc2' && scarletView?.command === scarletBat && scarletView?.contextWindow === 49152 && scarletView?.reasoning === true, '新模型的名称、上下文、思考能力与独立启动命令均保存')
+
+    await api.saveLocalLauncher('ninfer', { modelId: 'qwen', modelCommand: startBat })
+    await api.saveLocalLauncher('ninfer', { command: '', stopCommand: stopBat })
+    const multiConfig = JSON.parse(await readFile(join(dir, 'yan', 'local-models.json'), 'utf8'))
+    ok(!multiConfig.launchers.ninfer.command && multiConfig.launchers.ninfer.stopCommand === stopBat, '清空服务默认启动命令时保留停止命令与模型独立命令')
+    ok(multiConfig.launchers.ninfer.models?.qwen?.command === startBat && multiConfig.launchers.ninfer.models?.['scarletkc-2.0']?.command === scarletBat, '两个模型各自保存独立启动命令')
+
+    await api.saveLocalLauncher('ninfer', { idleUnload: false })
+    await api.saveLocalLauncher('ninfer', { idleUnload: true })
+    const afterToggle = JSON.parse(await readFile(join(dir, 'yan', 'local-models.json'), 'utf8'))
+    ok(afterToggle.launchers.ninfer.stopCommand === stopBat && afterToggle.launchers.ninfer.models?.['scarletkc-2.0']?.command === scarletBat, '仅切换闲置卸载开关时不覆盖停止命令和模型启动命令')
+
+    let addRejected = 0
+    for (const bad of [
+      { id: 'scarletkc-2.0' },
+      { id: '!evil' },
+      { id: 'new-one', command: join(dir, 'nope.bat') }
+    ]) {
+      try {
+        await api.addLocalModel('ninfer', bad)
+      } catch {
+        addRejected++
+      }
+    }
+    ok(addRejected === 3, '重复模型 ID、! 开头、不存在的启动脚本均拒绝添加')
+
+    const qwenRunning = await serve(port, 'qwen')
+    servers.push(qwenRunning)
+
+    const blockedByBusy = await api.ensureLocalModelReady('ninfer', 'scarletkc-2.0', {
+      busy: () => true,
+      run: () => { throw new Error('繁忙时不该启动') }
+    })
+    ok(!blockedByBusy.ok && /草稿已保留|draft kept/.test(blockedByBusy.error ?? ''), '同端口有其他会话正在生成时不强行切换模型')
+
+    let switchedNotice = ''
+    let unloadedOld = false
+    let launchedCmd = ''
+    const switched = await api.ensureLocalModelReady('ninfer', 'scarletkc-2.0', {
+      pollMs: 30,
+      timeoutMs: 5_000,
+      busy: () => false,
+      onSwitching: (name) => { switchedNotice = name },
+      unload: async () => {
+        unloadedOld = true
+        await Promise.all(servers.splice(0).map(close))
+        return true
+      },
+      run: (cmd) => {
+        launchedCmd = cmd
+        setTimeout(() => void serve(port, 'scarletkc-2.0').then((s) => servers.push(s)), 80)
+      }
+    })
+    ok(switched.ok && switched.started && unloadedOld && launchedCmd === scarletBat && switchedNotice === 'ScarletKc2', '同端口跑着旧模型时自动卸载旧模型并启动新模型脚本', `ok=${switched.ok} unloaded=${unloadedOld} cmd=${launchedCmd} notice=${switchedNotice}`)
+
+    const alreadyScarlet = await api.ensureLocalModelReady('ninfer', 'scarletkc-2.0', {
+      run: () => { throw new Error('已经在跑目标模型不该重启') }
+    })
+    ok(alreadyScarlet.ok && !alreadyScarlet.started, '端口已提供目标模型时直接放行不重启')
+
+    const mismatch = await api.ensureLocalModelReady('ninfer', 'qwen', {
+      pollMs: 25,
+      timeoutMs: 5_000,
+      mismatchLimit: 2,
+      busy: () => false,
+      unload: async () => {
+        await Promise.all(servers.splice(0).map(close))
+        return true
+      },
+      run: () => {
+        setTimeout(() => void serve(port, 'scarletkc-2.0').then((s) => servers.push(s)), 40)
+      }
+    })
+    ok(!mismatch.ok && /scarletkc-2\.0/.test(mismatch.error ?? '') && /qwen/.test(mismatch.error ?? ''), '启动后服务返回的模型 ID 与配置不匹配时立即报错提示')
+
+    const onlyModelIdleUnloaded = []
+    let idleClock = Date.now() + 1_000
+    await api.scanIdleLocalModels({ busy: () => false, now: () => idleClock, unload: async (p) => { onlyModelIdleUnloaded.push(p); return true } })
+    idleClock += 11 * 60_000
+    await api.scanIdleLocalModels({ busy: () => false, now: () => idleClock, unload: async (p) => { onlyModelIdleUnloaded.push(p); return true } })
+    ok(onlyModelIdleUnloaded.includes('ninfer'), '仅配置模型级启动命令时同样支持闲置自动卸载')
+
+    const afterRemove = await api.removeLocalModel('ninfer', 'scarletkc-2.0')
+    ok(afterRemove.find((item) => item.provider === 'ninfer')?.models.length === 1, '移除本地模型后列表更新')
+    const afterRemoveCfg = JSON.parse(await readFile(join(dir, 'yan', 'local-models.json'), 'utf8'))
+    ok(!afterRemoveCfg.launchers.ninfer.models?.['scarletkc-2.0'], '移除本地模型时同步清理对应启动命令')
+
+    let lastRemoveFailed = false
+    try {
+      await api.removeLocalModel('ninfer', 'qwen')
+    } catch {
+      lastRemoveFailed = true
+    }
+    ok(lastRemoveFailed, '最后一个模型不允许移除')
   } finally {
     await Promise.all(servers.map(close))
     await rm(dir, { recursive: true, force: true })

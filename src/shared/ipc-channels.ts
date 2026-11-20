@@ -174,6 +174,8 @@ export interface IpcChannelMap {
   'yan:localLaunchers': Contract<B['localLaunchers']>
   'yan:saveLocalLauncher': Contract<B['saveLocalLauncher']>
   'yan:renameLocalModel': Contract<B['renameLocalModel']>
+  'yan:addLocalModel': Contract<B['addLocalModel']>
+  'yan:removeLocalModel': Contract<B['removeLocalModel']>
   'yan:pickLocalLauncher': Contract<B['pickLocalLauncher']>
   'yan:detectLocalLauncher': Contract<B['detectLocalLauncher']>
   'yan:removeCustomProvider': Contract<B['removeCustomProvider']>

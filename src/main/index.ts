@@ -123,7 +123,7 @@ import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
 import { executionBusy } from '../core/run-state'
-import { startLocalModelIdleUnload } from './local-model-launch'
+import { setLocalModelBusyChecker, startLocalModelIdleUnload } from './local-model-launch'
 import { RuntimeRef } from '../shared/runs'
 import { isWithin } from './file-path-gate'
 import { SubagentService } from './subagent-service'
@@ -2123,6 +2123,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
 
   runners.startIdleReclaim()
+  setLocalModelBusyChecker(localModelBusy)
   stopLocalModelIdleUnload ??= startLocalModelIdleUnload({
     busy: localModelBusy,
     onUnloaded: (name) => push({ ch: 'notify', payload: { id: `local-model-unload-${Date.now()}`, method: 'notify', notifyType: 'info',

@@ -679,6 +679,15 @@
     gap: var(--s-16);
   }
 
+  .ms-local-head-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s-12);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
   .ms-local-head,
   .ms-local-section {
     display: flex;
@@ -688,7 +697,89 @@
   }
 
   .ms-local-head {
+    flex: 1 1 14rem;
     gap: var(--s-2);
+  }
+
+  .ms-local-models {
+    display: flex;
+    flex-direction: column;
+    border: var(--hair, 1px) solid var(--line);
+    border-radius: var(--r-md);
+    min-width: 0;
+  }
+
+  .ms-local-model-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    padding: var(--s-12);
+    min-width: 0;
+  }
+
+  .ms-local-model-card + .ms-local-model-card {
+    border-top: var(--hair, 1px) solid var(--line);
+  }
+
+  .ms-local-model-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .ms-local-model-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .ms-local-model-name {
+    color: var(--fg);
+    font-weight: var(--w-medium);
+    overflow-wrap: anywhere;
+  }
+
+  .ms-local-model-id {
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+
+  .ms-local-add-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-local-add-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-8);
+  }
+
+  .ms-local-add-checks {
+    display: flex;
+    align-items: center;
+    gap: var(--s-16);
+    flex-wrap: wrap;
+  }
+
+  .ms-local-shared-title {
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    font-weight: var(--w-medium);
+  }
+
+  .ms-local-shared-cmd {
+    padding-top: var(--s-4);
   }
 
   .ms-local-section:has(> .ms-custom-actions) {
@@ -743,7 +834,8 @@
   }
 
   @container style(--ui-settings-sm: 1) {
-    .ms-custom-model {
+    .ms-custom-model,
+    .ms-local-add-grid {
       grid-template-columns: minmax(0, 1fr);
     }
   }

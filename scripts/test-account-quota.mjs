@@ -27,7 +27,7 @@ async function runCodexAuthIpcTests(ok, build) {
     'captureActiveCodexAccount', 'clearCodexAccounts', 'listCodexAccounts', 'removeCodexAccount', 'switchCodexAccount',
     'captureActiveApiKey', 'captureActiveOAuthAccount', 'clearOAuthAccounts', 'listOAuthAccounts', 'removeOAuthAccount',
     'renameOAuthAccount', 'switchOAuthAccount', 'consumeResetCredit', 'detectLocalLauncher', 'listLocalLaunchers',
-    'renameLocalModel', 'saveLocalLauncher', 'credentialBackupProgress', 'removeCredentialBackups'
+    'renameLocalModel', 'saveLocalLauncher', 'addLocalModel', 'removeLocalModel', 'credentialBackupProgress', 'removeCredentialBackups'
   ]
   await build({
     entryPoints: ['src/main/ipc/auth-ipc.ts'], outfile: 'out/test/codex-auth-ipc.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',

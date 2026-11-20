@@ -3105,7 +3105,9 @@ export class AgentController extends EventEmitter {
     const sessionId = this.state?.sessionId
     const result = await ensureLocalModelReady(model.provider, model.id, {
       onStarting: (name) => this.push({ ch: 'notify', payload: { id: `local-model-start-${Date.now()}`, method: 'notify', notifyType: 'info',
-        message: pick(`正在启动本地模型「${name}」，就绪后自动发送…`, `Starting local model "${name}"; the message will be sent once it is ready…`) } })
+        message: pick(`正在启动本地模型「${name}」，就绪后自动发送…`, `Starting local model "${name}"; the message will be sent once it is ready…`) } }),
+      onSwitching: (name) => this.push({ ch: 'notify', payload: { id: `local-model-switch-${Date.now()}`, method: 'notify', notifyType: 'info',
+        message: pick(`正在切换本地模型到「${name}」，就绪后自动发送…`, `Switching local model to "${name}"; the message will be sent once it is ready…`) } })
     }).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error), started: true }))
     if (!result.ok) return { ok: false, error: result.error }
     if (result.started && this.state?.sessionId !== sessionId) return { ok: false, error: pick('本地模型已启动，但会话已切换，消息未发送，草稿已保留', 'The local model started, but the session changed; message not sent, draft kept') }

@@ -5,14 +5,14 @@ import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron'
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
-import type { CustomProviderInput, LocalLauncherInput } from '../../shared/custom-provider'
+import type { CustomProviderInput, LocalLauncherInput, LocalModelInput } from '../../shared/custom-provider'
 import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders } from '../credentials'
 import { credentialBackupProgress, removeCredentialBackups } from '../credential-vault'
 import { addApiKey, captureActiveApiKey, clearApiKeys, listApiKeyPools, removeApiKey, renameApiKey, switchApiKey } from '../api-key-pool'
 import { detectToolchain } from '../toolchain'
 import { detectLocalModelServers } from '../local-models'
-import { detectLocalLauncher, listLocalLaunchers, renameLocalModel, saveLocalLauncher } from '../local-model-launch'
+import { addLocalModel, detectLocalLauncher, listLocalLaunchers, removeLocalModel, renameLocalModel, saveLocalLauncher } from '../local-model-launch'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
@@ -99,15 +99,40 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:localLaunchers', async () => listLocalLaunchers())
   handle('yan:saveLocalLauncher', async (provider: string, input: LocalLauncherInput) => {
     const value = (input && typeof input === 'object' ? input : {}) as Partial<LocalLauncherInput>
+    if (typeof value.modelId === 'string' && value.modelId.trim()) {
+      return saveLocalLauncher(String(provider ?? ''), {
+        modelId: value.modelId,
+        modelCommand: String(value.modelCommand ?? value.command ?? '')
+      })
+    }
     return saveLocalLauncher(String(provider ?? ''), {
-      command: String(value.command ?? ''),
-      stopCommand: String(value.stopCommand ?? ''),
-      idleUnload: value.idleUnload !== false
+      ...(value.command !== undefined ? { command: String(value.command) } : {}),
+      ...(value.stopCommand !== undefined ? { stopCommand: String(value.stopCommand) } : {}),
+      ...(value.idleUnload !== undefined ? { idleUnload: value.idleUnload !== false } : {})
     })
   })
   handle('yan:renameLocalModel', async (provider: string, modelId: string, name: string) => {
     const next = await renameLocalModel(String(provider ?? ''), String(modelId ?? ''), String(name ?? ''))
     void restartAgent('local model renamed').catch((error) => console.error('[auth] refresh after model rename failed', error))
+    return next
+  })
+  handle('yan:addLocalModel', async (provider: string, input: LocalModelInput) => {
+    const value = (input && typeof input === 'object' ? input : {}) as Partial<LocalModelInput>
+    const result = await addLocalModel(String(provider ?? ''), {
+      id: String(value.id ?? ''),
+      ...(typeof value.name === 'string' ? { name: value.name } : {}),
+      ...(typeof value.contextWindow === 'number' ? { contextWindow: value.contextWindow } : {}),
+      ...(typeof value.maxTokens === 'number' ? { maxTokens: value.maxTokens } : {}),
+      ...(value.reasoning === true ? { reasoning: true } : {}),
+      ...(Array.isArray(value.input) ? { input: value.input } : {}),
+      ...(typeof value.command === 'string' ? { command: value.command } : {})
+    })
+    void restartAgent('local model added').catch((error) => console.error('[auth] refresh after model add failed', error))
+    return result
+  })
+  handle('yan:removeLocalModel', async (provider: string, modelId: string) => {
+    const next = await removeLocalModel(String(provider ?? ''), String(modelId ?? ''))
+    void restartAgent('local model removed').catch((error) => console.error('[auth] refresh after model remove failed', error))
     return next
   })
   handle('yan:pickLocalLauncher', async (current?: string) => {
