@@ -3,7 +3,7 @@ import { MiniBars, SegmentBar, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
 import { useStreamingThrottledStore } from '../../state/streaming-throttle'
-import { subagentCost, subagentTokens, viewSubagentRuns } from '../../state/subagent-view'
+import { viewSubagentMetrics } from '../../state/subagent-view'
 import { useMoney } from '../usage/UsageOverview'
 import {
   latencyFloor,
@@ -68,8 +68,8 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
   const antigravity = useStore((s) => !s.peekedSessionId && s.session?.model?.provider === 'antigravity')
   const peekNote = useStore((s) => s.peekNote)
   const view = useStore(viewKey)
-  const childTokens = useStore((s) => (enabled ? subagentTokens(viewSubagentRuns(s)) : 0))
-  const childCost = useStore((s) => (enabled ? subagentCost(viewSubagentRuns(s)) : 0))
+  const childTokens = useStore((s) => (enabled && !antigravity ? viewSubagentMetrics(s).tokens : 0))
+  const childCost = useStore((s) => (enabled && !antigravity ? viewSubagentMetrics(s).cost : 0))
   const historyPartial = (peekNote?.truncated ?? 0) > 0
   const speedHold = useRef<RailSpeedHold | null>(null)
   const messages = useMemo(() => antigravity ? antigravityMessages(snapshot.messages) : snapshot.messages, [antigravity, snapshot.messages])

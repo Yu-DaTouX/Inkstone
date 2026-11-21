@@ -6,6 +6,7 @@ import { findAtQuery, replaceAtQuery } from './at-query'
 import { swallowsPendingCompletionKey, type ComposerKeyEvent } from './composer-keys'
 import { replaceTextRange, type ComposerAtomSpec, type TextSelection } from './composer-text'
 import { imageRefLabel, imageRefMatches, imageRefPrefix } from './image-refs'
+import { completionRequestKey, createCompletionScopeSelector, sameFileCwd } from './completion-scope'
 
 export interface ImageRefOption {
   n: number
@@ -53,15 +54,6 @@ function commandSourceRank(command: SlashCommand): number {
   return { yan: 0, pi: 1, extension: 2, skill: 3, prompt: 4, compatibility: 5 }[command.source]
 }
 
-function foldCase(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, '')
-  return /^[a-zA-Z]:/.test(trimmed) || trimmed.includes('\\') ? trimmed.toLowerCase() : trimmed
-}
-
-function sameFileCwd(a: string, b: string): boolean {
-  return foldCase(a) === foldCase(b)
-}
-
 export function firstClause(text?: string): string {
   if (!text) return ''
   const cut = text.search(/[。；;（(]|\.\s/)
@@ -87,23 +79,11 @@ export function useCompletion({
   const markCommandUsed = useStore((s) => s.markCommandUsed)
   const reloadCommands = useStore((s) => s.reloadCommands)
 
-  const activeSessionId = useStore((s) => s.session?.sessionId ?? '')
-  const activeCwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
+  const selectScope = useMemo(createCompletionScopeSelector, [])
+  const scope = useStore(selectScope)
+  const { activeCwd, activeGeneration, activeProjectId } = scope
   const attachments = useStore((s) => s.attachments)
   const { lang } = useI18n()
-  const activeRunnerId = useStore((s) => s.activeRunnerId ?? '')
-  const activeGeneration = useStore((s) =>
-    s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.generation ?? 0
-  )
-  const activeProjectId = useStore((s) => {
-    const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
-    if (runner?.projectId) return runner.projectId
-    const summary = s.sessions.find((item) => item.id === s.session?.sessionId || item.path === s.session?.sessionFile)
-    if (summary?.scope === 'global') return undefined
-    if (summary?.projectId) return summary.projectId
-    const cwd = s.session?.cwd ?? s.settings?.cwd ?? ''
-    return s.settings?.projects.find((project) => sameFileCwd(project.cwd, cwd))?.id
-  })
 
   const [menu, setMenu] = useState<{ open: boolean; index: number }>({ open: false, index: 0 })
   const [paths, setPaths] = useState<string[]>([])
@@ -207,23 +187,12 @@ export function useCompletion({
       generation: activeGeneration,
       ...(activeProjectId ? { projectId: activeProjectId } : {})
     }
-    const requestKey = `${activeRunnerId}\0${activeSessionId}\0${activeCwd}\0${activeProjectId ?? ''}\0${activeGeneration}\0${atQuery}`
+    const requestKey = completionRequestKey(scope, atQuery)
     const id = setTimeout(() => {
       void window.yan
         .completePath(atQuery, activeCwd, context)
         .then((result) => {
-          const current = useStore.getState()
-          const currentRunner = current.runners.find((runner) => (runner.runId ?? runner.id) === current.activeRunnerId)
-          const currentSummary = current.sessions.find(
-            (item) => item.id === current.session?.sessionId || item.path === current.session?.sessionFile
-          )
-          const currentCwd = current.session?.cwd ?? current.settings?.cwd ?? ''
-          const currentProject = currentRunner?.projectId ?? (
-            currentSummary?.scope === 'global'
-              ? undefined
-              : currentSummary?.projectId ?? current.settings?.projects.find((project) => sameFileCwd(project.cwd, currentCwd))?.id
-          ) ?? ''
-          const currentKey = `${current.activeRunnerId ?? ''}\0${current.session?.sessionId ?? ''}\0${currentCwd}\0${currentProject}\0${currentRunner?.generation ?? 0}\0${atQuery}`
+          const currentKey = completionRequestKey(selectScope(useStore.getState()), atQuery)
           const response = result.request
           const responseMatches = !response || (
             sameFileCwd(response.cwd, context.cwd) &&
@@ -250,7 +219,7 @@ export function useCompletion({
       alive = false
       clearTimeout(id)
     }
-  }, [atDismissed, activeCwd, activeGeneration, activeProjectId, activeRunnerId, activeSessionId, atQuery])
+  }, [atDismissed, activeCwd, activeGeneration, activeProjectId, atQuery, scope, selectScope])
 
   const slashReady = slashMatches.length > 0 || slashStatus === 'loading' || slashStatus === 'error'
   useEffect(() => {

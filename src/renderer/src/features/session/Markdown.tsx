@@ -22,6 +22,7 @@ import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { hasUnclosedFence, prepareStreamingMarkdown, splitMarkdownBlocks } from './markdown-blocks'
 import { markdownCacheKey } from './markdown-cache-key'
+import { createMarkdownPathCache } from './markdown-path-cache'
 import { MarkdownTable } from './MarkdownTable'
 import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
@@ -164,52 +165,26 @@ function FileLinkIcon({ path }: { path: string }): JSX.Element {
   return <FileTypeIcon name={base} size={14} className="v3-md-link-icon" />
 }
 
-const PATH_STAT_LIMIT = 2000
 type ResolvedPath = { abs: string; directory: boolean }
-const pathStats = new Map<string, ResolvedPath | null | Promise<ResolvedPath | null>>()
-const MISS_TTL_MS = 3000
-const pathMisses = new Map<string, number>()
+const pathStats = createMarkdownPathCache<ResolvedPath>()
 
-function cachedStat(key: string): ResolvedPath | null | Promise<ResolvedPath | null> | undefined {
-  const hit = pathStats.get(key)
-  if (hit !== null) return hit
-  if (Date.now() - (pathMisses.get(key) ?? 0) < MISS_TTL_MS) return hit
-  pathStats.delete(key)
-  pathMisses.delete(key)
-  return undefined
-}
-
-function statKnown(path: string, cwd?: string): Promise<ResolvedPath | null> {
-  const key = `${cwd ?? ''}|${path}`
-  const hit = cachedStat(key)
-  if (hit !== undefined && !(hit instanceof Promise)) return Promise.resolve(hit)
-  if (hit) return hit
-  if (pathStats.size > PATH_STAT_LIMIT) {
-    pathStats.clear()
-    pathMisses.clear()
-  }
-  const stat = window.yan?.statPreview
-  const pending = (typeof stat === 'function'
-    ? stat(path, cwd).then((result): ResolvedPath | null => (result.ok ? { abs: result.abs || path, directory: false } : result.directory && result.abs ? { abs: result.abs, directory: true } : null), () => null)
-    : Promise.resolve(null))
-    .then((abs) => {
-      pathStats.set(key, abs)
-      if (abs === null) pathMisses.set(key, Date.now())
-      return abs
-    })
-  pathStats.set(key, pending)
-  return pending
+function statKnown(key: string, path: string, cwd?: string): Promise<ResolvedPath | null> {
+  return pathStats.load(key, () => {
+    const stat = window.yan?.statPreview
+    if (typeof stat !== 'function') return Promise.resolve(null)
+    return stat(path, cwd).then((result): ResolvedPath | null => (result.ok ? { abs: result.abs || path, directory: false } : result.directory && result.abs ? { abs: result.abs, directory: true } : null), () => null)
+  }, (result) => result.abs.length)
 }
 
 function useResolvedPath(path: string | null, cwd?: string): ResolvedPath | null {
   const key = path ? `${cwd ?? ''}|${path}` : ''
-  const known = key ? cachedStat(key) : undefined
+  const known = key ? pathStats.get(key) : undefined
   const settled = known !== undefined && !(known instanceof Promise)
   const [resolved, setResolved] = useState<{ key: string; abs: ResolvedPath | null } | null>(null)
   useEffect(() => {
     if (!path || settled) return undefined
     let alive = true
-    void statKnown(path, cwd).then((abs) => {
+    void statKnown(key, path, cwd).then((abs) => {
       if (alive) setResolved({ key, abs })
     })
     return () => { alive = false }

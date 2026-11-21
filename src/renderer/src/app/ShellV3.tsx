@@ -150,7 +150,8 @@ export default function ShellV3(): ReactElement {
 
   const settings = useStore((s) => s.settings)
   const conn = useStore((s) => s.conn)
-  const session = useStore((s) => s.session)
+  const hasSession = useStore((s) => s.session !== null)
+  const sessionFile = useStore((s) => s.session?.sessionFile)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const applyPush = useStore((s) => s.applyPush)
@@ -267,9 +268,9 @@ export default function ShellV3(): ReactElement {
       displayedSessionOf({
         peekedSessionId,
         peekedPath,
-        session: session ? { sessionId: session.sessionId, sessionFile: session.sessionFile } : null
+        session: hasSession ? { sessionId: liveSessionId ?? undefined, sessionFile } : null
       }),
-    [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
+    [peekedSessionId, peekedPath, hasSession, liveSessionId, sessionFile]
   )
   const storedSplit = useSplitView((s) => s.split)
   const split = useMemo(() => (storedSplit ? reconcileSplit(storedSplit, displayed) : null), [storedSplit, displayed])
@@ -321,13 +322,13 @@ export default function ShellV3(): ReactElement {
 
   useEffect(() => {
     if (!settings) return
-    const settled = conn === 'exited' || conn === 'error' || (conn === 'ready' && !!session)
+    const settled = conn === 'exited' || conn === 'error' || (conn === 'ready' && hasSession)
     if (!settled) return
     let id = requestAnimationFrame(() => {
       id = requestAnimationFrame(() => dismissBootSplash())
     })
     return () => cancelAnimationFrame(id)
-  }, [settings, conn, session])
+  }, [settings, conn, hasSession])
 
   useEffect(() => {
     const openSearch = (): void => useUiV3.getState().setSidebarOpen(true)

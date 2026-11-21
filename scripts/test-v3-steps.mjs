@@ -151,7 +151,7 @@ async function buildSteps(outdir) {
   await writeFile(reactShim, REACT_SHIM)
   await writeFile(jsxShim, JSX_SHIM)
   const entry = join(outdir, 'steps-entry.ts')
-  await writeFile(entry, `export { ToolSteps, ToolTallyScope, detailKind, visibleNestedNodes, collapsedNest, stepIconName, groupIconName } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
+  await writeFile(entry, `export { ToolSteps, ToolTallyScope, detailKind, visibleNestedNodes, collapsedNest, stepIconName, groupIconName } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\nexport { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'\n`)
   const out = join(outdir, 'steps-bundle.mjs')
   await build({
     entryPoints: [entry],
@@ -323,7 +323,7 @@ async function main() {
     await rm(outdir, { recursive: true, force: true })
     process.exit(1)
   }
-  const { ToolSteps, detailKind, toolExpansion, stepIconName, groupIconName } = bundle
+  const { ToolSteps, detailKind, toolExpansion, stepIconName, groupIconName, useStore } = bundle
 
   const renderSteps = (tools, approvalIds) => {
     const rt = makeHookRuntime()
@@ -600,7 +600,22 @@ async function main() {
     ok(byTypeName(opened, 'StepNode').length === 12, '点开后逐条展示 12 步', byTypeName(opened, 'StepNode').length)
 
     const broken = renderSteps([...cmds.slice(0, 3), tool({ id: 'ask', name: 'question' }), ...cmds.slice(3, 6)])
-    ok(byTypeName(broken.tree, 'ToolGroupRow').length === 2 && byTypeName(broken.tree, 'QuestionReceipt').length === 1 && byTypeName(broken.tree, 'StepNode').length === 0, '提问工具独立成行（问答回执）并断开分组', byTypeName(broken.tree, 'QuestionReceipt').length)
+    const [question] = collect(broken.tree, (el) => typeof el.type === 'function' && el.props?.call?.id === 'ask')
+    const rt = makeHookRuntime()
+    const questionView = () => question && renderComponent(rt, question.type, question.props)
+    ok(byTypeName(broken.tree, 'ToolGroupRow').length === 2 && byTypeName(questionView(), 'QuestionReceipt').length === 1 && byTypeName(broken.tree, 'StepNode').length === 0, '提问工具独立成行（问答回执）并断开分组')
+    const originalRequests = useStore.getState().uiRequests
+    try {
+      useStore.setState({ uiRequests: [{ id: 'elsewhere', toolCallId: 'other-call', title: 'Other', method: 'select' }] })
+      ok(byTypeName(questionView(), 'QuestionReceipt').length === 1, '其他调用的提问不替换此行回执')
+      useStore.setState({ uiRequests: [{ id: 'own', toolCallId: 'ask', method: 'select' }] })
+      ok(byTypeName(questionView(), 'AskPill')[0]?.props.kind === 'answer', '匹配的提问即使没有标题也指向待答卡片')
+      useStore.setState({ uiRequests: [{ id: 'own', toolCallId: 'ask', title: 'Question', method: 'select' }] })
+      ok(byTypeName(questionView(), 'AskPill')[0]?.props.title === 'Question', '匹配的提问标题变化仍更新')
+    } finally {
+      useStore.setState({ uiRequests: originalRequests })
+    }
+    ok(byTypeName(questionView(), 'QuestionReceipt').length === 1, '提问结束后恢复此行回执')
 
     const rereads = Array.from({ length: 3 }, (_, i) => tool({ id: `same-${i}`, name: 'read', args: { path: 'docs/a.md' } }))
     const same = renderSub(renderSteps(rereads).tree, 'ToolGroupRow')

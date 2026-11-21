@@ -479,14 +479,19 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
             nodes.push(
               <SidebarProjectFolderHeader
                 key={`project-folder:${folder.projectKey}`}
-                folder={folder}
+                projectKey={folder.projectKey}
+                displayName={folder.displayName}
+                collapsed={folder.collapsed}
+                empty={folder.threadKeys.length === 0}
+                hiddenCount={folder.hiddenCount}
+                dot={folder.dot}
+                dotLabel={folder.dotLabel}
+                manageable={folder.manageable}
                 newThreadLabel={props.folderNewThreadLabel?.(folder.projectKey) ?? folder.displayName}
                 menuLabel={props.folderMenuLabel ?? folder.displayName}
-                onToggle={(projectKey) => props.onToggleFolder?.(projectKey)}
-                onNewThread={(projectKey) => props.onNewThreadInFolder?.(projectKey)}
-                onContextMenu={(projectKey, position) =>
-                  props.onFolderContextMenu?.(projectKey, position)
-                }
+                onToggle={props.onToggleFolder}
+                onNewThread={props.onNewThreadInFolder}
+                onContextMenu={props.onFolderContextMenu}
               />
             )
             for (const threadKey of folder.collapsed ? folder.threadKeys.filter((key) => key === routeThreadKey) : folder.threadKeys) {

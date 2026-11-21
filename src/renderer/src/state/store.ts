@@ -44,6 +44,7 @@ import { SubagentPatchBatch, applySubagentPatches } from './subagent-patch-batch
 import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
 import { composerSubmitIdentity, sameComposerView, type ComposerSubmitIdentity } from './composer-recovery'
 import type { QueueOp } from '../features/composer/queue-plan'
+import { replaceIndexedMessage } from './message-index'
 import { reuseIfSame } from './same-messages'
 import { keepRef } from './stable-ref'
 import {
@@ -381,23 +382,20 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
   const i = list.findLastIndex((m) => m.id === id)
   if (i < 0) return list
 
+  const cur = list[i]
   if (patch.textDelta === undefined && patch.thinkingDelta === undefined) {
-    const next = list.slice()
-    next[i] = { ...next[i], ...patch }
-    return next
+    return replaceIndexedMessage(list, i, { ...cur, ...patch })
   }
 
-  const cur = list[i]
   const { textDelta, thinkingDelta, ...rest } = patch
-  const next = list.slice()
-  next[i] = {
+  const next = {
     ...cur,
     ...rest,
     ...(textDelta ? { text: (cur.text ?? '') + textDelta } : null),
     ...(thinkingDelta ? { thinking: (cur.thinking ?? '') + thinkingDelta } : null)
   }
-  noteTextArrival(id, cur.text, next[i].text)
-  return next
+  noteTextArrival(id, cur.text, next.text)
+  return replaceIndexedMessage(list, i, next)
 }
 
 let approvalBootstrapSeq = 0

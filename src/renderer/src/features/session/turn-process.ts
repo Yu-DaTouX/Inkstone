@@ -6,7 +6,7 @@ import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { modelBrand } from '../../../../shared/model-brand'
-import { messageIndex } from './message-index'
+import { messageIndex } from '../../state/message-index'
 import { fileBaseName as baseOf } from './tool-title'
 
 const LIVE_SEGMENTS = 3

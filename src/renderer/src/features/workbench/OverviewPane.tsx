@@ -9,8 +9,7 @@ import { useStreamingThrottledStore, useThrottledValue } from '../../state/strea
 import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, scaledSourceItems, sourceItemLabel, type ContextSourceItem } from '../../state/context-sources'
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
-import { viewSubagentRuns } from '../../state/subagent-view'
-import { isLiveSubagentRun } from '../../../../shared/subagent-task-rows'
+import { viewSubagentMetrics } from '../../state/subagent-view'
 import { sessionViewIdentity } from '../session/view-state'
 import { quotaForecastLine, quotaPace, quotaReadAgo, quotaResetLine, quotaShortLabel, quotaWindowName, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
@@ -767,8 +766,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const stats = useStore((s) => s.stats)
   const settings = useStore((s) => s.settings)
   const messages = useStreamingThrottledStore((s) => s.messages)
-  const childTasks = useStore((s) => viewSubagentRuns(s).length)
-  const childTasksLive = useStore((s) => viewSubagentRuns(s).filter(isLiveSubagentRun).length)
+  const childTasks = useStore((s) => viewSubagentMetrics(s).total)
+  const childTasksLive = useStore((s) => viewSubagentMetrics(s).live)
   const terminalJobs = useViewTerminalJobs()
   const widgets = useStore((s) => s.widgets)
   const peekedSessionId = useStore((s) => s.peekedSessionId)

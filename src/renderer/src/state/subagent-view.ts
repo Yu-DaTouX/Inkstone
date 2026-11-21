@@ -1,4 +1,5 @@
 import type { SubagentRun } from '../../../shared/ipc'
+import { isLiveSubagentRun } from '../../../shared/subagent-task-rows'
 
 export interface SubagentScope {
   sessionIds: string[]
@@ -97,6 +98,35 @@ export function selectSubagentRuns(runs: SubagentRun[], scope: SubagentScope): S
 
 export function viewSubagentRuns(input: SubagentViewInput & { subagents: SubagentRun[] }): SubagentRun[] {
   return selectSubagentRuns(input.subagents, subagentScopeForView(input)).all
+}
+
+type SubagentViewMetrics = Readonly<{ total: number; live: number; tokens: number; cost: number }>
+
+const viewMetrics = new WeakMap<SubagentRun[], {
+  runners: SubagentViewInput['runners']
+  sessionId: string | undefined
+  path: string | undefined
+  conversationId: string | undefined
+  metrics: SubagentViewMetrics
+}>()
+
+export function viewSubagentMetrics(input: SubagentViewInput & { subagents: SubagentRun[] }): SubagentViewMetrics {
+  const peeking = !!(input.peekedSessionId || input.peekedPath)
+  const sessionId = peeking ? input.peekedSessionId ?? undefined : input.session?.sessionId
+  const path = peeking ? input.peekedPath ?? undefined : input.session?.sessionFile
+  const conversationId = peeking ? undefined : input.session?.conversationId
+  const { subagents, runners } = input
+  const cached = viewMetrics.get(subagents)
+  if (cached && cached.runners === runners && cached.sessionId === sessionId && cached.path === path && cached.conversationId === conversationId) return cached.metrics
+  const runs = viewSubagentRuns(input)
+  const metrics = {
+    total: runs.length,
+    live: runs.filter(isLiveSubagentRun).length,
+    tokens: subagentTokens(runs),
+    cost: subagentCost(runs)
+  }
+  viewMetrics.set(subagents, { runners, sessionId, path, conversationId, metrics })
+  return metrics
 }
 
 export interface TurnSubagentScope {

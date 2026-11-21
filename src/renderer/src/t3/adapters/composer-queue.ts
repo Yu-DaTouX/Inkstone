@@ -1,8 +1,10 @@
 import { useCallback, useMemo } from 'react'
+import { shallow } from 'zustand/shallow'
 import type { QueueState } from '../../../../shared/ipc'
 import { pendingSendsForView, useStore, type PendingSend } from '@/state/store'
 import { composerSubmitIdentity, sameComposerView, type ComposerSubmitIdentity } from '../../state/composer-recovery'
 import { queueImagesToAttachments } from '../../state/queue-images'
+import { viewIdentityOf } from '../../state/view-identity'
 import { MAX_ATTACHMENTS, MAX_IMAGE_BYTES } from '../../state/slices/queue-recovery'
 import { useT } from '../../i18n'
 import { showToast } from '../../ui'
@@ -108,21 +110,35 @@ async function requeueRows(rows: readonly QueueRow[], identity: ComposerSubmitId
   }
 }
 
+const EMPTY_PENDING: readonly PendingSend[] = []
+
+export function createPendingQueueSelector() {
+  let source: readonly PendingSend[] = EMPTY_PENDING
+  let selected: readonly PendingSend[] = EMPTY_PENDING
+  let sessionId: string | null = null
+  let peeked = false
+  let blankRunner: string | null = null
+  return (state: Parameters<typeof pendingSendsForView>[0]): readonly PendingSend[] => {
+    const view = viewIdentityOf(state)
+    const runner = view.sessionId || view.peeked ? null : state.activeRunnerId || null
+    if (source === state.pendingSends && sessionId === view.sessionId && peeked === view.peeked && blankRunner === runner) return selected
+    source = state.pendingSends
+    sessionId = view.sessionId
+    peeked = view.peeked
+    blankRunner = runner
+    const next = pendingSendsForView(state)
+    if (!shallow(next, selected)) selected = next
+    return selected
+  }
+}
+
 export function useQueueAdapter(): QueueAdapter {
   const t = useT()
   const queue = useStore((s) => s.queue)
-  const allPending = useStore((s) => s.pendingSends)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const session = useStore((s) => s.session)
-  const activeRunnerId = useStore((s) => s.activeRunnerId)
+  const selectPending = useMemo(createPendingQueueSelector, [])
+  const pending = useStore(selectPending)
   const running = useStore(
     (s) => s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running === true
-  )
-
-  const pending = useMemo(
-    () => pendingSendsForView({ pendingSends: allPending, peekedSessionId, peekedPath, session, activeRunnerId }),
-    [allPending, peekedSessionId, peekedPath, session, activeRunnerId]
   )
 
   const rows = useMemo(() => buildQueueRows(queue, pending), [queue, pending])

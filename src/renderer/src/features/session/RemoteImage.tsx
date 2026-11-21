@@ -3,23 +3,13 @@ import { ImageDown } from '../../ui/icons'
 import { useT } from '../../i18n'
 import { Button } from '../../ui'
 import { MessageImage } from './Image'
+import { createRemoteImageCache } from './message-cache'
 import { useTurnSession } from './turn-scope'
 import type { RemoteImageResult } from '../../../../shared/ipc'
 
 type RemoteState = { phase: 'checking' } | { phase: 'idle' } | { phase: 'loading' } | { phase: 'ready'; dataUrl: string } | { phase: 'failed'; code: string }
 
-const loaded = new Map<string, string>()
-const LOADED_LIMIT = 32
-
-function rememberLoaded(src: string, dataUrl: string): void {
-  loaded.delete(src)
-  loaded.set(src, dataUrl)
-  while (loaded.size > LOADED_LIMIT) {
-    const oldest = loaded.keys().next().value
-    if (oldest === undefined) break
-    loaded.delete(oldest)
-  }
-}
+const loaded = createRemoteImageCache()
 
 function remoteImageHost(url: string): string {
   try {
@@ -132,8 +122,10 @@ export function RemoteImage({ src, alt, className }: { src: string; alt?: string
   const sessionId = useTurnSession((session) => session?.sessionId ?? session?.conversationId ?? '')
   const group = useContext(RemoteImageGroupContext)
   const memberKey = useState(() => ({}))[0]
-  const cached = loaded.get(src)
-  const [state, setState] = useState<RemoteState>(cached ? { phase: 'ready', dataUrl: cached } : { phase: 'checking' })
+  const [state, setState] = useState<RemoteState>(() => {
+    const cached = loaded.get(src)
+    return cached ? { phase: 'ready', dataUrl: cached } : { phase: 'checking' }
+  })
 
   const load = async (prompt: boolean): Promise<void> => {
     const bridge = window.yan?.browser
@@ -143,15 +135,16 @@ export function RemoteImage({ src, alt, className }: { src: string; alt?: string
     }
     if (prompt) setState({ phase: 'loading' })
     const result = await bridge.remoteImage(sessionId, src, prompt).catch((): RemoteImageResult => ({ ok: false, code: 'network' }))
-    if (result.ok) rememberLoaded(src, result.dataUrl)
+    if (result.ok) loaded.set(src, result.dataUrl)
     setState(remoteImageState(result, prompt))
   }
   const loadRef = useRef(load)
   loadRef.current = load
 
   useEffect(() => {
-    if (loaded.has(src)) return
-    void load(false)
+    const cached = loaded.get(src)
+    if (cached) setState((current) => current.phase === 'ready' && current.dataUrl === cached ? current : { phase: 'ready', dataUrl: cached })
+    else void loadRef.current(false)
   }, [src, sessionId])
 
   useEffect(() => {

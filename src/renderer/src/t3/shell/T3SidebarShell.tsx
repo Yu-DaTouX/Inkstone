@@ -26,7 +26,7 @@ import { NewSessionPicker } from '../../features/sidebar/NewSessionPicker'
 import { FolderManager } from '../../features/sidebar/FolderManager'
 import { matchesStatusFilter, StatusFilter, type SessionStatusFilter } from '../../features/sidebar/StatusFilter'
 import { openAddProjectPalette } from '../../features/projects'
-import { quoteTargetUnder, SESSION_QUOTE_DROP_EVENT, sidebarEdge, startSessionRowDrag } from '../../features/sidebar/session-drag'
+import { quoteTargetUnder, SESSION_QUOTE_DROP_EVENT, sidebarEdge } from '../../features/sidebar/session-drag'
 import { createSessionSplitDrag, setSplitBadge, type SessionSplitDrag } from '../../features/split/split-drag'
 import { IconButton, Menu, MenuItem, Popover } from '../../ui'
 import { compactAgo } from '../../features/sidebar/sidebar-model'
@@ -55,7 +55,9 @@ import {
   type ThreadRef
 } from '../adapters/sidebar'
 import { SidebarThreadList, type SidebarDropInput, type SidebarRowRenderProps } from '../components/Sidebar'
-import { ProjectFavicon } from '../components/ProjectFavicon'
+import { memoByReference } from '../lib/memoByReference'
+import { resolveCollapsedFolderDot } from '../adapters/sidebar/status'
+import { openSidebarThread as openView, SidebarSessionRow } from './SidebarSessionRow'
 import {
   SidebarChromeFooter,
   SidebarChromeHeader,
@@ -64,15 +66,25 @@ import {
 import { SidebarDraftBlock } from '../components/sidebar/SidebarDraftBlock'
 import { SidebarSearchContentMatches, SidebarThreadHeader } from '../components/sidebar/SidebarThreadHeader'
 import { SidebarThreadUndoNotice } from '../components/sidebar/SidebarThreadUndoNotice'
-import {
-  SidebarThreadRow,
-  type SidebarThreadRowView
-} from '../components/sidebar/SidebarThreadRow'
+import type { SidebarThreadRowView } from '../components/sidebar/SidebarThreadRow'
 import type { SidebarProjectFolderView } from '../components/sidebar/SidebarProjectFolderHeader'
 import './T3SidebarShell.css'
 
 const SHELF_PAGE_SIZE = 10
 const PROJECT_FILTER_KEY = 'inkstone.v3.sidebarProjectFilter'
+const EMPTY_SORTABLE = {}
+
+const listedPaths = memoByReference((sessions: ReturnType<typeof useStore.getState>['sessions']) => {
+  let previousPath: string | undefined
+  let listed = true
+  return (path: string): boolean => {
+    if (path !== previousPath) {
+      previousPath = path
+      listed = sessions.some((entry) => sameSessionPathLoose(entry.path, path))
+    }
+    return listed
+  }
+})
 
 export interface T3SidebarShellProps {
   inert?: boolean
@@ -114,6 +126,11 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const [query, setQuery] = useState('')
   const [renamingKey, setRenamingKey] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const startRename = useCallback((key: string, title: string) => {
+    setRenameValue(title)
+    setRenamingKey(key)
+  }, [])
+  const endRename = useCallback(() => setRenamingKey(null), [])
   const menuPointRef = useRef<HTMLSpanElement>(null)
   const [sessionMenu, setSessionMenu] = useState<{ key: string; open: boolean; point: { x: number; y: number } | null } | null>(null)
   const closeSessionMenu = useCallback((): void => setSessionMenu((previous) => previous ? { ...previous, open: false } : previous), [])
@@ -163,9 +180,12 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const searching = query.trim().length > 0
   const search = useSidebarSearch(query, sections)
   const snoozePresets = useSnoozePresets(true, now)
+  const rowSnoozePresets = useMemo(() => snoozePresets.map((preset) => ({ id: preset.id, label: preset.label, until: Date.parse(preset.snoozedUntil) })), [snoozePresets])
 
-  const sessions = useStore((s) => s.sessions)
-  const settings = useStore((s) => s.settings)
+  const projectRecords = useStore((s) => s.settings?.projects)
+  const profileName = useStore((s) => s.settings?.profile?.name)
+  const shortcutOverrides = useStore((s) => s.settings?.shortcutOverrides)
+  const flatLayout = useStore((s) => s.settings?.sidebarLayout === 'flat')
   const conn = useStore((s) => s.conn)
   const connDetail = useStore((s) => s.connDetail)
   const currentSessionFile = useStore((s) => s.session?.sessionFile)
@@ -175,7 +195,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const refreshSessions = useStore((s) => s.refreshSessions)
   const running = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming))
   const currentListed = useStore(
-    (s) => !s.session?.sessionFile || s.sessions.some((entry) => sameSessionPathLoose(entry.path, s.session?.sessionFile))
+    (s) => !(s.session?.isAgentRunning || s.session?.isStreaming) || !s.session.sessionFile || listedPaths(s.sessions)(s.session.sessionFile)
   )
 
   useEffect(() => {
@@ -204,19 +224,14 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     setSessionOrder(orderKey ? orderKey.split('\n') : [])
   }, [orderKey])
 
-  const openView = useCallback((view: SidebarThreadView): void => {
-    if (view.snoozedUntil !== null) void sidebarActions.unsnooze(refOf(view))
-    void openSidebarSession({ id: view.id, path: view.path })
-  }, [])
-
   const createGlobal = useCallback((): void => {
     useUiV3.getState().navigate({ name: 'chat' })
     void useStore.getState().newSession({ scope: 'global' })
   }, [])
 
   const projectRecord = useCallback(
-    (projectId: string | undefined) => (projectId ? settings?.projects.find((entry) => entry.id === projectId) : undefined),
-    [settings?.projects]
+    (projectId: string | undefined) => (projectId ? projectRecords?.find((entry) => entry.id === projectId) : undefined),
+    [projectRecords]
   )
 
   const newThreadInProject = useCallback(
@@ -263,7 +278,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       if (first) openView(first)
       else if (content) void openSidebarSession({ id: content.id ?? undefined, path: content.path })
     },
-    [clearSearch, openView, search.threads, search.matches]
+    [clearSearch, search.threads, search.matches]
   )
 
   useEffect(() => {
@@ -288,12 +303,13 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       if (view) openView(view)
       else void openSidebarSession({ path })
     },
-    [openView, viewByPath]
+    [viewByPath]
   )
   useSessionJump(asideRef, jumpToPath)
   useSessionFileDrop(asideRef, t)
 
-  const projectFolders = useMemo<SidebarProjectFolderView[]>(() => {
+  const projectFolders = useMemo<SidebarProjectFolderView[] | null>(() => {
+    if (flatLayout) return null
     const grouped = new Map<string, SidebarThreadView[]>()
     for (const view of sections.active) {
       const list = grouped.get(view.projectId)
@@ -301,38 +317,26 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       else grouped.set(view.projectId, [view])
     }
     const order = projects.list.filter((project) => !project.archived).map((project) => project.projectId)
-    const keys = [
-      ...order,
-      ...Array.from(grouped.keys()).filter((id) => !order.includes(id))
-    ]
+    const ordered = new Set(order)
+    const keys = [...order, ...Array.from(grouped.keys()).filter((id) => !ordered.has(id))]
     return keys.map((projectId) => {
       const rows = grouped.get(projectId) ?? []
       const project = projects.byId.get(projectId)
-      const statuses = rows.map((view) => resolveRowStatus(view, now))
-      const dot: SidebarProjectFolderView['dot'] =
-        statuses.some((status) => status === 'approval' || status === 'input' || status === 'waiting')
-          ? 'attention'
-          : statuses.some((status) => status === 'failed')
-            ? 'failed'
-            : rows.some((view) => view.unread)
-              ? 'unread'
-              : statuses.some((status) => status === 'working')
-                ? 'working'
-                : null
       const collapsed = collapsedFolders.has(projectId)
+      const dot = collapsed ? resolveCollapsedFolderDot(rows, now) : null
+      const threadKeys = rows.map((view) => scopedKeyOf(view.id))
       return {
         projectKey: projectId,
         displayName: project?.displayName ?? rows[0]?.projectDisplayName ?? text.groupUngrouped,
-        icon: project ? <ProjectFavicon project={{ projectId: project.projectId, displayName: project.displayName }} /> : null,
         collapsed,
-        threadKeys: rows.map((view) => scopedKeyOf(view.id)),
-        hiddenCount: collapsed ? rows.filter((view) => scopedKeyOf(view.id) !== activeKey).length : 0,
-        dot: collapsed ? dot : null,
-        dotLabel: collapsed && dot !== null ? own.attention : null,
+        threadKeys,
+        hiddenCount: collapsed ? threadKeys.length - Number(activeKey !== null && threadKeys.includes(activeKey)) : 0,
+        dot,
+        dotLabel: dot !== null ? own.attention : null,
         manageable: project !== undefined
       }
     })
-  }, [activeKey, collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
+  }, [activeKey, collapsedFolders, flatLayout, now, own.attention, projects, sections.active, text.groupUngrouped])
 
   const toggleFolder = useCallback((projectKey: string): void => {
     setCollapsedFolders((previous) => {
@@ -359,9 +363,11 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     setProjectMenu({ id: projectKey, open: true })
   }, [closeSessionMenu])
 
+  const openFolderMenu = useCallback((projectKey: string) => openProjectMenu(projectKey), [openProjectMenu])
+  const newThreadInFolder = useCallback((projectKey: string) => newThreadInProject(projectKey), [newThreadInProject])
   const modelCatalog = useStore((s) => s.models)
-  const rowView = useCallback(
-    (view: SidebarThreadView): SidebarThreadRowView => {
+  const rowView = useMemo(() => memoByReference(
+    (view: SidebarThreadView): SidebarThreadRowView & { sessionPath: string } => {
       const threadKey = scopedKeyOf(view.id)
       const status = resolveRowStatus(view, now)
       const startedAt = view.runtime?.activityStartedAt === null || view.runtime === null ? NaN : Date.parse(view.runtime.activityStartedAt ?? '')
@@ -387,62 +393,38 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         modelLabel: view.modelLabel ? modelDisplayName(view.modelLabel, modelCatalog ?? []) : null,
         diff: null
       }
-    },
-    [activeKey, draftIds, jump, lang, modelCatalog, now, wakeLabel]
-  )
+    }
+  ), [activeKey, draftIds, jump, lang, modelCatalog, now, wakeLabel])
 
   const renderRow = useCallback(
     (rowProps: SidebarRowRenderProps) => {
       const view = viewByKey.get(rowProps.threadKey)
       if (!view) return null
-      const ref = refOf(view)
       const threadKey = rowProps.threadKey
       return (
-        <SidebarThreadRow
+        <SidebarSessionRow
           key={threadKey}
+          id={view.id}
           view={rowView(view)}
           variant={rowProps.variant}
           isActive={threadKey === activeKey}
           navigationParent={rowProps.navigationParent}
           dropVerb={rowProps.dropVerb}
-          isDragging={rowProps.sortable.isDragging === true}
-          isFileDragOver={fileDropPath !== null && fileDropPath === view.path}
-          renaming={renamingKey === threadKey}
-          renameValue={renamingKey === threadKey ? renameValue : ''}
-          snoozePresets={snoozePresets.map((preset) => ({ id: preset.id, label: preset.label, until: Date.parse(preset.snoozedUntil) }))}
+          isFileDragOver={fileDropPath === view.path}
+          archived={view.archivedAt !== null}
+          snoozedUntil={view.snoozedUntil}
+          renameValue={renamingKey === threadKey ? renameValue : null}
+          snoozePresets={rowSnoozePresets}
           sortable={rowProps.sortable}
-          fileDropHandlers={!rowProps.sortable.listeners ? { onPointerDown: (event) => {
-            if ((event.target as HTMLElement).closest('button, input')) return
-            startSessionRowDrag(event, { id: view.id, path: view.path, title: view.title }, () => undefined)
-          } } : undefined}
-          onOpen={() => openView(view)}
-          onActivate={() => openView(view)}
-          onContextMenu={(point) => openMenu(threadKey, point)}
-          onRenameStart={() => {
-            setRenameValue(view.title)
-            setRenamingKey(threadKey)
-          }}
-          onRenameChange={(value) => setRenameValue(value)}
-          onRenameCommit={() => {
-            const next = renameValue.trim()
-            setRenamingKey(null)
-            if (next && next !== view.title) void sidebarActions.rename(ref, next)
-          }}
-          onRenameCancel={() => setRenamingKey(null)}
-          onArchive={view.archivedAt === null ? () => void sidebarActions.archive(ref) : undefined}
-          onUnarchive={view.archivedAt === null ? undefined : () => void sidebarActions.unarchive(ref)}
-          onDelete={() => void sidebarActions.remove(ref)}
-          onSnooze={(until) => {
-            void sidebarActions.snooze(ref, until)
-            setAnnouncement(t('sidebar.t3.snooze'))
-          }}
-          onUnsnooze={view.snoozedUntil === null ? undefined : () => void sidebarActions.unsnooze(ref)}
-          onUnpin={() => void sidebarActions.unpin(ref)}
-          onDiscardDraft={() => sidebarActions.discardDraft(ref)}
+          onMenu={openMenu}
+          onRenameStart={startRename}
+          onRenameChange={setRenameValue}
+          onRenameEnd={endRename}
+          onAnnounce={setAnnouncement}
         />
       )
     },
-    [activeKey, fileDropPath, openMenu, openView, renameValue, renamingKey, rowView, snoozePresets, t, viewByKey]
+    [activeKey, endRename, fileDropPath, openMenu, renameValue, renamingKey, rowSnoozePresets, rowView, startRename, viewByKey]
   )
 
   const onDropPlan = useCallback(
@@ -494,18 +476,21 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     if (current >= settledVisible) shown.push(sections.settled[current])
     return shown
   }, [sections.settled, settledVisible, activeKey])
+  const listSectionKeys = useMemo(() => {
+    const keys = (views: SidebarThreadView[]) => views.map((view) => scopedKeyOf(view.id))
+    return { pinned: keys(sections.pinned), active: keys(sections.active), working: keys(sections.working), snoozed: keys(sections.snoozed), settled: keys(settledShown) }
+  }, [sections.pinned, sections.active, sections.working, sections.snoozed, settledShown])
   const settledRemaining = Math.max(0, sections.settled.length - settledShown.length)
   const undoNotice = undo.text === null ? null : { text: undo.text, label: undo.label, undo: undo.undo }
   const menuView = sessionMenu === null ? null : viewByKey.get(sessionMenu.key)
-  const menuSession = menuView ? sessions.find((entry) => entry.id === menuView.id) : undefined
-  const menuProject = projectMenu ? settings?.projects.find((project) => project.id === projectMenu.id) : undefined
+  const menuSession = useStore((s) => menuView ? s.sessions.find((entry) => entry.id === menuView.id) : undefined)
+  const menuProject = projectMenu ? projectRecord(projectMenu.id) : undefined
   const menuDraftId = draftMenuId !== null && draftIds.has(draftMenuId) ? draftMenuId : null
-  const flatLayout = settings?.sidebarLayout === 'flat'
   const connBannerShown = useUiV3((s) => s.route.name === 'chat')
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
-  const userName = settings?.profile?.name?.trim() || own.localUser
-  const newThreadShortcut = shortcutKeysText('newSession', shortcutOverridesFromSettings(settings))
+  const userName = profileName?.trim() || own.localUser
+  const newThreadShortcut = useMemo(() => shortcutKeysText('newSession', shortcutOverridesFromSettings({ shortcutOverrides })), [shortcutOverrides])
 
   const utilities: SidebarUtilityEntry[] = []
   if (onSettings) utilities.push({ key: 'settings', label: text.settingsEntryHint, icon: <Settings />, onSelect: onSettings })
@@ -576,7 +561,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
               ) : null}
               {search.threads.length > 0 ? (
                 <ul aria-label={t('sidebar.t3.searchThreads')} className="v3-swap-fade t3-sidebar-shell__results">
-                  {search.threads.map((view) => renderRow({ threadKey: scopedKeyOf(view.id), section: 'active', variant: 'slim', dropVerb: null, sortable: {} }))}
+                  {search.threads.map((view) => renderRow({ threadKey: scopedKeyOf(view.id), section: 'active', variant: 'slim', dropVerb: null, sortable: EMPTY_SORTABLE }))}
                 </ul>
               ) : null}
               <SidebarSearchContentMatches
@@ -589,13 +574,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
             </>
           ) : (
             <SidebarThreadList
-              sections={{
-                pinned: sections.pinned.map((view) => scopedKeyOf(view.id)),
-                active: sections.active.map((view) => scopedKeyOf(view.id)),
-                working: sections.working.map((view) => scopedKeyOf(view.id)),
-                snoozed: sections.snoozed.map((view) => scopedKeyOf(view.id)),
-                settled: settledShown.map((view) => scopedKeyOf(view.id))
-              }}
+              sections={listSectionKeys}
               labels={{
                 tree: t('sidebar.t3.threads'),
                 pinned: t('sidebar.t3.pinned'),
@@ -619,10 +598,10 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                       onShowMore: () => setSettledVisible((count) => count + SHELF_PAGE_SIZE)
                     }
               }
-              projectFolders={flatLayout ? null : projectFolders}
+              projectFolders={projectFolders}
               onToggleFolder={toggleFolder}
-              onFolderContextMenu={(projectKey) => openProjectMenu(projectKey)}
-              onNewThreadInFolder={(projectKey) => newThreadInProject(projects.byId.get(projectKey)?.projectId)}
+              onFolderContextMenu={openFolderMenu}
+              onNewThreadInFolder={newThreadInFolder}
               folderNewThreadLabel={(projectKey) => t('sidebar.t3.newThreadInProjectName', { name: projects.byId.get(projectKey)?.displayName ?? '' })}
               folderMenuLabel={own.projectMenu}
               draftRows={

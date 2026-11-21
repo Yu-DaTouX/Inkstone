@@ -5,6 +5,7 @@ import { useTerminalJobs } from '../../../state/terminal-jobs'
 import { isLiveTerminalJob, type TerminalJob } from '../../../../../shared/terminal-jobs'
 import type { RunSnapshot } from '../../../../../shared/runs'
 import type { SessionSummary, SubagentRun } from '../../../../../shared/ipc'
+import { memoByReference } from '../../lib/memoByReference'
 import { scopedKeyOf } from './types'
 import { buildSidebarSections, type SidebarSections } from './sections'
 
@@ -67,7 +68,7 @@ export function useSidebarRuns(): readonly RunSnapshot[] {
   return useRunsV3((s) => selectSidebarRuns(s.runs))
 }
 
-function liveSubagentSignature(runs: readonly SubagentRun[]): string {
+export const liveSubagentSignature = memoByReference((runs: readonly SubagentRun[]): string => {
   const since = new Map<string, number>()
   for (const run of runs) {
     if (!run.parentSessionId || (run.status !== 'starting' && run.status !== 'running')) continue
@@ -75,9 +76,9 @@ function liveSubagentSignature(runs: readonly SubagentRun[]): string {
     if (previous === undefined || run.startedAt < previous) since.set(run.parentSessionId, run.startedAt)
   }
   return [...since].sort(([a], [b]) => a.localeCompare(b)).map(([id, at]) => `${id}\t${at}`).join('\n')
-}
+})
 
-function liveJobSignature(jobs: readonly TerminalJob[]): string {
+export const liveJobSignature = memoByReference((jobs: readonly TerminalJob[]): string => {
   const since = new Map<string, number>()
   for (const job of jobs) {
     if (!isLiveTerminalJob(job)) continue
@@ -88,7 +89,7 @@ function liveJobSignature(jobs: readonly TerminalJob[]): string {
     }
   }
   return [...since].sort(([a], [b]) => a.localeCompare(b)).map(([id, at]) => `${id}\t${at}`).join('\n')
-}
+})
 
 function subagentsSinceOf(signature: string): ReadonlyMap<string, number> {
   const since = new Map<string, number>()
@@ -112,10 +113,10 @@ export function backgroundSinceOf(sessions: readonly SessionSummary[], subagentS
   return since
 }
 
-function firstUserLine(messages: ReadonlyArray<{ role: string; text?: string }>): string {
+const firstUserLine = memoByReference((messages: ReadonlyArray<{ role: string; text?: string }>): string => {
   const text = messages.find((message) => message.role === 'user' && message.text?.trim())?.text ?? ''
-  return text.trim().split('\n')[0].slice(0, 80)
-}
+  return text.trim().split('\n', 1)[0].slice(0, 80)
+})
 
 const unlistedMemory = new Map<string, { name: string; cwd: string }>()
 

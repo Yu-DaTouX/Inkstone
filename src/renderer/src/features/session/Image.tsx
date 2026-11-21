@@ -4,6 +4,7 @@ import { useStore } from '../../state/store'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
 import { ImageViewer } from '../composer/image-viewer'
 import { InlineImage } from '../../ui/InlineImage'
+import { createFailedImageCache } from './message-cache'
 
 const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
@@ -137,7 +138,7 @@ function rememberImageSize(src: string, width: number, height: number): void {
   if (imageSizes.size > IMAGE_SIZE_LIMIT) imageSizes.delete(imageSizes.keys().next().value as string)
 }
 
-const failedImages = new Set<string>()
+const failedImages = createFailedImageCache()
 
 export function MessageImage({
   src,

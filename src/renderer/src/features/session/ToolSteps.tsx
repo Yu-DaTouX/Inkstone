@@ -83,8 +83,8 @@ function isRunning(call: UIToolCall): boolean {
 }
 
 function useCurrentApprovalCall(tools: readonly UIToolCall[], approvalIds: ReadonlySet<string>): string | null {
-  const current = useStore((s) => s.approvals[0])
-  if (!current || current.subagentId || !approvalIds.size) return null
+  const current = useStore((s) => approvalIds.size ? s.approvals[0] : undefined)
+  if (!current || current.subagentId) return null
   for (const id of approvalCallIds([current], tools)) {
     if (approvalIds.has(id) && tools.some((call) => call.id === id)) return id
   }
@@ -95,6 +95,14 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
   return nodes.some((node) => node.call.id === id || holdsCall(node.children, id))
 }
 
+const QuestionStep = memo(function QuestionStep({ call }: { call: UIToolCall }): JSX.Element | null {
+  const title = useStore((s) => {
+    const request = s.uiRequests.find((item) => item.toolCallId === call.id)
+    return request ? request.title ?? null : undefined
+  })
+  return title !== undefined ? <AskPill kind="answer" title={title ?? undefined} /> : <QuestionReceipt call={call} />
+})
+
 export function ToolSteps({ tools: allTools, approvalIds = NO_APPROVALS, glowId: glowProp, alertFailures = true, staged = false }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean; staged?: boolean }): JSX.Element | null {
   const t = useT()
   const tools = useSettledToolRows(allTools)
@@ -102,7 +110,6 @@ export function ToolSteps({ tools: allTools, approvalIds = NO_APPROVALS, glowId:
   const tallied = useContext(ToolTallyScope)
   const scope = useContext(ToolExpansionScope)
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
-  const askedCalls = useStore((s) => s.uiRequests)
   const cache = useRef<ToolRowsCache | null>(null)
   cache.current = cachedToolRows(cache.current, tools, approvalIds)
   const grouped = cache.current.rows
@@ -117,11 +124,7 @@ export function ToolSteps({ tools: allTools, approvalIds = NO_APPROVALS, glowId:
           if (row.kind === 'group') return <MemoToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
           if (row.kind === 'web') return <WebGroupRow key={row.id} row={row} glowId={glowId} />
           if (row.standalone && isQuestionCall(row.node.call)) {
-            const callId = row.node.call.id
-            const asked = askedCalls.find((request) => request.toolCallId === callId)
-            return asked
-              ? <AskPill key={row.id} kind="answer" title={asked.title} />
-              : <QuestionReceipt key={row.id} call={row.node.call} />
+            return <QuestionStep key={row.id} call={row.node.call} />
           }
           return <MemoStepNode key={row.id} node={row.node} glowId={glowId} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
         })}

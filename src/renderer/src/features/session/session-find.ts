@@ -201,6 +201,27 @@ export function turnFindText(turn: Turn): string {
   return [turn.response?.text ?? '', ...turn.commentary.map((part) => part.text)].join('\n')
 }
 
+type FindTurn = Turn | { kind: 'pending'; id: string }
+
+export function createTurnFindTexts(): (items: readonly FindTurn[]) => TurnFindText[] {
+  const lists = new WeakMap<readonly FindTurn[], TurnFindText[]>()
+  const entries = new WeakMap<FindTurn, TurnFindText>()
+  return (items) => {
+    const cached = lists.get(items)
+    if (cached) return cached
+    const texts = items.map((item) => {
+      let entry = entries.get(item)
+      if (!entry) {
+        entry = { id: item.id, text: item.kind === 'pending' ? '' : turnFindText(item) }
+        entries.set(item, entry)
+      }
+      return entry
+    })
+    lists.set(items, texts)
+    return texts
+  }
+}
+
 export function countTextMatches(text: string, query: string): number {
   const matcher = query ? compileFind(query, DEFAULT_FIND_OPTIONS) : null
   if (!matcher || !text) return 0

@@ -18,8 +18,22 @@ export interface SnippetPart {
   hit: boolean
 }
 
-function samePath(a: string, b: string): boolean {
-  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+function pathKey(path: string): string {
+  return path.replace(/\\/g, '/').toLowerCase()
+}
+
+const sessionsByPath = new WeakMap<readonly SessionSummary[], ReadonlyMap<string, SessionSummary>>()
+
+function indexSessions(sessions: readonly SessionSummary[]): ReadonlyMap<string, SessionSummary> {
+  const cached = sessionsByPath.get(sessions)
+  if (cached) return cached
+  const index = new Map<string, SessionSummary>()
+  for (const session of sessions) {
+    const key = pathKey(session.path)
+    if (!index.has(key)) index.set(key, session)
+  }
+  sessionsByPath.set(sessions, index)
+  return index
 }
 
 export function shouldSearchContent(query: string): boolean {
@@ -36,11 +50,14 @@ export function buildContentMatches(options: {
 }): ContentMatch[] {
   const out: ContentMatch[] = []
   const limit = options.limit ?? CONTENT_SEARCH_LIMIT
+  if (limit <= 0 || options.hits.length === 0) return out
+  const seen = new Set(options.shownPaths.map(pathKey))
   for (const hit of options.hits) {
     if (out.length >= limit) break
-    if (options.shownPaths.some((path) => samePath(path, hit.path))) continue
-    if (out.some((match) => samePath(match.path, hit.path))) continue
-    const session = options.sessions.find((item) => samePath(item.path, hit.path))
+    const key = pathKey(hit.path)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const session = indexSessions(options.sessions).get(key)
     out.push({
       path: session?.path ?? hit.path,
       id: session?.id ?? null,

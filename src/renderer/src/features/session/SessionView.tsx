@@ -40,7 +40,7 @@ import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar, type VirtualFindSource } from './SessionFindBar'
-import { turnFindText, type TurnFindText } from './session-find'
+import { createTurnFindTexts } from './session-find'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, wheelReachesBottom, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
 import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, resolveAnchorPoint, readScrollSnapshot, pinnedBottomTop, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, tailGap, type SettleAnchor } from './scroll-position'
@@ -1072,16 +1072,9 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
-  const findTextsRef = useRef<{ items: RenderItem[]; texts: TurnFindText[] } | null>(null)
+  const findTexts = useMemo(createTurnFindTexts, [])
   const findSource = useMemo<VirtualFindSource>(() => ({
-    texts: () => {
-      const items = renderTurnsRef.current
-      const cached = findTextsRef.current
-      if (cached?.items === items) return cached.texts
-      const texts = items.map((item) => ({ id: item.id, text: isPending(item) ? '' : turnFindText(item) }))
-      findTextsRef.current = { items, texts }
-      return texts
-    },
+    texts: () => findTexts(renderTurnsRef.current),
     firstVisible: () => {
       const handle = vlistRef.current
       return handle ? handle.findItemIndex(handle.scrollOffset) : 0
@@ -1100,7 +1093,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       }
       return null
     }
-  }), [setStickNow, turnNode, flyToRow])
+  }), [findTexts, setStickNow, turnNode, flyToRow])
 
   const jumpToBottom = useCallback(() => {
     setStickNow(true)

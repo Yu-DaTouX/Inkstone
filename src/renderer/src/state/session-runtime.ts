@@ -16,6 +16,7 @@ import type {
 } from '../../../shared/ipc'
 import { adoptResyncSnapshot, applySyncDelta, mergeSyncHistory } from './session-message-merge'
 import { noteTextArrival } from './text-arrival'
+import { replaceIndexedMessage } from './message-index'
 
 export interface SessionRuntimeSnapshot {
   touchedAt?: number
@@ -174,9 +175,7 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
       : { thinking: (current.thinking ?? '') + thinkingDelta })
   }
   noteTextArrival(id, current.text, next.text)
-  const out = list.slice()
-  out[index] = next
-  return out
+  return replaceIndexedMessage(list, index, next)
 }
 
 export function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
@@ -184,9 +183,7 @@ export function patchArtifact(list: UIMessage[], messageId: string, artifact: No
   if (index < 0) return list
   const current = list[index]
   if (current.artifacts?.some((item) => item.id === artifact.id)) return list
-  const out = list.slice()
-  out[index] = { ...current, artifacts: [...(current.artifacts ?? []), artifact] }
-  return out
+  return replaceIndexedMessage(list, index, { ...current, artifacts: [...(current.artifacts ?? []), artifact] })
 }
 
 function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDelta?: string, sameArgs?: boolean): UIMessage[] {
@@ -206,9 +203,7 @@ function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDel
       ...(outputDelta === undefined ? {} : { output: (old.output ?? '') + outputDelta })
     }
   }
-  const out = list.slice()
-  out[index] = { ...current, toolCalls: calls }
-  return out
+  return replaceIndexedMessage(list, index, { ...current, toolCalls: calls })
 }
 
 export function reduceSessionRuntime(

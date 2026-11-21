@@ -1,5 +1,5 @@
 import { AlertCircle, Check, CircleDot, Inbox, ListFilter, Loader, MailOpen } from '../../ui/icons'
-import { useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { memo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { Dialog, ListRow, Popover } from '../../ui'
 import { SidebarHeaderIconButton } from '../../t3/components/sidebar/SidebarThreadHeader'
@@ -29,7 +29,7 @@ interface Props {
   onChange: (value: SessionStatusFilter | null) => void
 }
 
-export function StatusFilter({ value, onChange }: Props): ReactElement {
+export const StatusFilter = memo(function StatusFilter({ value, onChange }: Props): ReactElement {
   const t = useT()
   const anchorRef = useRef<HTMLElement | null>(null)
   const [open, setOpen] = useState(false)
@@ -78,4 +78,4 @@ export function StatusFilter({ value, onChange }: Props): ReactElement {
       </Popover>
     </>
   )
-}
+})

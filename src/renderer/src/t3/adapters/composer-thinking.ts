@@ -1,4 +1,5 @@
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useT } from '../../i18n'
 import { currentThinkingLevels, useStore } from '../../state/store'
 import {
@@ -11,6 +12,7 @@ import {
 } from './model-traits'
 
 const ULTRACODE_LABEL = 'Ultracode'
+const LOCKED_LEVELS = ['off'] as const
 
 const EFFORT_LABELS: Record<string, string> = {
   off: 'Off',
@@ -106,22 +108,28 @@ export type ComposerTraitsAdapter = {
   cancelUltracode: () => void
 }
 
+export function selectComposerThinking({ session }: Pick<ReturnType<typeof useStore.getState>, 'session'>) {
+  const antigravity = session?.model?.provider === 'antigravity'
+  return {
+    antigravity,
+    busy: !!session?.isStreaming || !!session?.isCompacting || (antigravity && !!session?.isAgentRunning),
+    ultracode: !!session?.ultracode,
+    sessionId: session?.sessionId ?? '',
+    storedLevel: session?.thinkingLevel || 'off',
+    options: antigravity ? session?.antigravity?.thinking?.options : undefined
+  }
+}
+
 export function useComposerTraits(): ComposerTraitsAdapter | null {
   const t = useT()
-  const session = useStore((s) => s.session)
+  const { antigravity, busy, ultracode, sessionId, storedLevel, options } = useStore(useShallow(selectComposerThinking))
   const owner = useStore(thinkingOwner)
-  const levels = useStore(currentThinkingLevels)
+  const levels = useStore(useShallow(currentThinkingLevels))
   const pending = useSyncExternalStore(subscribePendingThinking, pendingThinkingSnapshot)
   const setUltracode = useStore((s) => s.setUltracode)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
-  const antigravity = session?.model?.provider === 'antigravity'
-  const busy = !!session?.isStreaming || !!session?.isCompacting || (antigravity && !!session?.isAgentRunning)
-  const ultracode = !!session?.ultracode
-  const sessionId = session?.sessionId ?? ''
-  const level = pending?.owner === owner && (!antigravity || levels.includes(pending.level)) ? pending.level : session?.thinkingLevel || 'off'
-  const labelOf = (value: string) => session?.antigravity?.thinking?.options.find((option) => option.id === value)?.name ??
-    (antigravity && !levels.length ? t('picker.thinkUnknownShort') : effortLabel(value))
+  const level = pending?.owner === owner && (!antigravity || levels.includes(pending.level)) ? pending.level : storedLevel
   const unsupportedReason =
     levels.length > 1
       ? null
@@ -134,8 +142,10 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
       : levels.length === 0
         ? t('picker.thinkUnknownShort')
         : t('picker.thinkUnsupportedShort')
-  const descriptor =
-    buildReasoningDescriptor({
+  const descriptor = useMemo(() => {
+    const labelOf = (value: string) => options?.find((option) => option.id === value)?.name ??
+      (antigravity && !levels.length ? t('picker.thinkUnknownShort') : effortLabel(value))
+    return buildReasoningDescriptor({
       levels,
       current: level,
       ultracode,
@@ -143,12 +153,12 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
       ultracodeDescription: t('picker.deepDesc'),
       sectionLabel: t('picker.think'),
       levelLabel: labelOf
-    }) ??
-    buildLockedReasoningDescriptor({
+    }) ?? buildLockedReasoningDescriptor({
       sectionLabel: t('picker.think'),
       levelLabel: () => antigravity && levels.length === 1 ? labelOf(level) : labelOf('off')
     })
-  const canUltracode = !antigravity && levels.length > 1 && !!session?.sessionId && !ultracode && !busy
+  }, [antigravity, level, levels, options, t, ultracode])
+  const canUltracode = !antigravity && levels.length > 1 && !!sessionId && !ultracode && !busy
 
   const requestUltracode = useCallback(() => {
     if (!canUltracode) return
@@ -175,12 +185,10 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
     [antigravity, busy, level, requestUltracode, sessionId, setUltracode, ultracode]
   )
 
-  if (!descriptor) return null
-
-  return {
+  return useMemo(() => descriptor ? {
     descriptor,
     display: buildTraitsTriggerDisplay(descriptor),
-    levels: levels.length > 1 ? levels : ['off'],
+    levels: levels.length > 1 ? levels : LOCKED_LEVELS,
     unsupportedReason,
     unsupportedShortLabel,
     busy,
@@ -191,5 +199,5 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
     requestUltracode,
     confirmUltracode,
     cancelUltracode
-  }
+  } : null, [descriptor, levels, unsupportedReason, unsupportedShortLabel, busy, ultracode, canUltracode, confirmOpen, select, requestUltracode, confirmUltracode, cancelUltracode])
 }

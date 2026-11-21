@@ -18,6 +18,18 @@ export function resolveRowStatus(view: SidebarThreadView, now: number): RowStatu
   return view.unread ? 'done' : null
 }
 
+export function resolveCollapsedFolderDot(rows: readonly SidebarThreadView[], now: number): 'attention' | 'failed' | 'unread' | 'working' | null {
+  let dot: 'failed' | 'unread' | 'working' | null = null
+  for (const row of rows) {
+    const status = resolveRowStatus(row, now)
+    if (status === 'approval' || status === 'input' || status === 'waiting') return 'attention'
+    if (status === 'failed') dot = 'failed'
+    else if (dot !== 'failed' && row.unread) dot = 'unread'
+    else if (dot === null && status === 'working') dot = 'working'
+  }
+  return dot
+}
+
 export function rowIsReceded(status: RowStatus, unread: boolean, active: boolean): boolean {
   if (active || status === 'input') return false
   if (status === 'waiting') return true

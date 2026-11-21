@@ -4,7 +4,7 @@ import { isTerminalPhase } from '../../../../shared/runs'
 import { subagentOutcome, type SubagentOutcomeKey, type SubagentTone } from '../../../../shared/subagent-outcome'
 import { classifyModelError, EMPTY_MODEL_ERROR_NOTICE, type ModelErrorKind, type ModelErrorQuotaScope } from '../../../../shared/model-errors'
 import { sameSessionFile } from '../../state/view-identity'
-import { messageIndex } from './message-index'
+import { messageIndex } from '../../state/message-index'
 import type { SessionTextKey } from './text'
 
 export type ErrorCardAction = 'retry' | 'model' | 'compact' | 'wait'

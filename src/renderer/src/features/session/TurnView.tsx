@@ -305,8 +305,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
     return anchor === turn.sourceIds.at(-1) ? COMPACTION_AT_END : anchor
   })
   const compactionToolId = useStore((s) => compactionSpot === null || compactionSpot === COMPACTION_AT_END ? null : (scopedMessages ?? s.messages).find((message) => message.id === compactionSpot)?.toolCalls?.at(-1)?.id ?? null)
-  const approvals = useStore((s) => s.approvals)
-  const approvalIds = streaming ? approvalCallIds(approvals, turn.tools, sessionId) : undefined
+  const approvals = useStore((s) => streaming ? s.approvals : undefined)
+  const approvalIds = approvals ? approvalCallIds(approvals, turn.tools, sessionId) : undefined
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')

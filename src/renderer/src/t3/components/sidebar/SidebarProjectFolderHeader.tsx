@@ -1,10 +1,11 @@
 import { ChevronDownIcon, EllipsisIcon, SquarePenIcon } from '../../../ui/icons'
-import { memo, type ReactNode } from 'react'
+import { memo } from 'react'
 import { useI18n } from '../../../i18n'
 import { v3Text } from '../../../app/v3-text'
 import { NO_PROJECT_ID } from '../../adapters/sidebar/types'
 import { cx } from '../../../ui/cx'
 import { sidebarFolderRowId } from '../Sidebar.logic'
+import { ProjectFavicon } from '../ProjectFavicon'
 import { IconButton, StatusDot } from '../../../ui'
 import './SidebarProjectFolderHeader.css'
 
@@ -20,7 +21,6 @@ const FOLDER_DOT_KIND = {
 export interface SidebarProjectFolderView {
   projectKey: string
   displayName: string
-  icon?: ReactNode
   collapsed: boolean
   threadKeys: readonly string[]
   hiddenCount: number
@@ -29,19 +29,18 @@ export interface SidebarProjectFolderView {
   manageable?: boolean
 }
 
-export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: {
-  folder: SidebarProjectFolderView
+export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: Omit<SidebarProjectFolderView, 'threadKeys'> & {
+  empty: boolean
   newThreadLabel: string
   menuLabel: string
-  onToggle: (projectKey: string) => void
-  onNewThread: (projectKey: string) => void
-  onContextMenu: (projectKey: string, position: { x: number; y: number }) => void
+  onToggle?: (projectKey: string) => void
+  onNewThread?: (projectKey: string) => void
+  onContextMenu?: (projectKey: string, position: { x: number; y: number }) => void
 }) {
-  const { folder } = props
+  const { empty, projectKey, collapsed, dot, dotLabel, hiddenCount, manageable } = props
   const { lang } = useI18n()
-  const rowId = sidebarFolderRowId(folder.projectKey)
-  const displayName = folder.projectKey === NO_PROJECT_ID ? v3Text(lang).groupUngrouped : folder.displayName
-  const empty = folder.threadKeys.length === 0
+  const rowId = sidebarFolderRowId(projectKey)
+  const displayName = projectKey === NO_PROJECT_ID ? v3Text(lang).groupUngrouped : props.displayName
   return (
     <li
       data-testid="sidebar-project-folder"
@@ -52,27 +51,27 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         role="treeitem"
         tabIndex={-1}
         data-sidebar-row={rowId}
-        aria-expanded={empty ? undefined : !folder.collapsed}
-        onClick={empty ? undefined : () => props.onToggle(folder.projectKey)}
+        aria-expanded={empty ? undefined : !collapsed}
+        onClick={empty ? undefined : () => props.onToggle?.(projectKey)}
         onContextMenu={(event) => {
           event.preventDefault()
-          props.onContextMenu(folder.projectKey, { x: event.clientX, y: event.clientY })
+          props.onContextMenu?.(projectKey, { x: event.clientX, y: event.clientY })
         }}
         className={cx('t3-folder__header', !empty && 't3-folder__header--expandable')}
       >
-        {folder.icon}
+        {manageable ? <ProjectFavicon project={{ projectId: projectKey, displayName: props.displayName }} /> : null}
         <span className={cx('t3-folder__name', empty && 't3-folder__name--empty')}>
           {displayName}
         </span>
-        {folder.dot ? (
+        {dot ? (
           <>
-            <StatusDot kind={FOLDER_DOT_KIND[folder.dot]} />
-            <span className="sr-only">{folder.dotLabel}</span>
+            <StatusDot kind={FOLDER_DOT_KIND[dot]} />
+            <span className="sr-only">{dotLabel}</span>
           </>
         ) : null}
-        {folder.collapsed && folder.hiddenCount > 0 ? (
+        {collapsed && hiddenCount > 0 ? (
           <span className="t3-folder__hidden-count">
-            {folder.hiddenCount}
+            {hiddenCount}
           </span>
         ) : null}
         {empty ? null : (
@@ -80,17 +79,17 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
             aria-hidden
             className={cx(
               't3-icon--xs t3-chevron t3-folder__chevron',
-              folder.collapsed && 't3-chevron--collapsed'
+              collapsed && 't3-chevron--collapsed'
             )}
           />
         )}
       </button>
       <span className="t3-folder__actions">
-        {folder.manageable ? <IconButton data-t3-btn variant="ghost" size="md" className="t3-folder__action" onPress={(event) => {
+        {manageable ? <IconButton data-t3-btn variant="ghost" size="md" className="t3-folder__action" onPress={(event) => {
             const rect = (event.target as HTMLElement).getBoundingClientRect()
-            props.onContextMenu(folder.projectKey, { x: rect.left, y: rect.bottom })
+            props.onContextMenu?.(projectKey, { x: rect.left, y: rect.bottom })
           }} data-sidebar-action-for={rowId} aria-label={props.menuLabel} data-testid="v3-project-more"><EllipsisIcon aria-hidden /></IconButton> : null}
-        <IconButton data-t3-btn variant="ghost" size="md" className="t3-folder__action" onPress={() => props.onNewThread(folder.projectKey)} data-sidebar-action-for={rowId} aria-label={props.newThreadLabel}>
+        <IconButton data-t3-btn variant="ghost" size="md" className="t3-folder__action" onPress={() => props.onNewThread?.(projectKey)} data-sidebar-action-for={rowId} aria-label={props.newThreadLabel}>
           <SquarePenIcon aria-hidden />
         </IconButton>
       </span>

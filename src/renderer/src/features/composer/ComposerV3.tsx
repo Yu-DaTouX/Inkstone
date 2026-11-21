@@ -78,6 +78,12 @@ import './ComposerV3.css'
 let consumedComposerFocus = 0
 let attachmentsConversation: string | null = null
 
+const AttachmentMediaRow = memo(ComposerAttachmentMediaRow)
+const AttachmentFileList = memo(ComposerAttachmentFileList)
+const AttachButton = memo(ComposerAttachButton)
+const VoiceButton = memo(ComposerVoiceButton)
+const QueueControl = memo(QueuedRunsControl)
+
 function sourceLabelOf(t: ReturnType<typeof useT>, source: string): string {
   const key = ({
     yan: 'composer.src.yan',
@@ -211,16 +217,21 @@ export function ComposerV3(): JSX.Element {
   const prefix = imageRefPrefix(lang)
   const labelFor = useCallback((index: number) => imageRefLabel(prefix, index + 1), [prefix])
 
-  const preview = previewId ? attachments.images.find((item) => item.id === previewId) : undefined
+  const { images, files, remove: removeAttachment } = attachments
+  const preview = previewId ? images.find((item) => item.id === previewId) : undefined
 
   const removeImage = useCallback(
     (id: string) => {
-      const index = attachments.images.findIndex((item) => item.id === id)
+      const index = images.findIndex((item) => item.id === id)
       setValue((draft) => (index < 0 ? draft : renumberImageRefsAfterRemoval(draft, index + 1)))
-      attachments.remove(id)
+      removeAttachment(id)
     },
-    [attachments]
+    [images, removeAttachment]
   )
+  const previewFile = useCallback((id: string): void => {
+    const file = files.find((item) => item.id === id)
+    if (file?.path) void useStore.getState().previewFile(file.path)
+  }, [files])
 
   const [composing, setComposing] = useState(false)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
@@ -465,8 +476,7 @@ export function ComposerV3(): JSX.Element {
     } else completion.completeAt(item.path)
   }
 
-  const submitMessage = (dispatch: 'steer' | 'followUp'): Promise<void> =>
-    submitAdapter.submit(dispatch)
+  const submitMessage = submitAdapter.submit
 
   const recallHistory = (event: ComposerKeyEvent): boolean => {
     const arrow = event.key === 'ArrowUp' || event.key === 'ArrowDown'
@@ -559,11 +569,11 @@ export function ComposerV3(): JSX.Element {
     else if (plan.action === 'abort') void abort()
   }
 
-  const appendVoiceText = (text: string): void => {
+  const appendVoiceText = useCallback((text: string): void => {
     const spoken = text.trim()
     if (!spoken) return
     setValue((draft) => (/[A-Za-z0-9]$/.test(draft) && /^[A-Za-z0-9]/.test(spoken) ? `${draft} ${spoken}` : `${draft}${spoken}`))
-  }
+  }, [])
 
   const onPaste = (event: ComposerPasteEvent): void => {
     const files = [...event.clipboardData.items]
@@ -672,27 +682,24 @@ export function ComposerV3(): JSX.Element {
   )
 
   const mediaRow = (
-    <ComposerAttachmentMediaRow
-      images={attachments.images}
+    <AttachmentMediaRow
+      images={images}
       refLabel={labelFor}
       onExpandImage={setPreviewId}
       onRemoveImage={removeImage}
     />
   )
   const fileList = (
-    <ComposerAttachmentFileList
-      files={attachments.files}
-      onPreviewFile={(id) => {
-        const file = attachments.files.find((item) => item.id === id)
-        if (file?.path) void useStore.getState().previewFile(file.path)
-      }}
-      onRemoveFile={attachments.remove}
+    <AttachmentFileList
+      files={files}
+      onPreviewFile={previewFile}
+      onRemoveFile={removeAttachment}
     />
   )
 
   return (
     <div className="composer-v3" ref={rootRef} data-testid="composer-v3" data-session-quote-drop data-quote-label={t('composer.quoteDrop')}>
-      <QueuedRunsControl />
+      <QueueControl />
       <PendingModelChange />
       <ComposerFrame
         editor={editor}
@@ -721,8 +728,8 @@ export function ComposerV3(): JSX.Element {
         notice={notice ? <ComposerNotice message={notice.message} tone={notice.tone} slot="image-ref" /> : null}
         footerLeading={
           <>
-            <ComposerAttachButton onFiles={attachments.addFiles} />
-            <ComposerVoiceButton onText={appendVoiceText} scope={sessionId ?? undefined} />
+            <AttachButton onFiles={attachments.addFiles} />
+            <VoiceButton onText={appendVoiceText} scope={sessionId ?? undefined} />
             <WorktreeToggle text={value} />
           </>
         }
@@ -737,7 +744,7 @@ export function ComposerV3(): JSX.Element {
               sendDisabledReason={submitAdapter.sendDisabledReason}
               hasSendableContent={submitAdapter.hasSendableContent}
               preserveComposerFocusOnPointerDown
-              onSubmitMessage={(mode) => void submitMessage(mode)}
+              onSubmitMessage={submitMessage}
               onInterrupt={submitAdapter.interrupt}
             />
           </>
