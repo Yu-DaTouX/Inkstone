@@ -73,9 +73,14 @@ function measuredInput(entry: Entry): number | undefined {
   if (!message || message.role !== 'assistant') return undefined
   if (message.stopReason === 'error' || message.stopReason === 'aborted') return undefined
   const usage = recordOf(message.usage)
-  if (!usage) return undefined
-  const input = (finiteNumber(usage.input) ?? 0) + (finiteNumber(usage.cacheRead) ?? 0) + (finiteNumber(usage.cacheWrite) ?? 0)
-  return input > 0 ? input : undefined
+  if (usage) {
+    const input = (finiteNumber(usage.input) ?? 0) + (finiteNumber(usage.cacheRead) ?? 0) + (finiteNumber(usage.cacheWrite) ?? 0)
+    if (input > 0) return input
+  }
+  const antigravity = recordOf(message.yanAntigravityTurn)
+  const ctx = recordOf(antigravity?.context)
+  const acpUsed = finiteNumber(ctx?.used)
+  return acpUsed !== undefined && acpUsed > 0 ? acpUsed : undefined
 }
 
 export function compactionHistory(entries: readonly unknown[], leafId: string | null): CompactionHistoryItem[] {

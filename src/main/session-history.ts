@@ -1,5 +1,5 @@
 import { planHistoryRead } from '../shared/session-chain'
-import { readSessionMessages, type ReadResult } from './session-reader'
+import { readSessionMessages, type ReadResult, type SessionCompactionInfo } from './session-reader'
 import type { SessionChainStore } from './session-chain-service'
 import type { UIMessage } from '../shared/ipc'
 
@@ -40,6 +40,7 @@ export async function readChainMessages(
   let sessionId: string | undefined
   let sourceCwd: string | undefined
   let contextFrom: ReadResult['contextFrom']
+  let compaction: SessionCompactionInfo | undefined
   let read = 0
   let missing = 0
 
@@ -60,7 +61,10 @@ export async function readChainMessages(
     if (read === 0) sourceCwd = result.sourceCwd
     else if (sourceCwd !== result.sourceCwd) sourceCwd = undefined
     if (result.sessionId) sessionId = result.sessionId
-    if (file === files.at(-1)) contextFrom = result.contextFrom
+    if (file === files.at(-1)) {
+      contextFrom = result.contextFrom
+      compaction = result.compaction
+    }
     read += 1
   }
 
@@ -73,6 +77,7 @@ export async function readChainMessages(
     ...(sessionId ? { sessionId } : {}),
     ...(sourceCwd ? { sourceCwd } : {}),
     ...(contextFrom ? { contextFrom } : {}),
+    ...(compaction ? { compaction } : {}),
     segments: read,
     missing
   }

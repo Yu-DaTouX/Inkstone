@@ -420,4 +420,117 @@ await runSuite(import.meta.url, async (ok, compile) => {
       else process.env.YAN_DATA_DIR = prevYanDir
     }
   }
+
+  {
+    const compactMod = await compile('src/main/antigravity-compact.ts')
+    const { readSessionMessages } = await compile('src/main/session-reader.ts')
+    const { measuredAfterCompaction } = await compile('src/main/compaction.ts')
+    const { contextUsageSummary } = await compile('src/renderer/src/features/workbench/context-pane-view.ts')
+    const msgs = [
+      { id: 'm1', entryId: 'e1', role: 'user', text: '先读 README 并分析架构', timestamp: 1000 },
+      { id: 'm2', entryId: 'e2', role: 'assistant', model: 'antigravity/pro', text: 'x'.repeat(90_000), timestamp: 1001 },
+      { id: 'm3', entryId: 'e3', role: 'user', text: '继续修第二个问题', timestamp: 1002 },
+      { id: 'm4', entryId: 'e4', role: 'assistant', model: 'antigravity/pro', text: '已完成', antigravity: { context: { used: 420_000, size: 1_000_000 } }, timestamp: 1003 }
+    ]
+    const plan = compactMod.planAntigravityCompaction(msgs, { keepRecentTokens: 20_000 })
+    ok(plan.ok && plan.toSummarize.length === 2 && plan.kept.length === 2 && plan.firstKeptEntryId === 'e3', 'Antigravity 压缩规划按最近 token 预算并对齐用户回合边界', JSON.stringify({ toSum: plan.toSummarize?.length, firstKept: plan.firstKeptEntryId }))
+
+    const singleHuge = [
+      { id: 'm1', entryId: 'e1', role: 'user', text: '一个超长任务', timestamp: 1000 },
+      { id: 'm2', entryId: 'e2', role: 'assistant', model: 'antigravity/pro', text: 'y'.repeat(120_000), timestamp: 1001 }
+    ]
+    const fullPlan = compactMod.planAntigravityCompaction(singleHuge, { keepRecentTokens: 20_000 })
+    ok(fullPlan.ok && fullPlan.toSummarize.length === 2 && fullPlan.kept.length === 0 && !fullPlan.firstKeptEntryId, '单回合超限时允许整段压缩而不拒绝', JSON.stringify({ toSum: fullPlan.toSummarize?.length, kept: fullPlan.kept?.length }))
+
+    const chunks = compactMod.serializeCompactChunks(msgs, 40_000)
+    ok(chunks.length >= 2 && chunks.every((chunk) => chunk.length <= 40_000), '压缩分块把超大消息切分在块上限之内', String(chunks.length))
+    ok(compactMod.detectCompactLanguage(msgs)?.includes('Chinese'), '根据用户消息识别中文压缩摘要语言')
+
+    const withSummary = antigravityPrompt('继续', plan.kept, '## Goal\n修好压缩')
+    ok(withSummary.includes('<prior-compaction-summary>\n## Goal\n修好压缩\n</prior-compaction-summary>') && withSummary.includes('继续修第二个问题') && !withSummary.includes('先读 README'), '交接提示词只携带压缩摘要与保留消息', withSummary.slice(0, 120))
+    const summaryOnly = antigravityPrompt('继续', [], '## Goal\n全部已压缩')
+    ok(summaryOnly.includes('<prior-compaction-summary>') && !summaryOnly.includes('[]'), '无保留消息时仅附带压缩摘要')
+
+    const measured = measuredAfterCompaction(
+      { status: 'completed', reason: 'threshold', startedAt: 1000, endedAt: 1050, beforeTokens: 450_000, afterTokens: 25_000, afterMeasured: false },
+      [{ id: 'm5', entryId: 'e5', role: 'assistant', model: 'antigravity/pro', text: '下一轮', antigravity: { context: { used: 35_000, size: 1_000_000 } }, timestamp: 2000 }]
+    )
+    ok(measured?.afterMeasured === true && measured.afterTokens === 35_000, '压缩后下一轮 Antigravity 回合回填实测 token 数')
+
+    const afterSummaryView = contextUsageSummary(
+      {
+        model: { provider: 'antigravity', id: 'pro', name: 'Gemini Pro', contextWindow: 0 },
+        autoCompactionEnabled: true,
+        lastCompaction: { status: 'completed', reason: 'manual', startedAt: 1000, endedAt: 1050, beforeTokens: 450_000, afterTokens: 24_000, afterMeasured: false }
+      },
+      { contextUsage: { modelKey: 'antigravity/pro', tokens: null, contextWindow: 1_000_000, percent: null, availability: 'known' } },
+      400_000
+    )
+    ok(afterSummaryView.known && afterSummaryView.estimated && afterSummaryView.tokens === 24_000 && afterSummaryView.windowSize === 400_000, 'Antigravity 压缩后立即展示估算剩余用量', JSON.stringify(afterSummaryView))
+
+    const tmpSessionDir = mkdtempSync(join(tmpdir(), 'inkstone-acp-compact-'))
+    try {
+      const sessionPath = join(tmpSessionDir, 'compact.jsonl')
+      const lines = [
+        JSON.stringify({ type: 'session', version: 3, id: 'sess-c1', timestamp: new Date(1000).toISOString(), cwd }),
+        JSON.stringify({ type: 'message', id: 'u1', parentId: null, timestamp: new Date(1001).toISOString(), message: { role: 'user', content: [{ type: 'text', text: '旧问题' }], timestamp: 1001 } }),
+        JSON.stringify({ type: 'message', id: 'a1', parentId: 'u1', timestamp: new Date(1002).toISOString(), message: { role: 'assistant', api: 'antigravity-acp', provider: 'antigravity', model: 'pro', content: [{ type: 'text', text: '旧回答' }], timestamp: 1002 } }),
+        JSON.stringify({ type: 'compaction', id: 'c1', parentId: 'a1', timestamp: new Date(1003).toISOString(), summary: '## Goal\n摘要内容', firstKeptEntryId: 'c1', tokensBefore: 420_000 }),
+        JSON.stringify({ type: 'message', id: 'u2', parentId: 'c1', timestamp: new Date(1004).toISOString(), message: { role: 'user', content: [{ type: 'text', text: '新问题' }], timestamp: 1004 } })
+      ]
+      writeFileSync(sessionPath, `${lines.join('\n')}\n`, 'utf8')
+      const read = await readSessionMessages(sessionPath, { fullText: true })
+      const sliced = compactMod.sliceInContextMessages(read.messages, read.compaction)
+      ok(read.compaction?.summary === '## Goal\n摘要内容' && sliced.length === 1 && sliced[0].text === '新问题', 'readSessionMessages 提取活动分支压缩摘要并准确切片保留消息', JSON.stringify({ summary: read.compaction?.summary, sliced: sliced.map((m) => m.text) }))
+    } finally {
+      rmSync(tmpSessionDir, { recursive: true, force: true })
+    }
+
+    const bridgeMod = await import(new URL('../resources/pi-extensions/native-session-bridge.js', import.meta.url))
+    const { NativeSessionRuntime } = await compile('src/main/native-session-runtime.ts')
+    let handler
+    let leaf = 'a1'
+    const compactions = []
+    const prevBridgeEnv = process.env.YAN_NATIVE_BRIDGE
+    process.env.YAN_NATIVE_BRIDGE = '1'
+    bridgeMod.default({ on() {}, registerCommand(_name, spec) { handler = spec.handler }, setLabel() {} })
+    const runtime = new NativeSessionRuntime({
+      async command(_type, payload) {
+        const argText = String(payload?.message ?? '').replace(/^\/__inkstone_native\s+/, '')
+        const ctx = {
+          isIdle: () => true,
+          ui: { notify: (msg) => runtime.handleNotify(msg) },
+          sessionManager: {
+            getSessionId: () => 'sess-c2',
+            getLeafId: () => leaf,
+            resetLeaf: () => { leaf = null },
+            branch: (id) => { leaf = id },
+            appendCompaction: (summary, firstKeptEntryId, tokensBefore, details, fromHook) => {
+              const id = `comp-${compactions.length + 1}`
+              compactions.push({ id, summary, firstKeptEntryId, tokensBefore, details, fromHook })
+              leaf = id
+              return id
+            }
+          },
+          navigateTree: async (targetId) => { leaf = targetId; return { cancelled: false } }
+        }
+        void handler(argText, ctx)
+        return { success: true, data: { disposition: 'handled' } }
+      }
+    }, 5_000)
+    try {
+      runtime.handleNotify(bridgeMod.buildReceipt({ id: 'hello-c', op: 'hello', ok: true, result: { capabilities: ['append_antigravity_compaction'] } }))
+      const saved = await runtime.appendAntigravityCompaction({
+        sessionId: 'sess-c2',
+        summary: '## Goal\n压缩摘要',
+        firstKeptEntryId: 'u2',
+        tokensBefore: 410_000,
+        details: { antigravity: true, reason: 'manual' }
+      })
+      ok(saved.entryId === 'comp-1' && compactions.length === 1 && compactions[0].tokensBefore === 410_000 && compactions[0].fromHook === true, 'append_antigravity_compaction 写入 Pi 原生压缩条目并同步分支', JSON.stringify(saved))
+    } finally {
+      if (prevBridgeEnv === undefined) delete process.env.YAN_NATIVE_BRIDGE
+      else process.env.YAN_NATIVE_BRIDGE = prevBridgeEnv
+    }
+  }
 })

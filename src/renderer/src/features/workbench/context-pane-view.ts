@@ -91,7 +91,7 @@ export function contextUsageSummary(
   const windowSize = cappedByLimit ? compactAt : modelWindow
   const measuredTokens = matchesModel && typeof usage?.tokens === 'number' ? usage.tokens : undefined
   const last = session?.lastCompaction
-  const afterTokens = !external && matchesModel && usage?.tokens === null && last?.status === 'completed' && !last.afterMeasured
+  const afterTokens = matchesModel && usage?.tokens === null && last?.status === 'completed' && !last.afterMeasured
     ? last.afterTokens
     : undefined
   const estimate = typeof afterTokens === 'number' && Number.isFinite(afterTokens) && afterTokens >= 0 ? afterTokens : undefined
@@ -195,14 +195,14 @@ export function largestToolCalls(
 function contextRange(input: ContextPaneInput, usage: ContextUsageSummary): { settled: readonly UIMessage[]; inContext: readonly UIMessage[] } | null {
   if (!usage.known) return null
   const settled = settledMessages(input.session, input.messages)
-  const from = input.session?.model?.provider === 'antigravity' ? undefined : contextFromOf(input.session)
+  const from = contextFromOf(input.session)
   return { settled, inContext: inContextMessages(settled, from) }
 }
 
 export function contextPaneData(input: ContextPaneInput): ContextPaneData {
   const usage = contextUsageSummary(input.session, input.stats, input.autoCompactLimit)
   const external = input.session?.model?.provider === 'antigravity'
-  const compacted = !external && !!contextFromOf(input.session)
+  const compacted = !!contextFromOf(input.session)
   const range = contextRange(input, usage)
   const sources = external ? null : input.sources ?? null
   if (!range) return { usage, slices: [], parts: [], compacted, sources }

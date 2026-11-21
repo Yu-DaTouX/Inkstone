@@ -87,6 +87,27 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
+    if (raw.includes('structured context checkpoint summary')) {
+      const facts = [
+        knowsFixtureCode || raw.includes('记住夹具暗号：砚石') ? '- 记住夹具暗号：砚石' : '',
+        raw.includes('历史起点') ? '- 保留长历史锚点：历史起点' : ''
+      ].filter(Boolean).join('\n')
+      chunk(`## Goal\n继续当前夹具任务\n\n## Progress\n### Done\n- [x] 完成前期步骤\n\n## Facts & Details\n${facts || '- 已生成测试摘要'}`)
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '上下文超限') {
+      update({ sessionUpdate: 'usage_update', used: 450_000, size: 1_000_000 })
+      chunk('上下文已达 450K')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '检查压缩后上下文') {
+      update({ sessionUpdate: 'usage_update', used: 35_000, size: 1_000_000 })
+      chunk(knowsFixtureCode ? `压缩后上下文收到 · ${model}` : '压缩后上下文丢失')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
     if (text === '检查档位') {
       chunk(`当前档位 · ${model}/${effort}`)
       reply(id, { stopReason: 'end_turn' })
@@ -169,7 +190,12 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
-    if (text === '派 Pi 子代理') {
+    if (raw.includes('<subagent-notification') && raw.includes('ACP-WAKE')) {
+      chunk('后台通知自动唤醒成功')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '派 Pi 子代理' || text === '后台派 Pi 子代理') {
       let transport
       try {
         if (!mcp) throw new Error('未收到委派工具')
@@ -188,23 +214,30 @@ for await (const line of input) {
           if (json.error) throw new Error(json.error.message)
           return json.result
         }
-        const rejected = await fetch(env.INKSTONE_PI_MCP_URL, { method: 'POST', signal: AbortSignal.timeout(5000) })
-        if (rejected.status !== 403) throw new Error('缺少委派鉴权')
+        if (text === '派 Pi 子代理') {
+          const rejected = await fetch(env.INKSTONE_PI_MCP_URL, { method: 'POST', signal: AbortSignal.timeout(5000) })
+          if (rejected.status !== 403) throw new Error('缺少委派鉴权')
+        }
         await rpc('initialize', { protocolVersion: '2025-06-18', clientInfo: { name: 'fixture', version: '1' }, capabilities: {} })
         const tools = (await rpc('tools/list', {})).tools.map(tool => tool.name).sort().join(',')
         if (tools !== 'get_pi_subagent,start_pi_subagent') throw new Error('工具范围不符')
         const tool = (name, args) => rpc('tools/call', { name, arguments: args })
-        if (!(await tool('get_pi_subagent', { id: 'sub-12345678' })).isError) throw new Error('陌生子代理可读')
-        const started = JSON.parse((await tool('start_pi_subagent', { task: 'WFAGENT WFITEM=ACP-FIXTURE WFDELAY10', model: 'fake/fake-model', readOnly: true })).content[0].text)
+        if (text === '派 Pi 子代理' && !(await tool('get_pi_subagent', { id: 'sub-12345678' })).isError) throw new Error('陌生子代理可读')
+        const item = text === '后台派 Pi 子代理' ? 'WFAGENT WFITEM=ACP-WAKE WFDELAY3' : 'WFAGENT WFITEM=ACP-FIXTURE WFDELAY10'
+        const started = JSON.parse((await tool('start_pi_subagent', { task: item, model: 'fake/fake-model', readOnly: true })).content[0].text)
         if (!started.id) throw new Error(started.error || '没有子代理 id')
-        for (let attempt = 0; attempt < 100; attempt++) {
-          const result = JSON.parse((await tool('get_pi_subagent', { id: started.id })).content[0].text)
-          if (result.status === 'done' && result.finalMessage?.includes('ACP-FIXTURE')) {
-            chunk('收到 Pi 子代理结果 · ' + result.finalMessage)
-            break
+        if (text === '后台派 Pi 子代理') {
+          chunk(`已派发后台子代理 · ${started.id}`)
+        } else {
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const result = JSON.parse((await tool('get_pi_subagent', { id: started.id })).content[0].text)
+            if (result.status === 'done' && result.finalMessage?.includes('ACP-FIXTURE')) {
+              chunk('收到 Pi 子代理结果 · ' + result.finalMessage)
+              break
+            }
+            if (result.error || attempt === 99) throw new Error(result.error ?? '未收到子代理结果')
+            await new Promise(resolve => setTimeout(resolve, 150))
           }
-          if (result.error || attempt === 99) throw new Error(result.error ?? '未收到子代理结果')
-          await new Promise(resolve => setTimeout(resolve, 150))
         }
       } catch (error) {
         chunk('派发失败 · ' + error.message)

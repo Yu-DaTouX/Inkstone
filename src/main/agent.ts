@@ -1,9 +1,22 @@
 import { pick } from '../shared/ui-lang'
-import { ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
+import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
 import { antigravityFileDiffs, antigravityPrompt, launchAntigravity, type AntigravitySession } from './antigravity'
+import {
+  buildChunkCompactPrompt,
+  buildCompactAppendices,
+  buildLiveCompactPrompt,
+  detectCompactLanguage,
+  estimateAntigravityMessageTokens,
+  planAntigravityCompaction,
+  serializeCompactChunks,
+  sliceInContextMessages,
+  stripCompactAppendices
+} from './antigravity-compact'
 import { openAntigravityDelegation } from './antigravity-delegation'
 import { antigravityMcpServices } from './antigravity-mcp'
 import { readAntigravityPreference, saveAntigravityPreference } from './antigravity-preferences'
+import { DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../shared/context-limits'
+import { estimateTextTokens } from '../shared/session-metrics'
 import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
 import { EventEmitter } from 'node:events'
 import { dangerGuardPrefs, getSettings } from './settings'
@@ -579,7 +592,12 @@ export class AgentController extends EventEmitter {
     ownerKeys: () => this.terminalOwnerKeys(),
     steer: (text) => this.steer(text),
     followUp: (text) => this.send(text, undefined, 'followUp'),
-    submitHeld: (text) => this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
+    submitHeld: async (text) => {
+      if (!this.acpConnection) return this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
+      if (this.acpTurn) return { success: this.enqueueAntigravity('steering', text).ok }
+      this.acpHeldNotices.push(text)
+      return { success: true }
+    }
   })
 
   private terminalOwnerKeys(): string[] {
@@ -659,7 +677,10 @@ export class AgentController extends EventEmitter {
   private acpPreferenceSessionId?: string
   private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean }
   private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null }
+  private acpCompacting: { abort: AbortController; done: Promise<void>; sessionId: string } | null = null
+  private acpCompactHold?: { sessionId: string; untilTokens: number }
   private acpQueue: QueueState = { steering: [], followUp: [] }
+  private acpHeldNotices: string[] = []
   private acpTodos: SessionTodo[] = []
   private agentRunning = false
   private runFromUser = false
@@ -2065,7 +2086,9 @@ export class AgentController extends EventEmitter {
     const acp = this.acpConnection
     const external = acp?.model
     const model = external ?? this.withAssumedWindow(normalizeModelInfo(data.model))
-    this.compactionState = clearStaleRunning(this.compactionState, !!data.isCompacting)
+    const acpCompacting = this.acpCompacting?.sessionId === sessionId
+    const compacting = !!data.isCompacting || acpCompacting
+    this.compactionState = clearStaleRunning(this.compactionState, compacting)
     const previous = this.state
     const levels = resolveThinkingLevels(
       data,
@@ -2105,14 +2128,14 @@ export class AgentController extends EventEmitter {
       availableThinkingLevels,
       thinkingLevelsStatus,
       capabilities: capabilitySnapshot(model, availableThinkingLevels, thinkingLevelsStatus),
-      isStreaming: !!this.acpTurn || !!data.isStreaming,
+      isStreaming: !!this.acpTurn || !!data.isStreaming || compacting,
       isAgentRunning: this.agentRunning,
       runStartedAt: this.agentRunning ? this.acpTurn?.startedAt ?? this.turn.startedAt : undefined,
-      isCompacting: !!data.isCompacting,
+      isCompacting: compacting,
       compaction: this.compactionState.running ?? undefined,
       lastCompaction: this.compactionState.last ?? undefined,
       ...(this.retryRun ? { retry: this.retryRun } : {}),
-      ...(!acp && this.contextFrom ? { contextFrom: this.contextFrom } : {}),
+      ...(this.contextFrom ? { contextFrom: this.contextFrom } : {}),
       messageCount: Number(data.messageCount ?? 0),
       pendingMessageCount: acp ? this.acpQueue.steering.length + this.acpQueue.followUp.length : Number(data.pendingMessageCount ?? 0),
       cwd: this.cwd,
@@ -2720,7 +2743,7 @@ export class AgentController extends EventEmitter {
   }
 
   private executionActive(): boolean {
-    return this.pendingAborts > 0 || this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null
+    return this.pendingAborts > 0 || this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null || !!this.acpCompacting
   }
 
   private claimExecutionAdmission(): { ok: true } | { ok: false; error: string } {
@@ -2818,7 +2841,7 @@ export class AgentController extends EventEmitter {
     this.contextFrom = next
     if (!this.state) return
     const { contextFrom: _previous, ...rest } = this.state
-    this.state = next && !this.acpConnection ? { ...rest, contextFrom: next } : rest
+    this.state = next ? { ...rest, contextFrom: next } : rest
     this.push({ ch: 'state', payload: this.state })
   }
 
@@ -3261,7 +3284,12 @@ export class AgentController extends EventEmitter {
   private steerIntoUserRunQueued(text: string, enter: () => void): Promise<{ ok: boolean; idle?: boolean; error?: string }> {
     return this.queue.run(async () => {
       enter()
-      if (!this.userRunActive() || this.acpConnection) return { ok: false, idle: true }
+      if (!this.userRunActive()) return { ok: false, idle: true }
+      if (this.acpConnection) {
+        if (!this.acpTurn) return { ok: false, idle: true }
+        const res = this.enqueueAntigravity('steering', text)
+        return res.ok ? { ok: true } : { ok: false, error: res.error }
+      }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, idle: true }
       const res = await this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
@@ -3396,6 +3424,14 @@ export class AgentController extends EventEmitter {
       this.acpTurn.delegation.abort()
       this.acpTurn.session.cancel()
       await this.acpTurn.done
+      return reclaimed
+    }
+    if (this.acpCompacting) {
+      const reclaimed = snapshotQueue(this.acpQueue)
+      this.acpQueue = { steering: [], followUp: [] }
+      this.publishAcpQueue()
+      this.acpCompacting.abort.abort()
+      await this.acpCompacting.done
       return reclaimed
     }
     this.pendingAborts += 1
@@ -3893,8 +3929,8 @@ export class AgentController extends EventEmitter {
   }
 
   async compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }> {
-    if (this.acpConnection) return { ok: false, error: pick('请先切回 Pi 再压缩会话。', 'Switch back to Pi before compacting this session.') }
     this.loopGuardContinuationVersion += 1
+    if (this.acpConnection) return this.compactAntigravity('manual', customInstructions)
     if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const trimmed = typeof customInstructions === 'string' ? customInstructions.trim() : ''
     const payload: Record<string, unknown> = trimmed ? { customInstructions: trimmed } : {}
@@ -4169,6 +4205,9 @@ export class AgentController extends EventEmitter {
   private async closeAntigravity(): Promise<void> {
     const connection = this.acpConnection
     this.acpConnection = undefined
+    this.acpCompactHold = undefined
+    this.acpHeldNotices = []
+    this.acpCompacting?.abort.abort()
     if (this.acpQueue.steering.length || this.acpQueue.followUp.length) {
       this.acpQueue = { steering: [], followUp: [] }
       this.publishAcpQueue()
@@ -4178,6 +4217,234 @@ export class AgentController extends EventEmitter {
       this.push({ ch: 'todos', payload: [] })
     }
     await connection?.session?.close()
+  }
+
+  private async compactAntigravity(
+    reason: 'manual' | 'threshold',
+    customInstructions?: string
+  ): Promise<{ ok: boolean; error?: string; aborted?: boolean }> {
+    const initial = this.acpConnection
+    const native = this.nativeRuntime
+    if (!this.rpc || !initial) return { ok: false, error: pick('Antigravity 尚未就绪', 'Antigravity is not ready') }
+    if (!native?.bridgeCapabilities.includes('append_antigravity_compaction')) {
+      return { ok: false, error: pick('当前 Pi 会话不支持写入 Antigravity 压缩记录。', 'This Pi session cannot save Antigravity compaction records.') }
+    }
+    if (this.executionActive()) return { ok: false, error: pick('请等当前操作结束后再压缩会话。', 'Wait for the current operation to finish before compacting.') }
+    const admission = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
+    if (!admission.ok) return { ok: false, error: admission.error }
+    const execution = this.claimExecutionAdmission()
+    if (!execution.ok) {
+      this.operations.release(admission.lease)
+      return execution
+    }
+    const owner = this.asyncOwner()
+    const ownsCompact = () => this.ownerCurrent(owner) && this.state?.sessionId === initial.sessionId && this.acpConnection === initial
+    const startedAt = Date.now()
+    const abort = new AbortController()
+    const compacting = { abort, done: Promise.resolve(), sessionId: initial.sessionId }
+    this.acpCompacting = compacting
+    this.compactionState = { ...this.compactionState, running: { status: 'running', reason, startedAt } }
+    if (this.state) {
+      this.state = {
+        ...this.state,
+        isCompacting: true,
+        isStreaming: true,
+        compaction: this.compactionState.running ?? undefined
+      }
+      this.push({ ch: 'state', payload: this.state })
+    }
+    const summarizeOnSession = (proc: AntigravitySession, promptText: string, expectedMode: string): Promise<string> => {
+      if (abort.signal.aborted) return Promise.reject(new Error('Compaction cancelled'))
+      let out = ''
+      let abortedHere = false
+      const onAbort = () => {
+        abortedHere = true
+        proc.cancel()
+      }
+      abort.signal.addEventListener('abort', onAbort, { once: true })
+      proc.onEvent = (event) => {
+        if (event.type === 'text') out += event.text
+        else if (event.type === 'permission') {
+          const deny = event.options.find((option) => !option.allow)
+          proc.reply(event.id, deny?.id ?? null)
+        }
+      }
+      return proc.prompt(promptText, initial.model.id, initial.thinking?.current, expectedMode).then((stopReason) => {
+        if (abortedHere || abort.signal.aborted || stopReason === 'cancelled') throw new Error('Compaction cancelled')
+        if (stopReason !== 'end_turn') throw new Error(`Antigravity: ${stopReason || 'missing stop reason'}`)
+        return out.trim()
+      }).finally(() => {
+        abort.signal.removeEventListener('abort', onAbort)
+      })
+    }
+    let result: { ok: boolean; error?: string; aborted?: boolean } = { ok: false }
+    const task = (async () => {
+      try {
+        const full = this.state?.sessionFile ? await this.readHistoryOf(this.state.sessionFile, true) : null
+        if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
+        const rawMessages = this.nativeBranchView && full
+          ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...this.messages.filter((message) => !message.id.startsWith('history:'))]
+          : full?.messages ?? this.messages
+        const previousSummary = full?.compaction?.summary
+        const inContext = sliceInContextMessages(rawMessages, full?.compaction)
+        const plan = planAntigravityCompaction(inContext, { previousSummary })
+        if (!plan.ok) {
+          const message = plan.reason === 'already-compacted'
+            ? pick('Already compacted', 'Already compacted')
+            : pick('Nothing to compact', 'Nothing to compact')
+          this.compactionState = {
+            running: null,
+            last: { status: reason === 'threshold' ? 'declined' : 'failed', reason, startedAt, endedAt: Date.now(), error: message }
+          }
+          result = reason === 'threshold'
+            ? { ok: true }
+            : { ok: false, error: plan.reason === 'already-compacted' ? pick('当前会话刚刚压缩过，暂无新内容可压缩。', 'Already compacted; no new messages to compact.') : pick('当前没有可压缩的会话内容。', 'Nothing to compact in this session.') }
+          return
+        }
+        const modelKey = modelKeyOf(initial.model)
+        const lastAssistant = inContext.findLast((message) => message.role === 'assistant')
+        const reportedUsed = initial.session?.context?.used
+          ?? (lastAssistant?.model === modelKey ? lastAssistant?.antigravity?.context?.used : undefined)
+        const tokensBefore = typeof reportedUsed === 'number' && reportedUsed > 0 ? reportedUsed : plan.estimatedTokens
+        const language = detectCompactLanguage(inContext)
+        let summaryBody = ''
+        if (initial.hasContext && initial.session) {
+          const live = initial.session
+          try {
+            let compactMode = initial.mode ?? ANTIGRAVITY_APPROVAL_MODE
+            if (compactMode !== 'plan' && initial.modes?.options.some((option) => option.id === 'plan')) {
+              const updated = await live.selectMode('plan')
+              compactMode = updated.mode ?? 'plan'
+            }
+            summaryBody = await summarizeOnSession(
+              live,
+              buildLiveCompactPrompt({ customInstructions, language, keptCount: plan.kept.length }),
+              compactMode
+            )
+          } catch (error) {
+            if (initial.session === live) {
+              initial.session = undefined
+              initial.hasContext = false
+              initial.bridgeConfigured = undefined
+              initial.mode = undefined
+            }
+            await live.close()
+            if (abort.signal.aborted) throw error
+          }
+        }
+        if (!summaryBody) {
+          if (abort.signal.aborted || !ownsCompact()) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
+          const chunks = serializeCompactChunks(plan.toSummarize)
+          if (!chunks.length) throw new Error('Nothing to compact')
+          const temp = launchAntigravity(this.cwd)
+          const onAbortTemp = () => { void temp.close() }
+          abort.signal.addEventListener('abort', onAbortTemp, { once: true })
+          try {
+            let models = await temp.start(this.cwd, undefined, { discoverOnly: true })
+            if (models.current !== initial.model.id) models = await temp.selectModel(initial.model.id)
+            const thinking = initial.thinking?.current
+            if (thinking && models.thinking?.options.some((option) => option.id === thinking) && models.thinking?.current !== thinking) {
+              models = await temp.selectThinking(thinking)
+            }
+            if (models.mode !== 'plan' && models.modes?.options.some((option) => option.id === 'plan')) {
+              models = await temp.selectMode('plan')
+            }
+            const tempMode = models.mode ?? ANTIGRAVITY_APPROVAL_MODE
+            let rolling = stripCompactAppendices(previousSummary)
+            for (let index = 0; index < chunks.length; index++) {
+              if (abort.signal.aborted || !ownsCompact()) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
+              rolling = await summarizeOnSession(
+                temp,
+                buildChunkCompactPrompt(chunks[index], {
+                  previousSummary: rolling,
+                  customInstructions,
+                  language,
+                  chunkIndex: index,
+                  totalChunks: chunks.length
+                }),
+                tempMode
+              )
+            }
+            summaryBody = rolling
+          } finally {
+            abort.signal.removeEventListener('abort', onAbortTemp)
+            await temp.close()
+          }
+        }
+        if (!summaryBody.trim()) throw new Error('Compaction produced an empty summary')
+        if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
+        const finalSummary = summaryBody.trim() + buildCompactAppendices(plan.toSummarize, previousSummary)
+        const { entryId } = await native.appendAntigravityCompaction({
+          sessionId: initial.sessionId,
+          summary: finalSummary,
+          ...(plan.firstKeptEntryId ? { firstKeptEntryId: plan.firstKeptEntryId } : {}),
+          tokensBefore,
+          details: { antigravity: true, reason, keptCount: plan.kept.length, summarizedCount: plan.toSummarize.length }
+        })
+        if (initial.session) {
+          const old = initial.session
+          initial.session = undefined
+          initial.hasContext = false
+          initial.bridgeConfigured = undefined
+          initial.mode = undefined
+          await old.close()
+        }
+        const endedAt = Date.now()
+        const afterTokens = estimateTextTokens(finalSummary) + plan.kept.reduce((sum, message) => sum + estimateAntigravityMessageTokens(message), 0)
+        this.compactionState = {
+          running: null,
+          last: {
+            status: 'completed',
+            reason,
+            startedAt,
+            endedAt,
+            entryId,
+            beforeTokens: tokensBefore,
+            afterTokens,
+            afterMeasured: false,
+            ...(plan.firstKeptEntryId ? { firstKeptEntryId: plan.firstKeptEntryId } : {})
+          }
+        }
+        this.contextFrom = { firstKeptEntryId: plan.firstKeptEntryId ?? entryId, compactedAt: endedAt }
+        this.acpCompactHold = undefined
+        if (this.acpCompacting === compacting) this.acpCompacting = null
+        await this.hydrate({ sessionId: initial.sessionId, sessionFile: this.state?.sessionFile })
+        await this.refreshStats()
+        result = { ok: true }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const aborted = abort.signal.aborted || /cancel/i.test(message)
+        this.compactionState = {
+          running: null,
+          last: {
+            status: aborted ? 'cancelled' : 'failed',
+            reason,
+            startedAt,
+            endedAt: Date.now(),
+            ...(aborted ? {} : { error: message })
+          }
+        }
+        result = { ok: false, aborted, error: message }
+      } finally {
+        if (this.acpCompacting === compacting) this.acpCompacting = null
+        if (this.state && this.state.sessionId === initial.sessionId) {
+          this.state = {
+            ...this.state,
+            isCompacting: false,
+            isStreaming: !!this.acpTurn,
+            compaction: this.compactionState.running ?? undefined,
+            lastCompaction: this.compactionState.last ?? undefined,
+            ...(this.contextFrom ? { contextFrom: this.contextFrom } : {})
+          }
+          this.push({ ch: 'state', payload: this.state })
+        }
+        this.operations.release(admission.lease)
+        this.settleExecutionAdmission()
+      }
+    })()
+    compacting.done = task
+    await task
+    return result
   }
 
   private antigravityModel(model: AntigravityModel, thinking?: AntigravityModels['thinking'], supportsImages?: boolean): ModelInfo {
@@ -4294,21 +4561,29 @@ export class AgentController extends EventEmitter {
     const owner = this.asyncOwner()
     const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection.sessionId && this.acpConnection === connection
     let history = connection.hasContext ? [] : this.messages
+    let compactionSummary: string | undefined
     if (history.length && this.state?.sessionFile) {
       const full = await this.readHistoryOf(this.state.sessionFile, true)
       if (!ownsTurn() || connection.session !== session) return { ok: false, error: GENERATION_MISMATCH_ERROR }
       if (!full || full.truncated || full.missing) return { ok: false, error: pick('未能读取完整的 Antigravity 交接历史。消息未发送，原记录未改动。', 'Could not read the full Antigravity handoff history. Nothing was sent or changed.') }
-      history = this.nativeBranchView
+      const rawHistory = this.nativeBranchView
         ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...history.filter((message) => !message.id.startsWith('history:'))]
         : full.messages
+      history = sliceInContextMessages(rawHistory, full.compaction)
+      compactionSummary = full.compaction?.summary
     }
+    await this.terminalNotices.flushHeld()
+    if (!ownsTurn() || connection.session !== session) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+    const heldNotices = this.acpHeldNotices.length ? [...this.acpHeldNotices] : []
+    const promptText = heldNotices.length ? `${heldNotices.join('\n\n')}\n\n${text}` : text
     let prompt: string
     try {
-      prompt = antigravityPrompt(text, history)
+      prompt = antigravityPrompt(promptText, history, compactionSummary)
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
     if (!this.confirmExecutionAdmission()) return { ok: false, error: pick('会话运行许可已失效，请重新发送。', 'Execution admission expired. Send the message again.') }
+    if (heldNotices.length) this.acpHeldNotices.splice(0, heldNotices.length)
     const startedAt = Date.now()
     const startedMono = performance.now()
     const modelId = `${ANTIGRAVITY_PROVIDER}/${connection.model.id}`
@@ -4385,7 +4660,7 @@ export class AgentController extends EventEmitter {
       this.acpTodos = []
       this.push({ ch: 'todos', payload: [] })
     }
-    this.runFromUser = true
+    this.runFromUser = !isSubagentNotice(text) && !isHostTextNotice(text)
     this.setAgentRunning(true)
     this.markStreaming(true)
     observe({ type: 'agent-start' })
@@ -4481,6 +4756,8 @@ export class AgentController extends EventEmitter {
     }
     const running = session.prompt(prompt, connection.model.id, connection.thinking?.current, connection.mode, media)
     let nextQueued: QueueItem | undefined
+    let autoCompactNeeded: { used: number; size: number } | undefined
+    let settledOutcome: 'completed' | 'stopped' | 'failed' | null = null
     turn.done = (async () => {
       let status = 'stop'
       let turnError: string | undefined
@@ -4588,7 +4865,16 @@ export class AgentController extends EventEmitter {
         observe({ type: 'agent-settled', aborted: false })
         void this.maybeGenerateTitle()
       }
-      this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome } })
+      settledOutcome = outcome
+      if (status === 'stop' && !turn.stopped && !turn.interjected && this.state?.autoCompactionEnabled !== false && turnContext?.used && turnContext.size > 0) {
+        const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
+        const line = autoCompactAt(cap, turnContext.size)
+        if (turnContext.used <= line) {
+          if (this.acpCompactHold?.sessionId === connection.sessionId) this.acpCompactHold = undefined
+        } else if (this.acpCompactHold?.sessionId !== connection.sessionId || turnContext.used >= this.acpCompactHold.untilTokens) {
+          autoCompactNeeded = turnContext
+        }
+      }
       if (!turn.stopped && (this.acpQueue.steering.length || this.acpQueue.followUp.length)) {
         nextQueued = this.acpQueue.steering.shift() ?? this.acpQueue.followUp.shift()
         this.publishAcpQueue()
@@ -4599,8 +4885,25 @@ export class AgentController extends EventEmitter {
         this.acpTurn = undefined
         if (ownsTurn()) {
           if (connection.session === session) this.bindAntigravity(connection, session)
-          this.markStreaming(false)
           this.setAgentRunning(false)
+          this.markStreaming(false)
+          if (settledOutcome) this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome: settledOutcome } })
+          if (autoCompactNeeded) {
+            const triggerUsed = autoCompactNeeded.used
+            void this.compactAntigravity('threshold').then((compacted) => {
+              if (!compacted.ok) this.acpCompactHold = { sessionId: connection.sessionId, untilTokens: triggerUsed * 1.2 }
+              if (nextQueued && !compacted.aborted && ownsTurn()) {
+                const queued = nextQueued
+                void this.withOperation('send', owner.generation, () => this.withExecutionAdmission(() => this.sendAntigravity(queued.text, queued.images)))
+                  .then((res) => {
+                    if (!res.ok && res.error) {
+                      this.push({ ch: 'notify', payload: { id: `acp-queue-fail-${Date.now()}`, method: 'notify', notifyType: 'error', message: res.error } })
+                    }
+                  })
+              }
+            })
+            return
+          }
           void this.refreshState()
           void this.refreshStats()
           if (nextQueued) {
@@ -5002,14 +5305,19 @@ export class AgentController extends EventEmitter {
   private antigravityStats(): SessionStats {
     const modelKey = modelKeyOf(this.acpConnection?.model)
     const latest = this.acpTurn?.messages.at(-1) ?? this.messages.findLast((message) => message.role === 'assistant')
-    const context = this.acpConnection?.session?.context ?? (latest?.model === modelKey ? latest?.antigravity?.context : undefined)
+    const compactedAt = this.compactionState.last?.status === 'completed'
+      ? (this.compactionState.last.endedAt ?? this.compactionState.last.startedAt)
+      : this.contextFrom?.compactedAt
+    const liveContext = this.acpConnection?.session?.context
+    const latestStale = compactedAt !== undefined && (latest?.timestamp ?? 0) <= compactedAt
+    const context = liveContext ?? (latest?.model === modelKey ? latest?.antigravity?.context : undefined)
     const messages = this.acpTurn ? [...this.messages, ...this.acpTurn.messages] : this.messages
     return {
       toolCalls: messages.reduce((n, message) => n + (message.toolCalls?.length ?? 0), 0),
       userMessages: messages.filter((message) => message.role === 'user').length,
       assistantMessages: messages.filter((message) => message.role === 'assistant').length,
-      ...(context ? { contextUsage: { modelKey, tokens: context.used, contextWindow: context.size,
-        percent: context.used / context.size * 100, availability: 'known' } } : {})
+      ...(context ? { contextUsage: { modelKey, tokens: !liveContext && latestStale ? null : context.used, contextWindow: context.size,
+        percent: !liveContext && latestStale ? null : context.used / context.size * 100, availability: 'known' } } : {})
     }
   }
 
@@ -5101,7 +5409,7 @@ export class AgentController extends EventEmitter {
   }
 
   holdsNotices(): boolean {
-    return this.quotaExhausted || !!this.acpConnection
+    return this.quotaExhausted
   }
 
   forkSource(): SubagentForkSource | string {
@@ -5226,7 +5534,7 @@ export class AgentController extends EventEmitter {
   async stop(options: { keepDescendants?: boolean } = {}): Promise<void> {
     const stopDeadline = Date.now() + STOP_TOTAL_BUDGET_MS
     const stopRemaining = (): number => Math.max(0, stopDeadline - Date.now())
-    if (this.acpTurn) await settleWithin(this.abort(), stopRemaining())
+    if (this.acpTurn || this.acpCompacting) await settleWithin(this.abort(), stopRemaining())
     this.stopping = true
     await this.closeAntigravity()
     this.releaseExecutionAdmission()

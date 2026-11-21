@@ -163,8 +163,10 @@ export function measuredAfterCompaction(run: CompactionRun | null, messages: rea
   const endedAt = run.endedAt ?? run.startedAt
   if (endedAt === undefined) return null
   for (const m of messages) {
-    if (m.role !== 'assistant' || m.error || (m.timestamp ?? 0) < endedAt || !m.usage) continue
-    const input = m.usage.input + m.usage.cacheRead + m.usage.cacheWrite
+    if (m.role !== 'assistant' || m.error || (m.timestamp ?? 0) < endedAt) continue
+    const input = m.usage
+      ? m.usage.input + m.usage.cacheRead + m.usage.cacheWrite
+      : (m.antigravity?.context?.used ?? 0)
     if (!(input > 0)) continue
     return { ...run, afterTokens: input, afterMeasured: true }
   }

@@ -299,7 +299,7 @@ export default function nativeSessionBridge(pi) {
           reason,
           version: ENVELOPE_VERSION,
           command: NATIVE_COMMAND,
-          capabilities: ['navigate_tree', 'reload', 'scoped_models_read', 'scoped_models_set', 'trust_read', 'trust_save', 'navigate_tree_summary', 'set_label', 'append_antigravity_turn']
+          capabilities: ['navigate_tree', 'reload', 'scoped_models_read', 'scoped_models_set', 'trust_read', 'trust_save', 'navigate_tree_summary', 'set_label', 'append_antigravity_turn', 'append_antigravity_compaction']
         }
       }),
       'info'
@@ -379,6 +379,22 @@ export default function nativeSessionBridge(pi) {
         const outcome = await ctx.navigateTree(assistantId, { summarize: false })
         if (outcome?.cancelled || manager.getLeafId() !== assistantId) throw new Error('回合已写入，但 Pi 未能同步该分支，请重新打开会话')
         return { userId, assistantId, assistantIds }
+      }
+      case 'append_antigravity_compaction': {
+        const manager = ctx.sessionManager
+        const payload = typeof args?.payloadFile === 'string' ? readBridgePayloadFile(args.payloadFile) : args
+        const { sessionId, summary, firstKeptEntryId, tokensBefore, details, usage } = payload
+        if (sessionId !== manager.getSessionId()) throw new Error('会话已经切换，未写入压缩记录')
+        if (typeof summary !== 'string' || !summary.trim()) throw new Error('压缩摘要为空')
+        const before = manager.getLeafId()
+        const kept = typeof firstKeptEntryId === 'string' && firstKeptEntryId ? firstKeptEntryId : undefined
+        const beforeTokens = typeof tokensBefore === 'number' && Number.isFinite(tokensBefore) && tokensBefore >= 0 ? Math.round(tokensBefore) : 0
+        const entryId = manager.appendCompaction(summary, kept, beforeTokens, details, true, usage)
+        if (before === null) manager.resetLeaf()
+        else manager.branch(before)
+        const outcome = await ctx.navigateTree(entryId, { summarize: false })
+        if (outcome?.cancelled || manager.getLeafId() !== entryId) throw new Error('压缩记录已写入，但 Pi 未能同步该分支，请重新打开会话')
+        return { entryId }
       }
       case 'navigate_tree': {
         const targetId = String(args?.targetId ?? '')

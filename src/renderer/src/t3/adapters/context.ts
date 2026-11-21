@@ -42,7 +42,7 @@ export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
     usedPercentage: percent,
     totalProcessedTokens: typeof total === 'number' && total > 0 ? total : null,
     cost: cost === null ? null : { amount: cost, currency: '$' },
-    compactsAutomatically: session?.model?.provider !== 'antigravity' && session?.autoCompactionEnabled !== false,
+    compactsAutomatically: session?.autoCompactionEnabled !== false,
     autoCompactThreshold: autoCompactLimit ?? null,
     modelWindow: summary.modelWindow > 0 ? summary.modelWindow : null,
     cappedByAutoCompact: summary.cappedByLimit,
@@ -68,7 +68,7 @@ export function useContextCompactAdapter(): ContextCompactAdapter {
     modelDisplayName: session?.model?.name ?? null,
     busy,
     onCompact: () => void compact(),
-    compactDisabled: !hasSession || busy || !session?.messageCount || session?.model?.provider === 'antigravity',
+    compactDisabled: !hasSession || busy || !session?.messageCount,
     compactDisabledReason: busy ? t('composer.t3.compactBusy') : null
   }
 }

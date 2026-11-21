@@ -303,10 +303,7 @@ export class NativeSessionRuntime {
     return receiptPromise
   }
 
-  async appendAntigravityTurn(args: Record<string, unknown>): Promise<{ userId: string; assistantId: string; assistantIds?: string[] }> {
-    if (!this.capabilities.includes('append_antigravity_turn')) {
-      throw new NativeBridgeError(pick('当前 Pi 会话不能保存 Antigravity 回合。', 'This Pi session cannot save Antigravity turns.'), 'bridge_unavailable')
-    }
+  private async invokeWithPayloadFile(op: string, args: Record<string, unknown>, timeoutMs: number): Promise<NativeReceipt> {
     const serialized = JSON.stringify(args)
     let payloadFile: string | undefined
     let invokeArgs = args
@@ -318,14 +315,31 @@ export class NativeSessionRuntime {
       invokeArgs = { payloadFile }
     }
     try {
-      const receipt = await this.invoke('append_antigravity_turn', invokeArgs, Math.max(this.defaultTimeoutMs, APPEND_TURN_TIMEOUT_MS))
-      const { userId, assistantId, assistantIds } = receipt.result ?? {}
-      if (typeof userId !== 'string' || typeof assistantId !== 'string') throw new Error('Invalid Antigravity turn receipt')
-      const ids = Array.isArray(assistantIds) && assistantIds.every((id): id is string => typeof id === 'string') ? assistantIds : undefined
-      return { userId, assistantId, ...(ids ? { assistantIds: ids } : {}) }
+      return await this.invoke(op, invokeArgs, timeoutMs)
     } finally {
       if (payloadFile) void rm(payloadFile, { force: true }).catch(() => undefined)
     }
+  }
+
+  async appendAntigravityTurn(args: Record<string, unknown>): Promise<{ userId: string; assistantId: string; assistantIds?: string[] }> {
+    if (!this.capabilities.includes('append_antigravity_turn')) {
+      throw new NativeBridgeError(pick('当前 Pi 会话不能保存 Antigravity 回合。', 'This Pi session cannot save Antigravity turns.'), 'bridge_unavailable')
+    }
+    const receipt = await this.invokeWithPayloadFile('append_antigravity_turn', args, Math.max(this.defaultTimeoutMs, APPEND_TURN_TIMEOUT_MS))
+    const { userId, assistantId, assistantIds } = receipt.result ?? {}
+    if (typeof userId !== 'string' || typeof assistantId !== 'string') throw new Error('Invalid Antigravity turn receipt')
+    const ids = Array.isArray(assistantIds) && assistantIds.every((id): id is string => typeof id === 'string') ? assistantIds : undefined
+    return { userId, assistantId, ...(ids ? { assistantIds: ids } : {}) }
+  }
+
+  async appendAntigravityCompaction(args: Record<string, unknown>): Promise<{ entryId: string }> {
+    if (!this.capabilities.includes('append_antigravity_compaction')) {
+      throw new NativeBridgeError(pick('当前 Pi 会话不能保存 Antigravity 压缩记录。', 'This Pi session cannot save Antigravity compaction records.'), 'bridge_unavailable')
+    }
+    const receipt = await this.invokeWithPayloadFile('append_antigravity_compaction', args, Math.max(this.defaultTimeoutMs, APPEND_TURN_TIMEOUT_MS))
+    const { entryId } = receipt.result ?? {}
+    if (typeof entryId !== 'string' || !entryId) throw new Error('Invalid Antigravity compaction receipt')
+    return { entryId }
   }
 
   async navigateTree(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {

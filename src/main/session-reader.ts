@@ -13,6 +13,14 @@ const MAX_TEXT = 64 * 1024
 
 const PROJECTION_SLICE_MS = 8
 
+export interface SessionCompactionInfo {
+  entryId: string
+  summary: string
+  firstKeptEntryId?: string
+  compactedAt?: number
+  firstPostEntryId?: string
+}
+
 export interface ReadResult {
   messages: UIMessage[]
   total: number
@@ -23,6 +31,7 @@ export interface ReadResult {
   segments?: number
   missing?: number
   contextFrom?: ContextFrom
+  compaction?: SessionCompactionInfo
 }
 
 function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
@@ -73,6 +82,7 @@ interface LinkedEntry {
   parentId?: string | null
   value?: unknown
   meta?: boolean
+  compaction?: SessionCompactionInfo
 }
 
 const META_ENTRY = /^\{"type":"(session_info|label)"/
@@ -95,15 +105,18 @@ function linkOfHead(head: string): LinkedEntry {
   }
 }
 
-export function leafBranch(entries: readonly LinkedEntry[], linked = true): LinkedEntry[] {
+function leafPath(entries: readonly LinkedEntry[], linked = true): LinkedEntry[] {
   const leaf = entries.findLast((entry) => !entry.meta) ?? entries.at(-1)
-  const all = entries.filter((entry) => entry.value !== undefined)
-  if (!linked || !leaf?.id) return all
+  if (!linked || !leaf?.id) return [...entries]
   const parents = new Map<string, string | null | undefined>()
   for (const entry of entries) if (entry.id) parents.set(entry.id, entry.parentId)
   const onPath = new Set<string>()
   for (let id: string | null | undefined = leaf.id; id && !onPath.has(id); id = parents.get(id)) onPath.add(id)
-  return all.filter((entry) => entry.id !== undefined && onPath.has(entry.id))
+  return entries.filter((entry) => entry.id !== undefined && onPath.has(entry.id))
+}
+
+export function leafBranch(entries: readonly LinkedEntry[], linked = true): LinkedEntry[] {
+  return leafPath(entries, linked).filter((entry) => entry.value !== undefined)
 }
 
 type ReadOptions = { localizeImage?: (mimeType: string, data: string) => string; fullText?: boolean }
@@ -259,8 +272,26 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
               if (!sourceCwd && typeof head.cwd === 'string' && head.cwd.trim()) sourceCwd = head.cwd
             } catch { }
           }
+          let compactionLinked: LinkedEntry | undefined
           if (rawLine.startsWith('{"type":"compaction"')) {
-            try { contextFrom = contextFromEntry(JSON.parse(rawLine)) ?? contextFrom } catch { }
+            try {
+              const rawCompaction = JSON.parse(rawLine) as { id?: unknown; parentId?: unknown; type?: unknown; summary?: unknown; firstKeptEntryId?: unknown; timestamp?: unknown }
+              const from = contextFromEntry(rawCompaction)
+              contextFrom = from ?? contextFrom
+              const entryId = typeof rawCompaction.id === 'string' ? rawCompaction.id : ''
+              const summary = typeof rawCompaction.summary === 'string' ? rawCompaction.summary : ''
+              if (entryId && summary) {
+                compactionLinked = {
+                  ...linkOf(rawCompaction),
+                  compaction: {
+                    entryId,
+                    summary,
+                    ...(from?.firstKeptEntryId ? { firstKeptEntryId: from.firstKeptEntryId } : {}),
+                    ...(from?.compactedAt !== undefined ? { compactedAt: from.compactedAt } : {})
+                  }
+                }
+              }
+            } catch { }
           }
           if (hasMessage) {
             let linkedEntry: LinkedEntry | undefined
@@ -274,7 +305,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
               }
             } catch { }
             if (!isHeader) link(linkedEntry ?? linkOfHead(lineHead))
-          } else if (!isHeader) link(linkOfHead(lineHead))
+          } else if (!isHeader) link(compactionLinked ?? linkOfHead(lineHead))
         }
         parts = []; chars = 0; discarded = false; hasMessage = false; scanTail = ''; lineHead = ''
       }
@@ -302,8 +333,21 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
           (after.size === before.size && !sameVersion(before, after)) ||
           (current.size === before.size && !sameVersion(before, current))) continue
       if (after.size === before.size && current.size === before.size) flush()
+      const activePath = leafPath(entries, linked)
+      const compactionIdx = activePath.findLastIndex((entry) => !!entry.compaction)
+      let compaction: SessionCompactionInfo | undefined
+      if (compactionIdx >= 0) {
+        const picked = activePath[compactionIdx].compaction!
+        const firstPostEntryId = activePath.slice(compactionIdx + 1).find((entry) => entry.value !== undefined && entry.id)?.id
+        compaction = { ...picked, ...(firstPostEntryId ? { firstPostEntryId } : {}) }
+        contextFrom = {
+          ...(picked.firstKeptEntryId ? { firstKeptEntryId: picked.firstKeptEntryId } : {}),
+          ...(picked.compactedAt !== undefined ? { compactedAt: picked.compactedAt } : {})
+        }
+      }
       let sliceStart = performance.now()
-      for (const entry of leafBranch(entries, linked)) {
+      for (const entry of activePath) {
+        if (entry.value === undefined) continue
         projector.appendPersisted(entry.value, entry.id)
         if (performance.now() - sliceStart > PROJECTION_SLICE_MS) {
           await new Promise<void>(resolve => setImmediate(resolve))
@@ -311,7 +355,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
         }
       }
       return { version: before, result: { messages: projector.uiMessages(), total, truncated, bytes: size,
-        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) } }
+        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}), ...(compaction ? { compaction } : {}) } }
     } catch { if (attempt === 0) continue; return null }
     finally { await fh?.close().catch(() => undefined) }
   }
