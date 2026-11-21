@@ -21,6 +21,7 @@ import {
   type LocalModelInput
 } from '../shared/custom-provider'
 import { readPiModelCatalog } from './pi-model-catalog'
+import { resolveNativeConfigValue } from './quota-credentials'
 
 export const MODELS_FILE = join(PI_AGENT_DIR, 'models.json')
 const AUTO_BACKUP_PREFIX = 'models.json.bak-yan-auto-'
@@ -34,22 +35,22 @@ export interface CustomProviderResult {
 
 type Json = Record<string, unknown>
 
-async function readRaw(): Promise<{ ok: true; json: unknown } | { ok: false; error: string }> {
+async function readRaw(): Promise<{ ok: true; json: unknown; text: string | null } | { ok: false; error: string }> {
   try {
     const text = await readFile(MODELS_FILE, 'utf8')
     try {
-      return { ok: true, json: JSON.parse(text) }
+      return { ok: true, json: JSON.parse(text), text }
     } catch {
       return { ok: false, error: pick(`models.json 不是合法 JSON，先修好再保存：${MODELS_FILE}`, `models.json is not valid JSON; fix it before saving: ${MODELS_FILE}`) }
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true, json: {} }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true, json: {}, text: null }
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
 let modelsWriteChain: Promise<unknown> = Promise.resolve()
-function serializeModels<T>(work: () => Promise<T>): Promise<T> {
+export function serializeModels<T>(work: () => Promise<T>): Promise<T> {
   const next = modelsWriteChain.then(work, work)
   modelsWriteChain = next.catch(() => undefined)
   return next
@@ -67,11 +68,40 @@ async function backupModels(): Promise<void> {
   await Promise.all(backups.slice(0, -AUTO_BACKUP_KEEP).map((name) => unlink(join(PI_AGENT_DIR, name)).catch(() => undefined)))
 }
 
-async function writeAtomic(json: Json): Promise<void> {
+type PrepareModelWrite = (models: unknown) => Promise<(() => Promise<void>) | undefined>
+
+export async function readConfigText(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function writeAtomic(json: Json, previous: string | null, apply?: () => Promise<void>): Promise<void> {
   await mkdir(PI_AGENT_DIR, { recursive: true })
   await backupModels()
+  if (await readConfigText(MODELS_FILE) !== previous) {
+    throw new Error(pick('models.json 已被其他程序修改，请重试', 'models.json was changed by another program; retry'))
+  }
   const text = `${JSON.stringify(json, null, 2)}\n`
   await atomicWriteFile(MODELS_FILE, text)
+  try {
+    await apply?.()
+  } catch (error) {
+    try {
+      if (await readConfigText(MODELS_FILE) !== text) throw new Error('models.json changed')
+      if (previous === null) await unlink(MODELS_FILE)
+      else {
+        await atomicWriteFile(MODELS_FILE, previous)
+        noteModelsWritten(previous)
+      }
+    } catch {
+      throw new Error(pick('部分提交：启动器保存失败，无法安全回滚 models.json，请检查两个文件后重试', 'Partial commit: launcher save failed and models.json could not be safely rolled back; check both files before retrying'), { cause: error })
+    }
+    throw error
+  }
   noteModelsWritten(text)
 }
 
@@ -110,7 +140,7 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
       const risk = modelsWriteRisk(raw.json, merged.next)
       if (risk.dropped.length) return { ok: false, errors: [pick(`保存会删掉其他服务商（${risk.dropped.join('、')}），已取消`, `Saving would remove other providers (${risk.dropped.join(', ')}); cancelled`)] }
       if (risk.shrink.length && !input.confirmShrink) return { ok: false, shrink: risk.shrink, errors: risk.shrink.map((item) => pick(`${item.provider} 的模型会从 ${item.before} 个减少到 ${item.after} 个，需要确认`, `${item.provider} would go from ${item.before} models to ${item.after}; confirmation needed`)) }
-      await writeAtomic(merged.next)
+      await writeAtomic(merged.next, raw.text)
     }
     return { ok: true, providers: readCustomProviders(merged.next) }
   })
@@ -118,7 +148,7 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
 
 export const MODEL_NAME_MAX = 120
 
-export async function renameProviderModel(provider: string, modelId: string, name: string): Promise<{ ok: boolean; error?: string }> {
+export async function renameProviderModel(provider: string, modelId: string, name: string, prepare?: PrepareModelWrite): Promise<{ ok: boolean; error?: string }> {
   const value = name.replace(/\s+/g, ' ').trim()
   if (value.length > MODEL_NAME_MAX) return { ok: false, error: pick(`名称最多 ${MODEL_NAME_MAX} 个字符`, `Name can be at most ${MODEL_NAME_MAX} characters`) }
   return serializeModels(async () => {
@@ -136,12 +166,12 @@ export async function renameProviderModel(provider: string, modelId: string, nam
     else delete model.name
     const nextModels = [...models]
     nextModels[index] = model
-    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
+    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } }, raw.text, await prepare?.(raw.json))
     return { ok: true }
   })
 }
 
-export async function addProviderModel(provider: string, input: LocalModelInput): Promise<{ ok: boolean; error?: string }> {
+export async function addProviderModel(provider: string, input: LocalModelInput, prepare?: PrepareModelWrite): Promise<{ ok: boolean; error?: string }> {
   const id = String(input.id ?? '').trim()
   if (!id) return { ok: false, error: pick('模型 ID 不能为空', 'Model ID is required') }
   if (hasExecutablePrefix(id)) return { ok: false, error: pick(`模型 ID「${id}」不能以 ! 开头`, `Model ID "${id}" cannot start with !`) }
@@ -177,12 +207,12 @@ export async function addProviderModel(provider: string, input: LocalModelInput)
       if (kinds.length) next.input = kinds
     }
     const nextModels = [...models, next]
-    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
+    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } }, raw.text, await prepare?.(raw.json))
     return { ok: true }
   })
 }
 
-export async function removeProviderModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
+export async function removeProviderModel(provider: string, modelId: string, prepare?: PrepareModelWrite): Promise<{ ok: boolean; error?: string }> {
   return serializeModels(async () => {
     const raw = await readRaw()
     if (!raw.ok) return { ok: false, error: raw.error }
@@ -194,7 +224,7 @@ export async function removeProviderModel(provider: string, modelId: string): Pr
     if (index < 0) return { ok: false, error: pick(`models.json 里没有模型 ${provider}/${modelId}`, `Model ${provider}/${modelId} is not in models.json`) }
     if (models.length <= 1) return { ok: false, error: pick('至少要保留一个模型', 'At least one model must be kept') }
     const nextModels = models.filter((_, i) => i !== index)
-    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } })
+    await writeAtomic({ ...base, providers: { ...providers, [provider]: { ...(entry as Json), models: nextModels } } }, raw.text, await prepare?.(raw.json))
     return { ok: true }
   })
 }
@@ -207,7 +237,7 @@ export async function removeCustomProvider(id: string): Promise<CustomProviderRe
     if (merged.changed) {
       const risk = modelsWriteRisk(raw.json, merged.next, [id])
       if (risk.dropped.length) return { ok: false, errors: [pick(`删除会连带删掉其他服务商（${risk.dropped.join('、')}），已取消`, `Deleting would also remove other providers (${risk.dropped.join(', ')}); cancelled`)] }
-      await writeAtomic(merged.next)
+      await writeAtomic(merged.next, raw.text)
     }
     return { ok: true, providers: readCustomProviders(merged.next) }
   })
@@ -220,48 +250,90 @@ function describeFetchError(error: unknown): string {
   return detail ? `${message}（${detail}）` : message
 }
 
-export function modelsEndpoint(baseUrl: string): string {
-  return `${baseUrl.trim().replace(/\/+$/, '')}/models`
+export function modelsEndpoint(baseUrl: string, suffix = 'models'): string {
+  const url = new URL(baseUrl)
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid provider URL')
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/${suffix}`
+  url.hash = ''
+  return url.href
 }
 
-function providerAuthHeaders(api: string | undefined, apiKey: string): Record<string, string> {
-  const headers: Record<string, string> = {}
-  if (!apiKey) return headers
-  if (api === 'anthropic-messages') {
-    headers['x-api-key'] = apiKey
-    headers['anthropic-version'] = '2023-06-01'
-  } else if (api === 'google-generative-ai') {
-    headers['x-goog-api-key'] = apiKey
-  } else {
-    headers.Authorization = `Bearer ${apiKey}`
+function sameOrigin(left: string, right: string): boolean {
+  try {
+    return new URL(modelsEndpoint(left)).origin === new URL(modelsEndpoint(right)).origin
+  } catch {
+    return false
+  }
+}
+
+export function providerAuthHeaders(api: string | undefined, apiKey: string, ...configured: unknown[]): Headers {
+  const headers = new Headers()
+  if (api === 'anthropic-messages') headers.set('anthropic-version', '2023-06-01')
+  const key = resolveNativeConfigValue(apiKey.trim())?.trim()
+  if (key && !/[^\x20-\x7e]/.test(key)) {
+    if (api === 'anthropic-messages') headers.set('x-api-key', key)
+    else if (api === 'google-generative-ai') headers.set('x-goog-api-key', key)
+    else headers.set('Authorization', `Bearer ${key}`)
+  }
+  for (const block of configured) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue
+    for (const [name, value] of Object.entries(block)) {
+      if (typeof value !== 'string' || /^(?:host|connection|content-length|transfer-encoding|proxy-.*)$/i.test(name)) continue
+      const resolved = resolveNativeConfigValue(value.trim())
+      if (!resolved) continue
+      try {
+        headers.set(name, resolved)
+      } catch {
+        continue
+      }
+    }
   }
   return headers
+}
+
+export function fetchProviderModels(url: string, headers: Headers, signal: AbortSignal): Promise<Response> {
+  return fetch(url, { headers, signal, redirect: 'manual' })
 }
 
 async function fetchModelsPage(
   api: string | undefined,
   baseUrl: string,
   apiKey: string,
-  signal: AbortSignal
-): Promise<{ url: string; response: Response; headers: Record<string, string> }> {
-  const trimmedBase = baseUrl.trim().replace(/\/+$/, '')
-  const headers = providerAuthHeaders(api, apiKey)
-  let url = modelsEndpoint(trimmedBase)
-  let response = await fetch(url, { headers, signal })
-  if (response.status === 404 && api === 'anthropic-messages' && !/\/v\d+$/.test(trimmedBase)) {
-    url = modelsEndpoint(`${trimmedBase}/v1`)
-    response = await fetch(url, { headers, signal })
+  signal: AbortSignal,
+  configured?: unknown
+): Promise<{ url: string; response: Response; headers: Headers }> {
+  const headers = providerAuthHeaders(api, apiKey, configured)
+  let url = modelsEndpoint(baseUrl)
+  let response = await fetchProviderModels(url, headers, signal)
+  if (response.status === 404 && api === 'anthropic-messages' && !/\/v\d+\/*$/.test(new URL(baseUrl).pathname)) {
+    await response.body?.cancel()
+    url = modelsEndpoint(baseUrl, 'v1/models')
+    response = await fetchProviderModels(url, headers, signal)
   }
   return { url, response, headers }
 }
 
-async function readProviderEntry(id: string): Promise<Json | null> {
-  const raw = await readRaw()
-  if (!raw.ok) return null
-  const providers = (raw.json as Json)?.providers
-  if (!providers || typeof providers !== 'object') return null
+export function providerEntry(models: unknown, id: string): Json | undefined {
+  const providers = (models as Json | null)?.providers
+  if (!providers || typeof providers !== 'object' || !Object.hasOwn(providers, id)) return undefined
   const entry = (providers as Json)[id]
-  return entry && typeof entry === 'object' ? (entry as Json) : null
+  return entry && typeof entry === 'object' ? (entry as Json) : undefined
+}
+
+async function readProviderEntry(id: string): Promise<Json | undefined> {
+  const raw = await readRaw()
+  return raw.ok ? providerEntry(raw.json, id) : undefined
+}
+
+export function modelProbeHeaders(baseUrl: string, entry: Json | undefined, modelId?: string): Headers {
+  const model = modelId && Array.isArray(entry?.models)
+    ? entry.models.find((item): item is Json => !!item && typeof item === 'object' && item.id === modelId)
+    : undefined
+  const inheritsAuth = typeof entry?.baseUrl === 'string' && sameOrigin(entry.baseUrl, baseUrl)
+  const api = model?.api ?? entry?.api
+  const key = model?.apiKey ?? (inheritsAuth ? entry?.apiKey : undefined)
+  return providerAuthHeaders(typeof api === 'string' ? api : undefined, typeof key === 'string' ? key : '',
+    inheritsAuth ? entry?.headers : undefined, model?.headers)
 }
 
 export async function testCustomProviderEndpoint(id: string): Promise<CustomProviderTestResult> {
@@ -276,7 +348,7 @@ export async function testCustomProviderEndpoint(id: string): Promise<CustomProv
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   try {
-    const { response } = await fetchModelsPage(api, baseUrl, apiKey, controller.signal)
+    const { response } = await fetchModelsPage(api, baseUrl, apiKey, controller.signal, entry.headers)
     const ms = Date.now() - started
     if (response.status === 401 || response.status === 403) {
       return { ok: false, mode: 'endpoint', ms, message: pick(`凭证被拒绝（HTTP ${response.status}）`, `Credentials rejected (HTTP ${response.status})`) }
@@ -287,8 +359,10 @@ export async function testCustomProviderEndpoint(id: string): Promise<CustomProv
     if (!response.ok) {
       return { ok: false, mode: 'endpoint', ms, message: pick(`端点返回 HTTP ${response.status}`, `Endpoint returned HTTP ${response.status}`) }
     }
-    await response.arrayBuffer()
-    return { ok: true, mode: 'endpoint', ms, message: pick(`地址可达，凭证可用（HTTP ${response.status}）`, `Reachable, credentials work (HTTP ${response.status})`) }
+    if (!parseModelEntries(await response.json().catch(() => null)).length) {
+      return { ok: false, mode: 'endpoint', ms, message: pick('地址可达，但没有返回可识别的模型列表', 'Reachable, but no recognizable model list was returned') }
+    }
+    return { ok: true, mode: 'endpoint', ms, message: pick(`地址可达，模型列表可用（HTTP ${response.status}）`, `Reachable, model list available (HTTP ${response.status})`) }
   } catch (error) {
     const ms = Date.now() - started
     const aborted = (error as { name?: string }).name === 'AbortError'
@@ -374,18 +448,16 @@ export async function discoverCustomProviderModels(input: {
   const urlError = validateBaseUrl(baseUrl)
   if (urlError) return { ok: false, models: [], message: urlError }
   let apiKey = (input.apiKey ?? '').trim()
-  if (!apiKey && input.id) {
-    const entry = await readProviderEntry(input.id)
-    if (entry && typeof entry.apiKey === 'string' && typeof entry.baseUrl === 'string' && entry.baseUrl.replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')) {
-      apiKey = entry.apiKey
-    } else if (entry && typeof entry.apiKey === 'string') {
-      return { ok: false, models: [], message: pick('服务地址已更改，请重新输入 API Key 后再获取模型', 'The service address changed; enter the API key again before fetching models') }
-    }
+  const entry = input.id ? await readProviderEntry(input.id) : undefined
+  const inheritsAuth = typeof entry?.baseUrl === 'string' && sameOrigin(entry.baseUrl, baseUrl)
+  if (!apiKey && typeof entry?.apiKey === 'string') {
+    if (!inheritsAuth) return { ok: false, models: [], message: pick('服务地址已更改，请重新输入 API Key 后再获取模型', 'The service address changed; enter the API key again before fetching models') }
+    apiKey = entry.apiKey
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   try {
-    const { url, response, headers } = await fetchModelsPage(input.api, baseUrl, apiKey, controller.signal)
+    const { url, response, headers } = await fetchModelsPage(input.api, baseUrl, apiKey, controller.signal, inheritsAuth ? entry?.headers : undefined)
     if (response.status === 401 || response.status === 403) {
       return { ok: false, models: [], message: pick(`凭证被拒绝（HTTP ${response.status}），先检查 API Key`, `Credentials rejected (HTTP ${response.status}); check the API key`) }
     }
@@ -395,7 +467,9 @@ export async function discoverCustomProviderModels(input: {
     let body = (await response.json().catch(() => null)) as { nextPageToken?: unknown } | null
     const found: DiscoveredModel[] = parseModelEntries(body)
     for (let page = 0; page < 10 && input.api === 'google-generative-ai' && typeof body?.nextPageToken === 'string' && body.nextPageToken; page++) {
-      const next = await fetch(`${url}${url.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(body.nextPageToken)}`, { headers, signal: controller.signal })
+      const nextUrl = new URL(url)
+      nextUrl.searchParams.set('pageToken', body.nextPageToken)
+      const next = await fetchProviderModels(nextUrl.href, headers, controller.signal)
       if (!next.ok) break
       body = (await next.json().catch(() => null)) as { nextPageToken?: unknown } | null
       for (const model of parseModelEntries(body)) if (!found.some((m) => m.id === model.id)) found.push(model)

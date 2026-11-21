@@ -1717,7 +1717,7 @@ export interface YanBridge {
   addLocalModel(provider: string, input: LocalModelInput): Promise<LocalLauncherSaveResult>
   removeLocalModel(provider: string, modelId: string): Promise<LocalLauncherView[]>
   pickLocalLauncher(current?: string): Promise<string | null>
-  detectLocalLauncher(provider: string): Promise<LocalLauncherDetectResult>
+  detectLocalLauncher(provider: string, modelId?: string): Promise<LocalLauncherDetectResult>
   testCustomProvider(
     id: string,
     mode: 'endpoint' | 'billable',

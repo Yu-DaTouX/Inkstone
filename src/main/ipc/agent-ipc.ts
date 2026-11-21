@@ -6,6 +6,7 @@ import type { ApprovalBroker } from '../approval-broker'
 import type { LineModel } from '../native-compaction-line'
 import type { ExpectedRuntimeOwner, MainPush, YanBridge, QueueEditOp, QueueSnapshot, QueueState } from '../../shared/ipc'
 import type { RuntimeRef } from '../../shared/runs'
+import type { IpcChannel } from '../../shared/ipc-channels'
 import { pick } from '../../shared/ui-lang'
 import { getSettings } from '../settings'
 import { userMessageSent } from '../browser/user-handoff'
@@ -16,6 +17,7 @@ import { abortBashFor, lastAssistantTextFor } from './session-command-target'
 import { localCommandDescriptors } from '../command-registry'
 import { approvalIdentityFrom } from '../approval-ledger'
 import { piInfo, resetPiVersionCache } from '../protocol'
+import { isRestoredReadonly, restoredReadonlyMessage } from '../restored-readonly'
 
 export type ExpectedRuntimeInput = RuntimeRef
 
@@ -53,7 +55,21 @@ export interface AgentIpcDeps {
 }
 
 export function registerAgentIpc(ipc: IpcRegistrar, deps: AgentIpcDeps): void {
-  const { handle } = ipc
+  const readOnlyAllowed = new Set<IpcChannel>([
+    'yan:setVisibleRunnerSessions', 'yan:listModels', 'yan:listThinkingLevels', 'yan:listCommands',
+    'yan:lastAssistantText', 'yan:approvalPending', 'yan:pendingUiRequests', 'yan:resyncView',
+    'yan:getState', 'yan:agentStatus', 'yan:getMessages', 'yan:getStats'
+  ])
+  const handle: IpcRegistrar['handle'] = (channel, handler) => {
+    ipc.handle(channel, (...args) => {
+      if (isRestoredReadonly() && !readOnlyAllowed.has(channel)) {
+        const error = restoredReadonlyMessage()
+        if (channel === 'yan:abort') return { ok: false, error, steering: [], followUp: [] }
+        return { ok: false, error }
+      }
+      return handler(...args)
+    })
+  }
   const {
     ac, startAgent, whenAgentStarted, flushRestoreNotice, piDown, push, isObject,
     normalizeExpectedRuntime, resolveExpectedTarget, targetMatchesExpected, runnerForExpected, pinSendTarget, pinnedTargetMatches,
@@ -194,7 +210,7 @@ export function registerAgentIpc(ipc: IpcRegistrar, deps: AgentIpcDeps): void {
 
   handle('yan:listModels', async () => {
     const models = (await ac()?.listModels()) ?? []
-    void syncCompactionLines(models)
+    if (!isRestoredReadonly()) void syncCompactionLines(models)
     return models
   })
   handle(

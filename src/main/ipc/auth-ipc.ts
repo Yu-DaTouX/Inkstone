@@ -151,7 +151,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     const picked = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
     return picked.canceled ? null : picked.filePaths[0] ?? null
   })
-  handle('yan:detectLocalLauncher', async (provider: string) => detectLocalLauncher(String(provider ?? '')))
+  handle('yan:detectLocalLauncher', async (provider: string, modelId?: string) => detectLocalLauncher(String(provider ?? ''), typeof modelId === 'string' ? modelId : undefined))
   handle('yan:removeCustomProvider', async (id: string) => {
     const r = await removeCustomProvider(id)
     if (r.ok) void restartAgent('自定义服务已移除').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))

@@ -3157,24 +3157,38 @@ export class AgentController extends EventEmitter {
       if (this.acpTurn) return this.enqueueAntigravity(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration)
       return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
     }
-    const local = await this.startLocalModel()
-    if (!local.ok) return { ok: false, error: local.error }
-    return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue)))
+    const sessionId = this.state?.sessionId
+    return this.withOperation('send', expectGeneration, () => this.withReadyLocalModel(sessionId, autoContinue,
+      () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue))))
   }
 
-  private async startLocalModel(): Promise<{ ok: boolean; error?: string }> {
-    const model = this.deferredModelSwitch?.model ?? this.state?.model
-    if (!model?.provider || !model.id) return { ok: true }
-    const sessionId = this.state?.sessionId
-    const result = await ensureLocalModelReady(model.provider, model.id, {
+  private async withReadyLocalModel(
+    sessionId: string | undefined,
+    autoContinue: AutoContinueScope | undefined,
+    send: () => Promise<{ ok: boolean; error?: string }>
+  ): Promise<{ ok: boolean; error?: string }> {
+    const currentModel = (): ModelInfo | undefined =>
+      (!autoContinue && !this.executionActive() ? this.deferredModelSwitch?.model : undefined) ?? this.state?.model
+    const model = currentModel()
+    const onReady = () => {
+      if (isRestoredReadonly()) return Promise.resolve({ ok: false, error: restoredReadonlyMessage() })
+      if (this.acpConnection || this.state?.sessionId !== sessionId || modelKeyOf(currentModel()) !== modelKeyOf(model)) {
+        return Promise.resolve({ ok: false, error: pick('会话或模型已切换，消息未发送，草稿已保留', 'The session or model changed; message not sent, draft kept') })
+      }
+      return send()
+    }
+    if (!model?.provider || !model.id) return onReady()
+    return ensureLocalModelReady(model.provider, model.id, {
+      onReady,
       onStarting: (name) => this.push({ ch: 'notify', payload: { id: `local-model-start-${Date.now()}`, method: 'notify', notifyType: 'info',
         message: pick(`正在启动本地模型「${name}」，就绪后自动发送…`, `Starting local model "${name}"; the message will be sent once it is ready…`) } }),
       onSwitching: (name) => this.push({ ch: 'notify', payload: { id: `local-model-switch-${Date.now()}`, method: 'notify', notifyType: 'info',
         message: pick(`正在切换本地模型到「${name}」，就绪后自动发送…`, `Switching local model to "${name}"; the message will be sent once it is ready…`) } })
-    }).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error), started: true }))
-    if (!result.ok) return { ok: false, error: result.error }
-    if (result.started && this.state?.sessionId !== sessionId) return { ok: false, error: pick('本地模型已启动，但会话已切换，消息未发送，草稿已保留', 'The local model started, but the session changed; message not sent, draft kept') }
-    return { ok: true }
+    }).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+  }
+
+  hasLocalModelActivity(): boolean {
+    return this.executionAdmissionToken !== undefined || this.executionActive() || this.getPendingUiCount() > 0
   }
 
   private async withExecutionAdmission(task: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
@@ -3277,6 +3291,7 @@ export class AgentController extends EventEmitter {
   }
 
   async steerIntoUserRun(text: string): Promise<{ ok: boolean; idle?: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.loopGuardStopping || this.loopGuardAbortSent || !this.userRunActive()) return { ok: false, idle: true }
     let entered = false
     try {
@@ -3306,6 +3321,7 @@ export class AgentController extends EventEmitter {
   }
 
   async steer(text: string, images?: QueueItem['images'], expectGeneration?: number): Promise<{ ok: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) {
       if (this.acpTurn) return this.enqueueAntigravity('steering', text, images, expectGeneration)
       return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
@@ -3330,6 +3346,7 @@ export class AgentController extends EventEmitter {
   }
 
   async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) {
       if (this.acpTurn) return this.enqueueAntigravity('followUp', text, images)
       return this.withOperation('send', undefined, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
@@ -3372,20 +3389,24 @@ export class AgentController extends EventEmitter {
   }
 
   async restoreQueueSnapshot(snapshot: QueueSnapshot): Promise<{ ok: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     return this.queue.restoreSnapshot(snapshot)
   }
 
   async steerQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) return this.editAntigravityQueueItem(queueId, true, guard)
     return this.queue.editItem(queueId, true, guard)
   }
 
   async removeQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) return this.editAntigravityQueueItem(queueId, false, guard)
     return this.queue.editItem(queueId, false, guard)
   }
 
   async planQueue(plan: (state: QueueState) => { next: QueueState } | { error: string }): Promise<QueueRewriteResult> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) {
       const outcome = plan(this.queueItems())
       if ('error' in outcome) return { ok: false, error: outcome.error }
@@ -3395,6 +3416,7 @@ export class AgentController extends EventEmitter {
   }
 
   async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) {
       this.acpQueue = {
         steering: next.steering.map((item) => ({ ...item, ...(item.images?.length ? { images: item.images.map((img) => ({ ...img })) } : {}) })),
@@ -3412,6 +3434,7 @@ export class AgentController extends EventEmitter {
   }
 
   async editQueue(op: QueueEditOp): Promise<QueueRewriteResult> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) {
       const plan = planQueueEditOp(this.queueItems(), op)
       if ('error' in plan) return { ok: false, error: plan.error }
@@ -3565,6 +3588,7 @@ export class AgentController extends EventEmitter {
   }
 
   async runBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) return { ok: false, error: pick('请先切回 Pi 再使用输入框的终端模式。', 'Switch back to Pi to use the composer terminal mode.') }
     return this.withExecutionAdmission(() => this.runBashAdmitted(command, options))
   }

@@ -1,43 +1,68 @@
 import './lib/test-isolate.mjs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
-import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
 
-function freePort() {
-  return new Promise((resolve) => {
-    const server = createServer()
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address()
-      server.close(() => resolve(port))
-    })
-  })
+const fixtures = Symbol.for('inkstone.local-model-tests')
+const origin = (port, host = '127.0.0.1') => `http://${host}:${port}`
+const modelsResponse = (...ids) => Response.json({ data: ids.map((id) => ({ id })) })
+const deferred = () => {
+  let resolve
+  const promise = new Promise((done) => { resolve = done })
+  return { promise, resolve }
 }
-
-function serve(port, modelId = 'qwen') {
-  return new Promise((resolve) => {
-    const server = createServer((req, res) => {
-      res.writeHead(req.url === '/v1/models' ? 200 : 404, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ data: [{ id: modelId }] }))
-    })
-    server.listen(port, '127.0.0.1', () => resolve(server))
-  })
+const child = (pid) => Object.assign(new EventEmitter(), { pid, exitCode: null, signalCode: null, killed: false })
+const fixturePlugin = {
+  name: 'local-model-fixtures',
+  setup(build) {
+    build.onResolve({ filter: /^(node:net|\.\/atomic-write)$/ }, ({ path, importer }) =>
+      /local-model-launch\.ts$/.test(importer) ? { path, namespace: 'fixtures' } : undefined)
+    build.onLoad({ filter: /.*/, namespace: 'fixtures' }, ({ path }) => ({
+      resolveDir: resolve('src/main'),
+      contents: path === 'node:net'
+        ? "export const connect = (target) => globalThis[Symbol.for('inkstone.local-model-tests')].connect(target)"
+        : "import { atomicWriteFile as write } from './atomic-write.ts'; export const atomicWriteFile = async (...args) => { await globalThis[Symbol.for('inkstone.local-model-tests')].beforeLauncherWrite?.(); return write(...args) }"
+    }))
+  }
 }
-
-const close = (server) => new Promise((resolve) => server.close(resolve))
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-local-launch-'))
   process.env.YAN_PI_DIR = dir
   process.env.YAN_DATA_DIR = join(dir, 'yan')
-  const servers = []
+  const port = 19001
+  const idlePort = 19002
+  const failPort = 19003
+  const otherPort = 19004
+  const authPort = 19005
+  const hosts = new Map()
+  const serve = (port, modelId, host = '127.0.0.1') => hosts.set(origin(port, host), () => modelsResponse(modelId))
+  const close = (port, host = '127.0.0.1') => hosts.delete(origin(port, host))
+  const modelFile = join(dir, 'models.json')
+  const launcherFile = join(dir, 'yan', 'local-models.json')
+  const oldFetch = globalThis.fetch
+  const envName = 'YAN_TEST_LOCAL_INFERENCE_KEY'
+  const oldKey = process.env[envName]
+  process.env[envName] = 'fixture-inference-key'
+  globalThis[fixtures] = {
+    connect({ host, port }) {
+      const socket = Object.assign(new EventEmitter(), { destroy() {}, setTimeout() {} })
+      queueMicrotask(() => hosts.has(origin(port, host))
+        ? socket.emit('connect')
+        : socket.emit('error', Object.assign(new Error('closed'), { code: 'ECONNREFUSED' })))
+      return socket
+    }
+  }
+  globalThis.fetch = async (address, init) => {
+    const url = new URL(address)
+    const handler = hosts.get(url.origin)
+    if (!handler) throw Object.assign(new Error('closed'), { code: 'ECONNREFUSED' })
+    return handler(url, init)
+  }
   try {
-    const port = await freePort()
-    const idlePort = await freePort()
-    const failPort = await freePort()
-    await writeFile(join(dir, 'models.json'), JSON.stringify({
+    await writeFile(modelFile, JSON.stringify({
       providers: {
         ninfer: { name: '本地 NInfer', baseUrl: `http://127.0.0.1:${port}/v1`, api: 'openai-completions', models: [{ id: 'qwen' }] },
         idle: { baseUrl: `http://127.0.0.1:${idlePort}/v1`, api: 'openai-completions', models: [{ id: 'm' }] },
@@ -45,7 +70,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
         cloud: { baseUrl: 'https://api.example.com/v1', api: 'openai-completions', models: [{ id: 'gpt' }] }
       }
     }))
-    const api = await compile('src/main/local-model-launch.ts')
+    const api = await compile('src/main/local-model-launch.ts', {
+      plugins: [fixturePlugin],
+      stdin: {
+        resolveDir: resolve('src/main'),
+        contents: "export * from './local-model-launch.ts'; export { saveCustomProvider, testCustomProviderEndpoint, discoverCustomProviderModels } from './custom-providers.ts'; export { isLoopbackBaseUrl, isLocalBaseUrl } from '../shared/model-capabilities.ts'"
+      }
+    })
     await mkdir(join(dir, 'yan'), { recursive: true })
     await writeFile(join(dir, 'yan', 'local-models.json'), JSON.stringify({ urls: ['http://127.0.0.1:9999'] }))
     const startBat = join(dir, '启动-NInfer.bat')
@@ -114,7 +145,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       run: (command) => {
         runs++
         ok(command === startBat, '运行的是用户保存的启动命令')
-        setTimeout(() => void serve(port).then((server) => servers.push(server)), 120)
+        serve(port, 'qwen')
       }
     }
     const [first, second] = await Promise.all([api.ensureLocalModelReady('ninfer', 'qwen', options), api.ensureLocalModelReady('ninfer', 'qwen', options)])
@@ -124,23 +155,27 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const again = await api.ensureLocalModelReady('ninfer', 'qwen', { run: () => { runs++ } })
     ok(again.ok && !again.started && runs === 1, '服务已在运行时不再启动')
 
-    const failing = new EventEmitter()
-    const startedAt = Date.now()
-    const broken = await api.ensureLocalModelReady('broken', 'b', { pollMs: 20, timeoutMs: 5_000, run: () => { setTimeout(() => failing.emit('exit', 1), 30); return failing } })
-    ok(!broken.ok && /代码 1|code 1/.test(broken.error ?? '') && Date.now() - startedAt < 2_000, '启动命令出错退出时立即失败，不等到超时')
+    const failing = child(1001)
+    failing.exitCode = 1
+    const killed = []
+    const kill = async (pid) => { killed.push(pid) }
+    const broken = await api.ensureLocalModelReady('broken', 'b', { pollMs: 1, timeoutMs: 5_000, run: () => failing, kill })
+    ok(!broken.ok && /代码 1|code 1/.test(broken.error ?? '') && killed.length === 0 && failing.eventNames().length === 0, '非零退出立即失败，不再终止已退出的 PID 或保留事件监听')
 
-    const stuck = await api.ensureLocalModelReady('idle', 'm', { pollMs: 20, timeoutMs: 150, run: () => {} })
-    ok(!stuck.ok && /草稿已保留|draft kept/.test(stuck.error ?? ''), '超时没就绪时不发送并说明草稿保留')
+    const hanging = child(1002)
+    const stuck = await api.ensureLocalModelReady('idle', 'm', { pollMs: 5, timeoutMs: 30, run: () => hanging, kill })
+    ok(!stuck.ok && /草稿已保留|draft kept/.test(stuck.error ?? '') && killed.join() === '1002' && hanging.eventNames().length === 0, '超时仅清理本次启动的进程并保留草稿')
+    killed.length = 0
 
     let busy = true
     const unloadCalls = []
-    let clock = 1_000_000
+    let clock = Date.now() + 1_000
     const scan = (extra = {}) => api.scanIdleLocalModels({
       busy: () => busy,
       now: () => clock,
-      unload: async (provider) => {
-        unloadCalls.push(provider)
-        return true
+      stop: async (_command, target) => {
+        unloadCalls.push(target.provider)
+        close(port)
       },
       ...extra
     })
@@ -157,35 +192,43 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(!unloadCalls.includes('idle'), '关闭了闲置卸载的服务商不卸载')
 
     const stops = []
-    const killed = []
+    serve(port, 'qwen')
     const result = await api.unloadLocalModel('ninfer', {
       stop: async (command) => {
         stops.push(command)
-        await Promise.all(servers.splice(0).map(close))
+        close(port)
       },
       kill: async (pid) => { killed.push(pid) },
       closeWaitMs: 2_000
     })
     ok(result && stops[0] === stopBat && killed.length === 0, '有停止命令时运行停止命令并确认端口已关闭')
 
-    const killServer = await serve(port)
+    serve(port, 'qwen')
     await api.saveLocalLauncher('ninfer', { command: startBat })
-    const killResult = await api.unloadLocalModel('ninfer', {
-      listener: async (value) => (value === port ? 4242 : null),
-      kill: async (pid) => {
-        killed.push(pid)
-        await close(killServer)
-      },
-      closeWaitMs: 2_000
+    let ownershipChecks = 0
+    const unmanaged = await api.unloadLocalModel('ninfer', {
+      ownsListener: async () => { ownershipChecks++; return true },
+      kill
     })
-    ok(killResult && killed[0] === 4242, '没有停止命令时结束占用端口的进程')
+    ok(!unmanaged && killed.length === 0 && ownershipChecks === 0 && hosts.has(origin(port)), '未托管的监听即便在环回地址也不按端口终止')
+    close(port)
+    const managed = child(4242)
+    await api.ensureLocalModelReady('ninfer', 'qwen', { pollMs: 1, run: () => { serve(port, 'qwen'); return managed } })
+    ok(!await api.unloadLocalModel('ninfer', { ownsListener: async () => false, kill }) && killed.length === 0, '无法验证监听归属时拒绝终止已登记进程')
+    const owned = await api.unloadLocalModel('ninfer', {
+      ownsListener: async (url, pid) => url === `${origin(port)}/v1` && pid === managed.pid,
+      kill: async (pid) => { killed.push(pid); close(port) }
+    })
+    ok(owned && killed.join() === '4242', '验证环回端点后只终止登记的子进程')
+    killed.length = 0
 
     ok(api.launcherFromProcess({ command: '"E:\\AI\\ninfer\\engine\\ninfer-serve.exe" model --vision', parent: 'C:\\Windows\\system32\\cmd.exe /c ""E:\\AI\\ninfer\\启动-NInfer.bat" "' }) === 'E:\\AI\\ninfer\\启动-NInfer.bat', '由 bat 拉起时识别出 bat 路径')
     ok(api.launcherFromProcess({ command: 'C:\\ollama\\ollama.exe serve', parent: 'C:\\Windows\\explorer.exe' }) === 'C:\\ollama\\ollama.exe serve', '没有启动脚本时用进程本身的命令行')
     ok(api.launcherFromProcess({ command: null, parent: null }) === null, '读不到进程信息时不猜')
 
     const netstat = '  TCP    0.0.0.0:135     0.0.0.0:0   LISTENING   1100\r\n  TCP    127.0.0.1:8080  0.0.0.0:0   LISTENING   29872\r\n  TCP    127.0.0.1:8080  127.0.0.1:5000  ESTABLISHED  29872'
-    ok(api.listeningPid(netstat, 8080) === 29872 && api.listeningPid(netstat, 80) === null, '从 netstat 输出找监听端口的进程')
+    ok(api.listeningPid(netstat, '127.0.0.1', 8080) === 29872 && api.listeningPid(netstat, '127.0.0.2', 8080) === null, 'netstat 按监听地址和端口匹配，拒绝其他 IP')
+    ok(api.listeningPid(netstat + '\n TCP [::]:8080 [::]:0 LISTENING 9999', '127.0.0.1', 8080) === null, '同端口存在多个可能的监听进程时不猜归属')
 
     const script = join(dir, '启动 服务.bat')
     await writeFile(script, '@echo off\r\n')
@@ -234,8 +277,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
     ok(addRejected === 3, '重复模型 ID、! 开头、不存在的启动脚本均拒绝添加')
 
-    const qwenRunning = await serve(port, 'qwen')
-    servers.push(qwenRunning)
+    serve(port, 'qwen')
 
     const blockedByBusy = await api.ensureLocalModelReady('ninfer', 'scarletkc-2.0', {
       busy: () => true,
@@ -251,14 +293,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
       timeoutMs: 5_000,
       busy: () => false,
       onSwitching: (name) => { switchedNotice = name },
-      unload: async () => {
+      stop: async () => {
         unloadedOld = true
-        await Promise.all(servers.splice(0).map(close))
-        return true
+        close(port)
       },
       run: (cmd) => {
         launchedCmd = cmd
-        setTimeout(() => void serve(port, 'scarletkc-2.0').then((s) => servers.push(s)), 80)
+        serve(port, 'scarletkc-2.0')
       }
     })
     ok(switched.ok && switched.started && unloadedOld && launchedCmd === scarletBat && switchedNotice === 'ScarletKc2', '同端口跑着旧模型时自动卸载旧模型并启动新模型脚本', `ok=${switched.ok} unloaded=${unloadedOld} cmd=${launchedCmd} notice=${switchedNotice}`)
@@ -268,26 +309,30 @@ await runSuite(import.meta.url, async (ok, compile) => {
     })
     ok(alreadyScarlet.ok && !alreadyScarlet.started, '端口已提供目标模型时直接放行不重启')
 
+    const wrong = child(1003)
+    const recovery = []
     const mismatch = await api.ensureLocalModelReady('ninfer', 'qwen', {
-      pollMs: 25,
-      timeoutMs: 5_000,
-      mismatchLimit: 2,
-      busy: () => false,
-      unload: async () => {
-        await Promise.all(servers.splice(0).map(close))
-        return true
-      },
-      run: () => {
-        setTimeout(() => void serve(port, 'scarletkc-2.0').then((s) => servers.push(s)), 40)
+      pollMs: 1,
+      timeoutMs: 500,
+      mismatchLimit: 1,
+      closeWaitMs: 0,
+      stop: async () => { close(port) },
+      kill: async (pid) => { killed.push(pid); close(port) },
+      run: (command) => {
+        recovery.push(command)
+        serve(port, 'scarletkc-2.0')
+        if (command === startBat) return wrong
       }
     })
-    ok(!mismatch.ok && /scarletkc-2\.0/.test(mismatch.error ?? '') && /qwen/.test(mismatch.error ?? ''), '启动后服务返回的模型 ID 与配置不匹配时立即报错提示')
+    ok(!mismatch.ok && /scarletkc-2\.0/.test(mismatch.error ?? '') && /qwen/.test(mismatch.error ?? ''), '启动后服务返回的模型 ID 与配置不匹配时明确报错')
+    ok(killed.join() === '1003' && recovery.join() === [startBat, scarletBat].join() && /旧服务已恢复|previous service was restored/.test(mismatch.error ?? ''), '仅清理新进程并尝试通过旧模型命令恢复')
+    killed.length = 0
 
     const onlyModelIdleUnloaded = []
     let idleClock = Date.now() + 1_000
-    await api.scanIdleLocalModels({ busy: () => false, now: () => idleClock, unload: async (p) => { onlyModelIdleUnloaded.push(p); return true } })
+    await api.scanIdleLocalModels({ busy: () => false, now: () => idleClock, stop: async (_command, target) => { onlyModelIdleUnloaded.push(target.provider); close(port) } })
     idleClock += 11 * 60_000
-    await api.scanIdleLocalModels({ busy: () => false, now: () => idleClock, unload: async (p) => { onlyModelIdleUnloaded.push(p); return true } })
+    await api.scanIdleLocalModels({ busy: () => false, now: () => idleClock, stop: async (_command, target) => { onlyModelIdleUnloaded.push(target.provider); close(port) } })
     ok(onlyModelIdleUnloaded.includes('ninfer'), '仅配置模型级启动命令时同样支持闲置自动卸载')
 
     const afterRemove = await api.removeLocalModel('ninfer', 'scarletkc-2.0')
@@ -302,8 +347,201 @@ await runSuite(import.meta.url, async (ok, compile) => {
       lastRemoveFailed = true
     }
     ok(lastRemoveFailed, '最后一个模型不允许移除')
+
+    const addedProviders = JSON.parse(await readFile(modelFile, 'utf8'))
+    const lan = '192.168.42.17'
+    const multiUrl = `${origin(otherPort)}/v1`
+    const authUrl = `${origin(authPort)}/gateway/?tenant=a%2Fb#ignored`
+    Object.assign(addedProviders.providers, {
+      lan: { baseUrl: `${origin(port, lan)}/v1`, models: [{ id: 'old' }, { id: 'new' }] },
+      multi: { baseUrl: `${origin(port)}/v1`, models: [{ id: 'main' }, { id: 'old', baseUrl: multiUrl }, { id: 'next', baseUrl: multiUrl }] },
+      alias: { baseUrl: `${origin(otherPort)}/v1`, models: [{ id: 'alias' }] },
+      auth: { baseUrl: authUrl, api: 'anthropic-messages', apiKey: '$' + envName,
+        headers: { 'x-fixture': 'preset' }, models: [{ id: 'auth' }, { id: 'redirected', baseUrl: `${origin(idlePort)}/v1` }] }
+    })
+    await writeFile(modelFile, JSON.stringify(addedProviders))
+    await Promise.all([
+      api.saveLocalLauncher('lan', { command: 'serve-lan' }),
+      api.saveLocalLauncher('multi', { command: 'serve-multi', stopCommand: 'stop-multi' }),
+      api.saveLocalLauncher('alias', { command: 'serve-alias', stopCommand: 'stop-alias' }),
+      api.saveLocalLauncher('auth', { command: 'serve-auth', stopCommand: 'stop-auth' })
+    ])
+
+    ok(api.isLocalBaseUrl(origin(port, lan)) && !api.isLoopbackBaseUrl(origin(port, lan)) && !api.isLoopbackBaseUrl('http://0.0.0.0') &&
+      api.isLoopbackBaseUrl('http://[::1]') && !api.isLocalBaseUrl('ftp://127.0.0.1'), '区分局域网、通配监听、本机环回和非 HTTP 地址')
+    serve(port, 'main')
+    serve(port, 'old', lan)
+    const deniedLan = await api.ensureLocalModelReady('lan', 'new', { kill, run: () => { throw new Error('未授权启动') } })
+    ok(!deniedLan.ok && /停止命令|stop command/.test(deniedLan.error ?? '') && killed.length === 0 &&
+      hosts.has(origin(port)) && hosts.has(origin(port, lan)), '局域网与本机同端口时，未配置停止命令不终止任何进程')
+    await api.saveLocalLauncher('lan', { stopCommand: 'stop-lan', idleUnload: false })
+    const lanTarget = []
+    ok(await api.unloadLocalModel('lan', { kill, stop: async (command, target) => { lanTarget.push(command, target.baseUrl); close(port, lan) } }) &&
+      lanTarget.join() === ['stop-lan', `${origin(port, lan)}/v1`].join() && hosts.has(origin(port)) && killed.length === 0,
+      '显式局域网停止命令只按目标地址确认端口关闭')
+
+    serve(otherPort, 'old')
+    const detection = await api.detectLocalLauncher('multi', 'old')
+    ok(detection.models?.map(({ id }) => id).join() === 'old', '模型级启动器识别使用模型自己的端点')
+    const actions = []
+    const multiActions = {
+      pollMs: 1, timeoutMs: 500, closeWaitMs: 0,
+      stop: async (command, target) => { actions.push(['stop', command, target.baseUrl, target.modelId]); close(otherPort) },
+      run: (command, target) => { actions.push(['run', command, target.baseUrl, target.modelId]); serve(otherPort, target.modelId) }
+    }
+    const isolatedSwitch = await api.ensureLocalModelReady('multi', 'next', {
+      ...multiActions, busy: (endpoint) => endpoint.matchesModel('multi', 'main')
+    })
+    ok(isolatedSwitch.ok && JSON.stringify(actions) === JSON.stringify([['stop', 'stop-multi', multiUrl, 'old'], ['run', 'serve-multi', multiUrl, 'next']]) &&
+      hosts.has(origin(port)), '切换模型级端点不卸载服务商默认端点，其他端点忙碌也不误阻断')
+    const removedTarget = await api.unloadLocalModel('multi', { modelId: 'next', stop: multiActions.stop })
+    ok(removedTarget && !hosts.has(origin(otherPort)) && hosts.has(origin(port)), '指定模型卸载只等待该模型的端口关闭')
+
+    actions.length = 0
+    const inHandoff = deferred()
+    const finishHandoff = deferred()
+    let generationActive = false
+    api.setLocalModelBusyChecker((endpoint) => generationActive && endpoint.matchesModel('multi', 'old'))
+    const starting = api.ensureLocalModelReady('multi', 'old', {
+      ...multiActions,
+      async onReady() { inHandoff.resolve(); await finishHandoff.promise; generationActive = true; return { ok: true } }
+    })
+    await inHandoff.promise
+    const queued = [
+      api.ensureLocalModelReady('alias', 'alias', multiActions),
+      api.ensureLocalModelReady('multi', 'next', multiActions),
+      api.unloadLocalModel('multi', { modelId: 'old', stop: multiActions.stop })
+    ]
+    finishHandoff.resolve()
+    const [running, blockedAlias, blockedNext, blockedUnload] = await Promise.all([starting, ...queued])
+    ok(running.ok && !blockedAlias.ok && !blockedNext.ok && blockedUnload === false && actions.length === 1 &&
+      /正在生成|is busy/.test(blockedAlias.error ?? ''), '多个排队请求在发送交接后重检模型和忙碌，跨服务商切换及卸载均被拦截')
+    generationActive = false
+    api.setLocalModelBusyChecker(null)
+    const ordered = await Promise.all([api.ensureLocalModelReady('alias', 'alias', multiActions), api.ensureLocalModelReady('alias', 'alias', multiActions)])
+    ok(ordered.every(({ ok }) => ok) && actions.length === 3 && actions[1][1] === 'stop-multi', '同端口切换只执行一次，使用已识别旧服务商的停止命令')
+    close(otherPort)
+    serve(otherPort, 'old')
+    await api.ensureLocalModelReady('multi', 'old')
+    actions.length = 0
+    const idleClock2 = Date.now() + 1_000
+    const idleOptions = { busy: (endpoint) => endpoint.matchesModel('multi', 'main'), now: () => idleClock2, idleMs: 0, stop: multiActions.stop }
+    const idleAtModelEndpoint = await api.scanIdleLocalModels(idleOptions)
+    ok(idleAtModelEndpoint.includes('multi') && actions[0]?.[2] === multiUrl && hosts.has(origin(port)),
+      '闲置卸载使用模型级端点，保留同服务商仍在忙的默认端点')
+
+    serve(otherPort, 'old')
+    const noRecovery = await api.ensureLocalModelReady('multi', 'next', {
+      ...multiActions, run: () => failing
+    })
+    ok(!noRecovery.ok && /已停止旧服务|previous service was stopped/.test(noRecovery.error ?? '') && !hosts.has(origin(otherPort)),
+      '旧服务恢复失败时明确告知旧服务已停止')
+
+    const authCalls = []
+    const authHandler = (result) => (url, init) => {
+      authCalls.push([url.pathname, url.search, init.headers.get('x-api-key'), init.headers.get('x-fixture'), init.redirect, url.hash])
+      return result(url, init)
+    }
+    for (const invalid of [
+      () => new Response('<html></html>', { headers: { 'content-type': 'text/html' } }),
+      () => new Response('{bad', { headers: { 'content-type': 'application/json' } }),
+      () => modelsResponse()
+    ]) {
+      authCalls.length = 0
+      hosts.set(origin(authPort), authHandler((url) => url.pathname.endsWith('/v1/models') ? modelsResponse('auth') : invalid()))
+      const ready = await api.ensureLocalModelReady('auth', 'auth')
+      ok(ready.ok && authCalls.length === 2 &&
+        authCalls.every(([, query, key, preset, redirect, hash]) => query === '?tenant=a%2Fb' && key === 'fixture-inference-key' && preset === 'preset' && redirect === 'manual' && !hash),
+        '无效/空响应继续探测同源候选路径，保留查询参数并给两条路径带认证头')
+    }
+
+    close(authPort)
+    ok((await api.localServingModels(authUrl)).state === 'down', '只有确认拒绝连接才标记为服务未运行')
+    hosts.set(origin(authPort), () => new Response(null, { status: 401 }))
+    ok((await api.localServingModels(authUrl)).state === 'unknown', 'HTTP 认证失败与拒绝连接是不同的探测状态')
+
+    let unsafeActions = 0
+    const wouldMutate = { run: () => { unsafeActions++ }, stop: async () => { unsafeActions++ }, kill: async () => { unsafeActions++ } }
+    for (const handler of [
+      () => new Response(null, { status: 401 }),
+      () => modelsResponse(),
+      () => new Response(null, { status: 302, headers: { location: `${origin(idlePort)}/v1/models` } }),
+      (_url, { signal }) => new Promise((_resolve, reject) => {
+        const ref = setTimeout(() => reject(new Error('fixture abort did not fire')), 2_000)
+        signal.addEventListener('abort', () => { clearTimeout(ref); reject(signal.reason) }, { once: true })
+      })
+    ]) {
+      hosts.set(origin(authPort), authHandler(handler))
+      const unknown = await api.ensureLocalModelReady('auth', 'auth', wouldMutate)
+      ok(!unknown.ok && !unknown.started && unsafeActions === 0, '已有 TCP 监听时认证失败、空列表、重定向及超时均不放行且不启停')
+    }
+
+    hosts.set(origin(idlePort), (_url, { headers }) =>
+      !headers.has('x-api-key') && !headers.has('x-fixture') ? modelsResponse('redirected') : new Response(null, { status: 401 }))
+    ok((await api.ensureLocalModelReady('auth', 'redirected', wouldMutate)).ok, '跨源模型级地址不继承服务商凭据和自定义请求头')
+    hosts.set(origin(authPort), authHandler((url) =>
+      url.pathname === '/gateway/v1/models' ? modelsResponse('auth') : new Response(null, { status: 404 })))
+    ok((await api.testCustomProviderEndpoint('auth')).ok &&
+      (await api.discoverCustomProviderModels({ id: 'auth', baseUrl: authUrl, api: 'anthropic-messages' })).models.join() === 'auth',
+      '自定义服务商探测与发现复用结构化地址及安全认证')
+    hosts.set(origin(authPort), () => new Response('<html></html>'))
+    ok(!(await api.testCustomProviderEndpoint('auth')).ok, '自定义服务商不会把 HTML 200 判为模型列表可用')
+
+    const fixture = globalThis[fixtures]
+    const failure = async (task) => task().then(() => '', (error) => error.message)
+    const initialModels = await readFile(modelFile, 'utf8')
+    const initialLaunchers = await readFile(launcherFile, 'utf8')
+    fixture.beforeLauncherWrite = async () => { throw new Error('fixture launcher write failed') }
+    const rejectedAdd = await failure(() => api.addLocalModel('ninfer', { id: 'rollback', command: 'serve-rollback' }))
+    ok(rejectedAdd.includes('fixture launcher write failed') && await readFile(modelFile, 'utf8') === initialModels &&
+      await readFile(launcherFile, 'utf8') === initialLaunchers, '新增第二步失败后按原始内容回滚两份配置')
+    delete fixture.beforeLauncherWrite
+    const retried = await api.addLocalModel('ninfer', { id: 'rollback', command: 'serve-rollback' })
+    ok(retried.launchers.some((entry) => entry.provider === 'ninfer' && entry.models.some((model) => model.id === 'rollback' && model.command === 'serve-rollback')),
+      '回滚后可重试新增同一个 ID')
+
+    const beforeRemove = await readFile(modelFile, 'utf8')
+    const beforeRemoveLaunchers = await readFile(launcherFile, 'utf8')
+    const wroteModels = deferred()
+    const releaseFailure = deferred()
+    fixture.beforeLauncherWrite = async () => {
+      delete fixture.beforeLauncherWrite
+      wroteModels.resolve()
+      await releaseFailure.promise
+      throw new Error('fixture launcher write failed')
+    }
+    const removing = failure(() => api.removeLocalModel('ninfer', 'rollback'))
+    await wroteModels.promise
+    ok(!JSON.parse(await readFile(modelFile, 'utf8')).providers.ninfer.models.some(({ id }) => id === 'rollback'), '故障注入发生在删除已写 models.json 而未写启动器之间')
+    const concurrent = [
+      api.saveCustomProvider({ id: 'yan-concurrent', api: 'openai-completions', baseUrl: 'https://api.example.com/v1', models: [{ id: 'other' }] }),
+      api.saveLocalLauncher('multi', { modelId: 'old', modelCommand: 'serve-old' }),
+      api.addLocalModel('ninfer', { id: 'parallel', command: 'serve-parallel' })
+    ]
+    releaseFailure.resolve()
+    const [removeError, customSaved] = await Promise.all([removing, ...concurrent])
+    const afterConcurrent = JSON.parse(await readFile(modelFile, 'utf8'))
+    const launchersConcurrent = JSON.parse(await readFile(launcherFile, 'utf8'))
+    ok(removeError.includes('fixture launcher write failed') && customSaved.ok && afterConcurrent.providers['yan-concurrent'] &&
+      afterConcurrent.providers.ninfer.models.some(({ id }) => id === 'rollback') && afterConcurrent.providers.ninfer.models.some(({ id }) => id === 'parallel') &&
+      launchersConcurrent.launchers.multi.models.old.command === 'serve-old' && launchersConcurrent.launchers.ninfer.models.parallel.command === 'serve-parallel' &&
+      launchersConcurrent.launchers.ninfer.models.rollback.command === JSON.parse(beforeRemoveLaunchers).launchers.ninfer.models.rollback.command &&
+      JSON.parse(beforeRemove).providers.ninfer.models.some(({ id }) => id === 'rollback'),
+      '删除补偿与自定义服务商保存、另一个启动器保存及新增共享队列，不互相覆盖')
+
+    fixture.beforeLauncherWrite = async () => {
+      const external = JSON.parse(await readFile(modelFile, 'utf8'))
+      await writeFile(modelFile, JSON.stringify({ ...external, externalChange: true }))
+      throw new Error('fixture launcher write failed')
+    }
+    const conflict = await failure(() => api.removeLocalModel('ninfer', 'rollback'))
+    ok(/部分提交|Partial commit/.test(conflict) && JSON.parse(await readFile(modelFile, 'utf8')).externalChange === true,
+      '补偿前发现外部改写，不覆盖外部改动并返回部分提交错误')
   } finally {
-    await Promise.all(servers.map(close))
+    delete globalThis[fixtures]
+    globalThis.fetch = oldFetch
+    if (oldKey === undefined) delete process.env[envName]
+    else process.env[envName] = oldKey
     await rm(dir, { recursive: true, force: true })
   }
 })

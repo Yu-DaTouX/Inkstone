@@ -18,15 +18,28 @@ function capabilityStatusForBoolean(value: unknown): CapabilityStatus {
   return 'unknown'
 }
 
-export function isLocalBaseUrl(raw: unknown): boolean {
-  if (typeof raw !== 'string' || !raw.trim()) return false
-  let host: string
+function httpHostname(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw.trim()) return ''
   try {
-    host = new URL(raw.trim()).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    const url = new URL(raw.trim())
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return ''
+    return url.hostname.toLowerCase().replace(/^\[|\]$|\.$/g, '')
   } catch {
-    return false
+    return ''
   }
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '::1' || host === '0.0.0.0') return true
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host)
+}
+
+export function isLoopbackBaseUrl(raw: unknown): boolean {
+  return isLoopbackHost(httpHostname(raw))
+}
+
+export function isLocalBaseUrl(raw: unknown): boolean {
+  const host = httpHostname(raw)
+  if (isLoopbackHost(host) || host.endsWith('.local') || host === '0.0.0.0') return true
   if (/^(fc|fd)[0-9a-f]{2}:/.test(host) || host.startsWith('fe80:')) return true
   const parts = host.split('.').map(Number)
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false

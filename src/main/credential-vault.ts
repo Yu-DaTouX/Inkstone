@@ -70,6 +70,8 @@ export class CredentialVaultError extends Error {
   }
 }
 
+class CredentialRewriteError extends CredentialVaultError {}
+
 export function plaintextCredentialsRequested(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv, portable: boolean = !!PORTABLE_DATA_DIR): boolean {
   if (portable || env.YAN_PLAINTEXT_CREDENTIALS?.trim() === '1') return true
   return argv.some((arg) => arg === PLAINTEXT_ARG || arg === `${PLAINTEXT_ARG}=1`)
@@ -366,10 +368,10 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
     }
   }
 
-  const plan = async (file: string): Promise<SealPlan> => {
-    if (deps.plaintext()) return { seal: false }
+  const plan = async (file: string, plaintext: boolean, sealed: boolean): Promise<SealPlan> => {
+    if (plaintext) return { seal: false }
     if (!(await deps.cipher.available())) {
-      if (!warnedUnavailable) {
+      if (!sealed && !warnedUnavailable) {
         warnedUnavailable = true
         await deps.log(file, 'plaintext-fallback safeStorage is not available; credentials stay in plaintext')
       }
@@ -378,7 +380,7 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
     if (!deps.cipher.keyId) return { seal: true }
     const keyId = await deps.cipher.keyId()
     if (keyId) return { seal: true, keyId }
-    if (!warnedKeyPending) {
+    if (!sealed && !warnedKeyPending) {
       warnedKeyPending = true
       await deps.log(file, 'plaintext-pending Local State on disk has no os_crypt.encrypted_key yet; credentials stay in plaintext until a later write or restart')
     }
@@ -389,7 +391,7 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
     try {
       return formatSealed(keyId, await deps.cipher.encrypt(text))
     } catch (error) {
-      await deps.log(file, `encrypt-failed ${file} ${error instanceof Error ? error.message : String(error)}; written in plaintext`)
+      await deps.log(file, `encrypt-failed ${file} ${error instanceof Error ? error.message : String(error)}`)
       return null
     }
   }
@@ -419,8 +421,14 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
     }
   }
 
-  const store = async (file: string, current: string | null, text: string, target: SealPlan): Promise<void> => {
+  const refuseDowngrade = async (file: string): Promise<never> => {
+    await deps.log(file, `write-refused ${file} (encryption failed or is unavailable; ciphertext preserved)`)
+    throw new CredentialRewriteError(pick(`无法加密凭据，修改未保存。原密文保持不变：${file}`, `Could not encrypt credentials. The change was not saved; the original ciphertext was preserved: ${file}`), file, await backupsOf(file))
+  }
+
+  const store = async (file: string, current: string | null, text: string, target: SealPlan, plaintext: boolean): Promise<void> => {
     let content = target.seal ? await encode(file, text, target.keyId) : null
+    if (content === null && current !== null && isSealed(current) && !plaintext) await refuseDowngrade(file)
     const migrating = content !== null && current !== null && !isSealed(current)
     if (migrating && !(await backup(file))) content = null
     await io.atomicWrite(file, content ?? text)
@@ -447,13 +455,14 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
         throw new CredentialVaultError(pick(`这次修改未保存。${error.message}`, `This change was not saved. ${error.message}`), error.file, error.backups)
       }
     }
-    const target = await plan(file)
+    const plaintext = deps.plaintext() === true
+    const target = await plan(file, plaintext, current !== null && isSealed(current))
     const sameForm = current !== null && (isSealed(current) ? target.seal && existing?.keyId === target.keyId : !target.seal)
     if (!force && existing && existing.text === text && !existing.stale && sameForm) {
       held.delete(fileKey(file))
       return
     }
-    await store(file, current, text, target)
+    await store(file, current, text, target, plaintext)
     held.delete(fileKey(file))
   }
 
@@ -496,20 +505,21 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
     },
     async sweep(files, options = {}) {
       const countStarts = options.countStart !== false
+      let rewriteError: CredentialRewriteError | undefined
       for (const file of files) {
         const decrypted = await locked(file, async (): Promise<boolean> => {
           const current = await readRaw(file)
           if (current === null) return false
           if (isSealed(current)) {
             const opened = await open(file, current)
-            if (deps.plaintext()) {
+            if (deps.plaintext() === true) {
               await io.atomicWrite(file, opened.text)
               await deps.log(file, `unsealed ${file} (plaintext mode: YAN_PLAINTEXT_CREDENTIALS, ${PLAINTEXT_ARG} or portable build)`)
               return false
             }
             if (!opened.stale) return true
-            const target = await plan(file)
-            await store(file, current, opened.text, target)
+            const target = await plan(file, false, true)
+            await store(file, current, opened.text, target, false)
             await deps.log(file, `resealed ${file}`)
             return true
           }
@@ -519,9 +529,11 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
             await deps.log(file, `skipped ${file} (not JSON)`)
             return false
           }
-          await store(file, current, current, await plan(file))
+          const plaintext = deps.plaintext() === true
+          await store(file, current, current, await plan(file, plaintext, false), plaintext)
           return false
         }).catch(async (error) => {
+          if (error instanceof CredentialRewriteError) rewriteError ??= error
           if (!(error instanceof CredentialVaultError)) await deps.log(file, `sweep-failed ${file} ${error instanceof Error ? error.message : String(error)}`)
           return null
         })
@@ -531,6 +543,7 @@ export function createCredentialVault(deps: CredentialVaultDeps): CredentialVaul
           : decrypted ? ((await readState(dirname(file))).files[basename(file)]?.okStarts ?? 0) : 0
         if (decrypted) await pruneBackups(file, okStarts)
       }
+      if (rewriteError) throw rewriteError
     },
     async backups(files) {
       return (await Promise.all(files.map(backupsOf))).flat()

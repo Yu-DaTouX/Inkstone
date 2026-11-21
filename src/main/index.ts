@@ -125,7 +125,7 @@ import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
 import { executionBusy } from '../core/run-state'
-import { setLocalModelBusyChecker, startLocalModelIdleUnload } from './local-model-launch'
+import { setLocalModelBusyChecker, startLocalModelIdleUnload, type LocalModelEndpoint } from './local-model-launch'
 import { RuntimeRef } from '../shared/runs'
 import { isWithin } from './file-path-gate'
 import { SubagentService } from './subagent-service'
@@ -1858,13 +1858,16 @@ function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; 
 
 let stopLocalModelIdleUnload: (() => void) | undefined
 
-function localModelBusy(provider: string): boolean {
+function localModelBusy(endpoint: LocalModelEndpoint): boolean {
   const agentBusy = (runners?.agents() ?? []).some((agent) => {
-    const state = agent.getState()
-    return state?.model?.provider === provider && executionBusy(state, () => agent.hasRunningBash(), () => agent.getPendingUiCount())
+    const model = agent.getState()?.model
+    return !!model && agent.hasLocalModelActivity() && endpoint.matchesModel(model.provider, model.id)
   })
-  return agentBusy || (subagentService.current()?.list() ?? []).some((run) =>
-    (run.status === 'running' || run.status === 'starting') && (!run.model || run.model.startsWith(`${provider}/`)))
+  return agentBusy || (subagentService.current()?.list() ?? []).some((run) => {
+    if (run.status !== 'running' && run.status !== 'starting') return false
+    const separator = run.model?.indexOf('/') ?? -1
+    return !run.model || separator < 0 || endpoint.matchesModel(run.model.slice(0, separator), run.model.slice(separator + 1))
+  })
 }
 
 async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {

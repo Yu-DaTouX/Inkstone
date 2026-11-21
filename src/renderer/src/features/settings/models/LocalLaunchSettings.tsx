@@ -190,7 +190,7 @@ export function LocalLaunchSettings(): ReactElement | null {
     setBusy(`${key}:detect`)
     setMsg(null)
     try {
-      const found = await window.yan.detectLocalLauncher(item.provider)
+      const found = await window.yan.detectLocalLauncher(item.provider, model.id)
       if (!alive.current) return
       if (found.ok && found.command) {
         setModelCmds((current) => ({ ...current, [key]: found.command! }))

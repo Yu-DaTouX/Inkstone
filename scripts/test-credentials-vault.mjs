@@ -433,6 +433,35 @@ async function vaultTests(ok, compile, root) {
   await throwVault.write(plainFile, '{"k":"p4"}')
   ok((await readFile(plainFile, 'utf8')) === '{"k":"p4"}', '加密调用异常时退回明文，写入不失败')
 
+  const guardedFile = join(dir, 'guarded.json')
+  const guardedStorage = fakeSafeStorage()
+  guardedStorage.state.stale = true
+  const writeCounts = []
+  const guardLines = []
+  const guardOptions = {
+    plaintext: () => false,
+    log: (path, line) => guardLines.push(line),
+    io: { atomicWrite: async (path, content) => { writeCounts.push(path); await v.atomicWriteFile(path, content) } }
+  }
+  const seed = v.createCredentialVault({ ...guardOptions, cipher: v.safeStorageCipher(async () => guardedStorage.safeStorage) })
+  await seed.write(guardedFile, '{"k":"original"}')
+  const original = await readFile(guardedFile)
+  writeCounts.length = 0
+  const pendingKey = v.createCredentialVault({
+    ...guardOptions,
+    cipher: v.safeStorageCipher(async () => guardedStorage.safeStorage, async () => undefined)
+  })
+  guardedStorage.safeStorage.encryptStringAsync = async () => { throw new Error('fixture encryption failure') }
+  for (const [label, guard] of [['加密调用抛错', seed], ['没有可用密钥而拒绝加密', pendingKey]]) {
+    for (const [operation, run] of [['写入', () => guard.write(guardedFile, '{"k":"new"}')], ['扫描重封', () => guard.sweep([guardedFile])]]) {
+      const beforeLogs = guardLines.length
+      const error = await errorOf(run)
+      ok(error instanceof v.CredentialVaultError && error.file === guardedFile && error.message.includes('原密文保持不变'), `${label}：${operation}抛出明确的凭据错误`, error?.message)
+      ok(writeCounts.length === 0 && (await readFile(guardedFile)).equals(original), `${label}：${operation}不调用写入且原始密文逐字节不变`)
+      ok(guardLines.slice(beforeLogs).some((line) => line.startsWith('write-refused ')) && !guardLines.slice(beforeLogs).some((line) => /resealed|plaintext-pending|written in plaintext/.test(line)), `${label}：${operation}记拒绝日志，不记为成功或明文降级`)
+    }
+  }
+
   state.plaintext = true
   await vault.sweep([file, other, fresh])
   ok((await readFile(file, 'utf8')) === '{"k":"plain-a"}\n' && (await readFile(other, 'utf8')) === '{"k":"plain-b"}\n', '明文模式下启动迁移把密文写回明文')
