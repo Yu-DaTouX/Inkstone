@@ -9,15 +9,15 @@ import { join, resolve } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { AntigravitySession, antigravityPrompt } = await compile('src/main/antigravity.ts')
-  const longHistory = [{ role: 'user', text: '甲' + '砚'.repeat(110_000) + '乙' }, { role: 'assistant', text: '答复', thinking: 'internal thought should be omitted', toolCalls: [{ id: 'tc-1', name: 'read', status: 'ok', args: { Path: 'a.ts' }, output: 'ok', details: { antigravity: true, kind: 'read', antigravityDiffs: [{ path: 'a.ts', patch: 'huge-diff' }] }, startedAt: 1, endedAt: 2 }] }]
+  const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, isAntigravityMcpPermission } = await compile('src/main/antigravity.ts')
+  const longHistory = [{ role: 'user', text: 'A' + 'x'.repeat(110_000) + 'Z' }, { role: 'assistant', text: '答复', thinking: 'internal thought should be omitted', toolCalls: [{ id: 'tc-1', name: 'read', status: 'ok', args: { Path: 'a.ts' }, output: 'ok', details: { antigravity: true, kind: 'read', antigravityDiffs: [{ path: 'a.ts', patch: 'huge-diff' }] }, startedAt: 1, endedAt: 2 }] }]
   const handoff = antigravityPrompt('继续', longHistory)
-  ok(handoff.startsWith('Current user message:\n继续\n') && handoff.includes(longHistory[0].text) && !handoff.includes('internal thought should be omitted') && !handoff.includes('huge-diff'), '超过旧字符上限时置顶当前消息、交接完整历史并剔除 UI 冗余字段')
+  ok(handoff.startsWith('Current user message:\n继续\n') && handoff.includes(longHistory[0].text) && !handoff.includes('internal thought should be omitted') && !handoff.includes('huge-diff'), '超过旧字符上限但在安全字节内时置顶当前消息、交接完整历史并剔除 UI 冗余字段')
   const withLocalizedImage = antigravityPrompt('看图', [{ role: 'user', text: '旧图', images: [{ mimeType: 'image/png', data: '', url: 'file:///a.png' }, { mimeType: 'image/jpeg', data: '' }] }])
   ok(withLocalizedImage.includes('"url":"file:///a.png"') && !withLocalizedImage.includes('"data":""'), '交接历史保留本地图片 URL，不发送空 data 字段')
   assert.throws(() => antigravityPrompt('a'.repeat(100_001), []), /消息太长/)
-  assert.throws(() => antigravityPrompt('继续', [{ role: 'user', text: '砚'.repeat(1_400_000) }]), /历史未裁剪/)
-  ok(true, '分别限制新消息字符数和完整历史传输字节数')
+  assert.throws(() => antigravityPrompt('继续', [{ role: 'user', text: '砚'.repeat(110_000) }]), (err) => err instanceof AntigravityHandoffLimitError && err.bytes > err.limit && /历史未裁剪/.test(err.message))
+  ok(true, '分别限制新消息字符数和冷交接安全字节数，防止触发 CLI 静默截断')
   const { parseAntigravityQuota } = await compile('src/main/antigravity-quota.ts')
   const quota = { status: 'SUCCESS', num_turns: 0, conversation_id: '', command: { name: 'usage', data: { groups: [{
     name: 'Gemini Models', description: 'Models within this group: Gemini 4 Neon, Gemini 3.8 Flash', buckets: [
@@ -145,6 +145,107 @@ await runSuite(import.meta.url, async (ok, compile) => {
   } finally { await probe.close() }
 
   {
+    const first = start()
+    let savedAcpId = ''
+    try {
+      await first.session.start(cwd)
+      savedAcpId = first.session.acpSessionId
+      await first.session.selectModel('pro')
+      await first.session.prompt('记住夹具暗号：砚石')
+    } finally {
+      await first.session.close()
+    }
+    const resumed = start()
+    try {
+      const models = await resumed.session.start(cwd, undefined, { resumeSessionId: savedAcpId, mode: 'plan' })
+      ok(resumed.session.resumed === true && resumed.session.acpSessionId === savedAcpId && models.mode === 'plan', '重连优先经 session/resume 原生续接同一 ACP 会话并应用权限档')
+      resumed.events.length = 0
+      await resumed.session.prompt('检查续接方式', 'pro', 'high', 'plan')
+      const replyText = resumed.events.filter((e) => e.type === 'text').map((e) => e.text).join('')
+      resumed.events.length = 0
+      await resumed.session.prompt('检查上下文', 'pro', 'high', 'plan')
+      const ctxText = resumed.events.filter((e) => e.type === 'text').map((e) => e.text).join('')
+      ok(replyText.startsWith('原生续接') && ctxText === '上下文收到 · pro', '原生续接保留原会话上下文且无需冷交接 JSON', JSON.stringify({ replyText, ctxText }))
+    } finally {
+      await resumed.session.close()
+    }
+    const loadFallback = start('load-only')
+    try {
+      await loadFallback.session.start(cwd, undefined, { resumeSessionId: savedAcpId })
+      ok(
+        loadFallback.session.resumed === true &&
+        loadFallback.session.context?.used === 480 &&
+        !loadFallback.events.some((e) => e.type === 'text' && e.text.includes('回放噪音')),
+        '不支持 session/resume 时回退 session/load，同时屏蔽历史回放噪音并保留上下文读数',
+        JSON.stringify({ resumed: loadFallback.session.resumed, ctx: loadFallback.session.context, events: loadFallback.events })
+      )
+    } finally {
+      await loadFallback.session.close()
+    }
+    const missingResume = start()
+    try {
+      await missingResume.session.start(cwd, undefined, { resumeSessionId: 'missing-session-id' })
+      ok(missingResume.session.resumed === false && missingResume.session.acpSessionId && missingResume.session.acpSessionId !== 'missing-session-id', '旧 ACP 会话不存在时平稳回退 session/new')
+    } finally {
+      await missingResume.session.close()
+    }
+    const authResume = start('auth')
+    try {
+      await assert.rejects(authResume.session.start(cwd, undefined, { resumeSessionId: savedAcpId }), /agy acp --login/)
+      ok(true, 'session/resume 遇到登录认证错误时直接报错，不静默新建会话')
+    } finally {
+      await authResume.session.close()
+    }
+  }
+
+  {
+    const servers = new Set(['inkstone-pi', 'codegraph'])
+    const known = new Set(['start_pi_subagent', 'codegraph_explore'])
+    ok(
+      isAntigravityMcpPermission({ kind: 'other', title: 'Run mcp_inkstone-pi_start_pi_subagent', rawInput: { task: 'x' } }, servers, known) &&
+      isAntigravityMcpPermission({ title: 'Run mcp_codegraph_codegraph_explore', rawInput: { query: 'x' } }, servers, known) &&
+      isAntigravityMcpPermission({ kind: 'other', title: 'codegraph / codegraph_explore', rawInput: { query: 'x' } }, servers, known) &&
+      isAntigravityMcpPermission({ kind: 'other', title: 'Run codegraph_explore', rawInput: { query: 'x' } }, servers, known) &&
+      isAntigravityMcpPermission({ kind: 'other', title: 'Tool call', _meta: { mcpServer: 'codegraph' }, rawInput: {} }, servers, known) &&
+      !isAntigravityMcpPermission({ kind: 'execute', title: 'Run mcp_codegraph_codegraph_explore', rawInput: { CommandLine: 'echo hi' } }, servers, known) &&
+      !isAntigravityMcpPermission({ kind: 'edit', title: 'codegraph / codegraph_explore', rawInput: {} }, servers, known) &&
+      !isAntigravityMcpPermission({ kind: 'other', title: 'Run manage_task', rawInput: {} }, servers, known) &&
+      !isAntigravityMcpPermission({ kind: 'other', title: 'Run mcp_unregistered_exec', rawInput: {} }, servers, known),
+      '仅精确识别本会话已注册 MCP 工具的权限请求，排除命令、文件与内置工具'
+    )
+
+    const acpAuto = start()
+    try {
+      const mcpConfig = [{ name: 'inkstone-pi', command: process.execPath, args: [], env: [] }]
+      await acpAuto.session.start(cwd, mcpConfig, { mode: 'auto', knownMcpTools: () => known })
+      acpAuto.events.length = 0
+      await acpAuto.session.prompt('检查 MCP 权限', 'flash', 'low', 'auto')
+      const autoReply = acpAuto.events.filter((e) => e.type === 'text').map((e) => e.text).join('')
+      const askedInAutoMcp = acpAuto.events.some((e) => e.type === 'permission')
+      ok(autoReply === '审批结果 · once' && !askedInAutoMcp, 'Auto 档下对已注册 MCP 工具的 ACP 权限请求自动单次放行，不弹审批', JSON.stringify({ autoReply, askedInAutoMcp }))
+
+      acpAuto.events.length = 0
+      const cmdPending = acpAuto.session.prompt('检查命令权限', 'flash', 'low', 'auto')
+      await wait(() => acpAuto.events.some((e) => e.type === 'permission'))
+      const cmdReq = acpAuto.events.find((e) => e.type === 'permission')
+      acpAuto.session.reply(cmdReq.id, cmdReq.options.find((o) => !o.allow).id)
+      await cmdPending
+      ok(Boolean(cmdReq) && acpAuto.events.filter((e) => e.type === 'text').map((e) => e.text).join('') === '审批结果 · deny', 'Auto 档下非 MCP 命令执行请求仍正常弹审批，不误放行')
+
+      await acpAuto.session.selectMode('default')
+      acpAuto.events.length = 0
+      const defPending = acpAuto.session.prompt('检查 MCP 权限', 'flash', 'low', 'default')
+      await wait(() => acpAuto.events.some((e) => e.type === 'permission'))
+      const defReq = acpAuto.events.find((e) => e.type === 'permission')
+      acpAuto.session.reply(defReq.id, defReq.options.find((o) => !o.allow).id)
+      await defPending
+      ok(Boolean(defReq), '非 Auto 档（default）下 MCP 工具仍照常弹审批')
+    } finally {
+      await acpAuto.session.close()
+    }
+  }
+
+  {
     const slowServer = createServer((req, res) => {
       let body = ''
       req.setEncoding('utf8')
@@ -186,6 +287,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
     let mode = 'plan'
     const calls = []
     const sharedOwned = new Set()
+    const confirmCalls = []
+    const mockMcpTools = [{ name: 'codegraph_explore', description: 'Explore codegraph', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } }]
+    const mockManager = {
+      list: () => [],
+      listToolsRaw: async () => mockMcpTools,
+      listToolsCached: async () => mockMcpTools,
+      pinConnection: () => undefined,
+      callTool: async (_serverId, toolName, args) => ({ content: [{ type: 'text', text: `${toolName}:${args.query}` }] })
+    }
     const bridge = await openAntigravityDelegation(
       resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
       () => ({
@@ -202,10 +312,23 @@ await runSuite(import.meta.url, async (ok, compile) => {
           return { summary: { id: 'sub-11112222', status: 'running', model: params.model, thinkingLevel: params.thinkingLevel } }
         }
       }),
-      { delegate: true, services: [], commandHost: { cwd: () => cwd, mcpConnectionManager: () => ({ list: () => [] }), mcpConfigError: () => undefined, permissionMode: async () => 'danger', confirmDanger: async () => null, approvalOwner: () => ({}) }, owned: sharedOwned }
+      {
+        delegate: true,
+        services: [{ name: 'codegraph', manager: mockManager }],
+        commandHost: {
+          cwd: () => cwd,
+          mcpConnectionManager: () => mockManager,
+          mcpConfigError: () => undefined,
+          permissionMode: async () => 'danger',
+          confirmDanger: async (req) => { confirmCalls.push(req); return { decision: 'allow', choice: 'once' } },
+          approvalOwner: () => ({})
+        },
+        owned: sharedOwned
+      }
     )
     try {
       const env = Object.fromEntries(bridge.configs[0].env.map(({ name, value }) => [name, value]))
+      const cgEnv = Object.fromEntries(bridge.configs.find(({ name }) => name === 'codegraph').env.map(({ name, value }) => [name, value]))
       const callMcp = async (url, auth, method, params) => {
         const res = await fetch(url, {
           method: 'POST',
@@ -217,6 +340,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
       const listed = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/list', {})
       const startSchema = listed.tools.find((tool) => tool.name === 'start_pi_subagent')?.inputSchema
       ok(Array.isArray(startSchema?.properties?.thinkingLevel?.enum) && startSchema.properties.thinkingLevel.enum.includes('high') && startSchema.properties.thinkingLevel.enum.includes('max'), 'start_pi_subagent 工具模式公开合法 thinkingLevel 枚举')
+      const cgListed = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/list', {})
+      ok(cgListed.tools.some((tool) => tool.name === 'codegraph_explore') && bridge.knownTools().has('codegraph_explore'), '同步 MCP 暴露的工具名同步登记到 knownTools')
+      const cgPlanDenied = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'codegraph_explore', arguments: { query: 'q' } })
+      ok(cgPlanDenied.isError === true && confirmCalls.length === 0, 'Plan 模式下拦截非只读同步 MCP 工具')
+      mode = 'default'
+      const cgDefault = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'codegraph_explore', arguments: { query: 'q1' } })
+      ok(!cgDefault.isError && confirmCalls.length === 1, 'default 档下同步 MCP 工具仍触发宿主审批')
+      mode = 'auto'
+      const cgAuto = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'codegraph_explore', arguments: { query: 'q2' } })
+      ok(!cgAuto.isError && cgAuto.content?.[0]?.text === 'codegraph_explore:q2' && confirmCalls.length === 1, 'Auto 档下同步 MCP 工具关闭宿主审批，直接执行返回结果', JSON.stringify({ cgAuto, confirmCalls: confirmCalls.length }))
+      mode = 'plan'
       const denied = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'edit files' } })
       ok(denied.isError === true && calls.length === 0, 'Plan 模式下拒绝派发可写 Pi 子代理')
       const badThinking = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', readOnly: true, thinkingLevel: 'turbo' } })
@@ -259,9 +393,22 @@ await runSuite(import.meta.url, async (ok, compile) => {
     process.env.YAN_DATA_DIR = prefRoot
     try {
       const prefs = await compile('src/main/antigravity-preferences.ts')
-      await prefs.saveAntigravityPreference('sess-acp-1', { model: { id: 'gemini-4-neon', name: 'Gemini 4 Neon' } })
+      await prefs.saveAntigravityPreference('sess-acp-1', {
+        model: { id: 'gemini-4-neon', name: 'Gemini 4 Neon' },
+        acpSessionId: 'acp-uuid-123',
+        acpCwd: 'E:\\pi-desktop',
+        acpHeadEntryId: 'entry-99'
+      })
       const file = prefs.antigravityPreferencePath(prefRoot, 'sess-acp-1')
-      ok(existsSync(file) && prefs.readAntigravityPreference('sess-acp-1')?.model.id === 'gemini-4-neon', 'Antigravity 偏好可保存并回读')
+      const loadedPref = prefs.readAntigravityPreference('sess-acp-1')
+      ok(
+        existsSync(file) &&
+        loadedPref?.model.id === 'gemini-4-neon' &&
+        loadedPref.acpSessionId === 'acp-uuid-123' &&
+        loadedPref.acpCwd === 'E:\\pi-desktop' &&
+        loadedPref.acpHeadEntryId === 'entry-99',
+        'Antigravity 偏好可保存并回读模型与原生续接会话锚点'
+      )
       await prefs.saveAntigravityPreference('sess-acp-1', null)
       ok(!existsSync(file) && prefs.readAntigravityPreference('sess-acp-1') === undefined, '切回 Pi 时删除偏好文件，不残留 null 文件')
     } finally {
@@ -518,6 +665,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
 
     const chunks = compactMod.serializeCompactChunks(msgs, 40_000)
     ok(chunks.length >= 2 && chunks.every((chunk) => chunk.length <= 40_000), '压缩分块把超大消息切分在块上限之内', String(chunks.length))
+    const denseChinese = [{ id: 'm-zh', entryId: 'e-zh', role: 'assistant', model: 'antigravity/pro', text: '砚'.repeat(55_000), timestamp: 1005 }]
+    const zhChunks = compactMod.serializeCompactChunks(denseChinese)
+    ok(zhChunks.length >= 2 && zhChunks.every((chunk) => Buffer.byteLength(chunk, 'utf8') <= 100_000), '压缩分块对高字节中文按 UTF-8 字节上限切分，避免超过 CLI 截断线', JSON.stringify(zhChunks.map((c) => Buffer.byteLength(c, 'utf8'))))
+    const keptBytesPlan = compactMod.planAntigravityCompaction([
+      { id: 'u1', entryId: 'e1', role: 'user', text: '开头', timestamp: 1000 },
+      { id: 'u2', entryId: 'e2', role: 'user', text: '砚'.repeat(35_000), timestamp: 1001 },
+      { id: 'a2', entryId: 'e3', role: 'assistant', model: 'antigravity/pro', text: '完成', timestamp: 1002 }
+    ], { keepRecentTokens: 200_000 })
+    ok(keptBytesPlan.ok && keptBytesPlan.kept.length === 1 && keptBytesPlan.firstKeptEntryId === 'e3', '压缩保留区间同时受序列化字节预算约束，确保压缩后冷交接不超限', JSON.stringify({ kept: keptBytesPlan.kept?.length, firstKept: keptBytesPlan.firstKeptEntryId }))
     ok(compactMod.detectCompactLanguage(msgs)?.includes('Chinese'), '根据用户消息识别中文压缩摘要语言')
 
     const withSummary = antigravityPrompt('继续', plan.kept, '## Goal\n修好压缩')

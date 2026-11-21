@@ -1,6 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
-import { antigravityFileDiffs, antigravityPrompt, launchAntigravity, type AntigravitySession } from './antigravity'
+import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, type AntigravitySession } from './antigravity'
 import {
   buildChunkCompactPrompt,
   buildCompactAppendices,
@@ -675,7 +675,7 @@ export class AgentController extends EventEmitter {
     this.stream.streaming = next
   }
   private acpPreferenceSessionId?: string
-  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean }
+  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean; acpSessionId?: string; acpCwd?: string; acpHeadEntryId?: string }
   private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null; cancel?: () => void }
   private acpCompacting: { abort: AbortController; done: Promise<void>; sessionId: string } | null = null
   private acpCompactHold?: { sessionId: string; untilTokens: number }
@@ -2083,7 +2083,17 @@ export class AgentController extends EventEmitter {
       void this.closeAntigravity()
       this.acpPreferenceSessionId = sessionId
       const saved = sessionId ? readAntigravityPreference(sessionId) : undefined
-      if (saved) this.acpConnection = { sessionId, model: this.antigravityModel(saved.model, saved.thinking, saved.supportsImages), thinking: saved.thinking, modes: saved.modes, supportsImages: saved.supportsImages, hasContext: false }
+      if (saved) this.acpConnection = {
+        sessionId,
+        model: this.antigravityModel(saved.model, saved.thinking, saved.supportsImages),
+        thinking: saved.thinking,
+        modes: saved.modes,
+        supportsImages: saved.supportsImages,
+        ...(saved.acpSessionId ? { acpSessionId: saved.acpSessionId } : {}),
+        ...(saved.acpCwd ? { acpCwd: saved.acpCwd } : {}),
+        ...(saved.acpHeadEntryId ? { acpHeadEntryId: saved.acpHeadEntryId } : {}),
+        hasContext: false
+      }
     }
     const acp = this.acpConnection
     const external = acp?.model
@@ -4005,13 +4015,19 @@ export class AgentController extends EventEmitter {
       const result = await this.nativeRuntime.navigateTree(entryId, options)
       if (!result.cancelled) {
         this.nativeBranchView = true
-        if (this.acpConnection?.session) {
-          const session = this.acpConnection.session
-          this.acpConnection.session = undefined
+        if (this.acpConnection) {
+          this.acpConnection.acpSessionId = undefined
+          this.acpConnection.acpCwd = undefined
+          this.acpConnection.acpHeadEntryId = undefined
           this.acpConnection.hasContext = false
-          this.acpConnection.bridgeConfigured = undefined
-          this.acpConnection.mode = undefined
-          await session.close()
+          await this.persistAntigravityPreference(this.acpConnection).catch(() => undefined)
+          if (this.acpConnection.session) {
+            const session = this.acpConnection.session
+            this.acpConnection.session = undefined
+            this.acpConnection.bridgeConfigured = undefined
+            this.acpConnection.mode = undefined
+            await session.close()
+          }
         }
         this.queue.reset()
         this.ui.cancelPending()
@@ -4258,6 +4274,14 @@ export class AgentController extends EventEmitter {
     reason: 'manual' | 'threshold',
     customInstructions?: string
   ): Promise<{ ok: boolean; error?: string; aborted?: boolean }> {
+    return this.runAntigravityCompaction(reason, customInstructions)
+  }
+
+  private async runAntigravityCompaction(
+    reason: 'manual' | 'threshold',
+    customInstructions?: string,
+    options?: { holdAdmission?: boolean }
+  ): Promise<{ ok: boolean; error?: string; aborted?: boolean }> {
     const initial = this.acpConnection
     const native = this.nativeRuntime
     if (!this.rpc || !initial) return { ok: false, error: pick('Antigravity 尚未就绪', 'Antigravity is not ready') }
@@ -4265,12 +4289,15 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: pick('当前 Pi 会话不支持写入 Antigravity 压缩记录。', 'This Pi session cannot save Antigravity compaction records.') }
     }
     if (this.executionActive()) return { ok: false, error: pick('请等当前操作结束后再压缩会话。', 'Wait for the current operation to finish before compacting.') }
-    const admission = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
-    if (!admission.ok) return { ok: false, error: admission.error }
-    const execution = this.claimExecutionAdmission()
-    if (!execution.ok) {
-      this.operations.release(admission.lease)
-      return execution
+    let lease: ReturnType<AgentController['operations']['acquire']> | null = null
+    if (!options?.holdAdmission) {
+      lease = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
+      if (!lease.ok) return { ok: false, error: lease.error }
+      const execution = this.claimExecutionAdmission()
+      if (!execution.ok) {
+        this.operations.release(lease.lease)
+        return execution
+      }
     }
     const owner = this.asyncOwner()
     const ownsCompact = () => this.ownerCurrent(owner) && this.state?.sessionId === initial.sessionId && this.acpConnection === initial
@@ -4315,8 +4342,12 @@ export class AgentController extends EventEmitter {
     let result: { ok: boolean; error?: string; aborted?: boolean } = { ok: false }
     const task = (async () => {
       try {
-        const full = this.state?.sessionFile ? await this.readHistoryOf(this.state.sessionFile, true) : null
+        const sessionFile = this.state?.sessionFile
+        const full = sessionFile ? await this.readHistoryOf(sessionFile, true) : null
         if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
+        if (sessionFile && (!full || full.truncated || full.missing)) {
+          throw new Error(pick('未能读取完整的会话历史，已取消压缩以避免遗漏上下文。', 'Could not read the full session history; compaction cancelled to avoid losing context.'))
+        }
         const rawMessages = this.nativeBranchView && full
           ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...this.messages.filter((message) => !message.id.startsWith('history:'))]
           : full?.messages ?? this.messages
@@ -4357,6 +4388,8 @@ export class AgentController extends EventEmitter {
               compactMode
             )
           } catch (error) {
+            if (abort.signal.aborted) throw error
+          } finally {
             if (initial.session === live) {
               initial.session = undefined
               initial.hasContext = false
@@ -4364,7 +4397,6 @@ export class AgentController extends EventEmitter {
               initial.mode = undefined
             }
             await live.close()
-            if (abort.signal.aborted) throw error
           }
         }
         if (!summaryBody) {
@@ -4416,6 +4448,10 @@ export class AgentController extends EventEmitter {
           tokensBefore,
           details: { antigravity: true, reason, keptCount: plan.kept.length, summarizedCount: plan.toSummarize.length }
         })
+        initial.acpSessionId = undefined
+        initial.acpCwd = undefined
+        initial.acpHeadEntryId = undefined
+        await this.persistAntigravityPreference(initial).catch(() => undefined)
         if (initial.session) {
           const old = initial.session
           initial.session = undefined
@@ -4473,8 +4509,10 @@ export class AgentController extends EventEmitter {
           }
           this.push({ ch: 'state', payload: this.state })
         }
-        this.operations.release(admission.lease)
-        this.settleExecutionAdmission()
+        if (lease?.ok) {
+          this.operations.release(lease.lease)
+          this.settleExecutionAdmission()
+        }
       }
     })()
     compacting.done = task
@@ -4521,7 +4559,48 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async selectAntigravity(modelId: string, restoreThinking?: string, restoreMode?: string): Promise<{ ok: boolean; error?: string }> {
+  private sameAcpCwd(a?: string, b?: string): boolean {
+    if (!a || !b) return false
+    const left = resolve(a)
+    const right = resolve(b)
+    return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
+  }
+
+  private persistAntigravityPreference(connection: NonNullable<AgentController['acpConnection']>): Promise<void> {
+    const model: AntigravityModel = { id: connection.model.id, name: connection.model.name }
+    return saveAntigravityPreference(connection.sessionId, {
+      model,
+      thinking: connection.thinking,
+      modes: connection.modes,
+      supportsImages: connection.supportsImages,
+      ...(connection.acpSessionId && connection.acpCwd
+        ? {
+            acpSessionId: connection.acpSessionId,
+            acpCwd: connection.acpCwd,
+            ...(connection.acpHeadEntryId ? { acpHeadEntryId: connection.acpHeadEntryId } : {})
+          }
+        : {})
+    })
+  }
+
+  private async resolveAntigravityResume(
+    connection: NonNullable<AgentController['acpConnection']> | undefined
+  ): Promise<{ sessionId: string; headEntryId: string } | undefined> {
+    if (!connection?.acpSessionId || !connection.acpHeadEntryId || this.nativeBranchView) return undefined
+    if (!this.sameAcpCwd(connection.acpCwd, this.cwd)) return undefined
+    if (this.state?.sessionFile) {
+      const full = await this.readHistoryOf(this.state.sessionFile, true)
+      if (!full || full.truncated || full.missing) return undefined
+      if (full.compaction && !full.compaction.firstPostEntryId) return undefined
+      const inContext = sliceInContextMessages(full.messages, full.compaction)
+      if (inContext.at(-1)?.entryId !== connection.acpHeadEntryId) return undefined
+      return { sessionId: connection.acpSessionId, headEntryId: connection.acpHeadEntryId }
+    }
+    if (this.messages.at(-1)?.entryId !== connection.acpHeadEntryId) return undefined
+    return { sessionId: connection.acpSessionId, headEntryId: connection.acpHeadEntryId }
+  }
+
+  private async selectAntigravity(modelId: string, restoreThinking?: string, restoreMode?: string, options?: { allowQueued?: boolean }): Promise<{ ok: boolean; error?: string }> {
     const sessionId = this.state?.sessionId
     const owner = this.asyncOwner()
     if (!owner.rpc?.running || !sessionId || !this.nativeRuntime?.bridgeCapabilities.includes('append_antigravity_turn')) {
@@ -4531,6 +4610,8 @@ export class AgentController extends EventEmitter {
     try {
       const previous = this.acpConnection
       const reuse = previous?.sessionId === sessionId && !previous.mcpStale && previous.session
+      const resumeTarget = !reuse && previous?.sessionId === sessionId ? await this.resolveAntigravityResume(previous) : undefined
+      if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
       session = reuse || launchAntigravity(this.cwd)
       const proc = session
       const host = this.subagentHost
@@ -4558,7 +4639,14 @@ export class AgentController extends EventEmitter {
       }, { delegate: !!host, services: mcp.services, commandHost: this.commandHost, owned }) : undefined
       if (bridge && mcp) proc.setCleanup(async () => { await bridge.close(); await mcp.close() })
       const desiredMode = restoreMode ?? (previous?.sessionId === sessionId ? previous.modes?.current : undefined)
-      let models = reuse ? await proc.selectModel(modelId) : await proc.start(this.cwd, bridge?.configs, { mode: desiredMode }).then((options) => options.current === modelId ? options : proc.selectModel(modelId))
+      let models = reuse
+        ? await proc.selectModel(modelId)
+        : await proc.start(this.cwd, bridge?.configs, {
+            mode: desiredMode,
+            ...(resumeTarget ? { resumeSessionId: resumeTarget.sessionId } : {}),
+            ...(bridge?.knownTools ? { knownMcpTools: bridge.knownTools } : {})
+          })
+            .then((options) => options.current === modelId ? options : proc.selectModel(modelId))
       if (desiredMode && models.mode !== desiredMode) models = await proc.selectMode(desiredMode)
       if (restoreThinking && models.thinking?.current !== restoreThinking) {
         if (!models.thinking?.options.some(({ id }) => id === restoreThinking)) {
@@ -4568,12 +4656,27 @@ export class AgentController extends EventEmitter {
       }
       const chosen = models.available.find(({ id }) => id === modelId && id === models.current)
       if (!chosen) throw new Error(pick('Antigravity 未切到选中的模型。', 'Antigravity did not switch to the selected model.'))
-      if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId || this.executionActive() || this.state.pendingMessageCount) throw new Error(pick('会话状态已变化，未切换模型。', 'The session changed; model not switched.'))
-      await saveAntigravityPreference(sessionId, { model: chosen, thinking: models.thinking, modes: models.modes, supportsImages: models.supportsImages })
+      if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId || this.executionActive() || (!options?.allowQueued && this.state.pendingMessageCount)) throw new Error(pick('会话状态已变化，未切换模型。', 'The session changed; model not switched.'))
+      const resumed = !reuse && proc.resumed
+      const acpSessionId = proc.acpSessionId || (reuse ? previous?.acpSessionId : undefined)
+      const acpHeadEntryId = reuse ? previous?.acpHeadEntryId : resumed ? resumeTarget?.headEntryId : undefined
+      const selected: NonNullable<AgentController['acpConnection']> = {
+        sessionId,
+        model: this.antigravityModel(chosen, models.thinking, models.supportsImages),
+        thinking: models.thinking,
+        mode: models.mode,
+        modes: models.modes,
+        supportsImages: models.supportsImages,
+        bridgeConfigured: reuse ? previous?.bridgeConfigured : !!bridge && !!host,
+        mcpServers: reuse ? previous?.mcpServers : mcp?.services.map(({ name }) => name),
+        session,
+        hasContext: (!!reuse && previous?.hasContext === true) || resumed,
+        ...(acpSessionId ? { acpSessionId, acpCwd: this.cwd } : {}),
+        ...(acpHeadEntryId ? { acpHeadEntryId } : {})
+      }
+      await this.persistAntigravityPreference(selected)
       if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
-      const selected = this.acpConnection = { sessionId, model: this.antigravityModel(chosen, models.thinking, models.supportsImages), thinking: models.thinking,
-        mode: models.mode, modes: models.modes, supportsImages: models.supportsImages, bridgeConfigured: reuse ? previous?.bridgeConfigured : !!bridge && !!host,
-        mcpServers: reuse ? previous?.mcpServers : mcp?.services.map(({ name }) => name), session, hasContext: !!reuse && previous?.hasContext === true }
+      this.acpConnection = selected
       this.bindAntigravity(selected, session)
       if (!reuse) await previous?.session?.close()
       await this.refreshState()
@@ -4604,38 +4707,63 @@ export class AgentController extends EventEmitter {
     }
     if (this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
     if (!initial.session || initial.mcpStale) {
-      const reconnected = await this.selectAntigravity(initial.model.id, initial.thinking?.current)
+      const reconnected = await this.selectAntigravity(initial.model.id, initial.thinking?.current, undefined, { allowQueued: true })
       if (!reconnected.ok) return reconnected
     }
-    const connection = this.acpConnection
-    const session = connection?.session
+    let connection = this.acpConnection
+    let session = connection?.session
     if (!connection || !session || connection.sessionId !== initial.sessionId || this.executionActive()) return { ok: false, error: GENERATION_MISMATCH_ERROR }
     if (media.length > 0 && connection.supportsImages === false) {
       return { ok: false, error: pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.') }
     }
     const owner = this.asyncOwner()
-    const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection.sessionId && this.acpConnection === connection
-    let history = connection.hasContext ? [] : this.messages
-    let compactionSummary: string | undefined
-    if (history.length && this.state?.sessionFile) {
-      const full = await this.readHistoryOf(this.state.sessionFile, true)
-      if (!ownsTurn() || connection.session !== session) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-      if (!full || full.truncated || full.missing) return { ok: false, error: pick('未能读取完整的 Antigravity 交接历史。消息未发送，原记录未改动。', 'Could not read the full Antigravity handoff history. Nothing was sent or changed.') }
-      const rawHistory = this.nativeBranchView
-        ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...history.filter((message) => !message.id.startsWith('history:'))]
-        : full.messages
-      history = sliceInContextMessages(rawHistory, full.compaction)
-      compactionSummary = full.compaction?.summary
+    const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection?.sessionId && this.acpConnection === connection
+    const loadHandoff = async (): Promise<{ ok: true; history: UIMessage[]; compactionSummary?: string } | { ok: false; error: string }> => {
+      let list = connection!.hasContext ? [] : this.messages
+      let summary: string | undefined
+      if (list.length && this.state?.sessionFile) {
+        const full = await this.readHistoryOf(this.state.sessionFile, true)
+        if (!ownsTurn() || connection!.session !== session) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+        if (!full || full.truncated || full.missing) return { ok: false, error: pick('未能读取完整的 Antigravity 交接历史。消息未发送，原记录未改动。', 'Could not read the full Antigravity handoff history. Nothing was sent or changed.') }
+        const rawHistory = this.nativeBranchView
+          ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...list.filter((message) => !message.id.startsWith('history:'))]
+          : full.messages
+        list = sliceInContextMessages(rawHistory, full.compaction)
+        summary = full.compaction?.summary
+      }
+      return { ok: true, history: list, compactionSummary: summary }
     }
+    let handoff = await loadHandoff()
+    if (!handoff.ok) return handoff
     await this.terminalNotices.flushHeld()
     if (!ownsTurn() || connection.session !== session || this.acpTurn) return { ok: false, error: GENERATION_MISMATCH_ERROR }
     const heldNotices = this.acpHeldNotices.length ? [...this.acpHeldNotices] : []
     const promptText = heldNotices.length ? `${heldNotices.join('\n\n')}\n\n${text}` : text
     let prompt: string
     try {
-      prompt = antigravityPrompt(promptText, history, compactionSummary)
+      prompt = antigravityPrompt(promptText, handoff.history, handoff.compactionSummary)
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      if (error instanceof AntigravityHandoffLimitError && !connection.hasContext && handoff.history.length > 0 && this.state?.autoCompactionEnabled !== false) {
+        this.push({ ch: 'notify', payload: { id: `acp-handoff-compact-${Date.now()}`, method: 'notify', notifyType: 'info',
+          message: pick('冷交接历史超出 Antigravity 单条上限，正在自动压缩上下文后继续发送…', 'Handoff history exceeds Antigravity\'s single-prompt limit; compacting context before sending…') } })
+        const compacted = await this.runAntigravityCompaction('threshold', undefined, { holdAdmission: true })
+        if (!this.ownerCurrent(owner) || this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+        if (!compacted.ok) return { ok: false, error: compacted.error ?? error.message }
+        const reconnected = await this.selectAntigravity(connection.model.id, connection.thinking?.current, undefined, { allowQueued: true })
+        if (!reconnected.ok) return reconnected
+        connection = this.acpConnection
+        session = connection?.session
+        if (!connection || !session || connection.sessionId !== initial.sessionId || this.executionActive()) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+        handoff = await loadHandoff()
+        if (!handoff.ok) return handoff
+        try {
+          prompt = antigravityPrompt(promptText, handoff.history, handoff.compactionSummary)
+        } catch (retryError) {
+          return { ok: false, error: retryError instanceof Error ? retryError.message : String(retryError) }
+        }
+      } else {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
     }
     if (!this.confirmExecutionAdmission()) return { ok: false, error: pick('会话运行许可已失效，请重新发送。', 'Execution admission expired. Send the message again.') }
     if (heldNotices.length) this.acpHeldNotices.splice(0, heldNotices.length)
@@ -4905,14 +5033,17 @@ export class AgentController extends EventEmitter {
     turn.done = (async () => {
       let status = 'stop'
       let turnError: string | undefined
+      let cleanCancel = false
       try {
         const reason = await running
-        if (reason === 'cancelled' || turn.stopped || turn.interjected) status = 'aborted'
-        else if (reason !== 'end_turn') {
+        if (reason === 'cancelled' || turn.stopped || turn.interjected) {
+          status = 'aborted'
+          cleanCancel = reason === 'cancelled'
+        } else if (reason !== 'end_turn') {
           status = 'error'
           turnError = `Antigravity: ${reason || 'missing stop reason'}`
         }
-        connection.hasContext = status === 'stop'
+        connection.hasContext = status === 'stop' || (status === 'aborted' && cleanCancel && connection.session === session)
       } catch (error) {
         status = turn.stopped || turn.interjected ? 'aborted' : 'error'
         if (!turn.stopped && !turn.interjected) turnError = error instanceof Error ? error.message : String(error)
@@ -4977,9 +5108,17 @@ export class AgentController extends EventEmitter {
         } else {
           lastStep.entryId = ids.assistantId
         }
+        if (connection.hasContext && session.acpSessionId && ids.assistantId) {
+          connection.acpSessionId = session.acpSessionId
+          connection.acpCwd = this.cwd
+          connection.acpHeadEntryId = ids.assistantId
+          void this.persistAntigravityPreference(connection).catch(() => undefined)
+        }
       } catch (error) {
         lastStep.error = pick(`回复未能保存到会话：${error instanceof Error ? error.message : String(error)}`, `Could not save the Antigravity turn: ${error instanceof Error ? error.message : String(error)}`)
         connection.hasContext = false
+        connection.acpHeadEntryId = undefined
+        void this.persistAntigravityPreference(connection).catch(() => undefined)
         if (status !== 'aborted') {
           status = 'error'
           lastStep.turnTiming.terminalReason = 'failed'
@@ -5183,7 +5322,8 @@ export class AgentController extends EventEmitter {
     try {
       const models = await (kind === 'thinking' ? session.selectThinking(value) : session.selectMode(value))
       if (!this.ownerCurrent(owner) || this.acpConnection !== previous || models.current !== previous.model.id) throw new Error(GENERATION_MISMATCH_ERROR)
-      await saveAntigravityPreference(previous.sessionId, { model: previous.model, thinking: models.thinking, modes: models.modes, supportsImages: previous.supportsImages })
+      const nextPref = { ...previous, thinking: models.thinking, modes: models.modes }
+      await this.persistAntigravityPreference(nextPref)
       if (!this.ownerCurrent(owner) || this.acpConnection !== previous) throw new Error(GENERATION_MISMATCH_ERROR)
       previous.thinking = models.thinking
       previous.model = this.antigravityModel(previous.model, models.thinking, previous.supportsImages)

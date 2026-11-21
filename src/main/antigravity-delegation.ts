@@ -23,19 +23,24 @@ export async function openAntigravityDelegation(script: string, active: () => De
   const name = 'inkstone-pi'
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('hex')}`)
   const owned = options.owned ?? new Set<string>()
+  const knownTools = new Set<string>(options.delegate ? ['start_pi_subagent', 'get_pi_subagent'] : [])
   let started = 0
   let starting = 0
   const createMcp = (service: AntigravityMcpService | undefined, requestSignal: AbortSignal) => {
     const mcp = new Server({ name: service?.name ?? name, version: '1.0.0' }, { capabilities: { tools: {} } })
-    mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: service
-      ? (await service.manager.listToolsRaw(service.name, { signal: requestSignal })).filter((tool) => service.exposes?.(tool.name) !== false).flatMap((tool) => {
-          const schema = tool.inputSchema as { type?: unknown } | undefined
-          return schema?.type === 'object' ? [{ name: tool.name, description: tool.description, inputSchema: { ...schema, type: 'object' as const } }] : []
-        })
-      : [
-      { name: 'start_pi_subagent', description: 'Delegate an independent coding task to an Inkstone Pi subagent in the current project. Returns its id; use get_pi_subagent to read the result.', inputSchema: { type: 'object', properties: { task: { type: 'string' }, model: { type: 'string', description: 'Optional exact Pi provider/model' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' }, readOnly: { type: 'boolean' } }, required: ['task'], additionalProperties: false } },
-      { name: 'get_pi_subagent', description: 'Read the state and final answer of a Pi subagent started by this Antigravity session.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false } },
-    ] }))
+    mcp.setRequestHandler(ListToolsRequestSchema, async () => {
+      const tools = service
+        ? (await service.manager.listToolsRaw(service.name, { signal: requestSignal })).filter((tool) => service.exposes?.(tool.name) !== false).flatMap((tool) => {
+            const schema = tool.inputSchema as { type?: unknown } | undefined
+            return schema?.type === 'object' ? [{ name: tool.name, description: tool.description, inputSchema: { ...schema, type: 'object' as const } }] : []
+          })
+        : [
+        { name: 'start_pi_subagent', description: 'Delegate an independent coding task to an Inkstone Pi subagent in the current project. Returns its id; use get_pi_subagent to read the result.', inputSchema: { type: 'object', properties: { task: { type: 'string' }, model: { type: 'string', description: 'Optional exact Pi provider/model' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' }, readOnly: { type: 'boolean' } }, required: ['task'], additionalProperties: false } },
+        { name: 'get_pi_subagent', description: 'Read the state and final answer of a Pi subagent started by this Antigravity session.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false } },
+      ]
+      for (const tool of tools) knownTools.add(tool.name)
+      return { tools }
+    })
     mcp.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
       const result = (value: unknown, isError = false) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) })
       const turn = active()
@@ -49,7 +54,8 @@ export async function openAntigravityDelegation(script: string, active: () => De
             const described = await describeMcpTool(service.manager, service.name, params.name, signal)
             if (mcpApprovalNeeded(described.annotations)) return result({ error: 'Plan mode only permits read-only MCP tools.' }, true)
           }
-          const response = await runMcpCommand({ ...options.commandHost, mcpConnectionManager: () => service.manager, permissionMode: async () => 'danger' },
+          const response = await runMcpCommand(
+            { ...options.commandHost, mcpConnectionManager: () => service.manager, permissionMode: async () => (turn.mode === 'auto' ? 'all' : 'danger') },
             'call', { serverId: service.name, toolName: params.name, arguments: args }, signal)
           const data = response.data as McpCallOutcome
           return { content: [{ type: 'text' as const, text: data.text }], ...(data.toolError ? { isError: true } : {}) }
@@ -137,6 +143,7 @@ export async function openAntigravityDelegation(script: string, active: () => De
   })
   return {
     configs: [...(options.delegate ? [config(name, '/mcp')] : []), ...options.services.map((service) => config(service.name, `/mcp/${service.name}`))],
+    knownTools: () => knownTools as ReadonlySet<string>,
     close: async () => {
       server.close()
       server.closeAllConnections()

@@ -13,6 +13,16 @@ interface Preference {
   thinking?: AntigravityChoice
   modes?: AntigravityChoice
   supportsImages?: boolean
+  acpSessionId?: string
+  acpCwd?: string
+  acpHeadEntryId?: string
+}
+
+function validToken(value: unknown, maxLen: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > maxLen || /[\r\n\0]/.test(trimmed)) return undefined
+  return trimmed
 }
 
 export function antigravityPreferencePath(yanDir: string, sessionId: string): string {
@@ -32,9 +42,16 @@ export function readAntigravityPreference(sessionId: string): Preference | undef
       choice.options.every((item) => typeof item?.id === 'string' && typeof item.name === 'string') &&
       choice.options.some((item) => item.id === choice.current)
     const { thinking, modes, supportsImages } = saved
-    return { model: saved.model, ...(validChoice(thinking) ? { thinking } : {}),
+    const acpSessionId = validToken(saved.acpSessionId, 200)
+    const acpCwd = validToken(saved.acpCwd, 4096)
+    const acpHeadEntryId = validToken(saved.acpHeadEntryId, 200)
+    return {
+      model: saved.model,
+      ...(validChoice(thinking) ? { thinking } : {}),
       ...(validChoice(modes) && isAntigravityMode(modes?.current) && modes?.options.every((item) => isAntigravityMode(item.id)) ? { modes } : {}),
-      ...(typeof supportsImages === 'boolean' ? { supportsImages } : {}) }
+      ...(typeof supportsImages === 'boolean' ? { supportsImages } : {}),
+      ...(acpSessionId && acpCwd ? { acpSessionId, acpCwd, ...(acpHeadEntryId ? { acpHeadEntryId } : {}) } : {})
+    }
   } catch {
     return undefined
   }

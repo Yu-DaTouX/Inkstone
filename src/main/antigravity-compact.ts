@@ -4,8 +4,10 @@ import type { SessionCompactionInfo } from './session-reader'
 
 const IMAGE_TOKENS = 1200
 const DEFAULT_KEEP_RECENT_TOKENS = 20_000
+const DEFAULT_KEEP_RECENT_BYTES = 96_000
 const MAX_COMPACT_USER_CHARS = 6_000
 const DEFAULT_CHUNK_CHARS = 120_000
+const DEFAULT_CHUNK_BYTES = 100_000
 
 const COMPACT_FORMAT = `## Goal
 [What the user is trying to accomplish, as it stands now. Can be multiple items.]
@@ -68,9 +70,29 @@ export function estimateAntigravityMessageTokens(m: UIMessage): number {
   return tokens
 }
 
+export function estimateAntigravitySerializedBytes(m: UIMessage): number {
+  let bytes = 64
+  if (m.text) bytes += Buffer.byteLength(m.text, 'utf8')
+  if (m.error) bytes += Buffer.byteLength(m.error, 'utf8')
+  if (m.note) bytes += Buffer.byteLength(JSON.stringify(m.note), 'utf8')
+  if (m.bash) bytes += Buffer.byteLength(JSON.stringify(m.bash), 'utf8')
+  if (m.images?.length) {
+    for (const img of m.images) {
+      bytes += 48 + Buffer.byteLength(img.data || img.url || '', 'utf8')
+    }
+  }
+  for (const call of m.toolCalls ?? []) {
+    bytes += 64 + Buffer.byteLength(call.name ?? '', 'utf8')
+    if (typeof call.argsRaw === 'string') bytes += Buffer.byteLength(call.argsRaw, 'utf8')
+    else if (call.args !== undefined) bytes += Buffer.byteLength(JSON.stringify(call.args), 'utf8')
+    if (call.output) bytes += Buffer.byteLength(call.output, 'utf8')
+  }
+  return Math.ceil(bytes * 1.1)
+}
+
 export function planAntigravityCompaction(
   messages: readonly UIMessage[],
-  options: { keepRecentTokens?: number; previousSummary?: string } = {}
+  options: { keepRecentTokens?: number; maxKeptBytes?: number; previousSummary?: string } = {}
 ):
   | { ok: false; reason: 'empty' | 'already-compacted' }
   | { ok: true; toSummarize: UIMessage[]; kept: UIMessage[]; firstKeptEntryId?: string; estimatedTokens: number } {
@@ -78,14 +100,17 @@ export function planAntigravityCompaction(
     return { ok: false, reason: options.previousSummary ? 'already-compacted' : 'empty' }
   }
   const keepRecent = options.keepRecentTokens ?? DEFAULT_KEEP_RECENT_TOKENS
+  const maxKeptBytes = options.maxKeptBytes ?? DEFAULT_KEEP_RECENT_BYTES
   const estimatedTokens = messages.reduce((sum, m) => sum + estimateAntigravityMessageTokens(m), 0)
     + estimateTextTokens(options.previousSummary)
   let keptTokens = 0
+  let keptBytes = 0
   let lastFitting: number | undefined
   let lastUserFitting: number | undefined
   for (let i = messages.length - 1; i >= 1; i--) {
     keptTokens += estimateAntigravityMessageTokens(messages[i])
-    if (keptTokens > keepRecent) break
+    keptBytes += estimateAntigravitySerializedBytes(messages[i])
+    if (keptTokens > keepRecent || keptBytes > maxKeptBytes) break
     lastFitting = i
     if (messages[i].role === 'user') lastUserFitting = i
   }
@@ -122,45 +147,86 @@ function serializeMessageForCompact(m: UIMessage): string {
   return parts.join('\n')
 }
 
-function splitOversizedText(text: string, maxChars: number): string[] {
-  if (text.length <= maxChars) return [text]
-  const room = Math.max(400, maxChars - 64)
+function slicePrefixByBudget(text: string, maxChars: number, maxBytes: number): string {
+  const capped = text.length > maxChars ? text.slice(0, maxChars) : text
+  if (Buffer.byteLength(capped, 'utf8') <= maxBytes) return capped
+  let lo = 1
+  let hi = capped.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (Buffer.byteLength(capped.slice(0, mid), 'utf8') <= maxBytes) lo = mid
+    else hi = mid - 1
+  }
+  let end = lo
+  const code = capped.charCodeAt(end - 1)
+  if (code >= 0xd800 && code <= 0xdbff && end > 1) end -= 1
+  return capped.slice(0, Math.max(1, end))
+}
+
+function splitOversizedText(text: string, maxChars: number, maxBytes: number): string[] {
+  if (text.length <= maxChars && Buffer.byteLength(text, 'utf8') <= maxBytes) return [text]
+  const roomChars = Math.max(400, maxChars - 64)
+  const roomBytes = Math.max(400, maxBytes - 64)
   const pieces: string[] = []
   let current = ''
+  let currentBytes = 0
   for (const line of text.split('\n')) {
     let rest = line
-    while (rest.length > room) {
+    while (rest.length > roomChars || Buffer.byteLength(rest, 'utf8') > roomBytes) {
       if (current) {
         pieces.push(current)
         current = ''
+        currentBytes = 0
       }
-      pieces.push(rest.slice(0, room))
-      rest = rest.slice(room)
+      const head = slicePrefixByBudget(rest, roomChars, roomBytes)
+      pieces.push(head)
+      rest = rest.slice(head.length)
     }
-    if (current && current.length + 1 + rest.length > room) {
+    const restBytes = Buffer.byteLength(rest, 'utf8')
+    if (current && (current.length + 1 + rest.length > roomChars || currentBytes + 1 + restBytes > roomBytes)) {
       pieces.push(current)
       current = ''
+      currentBytes = 0
     }
-    current = current ? `${current}\n${rest}` : rest
+    if (current) {
+      current = `${current}\n${rest}`
+      currentBytes += 1 + restBytes
+    } else {
+      current = rest
+      currentBytes = restBytes
+    }
   }
   if (current || !pieces.length) pieces.push(current)
   return pieces.map((piece, idx) => `[piece ${idx + 1}/${pieces.length}]\n${piece}`)
 }
 
-export function serializeCompactChunks(messages: readonly UIMessage[], maxChunkChars = DEFAULT_CHUNK_CHARS): string[] {
+export function serializeCompactChunks(
+  messages: readonly UIMessage[],
+  maxChunkChars = DEFAULT_CHUNK_CHARS,
+  maxChunkBytes = DEFAULT_CHUNK_BYTES
+): string[] {
   const parts = messages
     .map(serializeMessageForCompact)
     .filter(Boolean)
-    .flatMap((part) => splitOversizedText(part, maxChunkChars))
+    .flatMap((part) => splitOversizedText(part, maxChunkChars, maxChunkBytes))
   if (!parts.length) return []
   const chunks: string[] = []
   let current = ''
+  let currentBytes = 0
   for (const part of parts) {
-    if (current && current.length + 2 + part.length > maxChunkChars) {
+    const partBytes = Buffer.byteLength(part, 'utf8')
+    if (current && (current.length + 2 + part.length > maxChunkChars || currentBytes + 2 + partBytes > maxChunkBytes)) {
       chunks.push(current)
       current = ''
+      currentBytes = 0
     }
-    current = current ? `${current}\n\n${part}` : part
+    if (current) {
+      current = `${current}\n\n${part}`
+      currentBytes += 2 + partBytes
+    } else {
+      current = part
+      currentBytes = partBytes
+    }
   }
   if (current) chunks.push(current)
   return chunks

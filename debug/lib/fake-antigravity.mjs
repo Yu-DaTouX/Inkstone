@@ -1,18 +1,23 @@
 import { createInterface } from 'node:readline'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
 const send = (body) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...body })}\n`)
-const sid = 'fixture-session'
+let sid = `fixture-${randomUUID().slice(0, 8)}`
 const reply = (id, result) => send({ id, result })
 const call = (id, method, params) => send({ id, method, params })
 const update = (update, sessionId = sid) => send({ method: 'session/update', params: { sessionId, update } })
 const chunk = (text, sessionId) => update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } }, sessionId)
 const legacy = process.argv.includes('legacy')
 const noAuth = process.argv.includes('auth')
+const loadOnly = process.argv.includes('load-only')
+const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
 let effort = 'low'
 let mode = 'auto'
@@ -22,7 +27,24 @@ let waiting = false
 let mcp
 let syncedMcp
 let knowsFixtureCode = false
+let knowsLongHistory = false
+let resumedHere = false
 const longHistoryReply = '历史起点 ' + 'fixture history '.repeat(7_000) + ' 历史终点'
+const oversizedHistoryReply = '超限起点 ' + 'oversized history '.repeat(11_000) + ' 超限终点'
+const statePath = (id) => join(storeDir, `${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}.json`)
+const saveSession = () => {
+  try {
+    mkdirSync(storeDir, { recursive: true })
+    writeFileSync(statePath(sid), JSON.stringify({ model, effort, mode, cwd, knowsFixtureCode, knowsLongHistory }), 'utf8')
+  } catch {}
+}
+const loadSession = (id) => {
+  try {
+    return JSON.parse(readFileSync(statePath(id), 'utf8'))
+  } catch {
+    return null
+  }
+}
 const available = [
   { value: 'flash', name: 'Gemini Flash · Fixture' },
   { value: 'pro', name: 'Gemini Pro · Fixture' },
@@ -47,28 +69,71 @@ const options = [
 
 for await (const line of input) {
   const { id, method, params, result, error } = JSON.parse(line)
-  if (method === 'initialize') reply(id, { protocolVersion: 1, authMethods: [], agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } })
-  else if (method === 'session/new') {
+  if (method === 'initialize') {
+    reply(id, {
+      protocolVersion: 1,
+      authMethods: [],
+      agentCapabilities: {
+        loadSession: true,
+        promptCapabilities: { image: true },
+        ...(loadOnly ? {} : { sessionCapabilities: { resume: {}, load: {}, close: {} } })
+      }
+    })
+  } else if (method === 'session/new') {
     const blocked = await readFile(join(params.cwd, '.acp-fixture-login'), 'utf8').catch(() => '')
     if (noAuth || blocked === 'deny') send({ id, error: { code: -32000, message: 'Authentication required' } })
     else {
+      sid = `fixture-${randomUUID().slice(0, 8)}`
+      resumedHere = false
+      knowsFixtureCode = false
+      knowsLongHistory = false
       mcp = params.mcpServers.find(({ name }) => name === 'inkstone-pi')
       syncedMcp = params.mcpServers.find(({ name }) => name === 'sync-fixture')
       cwd = params.cwd
+      saveSession()
       reply(id, { sessionId: sid, ...(legacy ? models() : config()) })
       if (!legacy) update({ sessionUpdate: 'usage_update', used: 120, size: 12000 })
     }
+  } else if (method === 'session/resume' || method === 'session/load') {
+    const blocked = await readFile(join(params.cwd, '.acp-fixture-login'), 'utf8').catch(() => '')
+    if (noAuth || blocked === 'deny') {
+      send({ id, error: { code: -32000, message: 'Authentication required' } })
+      continue
+    }
+    const saved = loadSession(params.sessionId)
+    if (!saved) {
+      send({ id, error: { code: -32603, message: `Failed to read session ${params.sessionId}` } })
+      continue
+    }
+    sid = params.sessionId
+    resumedHere = true
+    model = saved.model ?? model
+    effort = saved.effort ?? effort
+    mode = saved.mode ?? mode
+    knowsFixtureCode = saved.knowsFixtureCode === true
+    knowsLongHistory = saved.knowsLongHistory === true
+    mcp = (params.mcpServers ?? []).find(({ name }) => name === 'inkstone-pi')
+    syncedMcp = (params.mcpServers ?? []).find(({ name }) => name === 'sync-fixture')
+    cwd = params.cwd
+    if (method === 'session/load') {
+      chunk('回放噪音不应泄漏')
+      update({ sessionUpdate: 'usage_update', used: 480, size: 20000 })
+    }
+    reply(id, { sessionId: sid, ...(legacy ? models() : config()) })
   } else if (method === 'session/set_config_option' && params.configId === 'model' || method === 'session/set_model' && legacy) {
     model = params.value ?? params.modelId
     effort = model === 'pro' ? 'high' : 'low'
+    saveSession()
     reply(id, legacy ? {} : config())
     if (!legacy) update({ sessionUpdate: 'usage_update', used: 240, size: 20000 })
   } else if (method === 'session/set_config_option' && params.configId === 'approval-fixture') {
     mode = params.value
+    saveSession()
     reply(id, config())
   } else if (method === 'session/set_config_option' && params.configId === `effort-${model}`) {
     await delay(700)
     effort = params.value
+    saveSession()
     reply(id, config())
     update({ sessionUpdate: 'usage_update', used: 360, size: 20000 })
   } else if (method === 'session/prompt') {
@@ -84,37 +149,69 @@ for await (const line of input) {
       : raw.split('\nCurrent user message:\n').at(-1)
     if (images.length > 0) {
       chunk(`收到 ${images.length} 张图 · ${images[0].mimeType}${text ? ` · ${text}` : ''}`)
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
-    if (raw.includes('structured context checkpoint summary')) {
+    if (raw.includes('structured context checkpoint summary') || raw.includes('Update the existing structured summary')) {
       const facts = [
         knowsFixtureCode || raw.includes('记住夹具暗号：砚石') ? '- 记住夹具暗号：砚石' : '',
-        raw.includes('历史起点') ? '- 保留长历史锚点：历史起点' : ''
+        knowsLongHistory || raw.includes('历史起点') ? '- 保留长历史锚点：历史起点' : '',
+        raw.includes('超限起点') ? '- 保留超限历史锚点：超限起点' : ''
       ].filter(Boolean).join('\n')
       chunk(`## Goal\n继续当前夹具任务\n\n## Progress\n### Done\n- [x] 完成前期步骤\n\n## Facts & Details\n${facts || '- 已生成测试摘要'}`)
+      saveSession()
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '检查续接方式') {
+      const cold = raw.includes('Continue the same Inkstone conversation.')
+      chunk(`${resumedHere && !cold ? '原生续接' : '冷交接'} · ${sid}`)
+      saveSession()
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '生成超限历史') {
+      chunk(oversizedHistoryReply)
+      saveSession()
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '检查超限交接') {
+      chunk(raw.includes('超限起点') ? `超限压缩后交接成功 · ${mode}` : '超限交接缺失')
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
     if (text === '上下文超限') {
       update({ sessionUpdate: 'usage_update', used: 450_000, size: 1_000_000 })
       chunk('上下文已达 450K')
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
     if (text === '检查压缩后上下文') {
       update({ sessionUpdate: 'usage_update', used: 35_000, size: 1_000_000 })
       chunk(knowsFixtureCode ? `压缩后上下文收到 · ${model}` : '压缩后上下文丢失')
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
     if (text === '检查档位') {
       chunk(`当前档位 · ${model}/${effort}`)
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
     if (text === '生成长历史' || text === '检查长历史与权限') {
-      chunk(text === '生成长历史' ? longHistoryReply : raw.includes(longHistoryReply) ? `完整历史收到 · ${mode}` : '长历史不完整')
+      if (text === '生成长历史') {
+        knowsLongHistory = true
+        chunk(longHistoryReply)
+      } else {
+        const hasLong = (resumedHere && knowsLongHistory) || raw.includes(longHistoryReply)
+        chunk(hasLong ? `完整历史收到 · ${mode}` : '长历史不完整')
+      }
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
@@ -187,6 +284,7 @@ for await (const line of input) {
     }
     if (text === '检查上下文') {
       chunk(knowsFixtureCode ? `上下文收到 · ${model}` : '上下文缺失')
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
       continue
     }
@@ -267,19 +365,29 @@ for await (const line of input) {
     }
     if (text === '崩溃') process.exit(3)
     if (text === '等待') { chunk('正在等待'); continue }
-    if (text === '权限' || text === '详情缺失') {
+    if (text === '权限' || text === '详情缺失' || text === '检查 MCP 权限' || text === '检查命令权限') {
       waiting = true
-      update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', title: '查看夹具项目', status: 'pending', ...(text === '权限' ? { rawInput: { path: 'README.md' } } : {}) })
-      call('foreign', 'session/request_permission', { sessionId: 'foreign-session', toolCall: { toolCallId: 'inspect' }, options })
-      call('unsupported', 'fs/write_text_file', { sessionId: sid, path: 'not-written.txt', content: 'fixture' })
-      call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
+      if (text === '检查 MCP 权限') {
+        update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', kind: 'other', title: 'Run mcp_inkstone-pi_start_pi_subagent', status: 'pending', rawInput: { task: 'inspect' } })
+        call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
+      } else if (text === '检查命令权限') {
+        update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', kind: 'execute', title: 'npm run typecheck', status: 'pending', rawInput: { CommandLine: 'npm run typecheck' } })
+        call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
+      } else {
+        update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', title: '查看夹具项目', status: 'pending', ...(text === '权限' ? { rawInput: { path: 'README.md' } } : {}) })
+        call('foreign', 'session/request_permission', { sessionId: 'foreign-session', toolCall: { toolCallId: 'inspect' }, options })
+        call('unsupported', 'fs/write_text_file', { sessionId: sid, path: 'not-written.txt', content: 'fixture' })
+        call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
+      }
     } else {
       chunk('不应出现', 'foreign-session')
       chunk('模拟'); chunk(`回复 · ${model}`)
+      saveSession()
       reply(id, { stopReason: 'end_turn' })
     }
   } else if (method === 'session/cancel') {
     waiting = false
+    saveSession()
     reply(promptId, { stopReason: 'cancelled' })
   } else if (id === 'foreign' && result?.outcome?.outcome !== 'cancelled') process.exit(4)
   else if (id === 'unsupported' && error?.code !== -32601) process.exit(5)
