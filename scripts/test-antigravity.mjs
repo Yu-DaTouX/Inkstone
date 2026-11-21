@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import { join, resolve } from 'node:path'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, isAntigravityMcpPermission } = await compile('src/main/antigravity.ts')
+  const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, normalizeAntigravityImages } = await compile('src/main/antigravity.ts')
   const longHistory = [{ role: 'user', text: 'A' + 'x'.repeat(110_000) + 'Z' }, { role: 'assistant', text: '答复', thinking: 'internal thought should be omitted', toolCalls: [{ id: 'tc-1', name: 'read', status: 'ok', args: { Path: 'a.ts' }, output: 'ok', details: { antigravity: true, kind: 'read', antigravityDiffs: [{ path: 'a.ts', patch: 'huge-diff' }] }, startedAt: 1, endedAt: 2 }] }]
   const handoff = antigravityPrompt('继续', longHistory)
   ok(handoff.startsWith('Current user message:\n继续\n') && handoff.includes(longHistory[0].text) && !handoff.includes('internal thought should be omitted') && !handoff.includes('huge-diff'), '超过旧字符上限但在安全字节内时置顶当前消息、交接完整历史并剔除 UI 冗余字段')
@@ -34,6 +36,39 @@ await runSuite(import.meta.url, async (ok, compile) => {
     group.windows[1].remainingFraction === 0 && group.windows[1].resetAt === undefined, '官方额度 JSON 保留分组、剩余数和时间，忽略无效或禁用窗口')
   ok(parseAntigravityQuota(JSON.stringify({ ...quota, num_turns: 1 })).length === 0 &&
     parseAntigravityQuota(JSON.stringify({ ...quota, command: { ...quota.command, name: 'model' } })).length === 0, '仅接受零模型回合的 usage 命令结果')
+  const parseResetGroups = (...groups) => parseAntigravityQuota(JSON.stringify({ ...quota, command: { ...quota.command, data: { groups } } }))
+  const buckets = quota.command.data.groups[0].buckets
+  const [inactive, mixed] = parseResetGroups(
+    { name: 'Claude and GPT models', buckets: [
+      { ...buckets[0], remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+      { ...buckets[1], remaining_fraction: 1, reset_time: 'not-a-date' },
+      { ...buckets[0], id: 'old', reset_time: '2019-12-31T23:59:59Z' }
+    ] },
+    { name: 'Gemini Models', buckets: [
+      { ...buckets[0], reset_time: '0001-01-01T00:00:00Z' },
+      { ...buckets[1], reset_time: '2020-01-01T00:00:00Z' }
+    ] }
+  )
+  ok(inactive.windows.length === 3 && inactive.windows.every((window) => !Object.hasOwn(window, 'resetAt')), '零时间、无效日期及早于有效纪元的时间不输出 resetAt，额度窗口保留')
+  ok(!Object.hasOwn(mixed.windows[0], 'resetAt') && mixed.windows[1].resetAt === Date.UTC(2020, 0, 1), '部分有效时独立保留有效窗口，包含纪元下界')
+
+  const { AntigravityQuotaDetails } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
+    jsx: 'automatic', loader: { '.css': 'empty' }, packages: 'external'
+  })
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 7)
+  const nextWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7, 18, 42)
+  const weeklyTime = new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(nextWeek)
+  const renderQuota = (windows) => renderToStaticMarkup(createElement(AntigravityQuotaDetails, {
+    lang: 'en-US', quota: { snapshot: { groups: [{ name: inactive.name, models: [], windows }] }, loading: false, refresh() {} }
+  }))
+  const [fiveHour, weekly] = mixed.windows
+  const noResets = renderQuota([0, -1, Infinity, NaN, Date.UTC(2019, 0, 1), Number.MAX_VALUE, undefined].map((resetAt, index) => ({ ...fiveHour, id: `bad-${index}`, resetAt })))
+  ok(!/\bResets?\b/.test(noResets) && noResets.includes('Claude and GPT models'), '渲染端独立拦截占位和无效时间，全组无有效时间不显示重置')
+  const fallback = renderQuota([{ ...fiveHour, resetAt: 0 }, { ...weekly, resetAt: nextWeek.getTime() }])
+  ok(fallback.includes(`Wk Reset ${weeklyTime}`) && fallback.includes(`Resets ${weeklyTime}`) && !fallback.includes('5h Reset'), '主窗口无有效时间时组头标明每周重置，只有每周 tooltip 有时间')
+  const both = renderQuota([{ ...weekly, resetAt: nextWeek.getTime() }, { ...fiveHour, resetAt: today.getTime() }])
+  ok(both.includes('5h Reset 00:07') && !both.includes('Wk Reset') && both.includes('Resets 00:07') && both.includes(`Resets ${weeklyTime}`), '5h 优先且同日只显示时间、跨日带日期，各窗口 tooltip 保留自己的重置时间')
   const cwd = process.cwd()
   const start = (...args) => {
     const child = spawn(process.execPath, [resolve('debug/lib/fake-antigravity.mjs'), ...args], { windowsHide: true })
@@ -102,6 +137,19 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await session.prompt('看这张图', 'pro', 'xhigh', 'default', [{ data: 'iVBORw0KGgo=', mimeType: 'image/png' }])
     ok(events.filter((e) => e.type === 'text').map((e) => e.text).join('') === '收到 1 张图 · image/png · 看这张图', '支持发送 ACP 图片内容块')
     events.length = 0
+    await session.prompt('', 'pro', 'xhigh', 'default', [{ data: ' DATA:IMAGE/JPEG;base64,/9j/\r\n2Q ', mimeType: ' image/JPG ' }])
+    ok(events.some((e) => e.text === '收到 1 张图 · image/jpeg'), '纯图消息：去除 data URL、空白，规范 MIME 和 Base64 padding 后发往 CLI')
+    assert.throws(() => normalizeAntigravityImages([{ data: 'a%%', mimeType: 'image/png' }]), /第 1 张/)
+    assert.throws(() => normalizeAntigravityImages([{ data: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/jpeg' }]), /第 1 张/)
+    assert.throws(() => normalizeAntigravityImages([{ data: 'iVBORw0KGgo=', mimeType: 'image/jpeg' }]), /第 1 张/)
+    assert.throws(() => normalizeAntigravityImages([{ data: 'A'.repeat(32 * 1024 * 1024 + 1), mimeType: 'image/png' }]), /传输上限/)
+    await assert.rejects(session.prompt('不能静默丢弃坏图', 'pro', 'xhigh', 'default', [{ data: '', mimeType: 'image/png' }]), /第 1 张/)
+    ok(true, '发布前拒绝错误编码、超限和 MIME/文件头不一致，不静默丢弃坏图')
+    await assert.rejects(session.prompt('参数诊断'), (error) => error.rpcCode === -32602 && /session\/prompt/.test(error.message) &&
+      /prompt\.1\.data/.test(error.message) && /raw Base64/.test(error.message) && /Missing image bytes/.test(error.message) &&
+      !/fixture-secret|原始正文/.test(error.message))
+    ok(true, 'RPC 参数错误保留方法、错误码、字段和有限说明，不回显凭据与请求原文')
+    events.length = 0
     const pending = session.prompt('权限')
     await assert.rejects(session.prompt('重入'))
     const ask = await wait(() => events.find((e) => e.type === 'permission'))
@@ -118,6 +166,68 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await assert.rejects(crash, /断开连接/)
     ok(events.some((e) => e.type === 'closed'), '进程退出时结束待处理请求并通知界面')
   } finally { await session.close() }
+
+  {
+    const { AntigravitySubagentRpc } = await compile('src/main/antigravity-subagent-rpc.ts')
+    const child = async (model, options, approve = async () => true, ...args) => {
+      const rpc = new AntigravitySubagentRpc(cwd, model, approve, { ...options, launch: () => start(...args).session })
+      const events = []
+      rpc.on('event', (event) => events.push(event))
+      rpc.spawn()
+      return { rpc, events, ready: await rpc.command('get_state', undefined, { timeoutMs: 2500 }) }
+    }
+    const readOnly = await child('pro', { thinkingLevel: 'xhigh', readOnly: true }, () => assert.fail('plan 不应弹出批准'))
+    try {
+      assert.equal(readOnly.ready.data?.thinkingLevel, 'xhigh')
+      assert.equal((await readOnly.rpc.command('prompt', { message: '子代理步骤' })).success, true)
+      await wait(() => readOnly.events.some((e) => e.type === 'agent_settled'))
+      const final = readOnly.events.findLast((e) => e.type === 'message_end').message
+      ok(final.content.some((block) => block.type === 'thinking' && block.thinking === '夹具子代理思考') &&
+        final.content.some((block) => block.text === '子代理 · pro/xhigh/plan'), 'ACP 子代理按目标模型确认思考档及 Plan 权限，并透传思考与正文')
+      ok(readOnly.events.filter((e) => e.type.startsWith('tool_execution_')).map((e) => e.type).join() === 'tool_execution_start,tool_execution_update,tool_execution_end' &&
+        final.yanAntigravityTools[0]?.output === 'fixture tool result' && final.yanAntigravityTools[0]?.endedAt, 'ACP 子代理透传工具增量、结果和结束时间，重复完成不计两次')
+      readOnly.events.length = 0
+      await readOnly.rpc.command('prompt', { message: '检查命令权限' })
+      await wait(() => readOnly.events.some((e) => e.type === 'agent_settled'))
+      ok(readOnly.events.findLast((e) => e.type === 'message_end').message.content.some((block) => block.text === '审批结果 · deny'), '只读子代理主动拒绝 CLI 工具批准请求')
+    } finally { await readOnly.rpc.close() }
+    const noPlan = await child('pro', { readOnly: true }, undefined, 'no-plan')
+    const invalid = await child('flash', { thinkingLevel: 'high-ish' })
+    const unavailable = await child('flash', { thinkingLevel: 'xhigh' })
+    try {
+      ok(!noPlan.ready.success && !invalid.ready.success && !unavailable.ready.success &&
+        !noPlan.rpc.running && !invalid.rpc.running && !unavailable.rpc.running, '无 Plan 档、非法思考档或所选模型不支持指定档位时启动失败且不降级')
+    } finally { await Promise.all([noPlan.rpc.close(), invalid.rpc.close(), unavailable.rpc.close()]) }
+    let approvalSignal
+    const cancellable = await child('flash', {}, (_request, signal) => {
+      approvalSignal = signal
+      return new Promise((resolve) => signal.addEventListener('abort', () => resolve(true), { once: true }))
+    })
+    try {
+      assert.equal(cancellable.ready.data?.thinkingLevel, 'low')
+      await cancellable.rpc.command('prompt', { message: '权限' })
+      await wait(() => approvalSignal)
+      await cancellable.rpc.command('abort')
+      await wait(() => cancellable.events.some((e) => e.type === 'agent_settled'))
+      const cancelled = cancellable.events.findLast((e) => e.type === 'message_end').message
+      ok(approvalSignal.aborted && cancelled.stopReason === 'aborted' && cancelled.yanAntigravityTools[0]?.cancelled === true, '取消 ACP 子代理时中止审批、收束工具和回合')
+      cancellable.events.length = 0
+      await cancellable.rpc.command('prompt', { message: '崩溃' })
+      await wait(() => cancellable.events.some((e) => e.type === 'agent_settled'))
+      ok(!cancellable.rpc.running && cancellable.events.findLast((e) => e.type === 'message_end').message.stopReason === 'error', 'ACP 断线时收束在途回合并退出')
+    } finally { await cancellable.rpc.close() }
+  }
+
+  {
+    const { session: summarySession, events } = start()
+    try {
+      await summarySession.start(cwd)
+      await assert.rejects(summarySession.prompt('structured context checkpoint summary'), /Compaction expected plan mode/)
+      const settings = await summarySession.confirmPromptMode('plan')
+      await summarySession.prompt('structured context checkpoint summary', settings.current, settings.thinking?.current, 'plan')
+      ok(events.some((e) => e.text?.startsWith('## Goal')), '压缩请求使用 CLI 确认的 Plan 档')
+    } finally { await summarySession.close() }
+  }
 
   const unknown = start().session
   try {
@@ -182,7 +292,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
     } finally {
       await loadFallback.session.close()
     }
-    const missingResume = start()
+    const mismatchedResume = start('wrong-resume-id')
+    try {
+      await mismatchedResume.session.start(cwd, undefined, { resumeSessionId: savedAcpId })
+      ok(mismatchedResume.session.resumed && mismatchedResume.session.acpSessionId === savedAcpId && mismatchedResume.session.context?.used === 480 &&
+        !mismatchedResume.events.some((e) => e.type === 'text'), 'resume 确认了不匹配的 ID 时回退 load，丢弃失败续接的回放和上下文')
+    } finally { await mismatchedResume.session.close() }
+    const missingResume = start('wrong-resume-id')
     try {
       await missingResume.session.start(cwd, undefined, { resumeSessionId: 'missing-session-id' })
       ok(missingResume.session.resumed === false && missingResume.session.acpSessionId && missingResume.session.acpSessionId !== 'missing-session-id', '旧 ACP 会话不存在时平稳回退 session/new')
@@ -199,49 +315,48 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
 
   {
-    const servers = new Set(['inkstone-pi', 'codegraph'])
-    const known = new Set(['start_pi_subagent', 'codegraph_explore'])
-    ok(
-      isAntigravityMcpPermission({ kind: 'other', title: 'Run mcp_inkstone-pi_start_pi_subagent', rawInput: { task: 'x' } }, servers, known) &&
-      isAntigravityMcpPermission({ title: 'Run mcp_codegraph_codegraph_explore', rawInput: { query: 'x' } }, servers, known) &&
-      isAntigravityMcpPermission({ kind: 'other', title: 'codegraph / codegraph_explore', rawInput: { query: 'x' } }, servers, known) &&
-      isAntigravityMcpPermission({ kind: 'other', title: 'Run codegraph_explore', rawInput: { query: 'x' } }, servers, known) &&
-      isAntigravityMcpPermission({ kind: 'other', title: 'Tool call', _meta: { mcpServer: 'codegraph' }, rawInput: {} }, servers, known) &&
-      !isAntigravityMcpPermission({ kind: 'execute', title: 'Run mcp_codegraph_codegraph_explore', rawInput: { CommandLine: 'echo hi' } }, servers, known) &&
-      !isAntigravityMcpPermission({ kind: 'edit', title: 'codegraph / codegraph_explore', rawInput: {} }, servers, known) &&
-      !isAntigravityMcpPermission({ kind: 'other', title: 'Run manage_task', rawInput: {} }, servers, known) &&
-      !isAntigravityMcpPermission({ kind: 'other', title: 'Run mcp_unregistered_exec', rawInput: {} }, servers, known),
-      '仅精确识别本会话已注册 MCP 工具的权限请求，排除命令、文件与内置工具'
-    )
-
-    const acpAuto = start()
+    const { session, events } = start()
+    const request = (prompt, mode) => {
+      events.length = 0
+      return session.prompt(prompt, 'flash', 'low', mode)
+    }
+    const receipt = () => events.filter((e) => e.type === 'text').map((e) => e.text).join('')
+    const permission = () => events.find((e) => e.type === 'permission')
+    const prompts = ['检查 MCP 权限', '检查命令权限', '检查文件权限']
     try {
       const mcpConfig = [{ name: 'inkstone-pi', command: process.execPath, args: [], env: [] }]
-      await acpAuto.session.start(cwd, mcpConfig, { mode: 'auto', knownMcpTools: () => known })
-      acpAuto.events.length = 0
-      await acpAuto.session.prompt('检查 MCP 权限', 'flash', 'low', 'auto')
-      const autoReply = acpAuto.events.filter((e) => e.type === 'text').map((e) => e.text).join('')
-      const askedInAutoMcp = acpAuto.events.some((e) => e.type === 'permission')
-      ok(autoReply === '审批结果 · once' && !askedInAutoMcp, 'Auto 档下对已注册 MCP 工具的 ACP 权限请求自动单次放行，不弹审批', JSON.stringify({ autoReply, askedInAutoMcp }))
+      await session.start(cwd, mcpConfig, { mode: 'auto' })
+      for (const prompt of prompts) {
+        const pending = request(prompt, 'auto')
+        await wait(() => permission() || receipt())
+        const asked = permission()
+        if (asked) session.reply(asked.id, 'deny')
+        ok(await pending === 'end_turn' && !asked && receipt() === '审批结果 · once', `Auto 档自动允许一次且不发审批事件：${prompt}`)
+      }
 
-      acpAuto.events.length = 0
-      const cmdPending = acpAuto.session.prompt('检查命令权限', 'flash', 'low', 'auto')
-      await wait(() => acpAuto.events.some((e) => e.type === 'permission'))
-      const cmdReq = acpAuto.events.find((e) => e.type === 'permission')
-      acpAuto.session.reply(cmdReq.id, cmdReq.options.find((o) => !o.allow).id)
-      await cmdPending
-      ok(Boolean(cmdReq) && acpAuto.events.filter((e) => e.type === 'text').map((e) => e.text).join('') === '审批结果 · deny', 'Auto 档下非 MCP 命令执行请求仍正常弹审批，不误放行')
+      for (const prompt of ['详情缺失', '详情超限']) {
+        const pending = request(prompt, 'auto')
+        const asked = await wait(() => permission() || receipt())
+        if (permission()) {
+          session.reply(asked.id, 'once')
+          session.reply(asked.id, 'deny')
+        }
+        ok(await pending === 'end_turn' && asked.options?.map((option) => option.id).join() === 'deny' &&
+          receipt() === '审批结果 · deny', `Auto 档仅可拒绝，不自动放行：${prompt}`)
+      }
 
-      await acpAuto.session.selectMode('default')
-      acpAuto.events.length = 0
-      const defPending = acpAuto.session.prompt('检查 MCP 权限', 'flash', 'low', 'default')
-      await wait(() => acpAuto.events.some((e) => e.type === 'permission'))
-      const defReq = acpAuto.events.find((e) => e.type === 'permission')
-      acpAuto.session.reply(defReq.id, defReq.options.find((o) => !o.allow).id)
-      await defPending
-      ok(Boolean(defReq), '非 Auto 档（default）下 MCP 工具仍照常弹审批')
+      for (const mode of ['default', 'accept-edits', 'plan']) {
+        await session.selectMode(mode)
+        for (const prompt of prompts) {
+          const pending = request(prompt, mode)
+          const asked = await wait(() => permission() || receipt())
+          if (permission()) session.reply(asked.id, 'deny')
+          ok(await pending === 'end_turn' && asked.options?.map((option) => option.id).join() === 'once,deny' &&
+            receipt() === '审批结果 · deny', `${mode} 档保留单次审批：${prompt}`)
+        }
+      }
     } finally {
-      await acpAuto.session.close()
+      await session.close()
     }
   }
 

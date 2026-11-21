@@ -1,6 +1,6 @@
 import { pick } from '../shared/ui-lang'
-import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
-import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, type AntigravitySession } from './antigravity'
+import { ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
+import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, normalizeAntigravityImages, type AntigravitySession } from './antigravity'
 import {
   buildChunkCompactPrompt,
   buildCompactAppendices,
@@ -22,7 +22,7 @@ import { EventEmitter } from 'node:events'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { runPluginCommand } from './plugin-commands'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
@@ -4201,7 +4201,9 @@ export class AgentController extends EventEmitter {
     expectGeneration?: number
   ): { ok: boolean; error?: string } {
     if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-    const media = (images ?? []).filter((item) => item.data && item.mimeType)
+    let media
+    try { media = normalizeAntigravityImages(images) }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
     if (!text.trim() && media.length === 0) return { ok: false, error: pick('消息为空，无法发送。', 'Cannot send an empty message.') }
     if (media.length > 0 && this.acpConnection?.supportsImages === false) {
       return { ok: false, error: pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.') }
@@ -4377,15 +4379,16 @@ export class AgentController extends EventEmitter {
         if (initial.hasContext && initial.session) {
           const live = initial.session
           try {
-            let compactMode = initial.mode ?? ANTIGRAVITY_APPROVAL_MODE
-            if (compactMode !== 'plan' && initial.modes?.options.some((option) => option.id === 'plan')) {
-              const updated = await live.selectMode('plan')
-              compactMode = updated.mode ?? 'plan'
-            }
+            await live.confirmPromptMode('plan')
+            initial.acpSessionId = undefined
+            initial.acpCwd = undefined
+            initial.acpHeadEntryId = undefined
+            await this.persistAntigravityPreference(initial)
+            if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
             summaryBody = await summarizeOnSession(
               live,
               buildLiveCompactPrompt({ customInstructions, language, keptCount: plan.kept.length }),
-              compactMode
+              'plan'
             )
           } catch (error) {
             if (abort.signal.aborted) throw error
@@ -4413,10 +4416,10 @@ export class AgentController extends EventEmitter {
             if (thinking && models.thinking?.options.some((option) => option.id === thinking) && models.thinking?.current !== thinking) {
               models = await temp.selectThinking(thinking)
             }
-            if (models.mode !== 'plan' && models.modes?.options.some((option) => option.id === 'plan')) {
-              models = await temp.selectMode('plan')
+            models = await temp.confirmPromptMode('plan')
+            if (models.current !== initial.model.id || (thinking && models.thinking?.current !== thinking)) {
+              throw new Error(pick('Antigravity 未确认压缩所需的模型或思考档。', 'Antigravity did not confirm the model or effort needed for compaction.'))
             }
-            const tempMode = models.mode ?? ANTIGRAVITY_APPROVAL_MODE
             let rolling = stripCompactAppendices(previousSummary)
             for (let index = 0; index < chunks.length; index++) {
               if (abort.signal.aborted || !ownsCompact()) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
@@ -4429,7 +4432,7 @@ export class AgentController extends EventEmitter {
                   chunkIndex: index,
                   totalChunks: chunks.length
                 }),
-                tempMode
+                'plan'
               )
             }
             summaryBody = rolling
@@ -4643,16 +4646,21 @@ export class AgentController extends EventEmitter {
         ? await proc.selectModel(modelId)
         : await proc.start(this.cwd, bridge?.configs, {
             mode: desiredMode,
-            ...(resumeTarget ? { resumeSessionId: resumeTarget.sessionId } : {}),
-            ...(bridge?.knownTools ? { knownMcpTools: bridge.knownTools } : {})
+            ...(resumeTarget ? { resumeSessionId: resumeTarget.sessionId } : {})
           })
             .then((options) => options.current === modelId ? options : proc.selectModel(modelId))
-      if (desiredMode && models.mode !== desiredMode) models = await proc.selectMode(desiredMode)
-      if (restoreThinking && models.thinking?.current !== restoreThinking) {
-        if (!models.thinking?.options.some(({ id }) => id === restoreThinking)) {
+      const prior = previous?.sessionId === sessionId ? previous : undefined
+      const preferredThinking = restoreThinking ?? (prior?.thinking?.current &&
+        models.thinking?.options.some(({ id }) => id === prior.thinking?.current) ? prior.thinking.current : undefined)
+      if (preferredThinking && models.thinking?.current !== preferredThinking) {
+        if (!models.thinking?.options.some(({ id }) => id === preferredThinking)) {
           throw new Error(pick('已保存的 Antigravity 思考档不可用。请重新选择模型或思考档。', 'The saved Antigravity effort is unavailable. Choose the model or effort again.'))
         }
-        models = await proc.selectThinking(restoreThinking)
+        models = await proc.selectThinking(preferredThinking)
+      }
+      models = await proc.confirmPromptMode(desiredMode)
+      if (preferredThinking && models.thinking?.current !== preferredThinking) {
+        throw new Error(pick('Antigravity 未确认最终设置，未切换会话。', 'Antigravity did not confirm the final settings; the session was not switched.'))
       }
       const chosen = models.available.find(({ id }) => id === modelId && id === models.current)
       if (!chosen) throw new Error(pick('Antigravity 未切到选中的模型。', 'Antigravity did not switch to the selected model.'))
@@ -4701,11 +4709,13 @@ export class AgentController extends EventEmitter {
   private async sendAntigravity(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }> {
     const initial = this.acpConnection
     const native = this.nativeRuntime
-    const media = (images ?? []).filter((item) => item.data && item.mimeType)
-    if (!initial || !native || this.executionActive() || !this.queue.isEmpty() || (!text.trim() && media.length === 0)) {
+    if (!initial || !native || this.executionActive() || !this.queue.isEmpty() || (!text.trim() && !images?.length)) {
       return { ok: false, error: pick('当前不能发送 Antigravity 消息。', 'Cannot send an Antigravity message right now.') }
     }
     if (this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+    let media
+    try { media = normalizeAntigravityImages(images) }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
     if (!initial.session || initial.mcpStale) {
       const reconnected = await this.selectAntigravity(initial.model.id, initial.thinking?.current, undefined, { allowQueued: true })
       if (!reconnected.ok) return reconnected
@@ -4721,9 +4731,21 @@ export class AgentController extends EventEmitter {
     const loadHandoff = async (): Promise<{ ok: true; history: UIMessage[]; compactionSummary?: string } | { ok: false; error: string }> => {
       let list = connection!.hasContext ? [] : this.messages
       let summary: string | undefined
-      if (list.length && this.state?.sessionFile) {
-        const full = await this.readHistoryOf(this.state.sessionFile, true)
+      if (!connection!.hasContext && this.state?.sessionFile) {
+        const sessionFile = this.state.sessionFile
+        const full = await this.readHistoryOf(sessionFile, true)
         if (!ownsTurn() || connection!.session !== session) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+        if (!full && !list.length && !this.nativeBranchView) {
+          const notYetPersisted = await lstat(sessionFile).then(() => false, (error: NodeJS.ErrnoException) => error.code === 'ENOENT')
+          if (notYetPersisted) {
+            const snapshot = await owner.rpc?.command<{ entries: { type: string }[] }>('get_entries').catch(() => null)
+            if (!ownsTurn() || connection!.session !== session || this.state?.sessionFile !== sessionFile) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+            const entries = snapshot?.data?.entries
+            if (snapshot?.success && Array.isArray(entries) && entries.every((entry) => entry?.type === 'model_change' || entry?.type === 'thinking_level_change' || entry?.type === 'session_info')) {
+              return { ok: true, history: [] }
+            }
+          }
+        }
         if (!full || full.truncated || full.missing) return { ok: false, error: pick('未能读取完整的 Antigravity 交接历史。消息未发送，原记录未改动。', 'Could not read the full Antigravity handoff history. Nothing was sent or changed.') }
         const rawHistory = this.nativeBranchView
           ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...list.filter((message) => !message.id.startsWith('history:'))]
@@ -5030,6 +5052,20 @@ export class AgentController extends EventEmitter {
     let nextQueued: QueueItem | undefined
     let autoCompactNeeded: { used: number; size: number } | undefined
     let settledOutcome: 'completed' | 'stopped' | 'failed' | null = null
+    const retireAcp = async () => {
+      if (!ownsTurn()) return
+      connection.hasContext = false
+      connection.acpSessionId = undefined
+      connection.acpCwd = undefined
+      connection.acpHeadEntryId = undefined
+      if (connection.session === session) {
+        connection.session = undefined
+        connection.bridgeConfigured = undefined
+        connection.mode = undefined
+        await session.close()
+      }
+      if (ownsTurn()) await this.persistAntigravityPreference(connection).catch(() => undefined)
+    }
     turn.done = (async () => {
       let status = 'stop'
       let turnError: string | undefined
@@ -5051,8 +5087,11 @@ export class AgentController extends EventEmitter {
       } finally {
         clearSettleTimer()
         session.clearTools()
+        for (const approval of approvals.values()) approval.abort()
+        approvals.clear()
       }
       turn.delegation.abort()
+      if (!connection.hasContext) await retireAcp()
       if (!ownsTurn()) {
         observe({ type: 'stopped', by: 'host', reason: 'interrupted' })
         return
@@ -5112,13 +5151,11 @@ export class AgentController extends EventEmitter {
           connection.acpSessionId = session.acpSessionId
           connection.acpCwd = this.cwd
           connection.acpHeadEntryId = ids.assistantId
-          void this.persistAntigravityPreference(connection).catch(() => undefined)
+          if (ownsTurn()) await this.persistAntigravityPreference(connection).catch(() => undefined)
         }
       } catch (error) {
         lastStep.error = pick(`回复未能保存到会话：${error instanceof Error ? error.message : String(error)}`, `Could not save the Antigravity turn: ${error instanceof Error ? error.message : String(error)}`)
-        connection.hasContext = false
-        connection.acpHeadEntryId = undefined
-        void this.persistAntigravityPreference(connection).catch(() => undefined)
+        if (connection.hasContext) await retireAcp()
         if (status !== 'aborted') {
           status = 'error'
           lastStep.turnTiming.terminalReason = 'failed'

@@ -1159,7 +1159,12 @@ export class SubagentController {
   ): Promise<SubagentRpc> {
     if (model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) {
       if (fork || sessionFile || isolation === 'controlled-cwd') throw new Error(pick('Antigravity 子代理不支持 fork、只读或原会话续接。', 'Antigravity subagents do not support forks, read-only mode, or resuming a native Pi session.'))
-      return new AntigravitySubagentRpc(cwd, model.slice(ANTIGRAVITY_PROVIDER.length + 1), (request, signal) => ctx.approveAntigravity?.(request, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }, signal) ?? Promise.resolve(false))
+      return new AntigravitySubagentRpc(
+        cwd,
+        model.slice(ANTIGRAVITY_PROVIDER.length + 1),
+        (request, signal) => ctx.approveAntigravity?.(request, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }, signal) ?? Promise.resolve(false),
+        { thinkingLevel: ctx.thinkingLevel }
+      )
     }
     if (fork) return this.createForkRpc(ctx, id, fork, sessionFile)
     let version: string | undefined

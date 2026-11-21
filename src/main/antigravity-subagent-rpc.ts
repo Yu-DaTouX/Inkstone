@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
-import { ANTIGRAVITY_PROMPT_LIMIT, ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
+import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROMPT_LIMIT, ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
+import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { pick } from '../shared/ui-lang'
 import type { UIToolCall } from '../shared/ui-message'
 import { launchAntigravity, type AntigravitySession } from './antigravity'
@@ -7,18 +8,23 @@ import type { SubagentRpc } from './subagents'
 
 type Approval = (request: { detail: string; title: string }, signal: AbortSignal) => Promise<boolean>
 
+type Options = { thinkingLevel?: string; readOnly?: boolean; launch?: typeof launchAntigravity }
+type Turn = { cancelled: boolean; done?: Promise<void> }
+
 export class AntigravitySubagentRpc implements SubagentRpc {
   private readonly events = new EventEmitter()
   private session?: AntigravitySession
   private ready?: Promise<void>
   private failure?: string
+  private thinkingLevel?: string
   private active = false
   private closed = false
   private exited = false
-  private runningTurn?: Promise<void>
+  private closePromise?: Promise<void>
+  private turn?: Turn
   private readonly model
 
-  constructor(private readonly cwd: string, modelId: string, private readonly approve: Approval) {
+  constructor(private readonly cwd: string, modelId: string, private readonly approve: Approval, private readonly options: Options = {}) {
     this.model = { provider: ANTIGRAVITY_PROVIDER, api: 'antigravity-acp', id: modelId }
   }
 
@@ -29,116 +35,161 @@ export class AntigravitySubagentRpc implements SubagentRpc {
   get running(): boolean { return !this.closed && !this.exited && !!this.ready }
 
   private handleClosed(error: string): void {
-    if (this.exited) return
-    this.exited = true
     this.active = false
     this.failure ??= error
-    if (!this.closed) this.events.emit('exit', 1, null)
+    if (this.exited || this.closed) return
+    this.exited = true
+    if (!this.turn) this.events.emit('exit', 1, null)
   }
 
   spawn(): void {
     if (this.ready || this.closed) return
     this.ready = (async () => {
-      const session = this.session = launchAntigravity(this.cwd)
+      const level = this.options.thinkingLevel
+      if (level !== undefined && !THINKING_LEVELS.includes(level)) throw new Error(pick('无效的 Antigravity 思考档。', 'Invalid Antigravity thinking level.'))
+      const mode = this.options.readOnly ? 'plan' : ANTIGRAVITY_APPROVAL_MODE
+      const session = this.session = (this.options.launch ?? launchAntigravity)(this.cwd)
       session.onEvent = (event) => {
         if (event.type === 'closed') this.handleClosed(event.error)
       }
-      const models = await session.start(this.cwd)
-      const selected = models.current === this.model.id ? models : await session.selectModel(this.model.id)
-      if (selected.current !== this.model.id || !selected.available.some(({ id }) => id === this.model.id)) throw new Error(pick('CLI 未切到指定模型。', 'The CLI did not select the requested model.'))
+      let models = await session.start(this.cwd, undefined, this.options.readOnly ? { mode } : undefined)
+      if (models.current !== this.model.id) models = await session.selectModel(this.model.id)
+      if (level !== undefined && models.thinking?.current !== level) models = await session.selectThinking(level)
+      models = await session.confirmPromptMode(mode)
+      if (models.current !== this.model.id || !models.available.some(({ id }) => id === this.model.id)) throw new Error(pick('CLI 未切到指定模型。', 'The CLI did not select the requested model.'))
+      if (level !== undefined && models.thinking?.current !== level) throw new Error(pick('CLI 未确认指定思考档。', 'The CLI did not confirm the requested thinking level.'))
+      if (this.closed || this.exited) return
+      this.thinkingLevel = models.thinking?.current
       this.active = true
-    })().catch((error: unknown) => {
-      this.failure = error instanceof Error ? error.message : String(error)
+    })().catch(async (error: unknown) => {
+      this.failure ??= error instanceof Error ? error.message : String(error)
       this.active = false
-      if (!this.closed && !this.exited) {
-        this.exited = true
-        this.events.emit('spawn-error', new Error(this.failure))
-      }
+      const notify = !this.closed && !this.exited
+      this.exited = true
+      await this.session?.close()
+      if (notify && !this.closed) this.events.emit('spawn-error', new Error(this.failure))
     })
   }
 
   async command(type: string, params?: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<{ success: boolean; error?: string; data?: unknown }> {
     if (type === 'abort') {
-      this.session?.cancel()
+      if (this.turn) {
+        this.turn.cancelled = true
+        this.session?.cancel()
+      } else if (this.running && !this.active) await this.close()
       return { success: true }
     }
-    if (!this.running) return { success: false, error: pick('Antigravity 未启动。', 'Antigravity not running.') }
+    if (!this.running) return { success: false, error: this.failure ?? pick('Antigravity 未启动。', 'Antigravity not running.') }
     if (type === 'get_state' && options?.timeoutMs && this.ready) {
       let timer: ReturnType<typeof setTimeout> | undefined
       await Promise.race([this.ready, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.timeoutMs) })])
       clearTimeout(timer)
-      if (!this.active) return { success: false, error: this.failure }
     }
     if (this.failure) return { success: false, error: this.failure }
-    if (type === 'get_state') return { success: this.active, data: { model: this.model, thinkingLevel: 'off' } }
+    if (type === 'get_state') return { success: this.active, data: { model: this.model, thinkingLevel: this.thinkingLevel ?? 'off' } }
     if (type === 'set_model') return { success: this.active && params?.provider === ANTIGRAVITY_PROVIDER && params?.modelId === this.model.id }
     if (type === 'get_session_stats') return { success: true, data: {} }
     if (type !== 'prompt') return { success: false, error: pick('Antigravity 不支持这项子代理操作。', 'This subagent operation is not supported by Antigravity.') }
     const message = params?.message
-    if (typeof message !== 'string' || !message.trim() || message.length > ANTIGRAVITY_PROMPT_LIMIT || !this.session || !this.active || this.runningTurn) return { success: false, error: pick('Antigravity 正忙或任务太长。', 'Antigravity is busy or the task is too long.') }
-    this.runningTurn = this.prompt(this.session, message).finally(() => { this.runningTurn = undefined })
+    if (typeof message !== 'string' || !message.trim() || message.length > ANTIGRAVITY_PROMPT_LIMIT || !this.session || !this.active || this.turn) return { success: false, error: pick('Antigravity 正忙或任务太长。', 'Antigravity is busy or the task is too long.') }
+    const turn: Turn = { cancelled: false }
+    this.turn = turn
+    turn.done = this.prompt(this.session, message, turn).finally(() => { if (this.turn === turn) this.turn = undefined })
     return { success: true, data: { disposition: 'started' } }
   }
 
-  private async prompt(session: AntigravitySession, message: string): Promise<void> {
+  private async prompt(session: AntigravitySession, message: string, turn: { cancelled: boolean }): Promise<void> {
     const user = { role: 'user', content: [{ type: 'text', text: message }], timestamp: Date.now() }
-    const assistant = { role: 'assistant', model: this.model.id, provider: this.model.provider, content: [{ type: 'text', text: '' }], timestamp: Date.now() }
+    const assistant = { role: 'assistant', model: this.model.id, provider: this.model.provider, timestamp: Date.now() }
+    const content: Array<{ type: 'text'; text: string } | { type: 'thinking'; thinking: string }> = []
     const calls = new Map<string, UIToolCall>()
     const approvals = new Map<number, AbortController>()
-    this.events.emit('event', { type: 'agent_start' })
-    this.events.emit('event', { type: 'message_start', message: user })
-    this.events.emit('event', { type: 'message_end', message: user })
-    this.events.emit('event', { type: 'message_start', message: assistant })
-    const update = () => this.events.emit('event', { type: 'message_update', message: { ...assistant, yanAntigravityTools: [...calls.values()] } })
+    const snapshot = () => ({ ...assistant, content: content.map((block) => ({ ...block })), yanAntigravityTools: [...calls.values()] })
+    const emit = (event: Record<string, unknown>) => { if (!this.closed) this.events.emit('event', event) }
+    const toolEvent = (type: string, call: UIToolCall) => emit({ type: `tool_execution_${type}`, toolCallId: call.id, toolName: call.name, ...(type === 'end' ? { isError: call.status === 'error' } : {}) })
+    const update = () => emit({ type: 'message_update', message: snapshot() })
+    let openBlock: typeof content[number] | undefined
     session.onEvent = (event) => {
-      if (this.closed) return
-      if (event.type === 'text') {
-        assistant.content[0].text += event.text
-        update()
-      } else if (event.type === 'tool') {
-        const old = calls.get(event.id)
-        const status = event.status === 'completed' ? 'ok' : event.status === 'failed' ? 'error' : event.status === 'in_progress' ? 'running' : 'pending'
-        const call: UIToolCall = { id: event.id, name: event.title || old?.name || 'Antigravity', status, args: event.args ?? old?.args ?? {}, details: { antigravity: true, kind: event.kind } }
-        calls.set(event.id, call)
-        if (!old) this.events.emit('event', { type: 'tool_execution_start', toolCallId: event.id, toolName: call.name })
-        if (status === 'ok' || status === 'error') this.events.emit('event', { type: 'tool_execution_end', toolCallId: event.id, toolName: call.name })
-        update()
-      } else if (event.type === 'permission') {
-        const allow = event.options.find((option) => option.allow)
-        const deny = event.options.find((option) => !option.allow)
-        if (!allow) { session.reply(event.id, deny?.id ?? null); return }
-        const controller = new AbortController()
-        approvals.set(event.id, controller)
-        void this.approve(event, controller.signal).then(
-          (approved) => session.reply(event.id, approved && !controller.signal.aborted ? allow.id : deny?.id ?? null),
-          () => session.reply(event.id, deny?.id ?? null)
-        )
-      } else if (event.type === 'permission-cleared') {
+      if (event.type === 'permission-cleared') {
         approvals.get(event.id)?.abort()
         approvals.delete(event.id)
       } else if (event.type === 'closed') {
         this.handleClosed(event.error)
+      } else if (this.closed || turn.cancelled) {
+        if (event.type === 'permission') session.reply(event.id, null)
+      } else if (event.type === 'text') {
+        if (openBlock?.type === 'text') openBlock.text += event.text
+        else content.push(openBlock = { type: 'text', text: event.text })
+        update()
+      } else if (event.type === 'thought') {
+        if (openBlock?.type === 'thinking') openBlock.thinking += event.text
+        else content.push(openBlock = { type: 'thinking', thinking: event.text })
+        update()
+      } else if (event.type === 'tool') {
+        openBlock = undefined
+        const old = calls.get(event.id)
+        const now = Date.now()
+        const status = event.status === 'completed' ? 'ok' : event.status === 'failed' ? 'error' : event.status === 'in_progress' ? 'running' : old?.status ?? 'pending'
+        const completed = status === 'ok' || status === 'error'
+        const call: UIToolCall = { id: event.id, name: event.title || old?.name || 'Antigravity', status, args: event.args ?? old?.args ?? {}, output: event.output ?? old?.output,
+          details: { antigravity: true, kind: event.kind }, startedAt: old?.startedAt ?? now, endedAt: completed ? old?.endedAt ?? now : undefined }
+        calls.set(event.id, call)
+        if (!old) toolEvent('start', call)
+        if (completed && !old?.endedAt) toolEvent('end', call)
+        else if (!completed && old) toolEvent('update', call)
+        update()
+      } else if (event.type === 'permission') {
+        const allow = event.options.find((option) => option.allow)
+        const deny = event.options.find((option) => !option.allow)
+        if (!allow || this.options.readOnly) { session.reply(event.id, deny?.id ?? null); return }
+        const controller = new AbortController()
+        approvals.set(event.id, controller)
+        void Promise.resolve().then(() => !controller.signal.aborted && this.approve(event, controller.signal)).then(
+          (approved) => session.reply(event.id, approved && !controller.signal.aborted ? allow.id : deny?.id ?? null),
+          () => session.reply(event.id, deny?.id ?? null)
+        )
       }
     }
     let stopReason = 'stop'
     let errorMessage: string | undefined
     try {
-      const reason = await session.prompt(message)
-      if (reason === 'cancelled') stopReason = 'aborted'
-      else if (reason !== 'end_turn') { stopReason = 'error'; errorMessage = `Antigravity: ${reason || 'missing stop reason'}` }
+      emit({ type: 'agent_start' })
+      emit({ type: 'message_start', message: user })
+      emit({ type: 'message_end', message: user })
+      emit({ type: 'message_start', message: snapshot() })
+      if (!turn.cancelled && !this.closed) {
+        const reason = await session.prompt(message, this.model.id, this.thinkingLevel, this.options.readOnly ? 'plan' : ANTIGRAVITY_APPROVAL_MODE)
+        if (reason === 'cancelled') turn.cancelled = true
+        else if (reason !== 'end_turn') { stopReason = 'error'; errorMessage = `Antigravity: ${reason || 'missing stop reason'}` }
+      }
     } catch (error) {
       stopReason = 'error'
       errorMessage = error instanceof Error ? error.message : String(error)
     } finally {
       for (const approval of approvals.values()) approval.abort()
+      session.clearTools()
+      session.onEvent = (event) => {
+        if (event.type === 'closed') this.handleClosed(event.error)
+        else if (event.type === 'permission') session.reply(event.id, null)
+      }
     }
-    this.events.emit('event', { type: 'message_end', message: { ...assistant, stopReason, errorMessage, yanAntigravityTools: [...calls.values()] } })
-    this.events.emit('event', { type: 'agent_settled' })
+    if (turn.cancelled || this.closed) { stopReason = 'aborted'; errorMessage = undefined }
+    for (const [id, call] of calls) {
+      if (call.endedAt) continue
+      const ended: UIToolCall = { ...call, status: 'error', cancelled: stopReason !== 'stop', endedAt: Date.now() }
+      calls.set(id, ended)
+      toolEvent('end', ended)
+    }
+    emit({ type: 'message_end', message: { ...snapshot(), stopReason, errorMessage } })
+    emit({ type: 'agent_settled' })
+    if (this.exited && !this.closed) this.events.emit('exit', 1, null)
   }
 
-  async close(): Promise<void> {
-    if (this.closed) return
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise
     this.closed = true
-    await this.session?.close()
+    this.active = false
+    this.closePromise = Promise.allSettled([this.session?.close(), this.turn?.done]).then(() => undefined)
+    return this.closePromise
   }
 }

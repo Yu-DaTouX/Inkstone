@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { shotKit } from '../lib/ui-shots.mjs'
@@ -16,10 +16,11 @@ export default async function run({ box, cdp, fake, runDir, check, waitFor, slee
   const quota = { status: 'SUCCESS', num_turns: 0, conversation_id: '', command: { name: 'usage', data: { groups: [
     { name: 'Gemini Models', description: 'Models within this group: Gemini Pro · Fixture, Gemini Flash · Fixture', buckets: [
       { id: 'gemini-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 0.925, reset_time: new Date(Date.now() + 3_600_000).toISOString() },
-      { id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 0.78 }
+      { id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 0.78, reset_time: new Date(Date.now() + 7 * 86_400_000).toISOString() }
     ] },
     { name: 'Claude and GPT models', description: 'Models within this group: Claude Sonnet · Fixture', buckets: [
-      { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 0.24 }
+      { id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+      { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 1, reset_time: '0001-01-01T00:00:00Z' }
     ] }
   ] } } }
   writeFileSync(fixture, `using System;
@@ -112,7 +113,7 @@ class Fixture {
     await ev(`${app}.switchSession(${JSON.stringify(path)})`)
     await waitFor(`s.session?.sessionId === ${JSON.stringify(sid)} && s.conn === 'ready'`)
   }
-  const settled = (value) => waitFor(`${idle} && s.messages.some(m => m.role === 'assistant' && m.entryId && m.text.includes(${JSON.stringify(value)}))`)
+  const settled = (value, since = 0) => waitFor(`${idle} && s.messages.slice(${since}).some(m => m.role === 'assistant' && m.entryId && m.text.includes(${JSON.stringify(value)}))`)
   const run = (sid, phase) => ev(`window.yan.runs.snapshot().then(r => r.runs.some(x => x.sessionId === ${JSON.stringify(sid)} && x.phase.kind === ${JSON.stringify(phase)}))`)
   const phase = async (sid, value) => {
     for (let i = 0; i < 80; i++) {
@@ -240,12 +241,22 @@ class Fixture {
   await waitFor(`${has(rail('stats'), '140')} && ${has(rail('connectors'), '砚子代理桥')}`)
   await waitFor(`${has(rail('usage'), '92.5%')} && ${has(rail('usage'), '78%')}`)
   check('右栏展示实报上下文、上下文明细、简洁带进度条订阅用量和同步 MCP', await ev(`${has(rail('stats'), 'tok/s')} && ${has(rail('context'), '25%')} && !!document.querySelector('${rail('context')} [data-testid="wb-ov-ctx-breakdown"]') && !(${has(rail('usage'), '最近已上报回合')}) && !(${has(rail('usage'), '订阅剩余额度')}) && ${has(rail('usage'), 'Claude and GPT models')} && !!document.querySelector('${rail('usage')} .wb-ov-qmini .wb-ctx-bar .wb-ov-qfill') && !!document.querySelector('[data-testid="antigravity-quota-refresh"]') && ${has(rail('changes'), '未上报')} && ${has(rail('connectors'), 'sync-fixture')} && !(${has(rail('connectors'), 'disabled-fixture')}) && !!document.querySelector('[data-testid="wb-rail-env-summary"] .wb-env-dirty')`))
+  const quotaResets = await ev(`Array.from(document.querySelectorAll('[data-testid="rail-antigravity-quota"] .wb-ov-qmain'), group => ({
+    header: group.querySelector('.wb-ov-qmain-side').textContent.trim(),
+    tips: Array.from(group.querySelectorAll('.wb-ov-qmini'), row => row.title.split('\\n').find(line => line.startsWith('重置 ')))
+  }))`)
+  const [geminiQuota, claudeQuota] = quotaResets
+  check('有效的 5h / 每周分别显示重置时间，Claude 满额占位时间不显示', !!geminiQuota?.header.startsWith('5h 重置 ') &&
+    geminiQuota.header === `5h ${geminiQuota.tips[0]}` && !!geminiQuota.tips[1] && geminiQuota.tips[0] !== geminiQuota.tips[1] &&
+    claudeQuota?.header === '' && claudeQuota.tips.length === 2 && claudeQuota.tips.every((tip) => tip === null), quotaResets)
   await ev(`document.querySelector('${rail('usage')}')?.scrollIntoView({ block: 'end' })`)
   await kit.shot('antigravity-reported-metrics', { native: false })
-  await ev(`${app}.addAttachments([{ id: 'acp-img-1', kind: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png', name: 'shot.png', size: 8 }])`)
+  await kit.clip('antigravity-quota-resets', '[data-testid="rail-antigravity-quota"]')
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  await ev(`${app}.addAttachments([{ id: 'acp-img-1', kind: 'image', data: ${JSON.stringify(png)}, mimeType: 'image/png', name: 'shot.png', size: ${Buffer.from(png, 'base64').length} }])`)
   await send('看这张图')
   await settled('收到 1 张图 · image/png · 看这张图')
-  check('Antigravity 支持从输入框发送图片并落盘保留', await ev(`${app}.messages.some(m => m.role === 'user' && m.text.includes('看这张图') && m.images?.length === 1 && m.entryId)`))
+  check('Antigravity 从输入框发送 PNG 并落盘保留', await ev(`${app}.messages.some(m => m.role === 'user' && m.text.includes('看这张图') && m.images?.length === 1 && m.entryId)`))
   await ev(`${app}.send('等待')`)
   await waitFor(has(conv, '正在等待'))
   await ev(`${app}.send('插话改方向', undefined, 'steer')`)
@@ -285,24 +296,47 @@ class Fixture {
   const msgCountBeforeAutoMcp = await ev(`${app}.messages.length`)
   await send('检查同步 MCP')
   await waitFor(`${idle} && s.messages.length > ${msgCountBeforeAutoMcp} && s.messages.at(-1)?.role === 'assistant' && s.messages.at(-1)?.entryId && s.messages.at(-1)?.text.includes('MCP 同步回执')`)
-  await send('检查 MCP 权限')
-  await settled('审批结果 · once')
-  check('Auto 档下关闭宿主与 ACP 侧的 MCP 工具审批，不弹审批卡', await ev(`!${app}.approvals.length && !document.querySelector('${sheet}')`))
+  const noApproval = `!${app}.approvals.length && !document.querySelector('${sheet}')`
+  check('Auto 档下同步 MCP 不弹宿主审批卡', await ev(noApproval))
+  for (const prompt of ['检查 MCP 权限', '检查命令权限', '检查文件权限', '详情缺失']) {
+    const since = await ev(`${app}.messages.length`)
+    const denied = prompt === '详情缺失'
+    await send(prompt)
+    await settled(denied ? '审批结果 · deny' : '审批结果 · once', since)
+    check(`Auto 档${denied ? '拒绝' : '单次放行'}且不弹审批卡：${prompt}`, await ev(noApproval))
+  }
   await click(picker)
   await waitFor(has(permission, 'auto'))
   await chooseMode('default')
   await waitFor('!document.querySelector(\'[role="option"][data-key="default"]\')')
   for (let index = 0; index < 3 && await ev(`!!document.querySelector('${menu}')`); index++) await kit.key('Escape')
   await waitFor(`!document.querySelector('${menu}')`)
+  const sinceDefault = await ev(`${app}.messages.length`)
+  await send('检查命令权限')
+  await waitFor(`${has(sheet, 'echo fixture')} && ${has(sheet, '仅允许这一次')}`)
+  await click('[data-testid="v3-question-option-1"]')
+  await settled('审批结果 · deny', sinceDefault)
+  check('切回 default 后命令仍弹出审批，拒绝后 CLI 收到 deny', true)
 
   await ev(`${app}.newSession({ cwd: ${JSON.stringify(project)} })`)
   await waitFor(`s.session?.sessionId !== ${JSON.stringify(baseSession)} && s.conn === 'ready'`)
   await choose('antigravity', 'Claude Sonnet')
   check('选中 Claude 时输入框仍显示 Antigravity 图标', await ev(triggerIcon))
   check('第二会话的 Claude 未报告思考档并清除 Pi 档位', await ev(`${app}.session.thinkingLevelsStatus === 'unknown' && !${app}.session.availableThinkingLevels.length`))
-  await send('第二会话')
-  await settled('模拟回复 · third-party')
   const other = await ev(`(({sessionId, sessionFile}) => ({sessionId, sessionFile}))(${app}.session)`)
+  assert.ok(other.sessionFile && !existsSync(other.sessionFile), '首条消息前 Pi 已分配会话路径，但尚未落盘')
+  const secondSendStarted = await ev('Date.now()')
+  const secondSendError = `s.notices.find(n => n.type === 'error' && n.at >= ${secondSendStarted})?.text`
+  const secondUserSaved = `s.messages.some(m => m.role === 'user' && m.text === '第二会话' && m.entryId)`
+  await send('第二会话')
+  await waitFor(`(${secondSendError}) || (${secondUserSaved})`)
+  assert.ok(await ev(`(() => { const s = ${app}; return ${secondUserSaved} })()`), await ev(`(() => { const s = ${app}; return ${secondSendError} })()`))
+  await settled('模拟回复 · third-party')
+  const secondHistory = readFileSync(other.sessionFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line).message)
+  check('未落盘的新会话可直接发送 Claude 首条消息并保存回合', secondHistory.some((m) => m?.role === 'user' && m.content.some((block) => block.text === '第二会话')) &&
+    secondHistory.some((m) => m?.role === 'assistant' && m.content.some((block) => block.text === '模拟回复 · third-party')))
+  await waitFor(has(conv, '模拟回复 · third-party'))
+  await kit.shot('antigravity-second-session', { native: false })
   await activate(baseFile, baseSession)
   check('两个会话并存时恢复第一会话的 Gemini Pro 和 Extra', await ev(`${app}.session.model.id === 'pro' && ${app}.session.thinkingLevel === 'xhigh'`))
   await send('权限')
@@ -451,8 +485,9 @@ class Fixture {
   await send('上下文超限')
   await waitFor(`${idle} && !s.session?.isCompacting && s.session?.lastCompaction?.reason === 'threshold' && s.session?.lastCompaction?.status === 'completed' && s.session?.lastCompaction?.beforeTokens === 450000`)
   check('Antigravity 上下文超过 400K 压缩线时自动触发压缩', true)
+  const sinceAutoCompaction = await ev(`${app}.messages.length`)
   await send('检查压缩后上下文')
-  await settled('压缩后上下文收到')
+  await settled('压缩后上下文收到', sinceAutoCompaction)
   await waitFor('s.stats?.contextUsage?.tokens === 35000')
   check('自动压缩后新回合交接保留上下文并回落实报用量', true)
 

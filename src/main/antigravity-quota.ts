@@ -75,7 +75,7 @@ export function parseAntigravityQuota(stdout: string): AntigravityQuotaGroup[] {
       const remainingFraction = bucket.remaining_fraction
       if (!id || !name || bucket.disabled === true || bucket.status === 'disabled' || typeof remainingFraction !== 'number' || !Number.isFinite(remainingFraction) || remainingFraction < 0 || remainingFraction > 1) return []
       const resetAt = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN
-      return [{ id, name, period: label(bucket.window), remainingFraction, ...(Number.isFinite(resetAt) ? { resetAt } : {}) }]
+      return [{ id, name, period: label(bucket.window), remainingFraction, ...(Number.isFinite(resetAt) && resetAt >= Date.UTC(2020, 0, 1) ? { resetAt } : {}) }]
     })
     return windows.length ? [{ name, models, windows }] : []
   })

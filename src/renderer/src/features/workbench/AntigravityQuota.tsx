@@ -63,12 +63,14 @@ function windowTone(fraction: number): 'ok' | 'ask' | 'fail' {
 }
 
 function shortReset(resetAt: number | undefined, lang: string): string | undefined {
-  if (resetAt === undefined) return undefined
+  if (resetAt === undefined || !Number.isFinite(resetAt) || resetAt < Date.UTC(2020, 0, 1)) return undefined
   const date = new Date(resetAt)
+  if (!Number.isFinite(date.getTime())) return undefined
   const sameDay = date.toDateString() === new Date().toDateString()
-  return new Intl.DateTimeFormat(lang, sameDay
-    ? { hour: '2-digit', minute: '2-digit', hour12: false }
-    : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+  return new Intl.DateTimeFormat(lang, {
+    ...(sameDay ? {} : { month: 'numeric', day: 'numeric' }),
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(date)
 }
 
 export function AntigravityQuotaDetails({ quota, lang }: {
@@ -96,8 +98,10 @@ export function AntigravityQuotaDetails({ quota, lang }: {
   return (
     <div className="wb-ov-quota" data-testid="rail-antigravity-quota">
       {groups.map((group, index) => {
-        const windows = orderedWindows(group)
-        const primaryReset = shortReset(windows[0]?.resetAt, lang)
+        const windows = orderedWindows(group).map((window) => ({
+          window, name: periodLabel(window, en), reset: shortReset(window.resetAt, lang)
+        }))
+        const primary = windows.find(({ reset }) => reset !== undefined)
         return (
           <div key={`${group.name}:${index}`} className="wb-ov-qmain" title={group.models.length ? `${group.name}: ${group.models.join(', ')}` : group.name}>
             <div className="wb-ov-ctx-head">
@@ -105,16 +109,14 @@ export function AntigravityQuotaDetails({ quota, lang }: {
                 <span className="wb-ov-qmain-label">{group.name}</span>
               </span>
               <span className="wb-ov-qmain-side">
-                {primaryReset ? `${en ? 'Reset ' : '重置 '}${primaryReset}` : null}
+                {primary ? `${windows.length > 1 ? `${primary.name} ` : ''}${en ? 'Reset ' : '重置 '}${primary.reset}` : null}
                 {index === 0 ? refreshButton : null}
               </span>
             </div>
             <ul className="wb-ov-qminis">
-              {windows.map((window) => {
-                const name = periodLabel(window, en)
+              {windows.map(({ window, name, reset }) => {
                 const used = Math.round(Math.min(100, Math.max(0, (1 - window.remainingFraction) * 100)))
                 const left = percent(window.remainingFraction, lang)
-                const reset = shortReset(window.resetAt, lang)
                 const tip = [
                   `${group.name} · ${name}`,
                   `${en ? 'Remaining' : '剩余'} ${left} (${used}% ${en ? 'used' : '已用'})`,

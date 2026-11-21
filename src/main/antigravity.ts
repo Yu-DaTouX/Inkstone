@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { realpathSync, statSync } from 'node:fs'
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { redactDiagnosticText, redactSecretText } from '../shared/redact-diagnostic'
 import { pick } from '../shared/ui-lang'
 import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROMPT_LIMIT, isAntigravityMode, type AntigravityChoice, type AntigravityContext, type AntigravityEvent, type AntigravityImage, type AntigravityModels, type AntigravityPlanEntry, type AntigravityUsage } from '../shared/antigravity'
 import type { UIMessage } from '../shared/ui-message'
@@ -85,14 +86,40 @@ export function antigravityPrompt(
   }
   return prompt
 }
+export function normalizeAntigravityImages(images: readonly AntigravityImage[] = []): AntigravityImage[] {
+  let bytes = 0
+  return images.map((image, index) => {
+    const invalid = () => new Error(pick(
+      `第 ${index + 1} 张 Antigravity 图片无效。请重新添加 PNG、JPEG、GIF 或 WebP 图片。`,
+      `Antigravity image ${index + 1} is invalid. Reattach it as PNG, JPEG, GIF, or WebP.`
+    ))
+    if (typeof image?.data !== 'string' || typeof image.mimeType !== 'string') throw invalid()
+    const tooLarge = () => new Error(pick('附带图片体积超出 Antigravity 传输上限，请减少图片后重试。', 'Attached images exceed the Antigravity transfer limit. Remove some images and try again.'))
+    if (image.data.length > MAX_IMAGE_PROMPT_BYTES) throw tooLarge()
+    const mime = (value: string) => value.trim().toLowerCase().replace(/^image\/(?:jpg|pjpeg)$/, 'image/jpeg').replace(/^image\/x-png$/, 'image/png')
+    const raw = image.data.trim()
+    const url = /^data:(image\/[\w.+-]+);base64,/i.exec(raw)
+    const mimeType = mime(image.mimeType)
+    if (url && mime(url[1]) !== mimeType) throw invalid()
+    const data = (url ? raw.slice(url[0].length) : raw).replace(/[ \t\r\n]/g, '')
+    if (!data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data) || data.length % 4 === 1 || (data.endsWith('=') && data.length % 4 !== 0)) throw invalid()
+    bytes += Math.ceil(data.length / 4) * 4 + 64
+    if (bytes > MAX_IMAGE_PROMPT_BYTES) throw tooLarge()
+    const decoded = Buffer.from(data, 'base64')
+    const canonical = decoded.toString('base64')
+    if (canonical.replace(/=+$/, '') !== data.replace(/=+$/, '')) throw invalid()
+    const ascii = (start: number, end: number) => decoded.toString('latin1', start, end)
+    const matches = mimeType === 'image/png' ? decoded.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+      : mimeType === 'image/jpeg' ? decoded.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))
+        : mimeType === 'image/gif' ? /^(GIF87a|GIF89a)$/.test(ascii(0, 6))
+          : mimeType === 'image/webp' && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP'
+    if (!matches) throw invalid()
+    return { data: canonical, mimeType }
+  })
+}
+
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
 const ENV_KEYS = /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|SYSTEMDRIVE|COMSPEC|USERPROFILE|USERNAME|USERDOMAIN|HOMEDRIVE|HOMEPATH|HOME|LOCALAPPDATA|APPDATA|PROGRAMDATA|PROGRAMFILES(?:\(X86\))?|PROGRAMW6432|TEMP|TMP|LANG|LC_ALL|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR)$/i
-const BUILTIN_ACP_TOOLS = new Set([
-  'run_command', 'read_file', 'write_file', 'edit_file', 'manage_task',
-  'invoke_subagent', 'define_subagent', 'manage_subagents', 'send_message',
-  'schedule', 'ask_question', 'search_web', 'run_workflow', 'swarm',
-  'list_resources', 'read_resource'
-])
 
 type RecordValue = Record<string, unknown>
 type RpcId = string | number
@@ -102,44 +129,22 @@ const object = (value: unknown): RecordValue => value && typeof value === 'objec
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
 
-export function isAntigravityMcpPermission(
-  tool: RecordValue,
-  servers: ReadonlySet<string>,
-  knownTools?: ReadonlySet<string>
-): boolean {
-  if (!servers.size) return false
-  const kind = text(tool.kind)
-  if (kind && kind !== 'other') return false
-  if (array(tool.locations).length > 0) return false
-  const rawInput = object(tool.rawInput)
-  if (typeof rawInput.CommandLine === 'string') return false
-  const matchesServerTool = (value: string): boolean => {
-    const trimmed = value.trim()
-    if (!trimmed) return false
-    const stripped = trimmed.replace(/^(?:(?:run|call)\s+|mcp(?:\s+tool)?\s*:?\s+)+/i, '').trim()
-    if (!stripped) return false
-    for (const server of servers) {
-      if (
-        (stripped.startsWith(`mcp_${server}_`) && stripped.length > server.length + 5) ||
-        (stripped.startsWith(`mcp__${server}__`) && stripped.length > server.length + 7) ||
-        (stripped.startsWith(`${server}:`) && stripped.slice(server.length + 1).trim().length > 0) ||
-        (stripped.startsWith(`${server}/`) && stripped.slice(server.length + 1).trim().length > 0) ||
-        (stripped.startsWith(`${server} / `) && stripped.slice(server.length + 3).trim().length > 0)
-      ) {
-        return true
-      }
-    }
-    if (knownTools?.size && !BUILTIN_ACP_TOOLS.has(stripped) && knownTools.has(stripped)) {
-      return true
-    }
-    return false
-  }
-  const meta = object(tool._meta)
-  const metaServer = text(meta.mcpServer) || text(meta.serverName) || text(meta.server)
-  if (metaServer && servers.has(metaServer)) return true
-  const metaTool = text(meta.toolName) || text(meta.name)
-  if (metaTool && matchesServerTool(metaTool)) return true
-  return matchesServerTool(text(tool.title))
+function parameterDiagnostic(error: RecordValue): string {
+  const data = object(error.data)
+  const issues = array(data.issues ?? data.errors ?? error.data).slice(0, 3).map(object)
+  const fields = [data, ...issues].flatMap((item) => {
+    const field = Array.isArray(item.path) ? item.path.slice(0, 8).map((part) => typeof part === 'number' ? String(part) : text(part)).join('.') : text(item.path ?? item.field)
+    return /^[\w.[\]-]{1,120}$/.test(field) && !/[a-z\d_-]{32,}/i.test(field) ? [field] : []
+  })
+  const details = [error.message, error.data, data.message, data.details, data.reason, ...issues.map((item) => item.message)].flatMap((value) => {
+    if (typeof value !== 'string' || value.length > 1024 || /^\s*invalid params\.?\s*$/i.test(value)) return []
+    const safe = redactDiagnosticText(redactSecretText(value)
+      .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+      .replace(/data:[^\s"'<>]+|[A-Za-z0-9+/_=-]{32,}/gi, '[redacted]')
+      .replace(/(["'`])(?:(?!\1).)*\1/g, '[redacted]'), 180)
+    return safe ? [safe] : []
+  })
+  return [...new Set([...fields, ...details])].join(' · ').slice(0, 380)
 }
 
 export function antigravityExecutable(cwd: string) {
@@ -219,7 +224,9 @@ export class AntigravitySession {
   private legacyModels: AntigravityModels = { current: null, available: [] }
   private choices = new Map<string, AcpChoice>()
   private mode?: string
+  private legacyMode?: string
   private legacyModes: AntigravityChoice['options'] = []
+  private modeAdvertised = false
   private promptMode?: string
   private cancelTimer: NodeJS.Timeout | null = null
   private closed = false
@@ -229,13 +236,10 @@ export class AntigravitySession {
   private discoverOnly = false
   private hadPrompt = false
   private resumedSession = false
-  private loadingSession = false
   private contextReading?: AntigravityContext
-  private openingContext?: { sessionId: string; value: AntigravityContext }
+  private openingContext = new Map<string, AntigravityContext>()
   private openingSession = false
   private imageCapable = false
-  private mcpServerNames = new Set<string>()
-  private knownMcpTools?: () => ReadonlySet<string>
   busy = false
 
   get context(): AntigravityContext | undefined { return this.contextReading }
@@ -244,7 +248,7 @@ export class AntigravitySession {
 
   get resumed(): boolean { return this.resumedSession }
 
-  private get acceptsActivity(): boolean { return !this.loadingSession && (this.prompting || (!this.discoverOnly && this.hadPrompt)) }
+  private get acceptsActivity(): boolean { return this.prompting || (!this.discoverOnly && this.hadPrompt) }
 
   clearTools(): void { this.tools.clear() }
 
@@ -266,7 +270,7 @@ export class AntigravitySession {
     child.once('exit', disconnected)
   }
 
-  async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[], options?: { discoverOnly?: boolean; mode?: string; resumeSessionId?: string; knownMcpTools?: () => ReadonlySet<string> }): Promise<AntigravityModels> {
+  async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[], options?: { discoverOnly?: boolean; mode?: string; resumeSessionId?: string }): Promise<AntigravityModels> {
     this.discoverOnly = options?.discoverOnly === true
     this.resumedSession = false
     const init = await this.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'inkstone', title: 'Inkstone', version: '1.0.0' } })
@@ -276,55 +280,44 @@ export class AntigravitySession {
     this.imageCapable = promptCaps.image === true
     const sessionCaps = object(caps.sessionCapabilities ?? caps.session_capabilities)
     const mcpServers = Array.isArray(server) ? server : server ? [server] : []
-    this.mcpServerNames = new Set(mcpServers.map((item) => item.name).filter(Boolean))
-    this.knownMcpTools = options?.knownMcpTools
     const resumeId = !this.discoverOnly && typeof options?.resumeSessionId === 'string' ? options.resumeSessionId.trim() : ''
     const canResume = !!resumeId && Boolean(sessionCaps.resume && typeof sessionCaps.resume === 'object')
     const canLoad = !!resumeId && (caps.loadSession === true || caps.load_session === true || Boolean(sessionCaps.load && typeof sessionCaps.load === 'object'))
     const fatalError = (err: unknown): boolean => this.closed || (err as { authError?: boolean } | null)?.authError === true
     let session: RecordValue | undefined
-    if (canResume) {
+    for (const method of [...(canResume ? ['session/resume'] : []), ...(canLoad ? ['session/load'] : [])]) {
       this.openingSession = true
       try {
-        session = await this.request('session/resume', { sessionId: resumeId, cwd, mcpServers })
+        const result = await this.request(method, { sessionId: resumeId, cwd, mcpServers })
+        if (result.sessionId !== undefined && result.sessionId !== resumeId) continue
+        if (!choicesFrom(result).has('model') && !legacyModelsFrom(result)?.available.length) continue
+        session = result
         this.resumedSession = true
+        break
       } catch (err) {
         if (fatalError(err)) throw err
       } finally {
         this.openingSession = false
-      }
-    }
-    if (!session && canLoad) {
-      this.openingSession = true
-      this.loadingSession = true
-      try {
-        session = await this.request('session/load', { sessionId: resumeId, cwd, mcpServers })
-        this.resumedSession = true
-      } catch (err) {
-        if (fatalError(err)) throw err
-      } finally {
-        this.openingSession = false
-        this.loadingSession = false
+        if (!this.resumedSession) this.openingContext.clear()
       }
     }
     if (!session) {
       this.openingSession = true
       session = await this.request('session/new', { cwd, mcpServers })
         .finally(() => { this.openingSession = false })
-      this.resumedSession = false
     }
     this.sessionId = text(session.sessionId) || (this.resumedSession ? resumeId : '')
     if (!this.sessionId) throw new Error(pick('Antigravity 未建立会话。', 'Antigravity did not create a session.'))
     if (this.resumedSession) this.hadPrompt = true
-    if (this.openingContext?.sessionId === this.sessionId) this.contextReading = this.openingContext.value
-    this.openingContext = undefined
-    this.mode = text(object(session.modes).currentModeId) || undefined
+    this.contextReading = this.openingContext.get(this.sessionId)
+    this.openingContext.clear()
+    this.legacyMode = text(object(session.modes).currentModeId) || undefined
+    this.mode = this.legacyMode
+    this.modeAdvertised = !!this.mode
     this.legacyModes = array(object(session.modes).availableModes).map(object).flatMap((mode) =>
       isAntigravityMode(mode.id) ? [{ id: mode.id, name: text(mode.name) || mode.id }] : [])
     this.readConfig(session)
-    const mode = options?.mode ?? ANTIGRAVITY_APPROVAL_MODE
-    if (!options?.discoverOnly && (this.mode || options?.mode) && this.mode !== mode) await this.selectMode(mode)
-    return this.modelView()
+    return this.discoverOnly ? this.modelView() : this.confirmPromptMode(options?.mode)
   }
 
   async selectModel(model: string): Promise<AntigravityModels> {
@@ -343,13 +336,20 @@ export class AntigravitySession {
     return this.setChoice('thought_level', level)
   }
 
+  async confirmPromptMode(expected = ANTIGRAVITY_APPROVAL_MODE): Promise<AntigravityModels> {
+    if (this.closed || !isAntigravityMode(expected)) throw new Error(this.approvalModeError())
+    if (this.mode === expected || (!this.modeAdvertised && this.mode === undefined && expected === ANTIGRAVITY_APPROVAL_MODE)) return this.modelView()
+    return this.selectMode(expected)
+  }
+
   async selectMode(mode: string): Promise<AntigravityModels> {
     if (!isAntigravityMode(mode) || !this.modelView().modes?.options.some(({ id }) => id === mode) || this.busy || !this.sessionId) throw new Error(this.approvalModeError())
     if (this.choices.has('mode')) return this.setChoice('mode', mode)
     this.busy = true
     try {
       await this.request('session/set_mode', { sessionId: this.sessionId, modeId: mode })
-      this.mode = mode
+      this.mode = this.legacyMode = mode
+      this.modeAdvertised = true
       return this.modelView()
     } finally { this.busy = false }
   }
@@ -369,9 +369,9 @@ export class AntigravitySession {
   }
 
   async prompt(prompt: string, expectedModel?: string, expectedThinking?: string, expectedMode = ANTIGRAVITY_APPROVAL_MODE, images?: readonly AntigravityImage[]): Promise<string> {
-    const media = (images ?? []).filter((item) => typeof item?.data === 'string' && item.data && typeof item?.mimeType === 'string' && item.mimeType)
-    if (this.busy || !this.sessionId || typeof prompt !== 'string' || (!prompt.trim() && media.length === 0)) throw new Error(pick('无法发送：会话忙、未连接或消息为空。', 'Cannot send: session busy, disconnected, or message is empty.'))
-    if (media.length > 0 && !this.imageCapable) throw new Error(pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.'))
+    if (this.busy || this.closed || !this.sessionId || typeof prompt !== 'string' || (!prompt.trim() && !images?.length)) throw new Error(pick('无法发送：会话忙、未连接或消息为空。', 'Cannot send: session busy, disconnected, or message is empty.'))
+    if (images?.length && !this.imageCapable) throw new Error(pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.'))
+    const media = normalizeAntigravityImages(images)
     const blocks: RecordValue[] = [
       ...(prompt.trim() ? [{ type: 'text', text: prompt }] : []),
       ...media.map(({ data, mimeType }) => ({ type: 'image', data, mimeType }))
@@ -384,7 +384,7 @@ export class AntigravitySession {
     this.tools.clear()
     try {
       const { mode, current, thinking } = this.modelView()
-      if (mode ? !isAntigravityMode(mode) || mode !== expectedMode : expectedMode !== ANTIGRAVITY_APPROVAL_MODE) throw new Error(this.approvalModeError())
+      if (mode ? !isAntigravityMode(mode) || mode !== expectedMode : this.modeAdvertised || expectedMode !== ANTIGRAVITY_APPROVAL_MODE) throw new Error(this.approvalModeError())
       this.promptMode = mode
       if ((expectedModel && current !== expectedModel) || (expectedThinking && thinking?.current !== expectedThinking)) {
         throw new Error(pick('Antigravity 设置已变化，消息未发送。请重试。', 'Antigravity settings changed. The message was not sent. Try again.'))
@@ -431,6 +431,7 @@ export class AntigravitySession {
     if (this.closed) return this.closing ?? Promise.resolve()
     this.closed = true
     this.clearCancelTimer()
+    const permissionIds = [...this.permissions.keys()]
     this.permissions.clear()
     this.closing = Promise.allSettled([
       this.child.pid && this.child.exitCode === null && this.child.signalCode === null ? this.killTree(this.child.pid) : undefined,
@@ -439,6 +440,7 @@ export class AntigravitySession {
     this.child.stdin.end()
     const reason = error ?? new Error(pick('Antigravity 会话已关闭。', 'Antigravity session closed.'))
     for (const pending of this.requests.values()) pending.finish(reason)
+    for (const id of permissionIds) this.onEvent({ type: 'permission-cleared', id })
     if (error) this.onEvent({ type: 'closed', error: error.message })
     return this.closing
   }
@@ -460,8 +462,9 @@ export class AntigravitySession {
   private readConfig(result: RecordValue): void {
     if (Array.isArray(result.configOptions)) {
       this.choices = choicesFrom(result)
-      const mode = this.choices.get('mode')?.current
-      if (mode) this.mode = mode
+      const mode = this.choices.get('mode')
+      this.mode = mode ? mode.current || undefined : this.legacyMode
+      if (mode) this.modeAdvertised = true
     }
     this.legacyModels = legacyModelsFrom(result) ?? this.legacyModels
   }
@@ -509,7 +512,7 @@ export class AntigravitySession {
         if (this.sessionId && params.sessionId === this.sessionId) this.update(update)
         else if (this.openingSession && update.sessionUpdate === 'usage_update' && typeof params.sessionId === 'string') {
           const value = contextOf(update)
-          if (value) this.openingContext = { sessionId: params.sessionId, value }
+          if (value && (this.openingContext.has(params.sessionId) || this.openingContext.size < 16)) this.openingContext.set(params.sessionId, value)
         }
       }
       else if (typeof id === 'string' || typeof id === 'number') {
@@ -528,7 +531,8 @@ export class AntigravitySession {
         : /quota|rate.?limit|\b429\b|resource.exhausted/i.test(raw)
           ? pick('Antigravity 报告额度不足或请求受限。', 'Antigravity reported a quota or rate limit.')
           : pick(`Antigravity 未能完成此操作（${pending.method}，${Number(error.code) || 'ACP'}）。`, `Antigravity could not complete this operation (${pending.method}, ${Number(error.code) || 'ACP'}).`)
-      const err = new Error(detail) as Error & { authError?: boolean; rpcCode?: number }
+      const diagnostic = !authError && error.code === -32602 ? parameterDiagnostic(error) : ''
+      const err = new Error(diagnostic ? `${detail} ${diagnostic}` : detail) as Error & { authError?: boolean; rpcCode?: number }
       if (authError) err.authError = true
       if (typeof error.code === 'number') err.rpcCode = error.code
       pending.finish(err)
@@ -547,8 +551,11 @@ export class AntigravitySession {
         this.onEvent({ type: 'context', ...context })
       }
     } else if (kind === 'config_option_update' || kind === 'model_update' || kind === 'available_models_update' || kind === 'current_mode_update') {
-      if (kind === 'current_mode_update') this.mode = text(update.currentModeId) || this.mode
-      else this.readConfig(kind === 'config_option_update' ? update : { models: update.models ?? update })
+      if (kind === 'current_mode_update') {
+        this.modeAdvertised = true
+        this.mode = text(update.currentModeId) || undefined
+        if (!this.choices.has('mode')) this.legacyMode = this.mode
+      } else this.readConfig(kind === 'config_option_update' ? update : { models: update.models ?? update })
       const models = this.modelView()
       if (this.prompting && models.mode !== this.promptMode) {
         void this.close(new Error(this.approvalModeError()))
@@ -599,7 +606,7 @@ export class AntigravitySession {
     })
     const activeMode = this.promptMode ?? this.mode
     const allowOnce = options.find((option) => option.allow)
-    if (activeMode === 'auto' && allowOnce && isAntigravityMcpPermission(tool, this.mcpServerNames, this.knownMcpTools?.())) {
+    if (activeMode === 'auto' && allowOnce) {
       this.send({ id: rpcId, result: { outcome: { outcome: 'selected', optionId: allowOnce.id } } })
       return
     }

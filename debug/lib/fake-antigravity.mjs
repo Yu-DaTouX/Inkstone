@@ -17,6 +17,7 @@ const chunk = (text, sessionId) => update({ sessionUpdate: 'agent_message_chunk'
 const legacy = process.argv.includes('legacy')
 const noAuth = process.argv.includes('auth')
 const loadOnly = process.argv.includes('load-only')
+const noPlan = process.argv.includes('no-plan')
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
 let effort = 'low'
@@ -54,7 +55,7 @@ const selected = (id, category, currentValue, options) => ({ id, category, type:
 const option = (value, name = value) => ({ value, name })
 const config = () => ({ configOptions: [
   selected('model', 'model', model, [{ group: 'gemini', name: 'Gemini', options: available }]),
-  selected('approval-fixture', 'mode', mode, [option('default'), option('auto'), option('plan', 'Plan')]),
+  selected('approval-fixture', 'mode', mode, [option('default'), option('accept-edits'), option('auto'), ...(!noPlan ? [option('plan', 'Plan')] : [])]),
   ...(model === 'third-party' ? [] : [selected(`effort-${model}`, 'thought_level', effort, [{
     group: 'common', name: 'Common', options: model === 'flash' ? [option('low', 'Low'), option('high', 'High')] :
       [option('low', 'Low'), option('medium', 'Medium'), option('high', 'High'), option('xhigh', 'Extra')]
@@ -66,6 +67,14 @@ const options = [
   { optionId: 'always', kind: 'allow_always', name: 'Always allow' },
   { optionId: 'deny', kind: 'reject_once', name: 'Deny' }
 ]
+const permissionCalls = new Map([
+  ['权限', { title: '查看夹具项目', rawInput: { path: 'README.md' } }],
+  ['详情缺失', { title: '查看夹具项目' }],
+  ['详情超限', { kind: 'edit', title: '写入大段夹具内容', rawInput: { text: 'x'.repeat(32_769) } }],
+  ['检查 MCP 权限', { kind: 'other', title: 'Run mcp_inkstone-pi_start_pi_subagent', rawInput: { task: 'inspect' } }],
+  ['检查命令权限', { kind: 'execute', title: 'echo fixture', rawInput: { CommandLine: 'echo fixture', BypassSandbox: true } }],
+  ['检查文件权限', { kind: 'edit', title: '编辑夹具文件', locations: [{ path: 'fixture.txt' }] }]
+])
 
 for await (const line of input) {
   const { id, method, params, result, error } = JSON.parse(line)
@@ -101,6 +110,12 @@ for await (const line of input) {
       continue
     }
     const saved = loadSession(params.sessionId)
+    if (process.argv.includes('wrong-resume-id') && method === 'session/resume') {
+      update({ sessionUpdate: 'usage_update', used: 999, size: 20000 }, params.sessionId)
+      chunk('失败续接的回放', params.sessionId)
+      reply(id, { sessionId: 'different-session', ...config() })
+      continue
+    }
     if (!saved) {
       send({ id, error: { code: -32603, message: `Failed to read session ${params.sessionId}` } })
       continue
@@ -147,6 +162,14 @@ for await (const line of input) {
     const text = raw.startsWith(prefix) && raw.includes(divider)
       ? raw.slice(prefix.length, raw.indexOf(divider))
       : raw.split('\nCurrent user message:\n').at(-1)
+    if (text === '参数诊断' || images.some(({ mimeType, data }) => !/^image\/(png|jpeg|gif|webp)$/.test(mimeType) || typeof data !== 'string' || Buffer.from(data, 'base64').toString('base64') !== data)) {
+      send({ id, error: { code: -32602, message: 'Invalid params', data: {
+        message: 'Image payload must be raw Base64. Bearer fixture-secret-123',
+        issues: [{ path: ['prompt', 1, 'data'], message: 'Missing image bytes' }],
+        request: { text: '不能暴露的原始正文' }
+      } } })
+      continue
+    }
     if (images.length > 0) {
       chunk(`收到 ${images.length} 张图 · ${images[0].mimeType}${text ? ` · ${text}` : ''}`)
       saveSession()
@@ -154,6 +177,10 @@ for await (const line of input) {
       continue
     }
     if (raw.includes('structured context checkpoint summary') || raw.includes('Update the existing structured summary')) {
+      if (mode !== 'plan') {
+        send({ id, error: { code: -32602, message: 'Compaction expected plan mode' } })
+        continue
+      }
       const facts = [
         knowsFixtureCode || raw.includes('记住夹具暗号：砚石') ? '- 记住夹具暗号：砚石' : '',
         knowsLongHistory || raw.includes('历史起点') ? '- 保留长历史锚点：历史起点' : '',
@@ -161,6 +188,16 @@ for await (const line of input) {
       ].filter(Boolean).join('\n')
       chunk(`## Goal\n继续当前夹具任务\n\n## Progress\n### Done\n- [x] 完成前期步骤\n\n## Facts & Details\n${facts || '- 已生成测试摘要'}`)
       saveSession()
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '子代理步骤') {
+      update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '夹具子代理思考' } })
+      update({ sessionUpdate: 'tool_call', toolCallId: 'sub-read', title: 'Read fixture', kind: 'read', status: 'pending' })
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'sub-read', status: 'in_progress', rawInput: { path: 'README.md' } })
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'sub-read', status: 'completed', rawOutput: 'fixture tool result' })
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'sub-read', status: 'completed' })
+      chunk(`子代理 · ${model}/${effort}/${mode}`)
       reply(id, { stopReason: 'end_turn' })
       continue
     }
@@ -365,20 +402,21 @@ for await (const line of input) {
     }
     if (text === '崩溃') process.exit(3)
     if (text === '等待') { chunk('正在等待'); continue }
-    if (text === '权限' || text === '详情缺失' || text === '检查 MCP 权限' || text === '检查命令权限') {
-      waiting = true
-      if (text === '检查 MCP 权限') {
-        update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', kind: 'other', title: 'Run mcp_inkstone-pi_start_pi_subagent', status: 'pending', rawInput: { task: 'inspect' } })
-        call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
-      } else if (text === '检查命令权限') {
-        update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', kind: 'execute', title: 'npm run typecheck', status: 'pending', rawInput: { CommandLine: 'npm run typecheck' } })
-        call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
-      } else {
-        update({ sessionUpdate: 'tool_call', toolCallId: 'inspect', title: '查看夹具项目', status: 'pending', ...(text === '权限' ? { rawInput: { path: 'README.md' } } : {}) })
-        call('foreign', 'session/request_permission', { sessionId: 'foreign-session', toolCall: { toolCallId: 'inspect' }, options })
-        call('unsupported', 'fs/write_text_file', { sessionId: sid, path: 'not-written.txt', content: 'fixture' })
-        call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'inspect' }, options })
+    const operation = permissionCalls.get(text)
+    if (operation) {
+      if (text === '检查 MCP 权限' && !mcp) {
+        chunk('未收到 ACP MCP 注册')
+        reply(id, { stopReason: 'end_turn' })
+        continue
       }
+      waiting = true
+      const toolCall = { toolCallId: 'inspect' }
+      update({ sessionUpdate: 'tool_call', ...toolCall, ...operation, status: 'pending' })
+      if (text === '权限' || text === '详情缺失') {
+        call('foreign', 'session/request_permission', { sessionId: 'foreign-session', toolCall, options })
+        call('unsupported', 'fs/write_text_file', { sessionId: sid, path: 'not-written.txt', content: 'fixture' })
+      }
+      call('permission', 'session/request_permission', { sessionId: sid, toolCall, options })
     } else {
       chunk('不应出现', 'foreign-session')
       chunk('模拟'); chunk(`回复 · ${model}`)
