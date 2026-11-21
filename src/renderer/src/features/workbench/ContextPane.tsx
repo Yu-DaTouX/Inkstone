@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { useI18n, useT, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
-import type { UIMessage } from '../../../../shared/ipc'
+import { useShallow } from 'zustand/react/shallow'
+import { selectContextSession } from './rail-selectors'
+import type { SessionStats, UIMessage } from '../../../../shared/ipc'
 import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, sourceItemLabel, type ContextSourceItem, type SystemPartId } from '../../state/context-sources'
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import {
@@ -187,12 +189,22 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const t = useT()
   const text = useMemo(() => contextPaneText(lang), [lang])
 
-  const session = useStore((s) => s.session)
-  const stats = useStore((s) => s.stats)
-  const messages = useStore((s) => (visible ? s.messages : NO_MESSAGES))
-  const autoCompactTokens = useStore((s) => s.settings?.autoCompactTokens)
-  const autoCompactLimit = autoCompactLimitOf(session, { autoCompactTokens })
-  const sourcesText = useStore((s) => (visible ? s.statuses[CONTEXT_USAGE_STATUS_KEY] : undefined))
+  const lastShown = useRef<{
+    session: ReturnType<typeof selectContextSession>
+    contextUsage?: SessionStats['contextUsage']
+    messages: UIMessage[]
+    autoCompactLimit?: number
+    sourcesText?: string
+  }>({ session: null, messages: NO_MESSAGES })
+  const session = useStore(useShallow((s) => visible ? selectContextSession(s) : lastShown.current.session))
+  const contextUsage = useStore((s) => visible ? s.stats?.contextUsage : lastShown.current.contextUsage)
+  const stats = useMemo(() => contextUsage ? { contextUsage } : null, [contextUsage])
+  const messages = useStore((s) => visible ? s.messages : lastShown.current.messages)
+  const autoCompactLimit = useStore((s) => visible ? autoCompactLimitOf(s.session, s.settings) : lastShown.current.autoCompactLimit)
+  const sourcesText = useStore((s) => visible ? s.statuses[CONTEXT_USAGE_STATUS_KEY] : lastShown.current.sourcesText)
+  useLayoutEffect(() => {
+    if (visible) lastShown.current = { session, contextUsage, messages, autoCompactLimit, sourcesText }
+  }, [visible, session, contextUsage, messages, autoCompactLimit, sourcesText])
   const sources = useMemo(() => parseContextSources(sourcesText), [sourcesText])
 
   const sessionId = session?.sessionId ?? null

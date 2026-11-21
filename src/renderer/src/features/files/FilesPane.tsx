@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -223,16 +224,15 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
     })
   }, [focusFilter])
 
-  const addFileRefPaths = useStore((store) => store.addFileRefPaths)
-  const activeSessionId = useStore((store) => store.session?.sessionId)
-  const canAdd = canAttachToContext(owner, activeSessionId)
+  const canAdd = useStore((store) => canAttachToContext(owner, store.session?.sessionId))
 
   const attach = useCallback(
     (paths: string[]): void => {
-      if (!canAttachToContext(owner, useStore.getState().session?.sessionId) || !paths.length) return
-      void addFileRefPaths(paths.map((rel) => toAbsolutePath(owner.cwd, rel)))
+      const store = useStore.getState()
+      if (!canAttachToContext(owner, store.session?.sessionId) || !paths.length) return
+      void store.addFileRefPaths(paths.map((rel) => toAbsolutePath(owner.cwd, rel)))
     },
-    [owner, addFileRefPaths]
+    [owner]
   )
 
   const selectedRows = useMemo(() => rows.filter((row) => row.focusable && selected.has(row.path)), [rows, selected])
@@ -248,6 +248,12 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
     },
     [selected, selectedRows]
   )
+
+  const onRowContextMenu = useCallback((row: FileTreeRow, event: MouseEvent<HTMLButtonElement>): void => {
+    event.preventDefault()
+    focus(row.path)
+    openMenu(row, event.currentTarget)
+  }, [focus, openMenu])
 
   const onRowKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, path: string): void => {
@@ -567,11 +573,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
                   onClick={onRowClick}
                   onKeyDown={onRowKeyDown}
                   onDragStart={onRowDragStart}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    focus(row.path)
-                    openMenu(row, event.currentTarget)
-                  }}
+                  onContextMenu={onRowContextMenu}
                 />
               ))}
               <div className="v3-files-pad" style={{ height: viewWindow.padBottom }} aria-hidden />
@@ -684,7 +686,7 @@ function linkTitle(text: FilesText, row: FileTreeRow): string | undefined {
   return text.linkTo.replace('{target}', link.target ?? '')
 }
 
-function FilesRowView({
+const FilesRowView = memo(function FilesRowView({
   row,
   text,
   tabbable,
@@ -711,7 +713,7 @@ function FilesRowView({
   onClick: (row: FileTreeRow, event: MouseEvent<HTMLButtonElement>) => void
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, path: string) => void
   onDragStart: (event: DragEvent<HTMLButtonElement>, row: FileTreeRow) => void
-  onContextMenu: (event: MouseEvent<HTMLButtonElement>) => void
+  onContextMenu: (row: FileTreeRow, event: MouseEvent<HTMLButtonElement>) => void
 }): ReactElement {
   if (row.kind === 'state') {
     return (
@@ -758,12 +760,12 @@ function FilesRowView({
       onKeyDown={(event) => onKeyDown(event, row.path)}
       onDragStart={(event) => onDragStart(event, row)}
       onClick={(event) => onClick(row, event)}
-      onContextMenu={onContextMenu}
+      onContextMenu={(event) => onContextMenu(row, event)}
     >
       {row.dir ? row.name : <MiddleTruncate value={row.name} showTitle={false} />}
     </TreeRow>
   )
-}
+})
 
 function statusLabel(text: FilesText, state: FileTreeRow['state']): string {
   switch (state) {

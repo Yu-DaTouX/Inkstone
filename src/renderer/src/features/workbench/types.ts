@@ -61,6 +61,7 @@ export interface BranchPaneProps {
 
 export interface LogsPaneProps {
   owner: WorkspaceOwner
+  visible?: boolean
 }
 
 export interface QuotaPaneProps {

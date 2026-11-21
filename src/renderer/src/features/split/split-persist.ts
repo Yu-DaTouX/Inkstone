@@ -100,6 +100,27 @@ export function restoreSplit(raw: unknown, sessions: readonly KnownSession[]): S
   return { split: { tiles, live }, weights, rowSplit }
 }
 
+export function watchSplitRestore<T extends { sessions: readonly KnownSession[] }>(
+  store: { getState: () => T; subscribe: (listener: (state: T, previous: T) => void) => () => void },
+  restore: (sessions: T['sessions']) => boolean
+): () => void {
+  let restoring = false
+  const tryRestore = (sessions: T['sessions']): void => {
+    if (restoring || sessions.length === 0) return
+    restoring = true
+    try {
+      if (restore(sessions)) stop()
+    } finally {
+      restoring = false
+    }
+  }
+  const stop = store.subscribe((state, previous) => {
+    if (state.sessions !== previous.sessions) tryRestore(state.sessions)
+  })
+  tryRestore(store.getState().sessions)
+  return stop
+}
+
 export function readSavedSplit(storage: Pick<Storage, 'getItem'> | undefined): unknown {
   try {
     const raw = storage?.getItem(SPLIT_STORAGE_KEY)

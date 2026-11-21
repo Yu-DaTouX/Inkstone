@@ -2,8 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { Copy, Search } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { PROMPT_SUGGESTION_STATUS_KEY } from '../composer/prompt-suggestion'
-import { CONTEXT_USAGE_STATUS_KEY } from '../../state/context-sources'
+import { createLogStatusSelector } from './rail-selectors'
 import { CloseButton, EmptyState, IconButton, InputGroup, InputGroupAddon, InputGroupInput } from '../../ui'
 import { workbenchPaneText } from './pane-text'
 import type { LogsPaneProps } from './types'
@@ -29,12 +28,17 @@ function droppedFromTop(previous: readonly string[], next: readonly string[]): n
   return previous.length
 }
 
-export function LogsPane(_props: LogsPaneProps): ReactElement {
+export function LogsPane({ visible: shownPane = true }: LogsPaneProps): ReactElement {
   const t = useT()
   const { lang } = useI18n()
   const text = workbenchPaneText(lang)
-  const logs = useStore((s) => s.logs)
-  const statuses = useStore((s) => s.statuses)
+  const selectStatuses = useMemo(createLogStatusSelector, [])
+  const lastShown = useRef<{ logs: string[]; statuses: [string, string][] }>({ logs: [], statuses: [] })
+  const logs = useStore((s) => shownPane ? s.logs : lastShown.current.logs)
+  const statusEntries = useStore((s) => shownPane ? selectStatuses(s) : lastShown.current.statuses)
+  useLayoutEffect(() => {
+    if (shownPane) lastShown.current = { logs, statuses: statusEntries }
+  }, [shownPane, logs, statusEntries])
   const [filter, setFilter] = useState('')
   const [copied, setCopied] = useState(false)
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -43,7 +47,6 @@ export function LogsPane(_props: LogsPaneProps): ReactElement {
   const stick = useRef(true)
   const lastInput = useRef(-Infinity)
 
-  const statusEntries = Object.entries(statuses).filter(([key]) => key !== PROMPT_SUGGESTION_STATUS_KEY && key !== CONTEXT_USAGE_STATUS_KEY)
   const needle = filter.trim().toLowerCase()
   const numbered = useMemo<LogLine[]>(() => {
     const previous = numbering.current

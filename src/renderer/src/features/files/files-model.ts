@@ -224,7 +224,7 @@ function listingState(listing: DirListing | null | undefined): FilesRowState | n
 
 export type FilesRootStatus = 'none' | 'loading' | 'error' | 'empty' | 'ready'
 
-export function rootStatus(state: FilesTreeState): FilesRootStatus {
+export function rootStatus(state: Pick<FilesTreeState, 'cwd' | 'listings'>): FilesRootStatus {
   if (!state.cwd) return 'none'
   const value = listingState(state.listings[''])
   if (value === null) return 'ready'
@@ -233,14 +233,28 @@ export function rootStatus(state: FilesTreeState): FilesRootStatus {
   return 'error'
 }
 
-export function flattenRows(state: FilesTreeState): FileTreeRow[] {
+type FilesRowSource = Pick<FilesTreeState, 'cwd' | 'listings' | 'open'>
+
+export function createFilesRowsSelector() {
+  let previous: FilesRowSource | undefined
+  let rows: FileTreeRow[] = []
+  return (state: FilesRowSource): FileTreeRow[] => {
+    if (previous?.cwd !== state.cwd || previous.listings !== state.listings || previous.open !== state.open) {
+      previous = state
+      rows = flattenRows(state)
+    }
+    return rows
+  }
+}
+
+export function flattenRows(state: FilesRowSource): FileTreeRow[] {
   const rows: FileTreeRow[] = []
   if (rootStatus(state) !== 'ready') return rows
   appendChildren(rows, state, '', 0)
   return rows
 }
 
-function appendChildren(rows: FileTreeRow[], state: FilesTreeState, parent: string, depth: number): void {
+function appendChildren(rows: FileTreeRow[], state: FilesRowSource, parent: string, depth: number): void {
   const listing = state.listings[parent]
   const blocker = listingState(listing)
   if (blocker) {

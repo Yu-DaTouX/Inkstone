@@ -21,26 +21,7 @@ import './rail-stats.css'
 
 const SPEED_BARS = 12
 
-interface RailSnapshot {
-  messages: UIMessage[]
-  liveId: string | null
-  running: boolean
-  startedAt: number | null
-}
-
-function railSnapshot(s: Store): RailSnapshot {
-  const peeking = !!s.peekedSessionId
-  return {
-    messages: s.messages,
-    liveId: peeking ? null : liveStepId(s.messages, !!s.session?.isStreaming),
-    running: !peeking && (!!s.session?.isStreaming || !!s.session?.isAgentRunning),
-    startedAt: !peeking && s.session?.isAgentRunning ? s.session.runStartedAt ?? null : null
-  }
-}
-
-function sameSnapshot(a: RailSnapshot, b: RailSnapshot): boolean {
-  return a.messages === b.messages && a.liveId === b.liveId && a.running === b.running && a.startedAt === b.startedAt
-}
+const NO_MESSAGES: UIMessage[] = []
 
 function viewKey(s: Store): string {
   return sessionViewIdentity({ session: s.session, peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath }).key
@@ -60,24 +41,27 @@ function antigravityMessages(messages: readonly UIMessage[]): UIMessage[] {
   return result
 }
 
-export function useRailStats(enabled: boolean): RailStatsModel | null {
+export function useRailStats(enabled: boolean, timeline?: UIMessage[]): RailStatsModel | null {
   const t = useT()
   const money = useMoney()
-  const snapshot = useStreamingThrottledStore(railSnapshot, undefined, sameSnapshot)
-  const stats = useStore((s) => s.stats)
-  const antigravity = useStore((s) => !s.peekedSessionId && s.session?.model?.provider === 'antigravity')
-  const peekNote = useStore((s) => s.peekNote)
-  const view = useStore(viewKey)
+  const stats = useStore((s) => enabled ? s.stats : null)
+  const antigravity = useStore((s) => enabled && !s.peekedSessionId && s.session?.model?.provider === 'antigravity')
+  const streaming = useStore((s) => enabled && !s.peekedSessionId && !!s.session?.isStreaming)
+  const running = useStore((s) => enabled && !s.peekedSessionId && !!(s.session?.isAgentRunning || s.session?.isStreaming))
+  const startedAt = useStore((s) => enabled && !s.peekedSessionId && s.session?.isAgentRunning ? s.session.runStartedAt ?? null : null)
+  const historyPartial = useStore((s) => enabled && (s.peekNote?.truncated ?? 0) > 0)
+  const view = useStore((s) => enabled ? viewKey(s) : '')
   const childTokens = useStore((s) => (enabled && !antigravity ? viewSubagentMetrics(s).tokens : 0))
   const childCost = useStore((s) => (enabled && !antigravity ? viewSubagentMetrics(s).cost : 0))
-  const historyPartial = (peekNote?.truncated ?? 0) > 0
   const speedHold = useRef<RailSpeedHold | null>(null)
-  const messages = useMemo(() => antigravity ? antigravityMessages(snapshot.messages) : snapshot.messages, [antigravity, snapshot.messages])
+  const fallback = useStreamingThrottledStore((s) => enabled && !timeline ? s.messages : NO_MESSAGES)
+  const source = enabled ? timeline ?? fallback : NO_MESSAGES
+  const messages = useMemo(() => antigravity ? antigravityMessages(source) : source, [antigravity, source])
   const countSource = useToolStructureMessages(messages)
   const counts = useMemo(() => (enabled ? railOperationCounts(countSource) : null), [enabled, countSource])
   const history = useMemo(() => {
     if (!enabled) return null
-    const { liveId, running, startedAt } = snapshot
+    const liveId = liveStepId(source, streaming)
     const { settled, live } = splitLiveStep(messages, liveId)
     const floor = latencyFloor(settled)
     const last = settled.findLast((message) => message.role === 'assistant')
@@ -93,7 +77,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
       running,
       liveSince: startedAt !== null && settled.some((m) => m.turnTiming?.startedAt === startedAt) ? null : startedAt
     }
-  }, [enabled, snapshot, messages, stats, historyPartial, view, counts, antigravity])
+  }, [enabled, source, streaming, running, startedAt, messages, stats, historyPartial, view, counts, antigravity])
   return useMemo(() => {
     if (!history) return null
     const { metrics, counts, speeds, heldReading, running, liveSince } = history

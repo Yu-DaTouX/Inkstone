@@ -6,7 +6,7 @@ import {
   REVEAL_FLASH_MS,
   computeWindow,
   filesTreeReducer,
-  flattenRows,
+  createFilesRowsSelector,
   freshTreeState,
   rootStatus,
   type FileTreeRow,
@@ -122,7 +122,8 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     })
   }, [cwd, watchId, openDirs, load])
 
-  const rows = useMemo(() => flattenRows(state), [state])
+  const selectRows = useMemo(createFilesRowsSelector, [])
+  const rows = selectRows(state)
   const status = rootStatus(state)
   const [highlight, setHighlight] = useState<string | null>(null)
   useEffect(() => {

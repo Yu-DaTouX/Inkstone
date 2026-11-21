@@ -1252,7 +1252,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visi
                     dir={shownDirs.get(item.path) ?? ''}
                     entry={patches[item.path]}
                     cwd={cwd}
-                    request={request ?? { kind: 'working' }}
+                    request={request ?? WORKING_SCOPE}
                     loader={loader}
                     schedule={schedule}
                     tick={tick}

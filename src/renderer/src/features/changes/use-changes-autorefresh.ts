@@ -44,7 +44,7 @@ export function useChangesAutoRefresh(visible: boolean, refresh: () => void): vo
     if (!gate) return undefined
     let running = runningOf(useStore.getState())
     let signature = toolActivitySignature(useStore.getState())
-    const unsubscribe = useStore.subscribe((s) => {
+    const unsubscribe = useStore.subscribe((s, previous) => {
       const nextRunning = runningOf(s)
       if (running && !nextRunning) {
         running = nextRunning
@@ -53,6 +53,7 @@ export function useChangesAutoRefresh(visible: boolean, refresh: () => void): vo
         return
       }
       running = nextRunning
+      if (s.messages === previous.messages) return
       const nextSignature = toolActivitySignature(s)
       if (nextSignature === signature) return
       signature = nextSignature

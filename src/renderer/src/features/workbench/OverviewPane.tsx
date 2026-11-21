@@ -10,7 +10,8 @@ import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, scaledSourceItems, sourc
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { viewSubagentMetrics } from '../../state/subagent-view'
-import { sessionViewIdentity } from '../session/view-state'
+import { useShallow } from 'zustand/react/shallow'
+import { selectOverviewSession } from './rail-selectors'
 import { quotaForecastLine, quotaPace, quotaReadAgo, quotaResetLine, quotaShortLabel, quotaWindowName, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import { money } from '../../../../shared/quota-mini'
@@ -762,23 +763,21 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const rail = useMemo(() => railText(lang), [lang])
 
   const cwd = owner?.cwd || ''
-  const session = useStore((s) => s.session)
-  const stats = useStore((s) => s.stats)
-  const settings = useStore((s) => s.settings)
+  const session = useStore(useShallow(selectOverviewSession))
+  const projectName = useStore((s) => cwd ? s.settings?.projectNames?.[cwd] || lastSegment(cwd) : '')
   const messages = useStreamingThrottledStore((s) => s.messages)
-  const childTasks = useStore((s) => viewSubagentMetrics(s).total)
-  const childTasksLive = useStore((s) => viewSubagentMetrics(s).live)
+  const { total: childTasks, live: childTasksLive } = useStore(useShallow((s) => {
+    const { total, live } = viewSubagentMetrics(s)
+    return { total, live }
+  }))
   const terminalJobs = useViewTerminalJobs()
   const widgets = useStore((s) => s.widgets)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const agentRunning = session?.isAgentRunning === true || session?.isStreaming === true
-  const provider = session?.model?.provider ?? ''
+  const agentRunning = session.running
+  const provider = session.model?.provider ?? ''
   const antigravity = provider === 'antigravity'
   const unreported = lang === 'en-US' ? 'Not reported' : '未上报'
 
-  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
-  const foldKey = view.key || 'none'
+  const foldKey = session.key || 'none'
   const savedOrder = useRailSections((s) => s.order)
   const hidden = useRailSections((s) => s.hidden)
   const foldsBySession = useRailSections((s) => s.foldsBySession)
@@ -786,8 +785,6 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const setOrder = useRailSections((s) => s.setOrder)
   const order = useMemo(() => resolveRailOrder(savedOrder), [savedOrder])
   const isOpen = (id: RailSectionId): boolean => isRailSectionOpen({ order: savedOrder, hidden, foldsBySession }, foldKey, id)
-
-  const projectName = cwd ? settings?.projectNames?.[cwd] || lastSegment(cwd) : ''
 
   const gitMessageCount = useThrottledValue(messages.length, agentRunning, GIT_REFRESH_WHILE_RUNNING_MS)
   const [gitTick, setGitTick] = useState(0)
@@ -837,15 +834,21 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     <RailValue value={rail.local} />
   )
 
-  const statsModel = useRailStats(!isRailSectionHidden({ hidden }, 'stats'))
+  const statsModel = useRailStats(!isRailSectionHidden({ hidden }, 'stats'), messages)
   const contextOpen = isOpen('context')
-  const autoCompactLimit = autoCompactLimitOf(session, settings)
+  const contextShown = !isRailSectionHidden({ hidden }, 'context')
+  const autoCompactLimit = useStore((s) => contextShown ? autoCompactLimitOf(s.session, s.settings) : undefined)
+  const contextUsage = useStore((s) => contextShown ? s.stats?.contextUsage : undefined)
+  const stats = useMemo(() => contextUsage ? { contextUsage } : null, [contextUsage])
+  const { model, lastCompaction } = session
+  const contextFrom = useStore((s) => contextOpen ? s.session?.contextFrom : undefined)
+  const contextSession = useMemo(() => ({ model, lastCompaction, contextFrom, isStreaming: agentRunning }), [model, lastCompaction, contextFrom, agentRunning])
   const sourcesText = useStore((s) => (contextOpen ? s.statuses[CONTEXT_USAGE_STATUS_KEY] : undefined))
   const contextData = useMemo(
-    () => (!contextOpen ? null : contextPaneData({ session, stats, messages, autoCompactLimit, sources: parseContextSources(sourcesText) })),
-    [contextOpen, session, stats, messages, autoCompactLimit, sourcesText]
+    () => (!contextOpen ? null : contextPaneData({ session: contextSession, stats, messages, autoCompactLimit, sources: parseContextSources(sourcesText) })),
+    [contextOpen, contextSession, stats, messages, autoCompactLimit, sourcesText]
   )
-  const usage = contextData?.usage ?? contextUsageSummary(session, stats, autoCompactLimit)
+  const usage = useMemo(() => contextData?.usage ?? contextUsageSummary({ model, lastCompaction }, stats, autoCompactLimit), [contextData, model, lastCompaction, stats, autoCompactLimit])
   const contextKnown = usage.known && usage.percent !== null
   const contextSummary = (
     <RailValue
@@ -859,7 +862,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const outputPool = useMemo(() => outputCandidates(toolMessages, cwd || undefined), [toolMessages, cwd])
   const outputPaths = useMemo(() => outputPool.map((output) => output.path), [outputPool])
   const outputScreen = useOutputScreen(cwd || null, outputPaths, gitRefresh)
-  const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
+  const [dismissedOutputs, dismissOutput] = useDismissedOutputs(session.sessionId || session.key || '')
   const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
   const taskCount = { running: childTasksLive + terminalJobs.filter(isLiveTerminalJob).length, total: childTasks + terminalJobs.length }
@@ -874,8 +877,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
   const piMcp = useMcpConnections(antigravity ? null : owner, agentRunning)
-  const bridgeConfigured = session?.antigravity?.bridgeConfigured
-  const acpMcpServers = session?.antigravity?.mcpServers ?? []
+  const { bridgeConfigured } = session
+  const acpMcpServers = session.mcpServers ?? []
   const configured = lang === 'en-US' ? 'Configured' : '已配置'
   const mcp = antigravity ? {
     visible: true,
@@ -888,7 +891,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
 
   const quota = useQuotaTile(antigravity ? '' : provider, agentRunning, t, text)
   const antigravityQuota = useAntigravityQuota(antigravity && !isRailSectionHidden({ hidden }, 'usage'), agentRunning)
-  const deepseek = modelBrand({ id: session?.model?.id }) === 'deepseek' || modelBrand(session?.model) === 'deepseek'
+  const deepseek = modelBrand({ id: model?.id }) === 'deepseek' || modelBrand(model) === 'deepseek'
   const peakPrice = deepseek && deepseekPricePeriod(quota.now) === 'peak'
   const quotaModel = quota.model
   const quotaStale = quotaModel ? quotaReadingStale(quotaModel.checkedAt, quota.now, !!quotaModel.staleError) : false
@@ -1031,7 +1034,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     },
     ...(antigravity
       ? { usage: {
-          summary: <RailValue value={antigravityQuotaSummary(antigravityQuota.snapshot, session?.model, lang) ?? (antigravityQuota.loading ? (lang === 'en-US' ? 'Reading…' : '查询中…') : unreported)} />,
+          summary: <RailValue value={antigravityQuotaSummary(antigravityQuota.snapshot, model, lang) ?? (antigravityQuota.loading ? (lang === 'en-US' ? 'Reading…' : '查询中…') : unreported)} />,
           body: <AntigravityQuotaDetails quota={antigravityQuota} lang={lang} />
         } }
       : quotaModel || peakPrice
@@ -1089,7 +1092,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ? {
           backgroundTasks: {
             summary: taskSummary,
-            body: <BackgroundTasks key={view.key} lang={lang} text={text} />
+            body: <BackgroundTasks key={session.key} lang={lang} text={text} />
           }
         }
       : {}),

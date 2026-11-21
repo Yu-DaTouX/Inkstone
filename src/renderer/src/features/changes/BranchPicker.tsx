@@ -89,7 +89,6 @@ export function BranchPicker({ cwd, triggerRef, isOpen, onOpenChange, onChanged,
 
 function BranchPickerBody({ cwd, onClose, onChanged, onShowFile }: { cwd: string; onClose: () => void; onChanged?: () => void; onShowFile?: (path: string) => void }): ReactElement {
   const { t } = useI18n()
-  const runners = useStore((s) => s.runners)
   const [snapshot, setSnapshot] = useState<PickerSnapshot | null>(null)
   const [tick, setTick] = useState(0)
   const [query, setQuery] = useState('')
@@ -127,7 +126,7 @@ function BranchPickerBody({ cwd, onClose, onChanged, onShowFile }: { cwd: string
   const reload = useCallback(() => setTick((n) => n + 1), [])
   const runner = useGitAction(cwd, snapshot?.expected, reload)
   const repo = snapshot?.repo ?? null
-  const running = cwdBusy(runners, repo?.root ?? cwd)
+  const running = useStore((s) => cwdBusy(s.runners, repo?.root ?? cwd))
   const list = useMemo(
     () => buildBranchList({ refs: snapshot?.refs ?? [], busyBranches: snapshot?.busyBranches ?? [], currentBranch: repo?.branch ?? null, query, running }),
     [snapshot, repo?.branch, query, running]

@@ -27,6 +27,7 @@ import { terminalJobsForView, useTerminalJobs } from '../../state/terminal-jobs'
 import { isLiveTerminalJob, terminalJobStoppable, type TerminalJob } from '../../../../shared/terminal-jobs'
 import type { SubagentRowState } from '../../../../shared/subagent-task-rows'
 import { openPanelTool } from './panel-actions'
+import { selectTerminalJobView } from './rail-selectors'
 import { activateTerminal } from '../terminal/terminal-activate'
 
 type TaskEntry = BackgroundTaskEntry & { run: SubagentRun; row: SubagentTaskRow }
@@ -34,13 +35,11 @@ type JobEntry = BackgroundTaskEntry & { job: TerminalJob }
 
 export function useViewTerminalJobs(): TerminalJob[] {
   const jobs = useTerminalJobs((s) => s.jobs)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const session = useStore((s) => s.session)
+  const { sessionId, sessionFile } = useStore(useShallow(selectTerminalJobView))
   useEffect(() => {
     void useTerminalJobs.getState().load()
   }, [])
-  return useMemo(() => terminalJobsForView(jobs, { peekedSessionId, peekedPath, session }), [jobs, peekedSessionId, peekedPath, session])
+  return useMemo(() => terminalJobsForView(jobs, { peekedSessionId: sessionId, peekedPath: sessionFile, session: null }), [jobs, sessionId, sessionFile])
 }
 
 export interface BackgroundTasksProps {

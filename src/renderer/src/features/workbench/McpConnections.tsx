@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useShallow } from 'zustand/react/shallow'
+import { selectMcpView } from './rail-selectors'
 import { MCP_SETTINGS_CHANGED, mcpViewKey, notifyMcpSettingsChanged, reloadCurrentMcp } from '../../state/mcp-settings'
 import { Button, Notice, RailRow, RailValue, Switch, type StatusDotKind } from '../../ui'
 import type { McpSettingsService, McpSettingsSnapshot } from '../../../../shared/mcp-settings'
@@ -11,8 +13,8 @@ import { summarizeMcpStatus } from '../settings/capabilities/mcp-status-summary'
 export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean) {
   const { lang } = useI18n()
   const en = lang === 'en-US'
-  const sessionKey = useStore((s) => JSON.stringify([s.activeRunnerId, s.session?.sessionId, s.peekedSessionId, s.peekedPath]))
-  const sessionBusy = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting || !!s.session?.pendingMessageCount || s.conn !== 'ready')
+  const sessionKey = useStore(useShallow((s) => owner ? selectMcpView(s) : null))
+  const sessionBusy = useStore((s) => !!owner && (!!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting || !!s.session?.pendingMessageCount || s.conn !== 'ready'))
   const [snapshot, setSnapshot] = useState<McpSettingsSnapshot | null>(null)
   const [runtime, setRuntime] = useState<CapabilitySettingsSnapshot | null>(null)
   const [error, setError] = useState('')
@@ -23,7 +25,7 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
     const state = useStore.getState()
     return !!owner?.active && !!owner.sessionId && owner.sessionId === state.session?.sessionId && !state.peekedSessionId && !state.peekedPath
   }
-  const active = current()
+  const active = !!owner?.active && !!owner.sessionId && owner.sessionId === sessionKey?.[1] && !sessionKey[2] && !sessionKey[3]
   const refresh = useCallback(async (): Promise<void> => {
     const id = ++requestId.current
     const view = mcpViewKey()

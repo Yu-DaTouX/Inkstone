@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { GitChangePatch, GitChangesScope } from '../../../../shared/git'
 import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat, Notice, Spinner, cx } from '../../ui'
 import { DiffView, type DiffContents, type DiffViewMode } from '../diff'
@@ -42,7 +42,7 @@ function samePatchText(patch: string): string {
   return (body < 0 ? text : text.slice(body)).trim()
 }
 
-export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
+export const ChangesFileDiff = memo(function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
   const { item, dir, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
   const [state, setState] = useState<PatchState>({ kind: 'idle' })
   const origin = useMemo(() => resolvePatchSource(item.path, entry), [item.path, entry])
@@ -192,4 +192,4 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
       </Collapsible>
     </section>
   )
-}
+})
