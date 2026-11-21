@@ -163,9 +163,6 @@ export async function runCredentialsTests(ok) {
       minimax: 'MINIMAX_API_KEY',
       moonshotai: 'MOONSHOT_API_KEY',
       'moonshotai-cn': 'MOONSHOT_API_KEY',
-      'qwen-token-plan': 'QWEN_TOKEN_PLAN_API_KEY',
-      'qwen-token-plan-individual': 'QWEN_TOKEN_PLAN_API_KEY',
-      'qwen-token-plan-individual-cn': 'QWEN_TOKEN_PLAN_CN_API_KEY',
       'vercel-ai-gateway': 'AI_GATEWAY_API_KEY',
       xiaomi: 'XIAOMI_API_KEY',
       'xiaomi-token-plan-ams': 'XIAOMI_TOKEN_PLAN_AMS_API_KEY',
@@ -193,6 +190,52 @@ export async function runCredentialsTests(ok) {
     } finally {
       if (savedEnv === undefined) delete process.env.CEREBRAS_API_KEY
       else process.env.CEREBRAS_API_KEY = savedEnv
+    }
+  }
+
+  {
+    const plans = [
+      ['qwen-token-plan', 'QWEN_TOKEN_PLAN_TEAM_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY'],
+      ['qwen-token-plan-cn', 'QWEN_TOKEN_PLAN_TEAM_CN_API_KEY', 'QWEN_TOKEN_PLAN_CN_API_KEY'],
+      ['qwen-token-plan-individual', 'QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY'],
+      ['qwen-token-plan-individual-cn', 'QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY', 'QWEN_TOKEN_PLAN_CN_API_KEY']
+    ]
+    const vars = [...new Set(plans.flatMap(([, primary, legacy]) => [primary, legacy]))]
+    const savedEnv = new Map(vars.map((name) => [name, process.env[name]]))
+    const fixture = 'SYNTHETIC_QWEN_FIXTURE'
+    const listed = async () => new Map((await listAuthProviders(pi)).map((p) => [p.id, p]))
+    try {
+      for (const name of vars) delete process.env[name]
+      const empty = await listed()
+      for (const [id, primary, legacy] of plans) {
+        const p = empty.get(id)
+        ok(p?.authKey === id && p.kind === 'api_key' && p.envVar === primary && p.status === 'missing', `${id} 仍用原生 provider ID 写入，首选专用变量`)
+        process.env[primary] = fixture
+        let rows = await listed()
+        ok(plans.every(([other]) => rows.get(other)?.status === (id === other ? 'ready' : 'missing')), `${primary} 不跨方案或地区启用`)
+        process.env[legacy] = fixture
+        rows = await listed()
+        ok(rows.get(id)?.source === 'env' && rows.get(id)?.envVar === primary, `${id} 的专用变量优先于旧变量`)
+        delete process.env[primary]
+        rows = await listed()
+        ok(plans.every(([other, , fallback]) => fallback === legacy
+          ? rows.get(other)?.source === 'env' && rows.get(other)?.envVar === legacy
+          : rows.get(other)?.status === 'missing'), `${legacy} 仅为同地区原有方案回退，并显示实际变量名`)
+        delete process.env[legacy]
+      }
+      for (const [id, , legacy] of plans) {
+        process.env[legacy] = fixture
+        ok((await setApiKey(id, fixture)).ok, `${id} 可独立保存凭证`)
+        const p = (await listed()).get(id)
+        ok(p?.source === 'auth.json' && p.envShadowed === true && !JSON.stringify(p).includes(fixture), `${id} 已保存凭证优先，不返回环境变量值`)
+      }
+      const stored = JSON.parse(await readFile(authPath, 'utf8'))
+      ok(plans.every(([id]) => stored[id]?.key === fixture) && stored['qwen-token-plan-team'] === undefined, '保留四个既有 auth ID，不新建团队凭证别名')
+    } finally {
+      for (const [name, value] of savedEnv) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
     }
   }
 

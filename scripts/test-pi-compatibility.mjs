@@ -1,12 +1,15 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { comparePiVersions, requirePiUpgrade } from './lib/pi-upgrade-policy.mjs'
+import { bundledPiRuntimeForTest } from './lib/pi-runtime-location.mjs'
+import { catalogKey } from '../resources/pi-extensions/generated/model-capabilities.mjs'
+import { fastModeSupported as extensionFastModeSupported } from '../resources/pi-extensions/fast-mode.js'
 
 let checks = 0
 const check = (condition, message) => { assert(condition, message); checks++ }
@@ -18,7 +21,11 @@ if (process.argv.includes('--upgrade-catalog-only')) {
 await runUpgradeCatalogTests()
 const root = await mkdtemp(join(tmpdir(), 'inkstone-pi-compat-'))
 const modules = {}
-for (const [name, file] of Object.entries({ normalize: 'src/main/normalize.ts', projector: 'src/main/session-items/projector.ts', tree: 'src/shared/tool-call-tree.ts' })) {
+for (const [name, file] of Object.entries({
+  normalize: 'src/main/normalize.ts', projector: 'src/main/session-items/projector.ts', tree: 'src/shared/tool-call-tree.ts',
+  session: 'src/main/session-reader.ts', prefs: 'src/main/pi-runtime-prefs.ts', models: 'src/shared/model-capabilities.ts',
+  brand: 'src/shared/model-brand.ts', fast: 'src/shared/fast-mode.ts', subagent: 'src/shared/subagent-pi-launch.ts'
+})) {
   const outfile = resolve(`out/test/pi-compat-${name}.mjs`)
   await build({ entryPoints: [resolve(file)], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent' })
   modules[name] = await import(pathToFileURL(outfile))
@@ -82,7 +89,128 @@ const cycle = [{ id: 'a', parentToolCallId: 'b', name: 'read' }, { id: 'b', pare
 check(modules.tree.toolCallForest(cycle).length === 2, 'cyclic history cannot hang the renderer')
 check(modules.tree.toolCallForest([{ id: 'x', parentToolCallId: 'gone', name: 'read' }]).length === 1, 'orphan child stays inspectable at the top level')
 
-console.log(`PASS: ${checks} assertions plus version rejection cases; pi upgrade, shell guard, nested history/tree and deferred-tool policy`)
+try {
+  await runReasoningDiagnosticsTests()
+  await runBundledRuntimeTests()
+} finally {
+  await rm(root, { recursive: true, force: true })
+}
+console.log(`PASS: ${checks} assertions plus version rejection cases; pi upgrade, models, diagnostics, bundled extensions and nested history/tree`)
+
+async function runReasoningDiagnosticsTests() {
+  const message = {
+    role: 'assistant', provider: 'openai', model: 'gpt-6.2-sol', stopReason: 'stop', timestamp: 100,
+    content: [{ type: 'text', text: 'normal response' }],
+    diagnostics: [{ type: 'openai_input_transformations', timestamp: 99, details: { transformations: [
+      { type: 'reasoning', id: 'rs_fixture', action: 'removed', reason: 'fixture' }
+    ] } }]
+  }
+  const { SessionItemProjector } = modules.projector
+  const live = new SessionItemProjector()
+  live.liveMessageStart(message, 99)
+  live.liveAssistantDelta({ type: 'text_delta', contentIndex: 0, delta: 'normal response' }, 100)
+  const settled = live.liveMessageEnd({ error: modules.normalize.assistantError(message) }, [], message)
+  check(settled?.text === 'normal response' && !settled.error && !settled.thinking, 'reasoning drop diagnostics are not live errors, content or thinking blocks')
+  const file = join(root, 'diagnostic.jsonl')
+  const timestamp = new Date(100).toISOString()
+  const persisted = [
+    { type: 'session', version: 3, id: 'fixture', cwd: root, timestamp },
+    { type: 'message', id: 'reply', parentId: null, timestamp, message }
+  ].map((row) => JSON.stringify(row)).join('\n') + '\n'
+  await writeFile(file, persisted)
+  const history = await modules.session.readSessionMessages(file)
+  const reply = history?.messages[0]
+  check(history?.messages.length === 1 && reply?.entryId === 'reply' && reply.text === settled.text && !reply.error, 'history retains the message and branch anchor without a spurious error')
+  check(await readFile(file, 'utf8') === persisted, 'desktop projection does not discard the persisted native diagnostics')
+  check(modules.prefs.applyPiNativePatch({ showCacheMissNotices: true }, { cacheWarming: 'off' }).showCacheMissNotices === true, 'editing desktop native settings preserves pi’s TUI cache diagnostic preference')
+}
+
+async function runBundledRuntimeTests() {
+  const runtime = bundledPiRuntimeForTest('pi compatibility', resolve('resources/pi-runtime'))
+  if (!runtime) return
+  const { version } = JSON.parse(await readFile(join(runtime, 'package.json'), 'utf8'))
+  const cli = join(runtime, 'dist/bundle/cli.js')
+  const extensionDir = resolve('resources/pi-extensions')
+  const app = await readFile(resolve('src/main/index.ts'), 'utf8')
+  const agent = await readFile(resolve('src/main/agent.ts'), 'utf8')
+  const desktopBlock = app.match(/const YAN_THIN_EXTENSION_FILES = \{([\s\S]*?)\} as const/)?.[1] ?? ''
+  const desktop = Object.fromEntries([...desktopBlock.matchAll(/(\w+Extension): '([^']+\.js)'/g)].map(([, key, file]) => [key, file]))
+  const providerLine = app.match(/^const PROVIDER_EXTENSION_FILES = .*$/m)?.[0] ?? ''
+  const providers = [...providerLine.matchAll(/'([^']+\.js)'/g)].map(([, file]) => file)
+  const extArgs = agent.match(/args: skipLaunch \? skipLaunch\.args : agentOwnedPiArgs\(\[([\s\S]*?)\], nativeTools\)/)?.[1] ?? ''
+  const ordered = [...extArgs.matchAll(/this\.(\w+Extension|providerExtensions)\s*(?:\?|\.flatMap)/g)]
+    .flatMap(([, key]) => key === 'providerExtensions' ? providers : desktop[key] ? [desktop[key]] : [])
+  const alternates = ['readonly-tools.js', 'side-question.js', 'subagent-guide.js']
+  const entrypoints = []
+  for (const name of await readdir(extensionDir)) {
+    if (name.endsWith('.js') && /^export default /m.test(await readFile(join(extensionDir, name), 'utf8'))) entrypoints.push(name)
+  }
+  check(new Set(ordered).size === ordered.length, 'desktop smoke loads each extension once')
+  assert.deepEqual([...ordered, ...alternates].sort(), entrypoints.sort(), 'all shipped pi extension entrypoints are included in a smoke group')
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(YAN_|PI_|ELECTRON_RUN_AS_NODE$)|(?:_API_KEY|_TOKEN)$/i.test(key)))
+  const catalog = JSON.parse(await readFile(join(extensionDir, 'generated/pi-model-catalog.json'), 'utf8')).models
+  const fixtures = [
+    ['openai-codex', 'gpt-6.2-sol', 'codex', 'GPT-6.2 Sol', 'openai-codex-responses'],
+    ['openai-codex', 'gpt-6.2-astra', 'codex', 'GPT-6.2 Astra', 'openai-codex-responses'],
+    ['google', 'gemini-4-neon', 'gemini', 'Gemini 4 Neon', 'google-generative-ai'],
+    ['qwen-token-plan', 'qwen4-max-preview', 'qwen', 'Qwen4 Max Preview', 'openai-completions'],
+    ['qwen-token-plan', 'deepseek-v4.1-flash', 'deepseek', 'DeepSeek V4.1 Flash', 'openai-completions']
+  ]
+  const registry = join(root, 'registry.json')
+  const mcpSnapshot = join(root, 'mcp-tools.json')
+  await writeFile(mcpSnapshot, JSON.stringify({ tools: [{ serverId: 'fixture', toolName: 'echo' }] }))
+  const probe = join(root, 'registry.mjs')
+  await writeFile(probe, `import { writeFileSync } from 'node:fs'\nexport default (pi) => pi.on('session_start', (_event, ctx) => writeFileSync(${JSON.stringify(registry)}, JSON.stringify(ctx.modelRegistry.getAll())))\n`)
+  const groups = [[...ordered, probe], ['subagent-guide.js'], ['readonly-tools.js'], ['side-question.js'], ['shell-fallback.js']]
+  for (const [index, group] of groups.entries()) {
+    const piDir = join(root, `pi-${index}`)
+    const yanDir = join(root, `yan-${index}`)
+    await mkdir(piDir)
+    await mkdir(yanDir)
+    const id = `extensions-${index}`
+    const child = spawnSync(process.execPath, [cli, '--mode', 'rpc', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates',
+      ...group.flatMap((file) => ['--extension', resolve(extensionDir, file)])], {
+      input: JSON.stringify({ id, type: 'get_state' }) + '\n', cwd: root, encoding: 'utf8', timeout: 30_000, windowsHide: true,
+      env: { ...env, PI_CODING_AGENT_DIR: piDir, YAN_DATA_DIR: yanDir, YAN_NATIVE_BRIDGE: '1', YAN_MCP_APP_TOOLS: mcpSnapshot, OPENAI_API_KEY: 'SYNTHETIC_COMPAT_FIXTURE', ...(index === 4 ? { YAN_SHELL: 'powershell' } : {}) }
+    })
+    const label = index === 0 ? `${ordered.length} desktop extensions` : group.join(', ')
+    check(child.status === 0, `${label}: RPC startup exits normally: ${child.error ?? child.stderr}`)
+    const frames = child.stdout.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line))
+    const response = frames.find((frame) => frame.id === id && frame.type === 'response')
+    check(response?.success && !child.stderr.trim() && !frames.some((frame) => frame.type === 'extension_error'), `${label}: RPC startup has no extension diagnostics: ${child.stderr} ${JSON.stringify(frames.filter((frame) => frame.type === 'extension_error'))}`)
+    if (index === 0) {
+      if (version === '1.6.0') check(response.data.model?.id === 'gpt-6.2-sol' && response.data.thinkingLevel === 'medium', 'OpenAI uses the native pi 1.6 default model and thinking level')
+      check(frames.some((frame) => frame.type === 'extension_ui_request' && frame.method === 'notify' && frame.message?.includes('"op":"hello"')), 'native bridge emits its hello receipt on pi 1.6 RPC')
+    }
+  }
+  if (version !== '1.6.0') return
+  for (const [id, primary, legacy] of [
+    ['qwen-token-plan', 'QWEN_TOKEN_PLAN_TEAM_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY'],
+    ['qwen-token-plan-cn', 'QWEN_TOKEN_PLAN_TEAM_CN_API_KEY', 'QWEN_TOKEN_PLAN_CN_API_KEY'],
+    ['qwen-token-plan-individual', 'QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY'],
+    ['qwen-token-plan-individual-cn', 'QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY', 'QWEN_TOKEN_PLAN_CN_API_KEY']
+  ]) {
+    for (const name of [primary, legacy]) {
+      const child = spawnSync(process.execPath, [cli, 'auth', 'check', '--provider', id, '--json', '--no-refresh'], {
+        cwd: root, encoding: 'utf8', timeout: 20_000, windowsHide: true,
+        env: { ...env, PI_CODING_AGENT_DIR: join(root, 'pi-0'), [name]: 'SYNTHETIC_QWEN_FIXTURE' }
+      })
+      check(child.status === 0 && JSON.parse(child.stdout)?.status === 'ready', `pi accepts ${name} for ${id}: ${child.error ?? child.stderr}`)
+    }
+  }
+  const rawModels = JSON.parse(await readFile(registry, 'utf8'))
+  for (const [provider, id, brand, name, api] of fixtures) {
+    const label = `${provider}/${id}`
+    const raw = rawModels.find((model) => model.provider === provider && model.id === id && model.api === api)
+    const normalized = modules.models.normalizeModelInfo(raw)
+    check(normalized?.name === name && normalized.reasoning && normalized.contextWindow > 0, `${label}: native display name and capabilities survive normalization`)
+    check(catalog[catalogKey(label)]?.reasoning === true, `${label}: model capabilities are in the compact catalog`)
+    check(modules.brand.modelBrand(normalized) === brand, `${label}: correct model brand`)
+    const fast = provider === 'openai-codex'
+    check(modules.fast.fastModeSupported(normalized) === fast && extensionFastModeSupported(raw) === fast, `${label}: UI and extension agree on Codex fast mode`)
+    check(modules.subagent.defaultSubagentThinking(label) === (brand === 'deepseek' ? 'high' : undefined), `${label}: preserves the DeepSeek high override and defers other defaults to pi`)
+  }
+}
 
 async function runUpgradeCatalogTests() {
   const fixture = await mkdtemp(join(tmpdir(), 'inkstone-upgrade-catalog-'))

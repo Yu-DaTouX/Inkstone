@@ -19,7 +19,7 @@ export async function resolveCodexAccountId(): Promise<string | undefined> {
   }
 }
 
-const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
+const CATALOG: (Omit<AuthProviderInfo, 'status'> & { legacyEnvVar?: string })[] = [
   {
     id: 'openai-codex',
     name: 'ChatGPT Plus / Pro',
@@ -78,10 +78,10 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   { id: 'moonshotai-cn', get name() { return pick('Moonshot AI（Kimi 国内）', 'Moonshot AI (Kimi China)') }, kind: 'api_key', envVar: 'MOONSHOT_API_KEY', authKey: 'moonshotai-cn' },
   { id: 'minimax-cn', get name() { return pick('MiniMax（国内）', 'MiniMax (China)') }, kind: 'api_key', envVar: 'MINIMAX_CN_API_KEY', authKey: 'minimax-cn' },
   { id: 'minimax', get name() { return pick('MiniMax（国际）', 'MiniMax (Global)') }, kind: 'api_key', envVar: 'MINIMAX_API_KEY', authKey: 'minimax' },
-  { id: 'qwen-token-plan-cn', get name() { return pick('Qwen Token Plan（国内）', 'Qwen Token Plan (China)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_CN_API_KEY', authKey: 'qwen-token-plan-cn' },
-  { id: 'qwen-token-plan', get name() { return pick('Qwen Token Plan（国际）', 'Qwen Token Plan (Global)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_API_KEY', authKey: 'qwen-token-plan' },
-  { id: 'qwen-token-plan-individual', get name() { return pick('Qwen Token Plan 个人（国际）', 'Qwen Token Plan Individual (Global)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_API_KEY', authKey: 'qwen-token-plan-individual' },
-  { id: 'qwen-token-plan-individual-cn', get name() { return pick('Qwen Token Plan 个人（国内）', 'Qwen Token Plan Individual (China)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_CN_API_KEY', authKey: 'qwen-token-plan-individual-cn' },
+  { id: 'qwen-token-plan-cn', get name() { return pick('Qwen Token Plan 团队（国内）', 'Qwen Token Plan Team (China)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_TEAM_CN_API_KEY', legacyEnvVar: 'QWEN_TOKEN_PLAN_CN_API_KEY', authKey: 'qwen-token-plan-cn' },
+  { id: 'qwen-token-plan', get name() { return pick('Qwen Token Plan 团队（国际）', 'Qwen Token Plan Team (Global)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_TEAM_API_KEY', legacyEnvVar: 'QWEN_TOKEN_PLAN_API_KEY', authKey: 'qwen-token-plan' },
+  { id: 'qwen-token-plan-individual', get name() { return pick('Qwen Token Plan 个人（国际）', 'Qwen Token Plan Individual (Global)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY', legacyEnvVar: 'QWEN_TOKEN_PLAN_API_KEY', authKey: 'qwen-token-plan-individual' },
+  { id: 'qwen-token-plan-individual-cn', get name() { return pick('Qwen Token Plan 个人（国内）', 'Qwen Token Plan Individual (China)') }, kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY', legacyEnvVar: 'QWEN_TOKEN_PLAN_CN_API_KEY', authKey: 'qwen-token-plan-individual-cn' },
   { id: 'xai-api', name: 'xAI（API key）', kind: 'api_key', envVar: 'XAI_API_KEY', authKey: 'xai' },
   { id: 'groq', name: 'Groq', kind: 'api_key', envVar: 'GROQ_API_KEY', authKey: 'groq' },
   { id: 'mistral', name: 'Mistral', kind: 'api_key', envVar: 'MISTRAL_API_KEY', authKey: 'mistral' },
@@ -275,14 +275,15 @@ export async function listAuthProviders(
     return typeof v === 'string' && v.trim().length > 0
   }
 
-  const base: AuthProviderInfo[] = CATALOG.map((c) => {
-    if ((c.authKey && configured.has(c.authKey)) || configured.has(c.id)) {
-      return { ...c, status: 'ready' as const, source: 'auth.json' as const, ...(fromEnv(c.envVar) ? { envShadowed: true } : {}) }
+  const base: AuthProviderInfo[] = CATALOG.map(({ legacyEnvVar, ...provider }) => {
+    const activeEnvVar = [provider.envVar, legacyEnvVar].find((name) => name && fromEnv(name))
+    if ((provider.authKey && configured.has(provider.authKey)) || configured.has(provider.id)) {
+      return { ...provider, status: 'ready', source: 'auth.json', ...(activeEnvVar ? { envShadowed: true } : {}) }
     }
-    if (fromEnv(c.envVar)) {
-      return { ...c, status: 'ready' as const, source: 'env' as const }
+    if (activeEnvVar) {
+      return { ...provider, envVar: activeEnvVar, status: 'ready', source: 'env' }
     }
-    return { ...c, status: 'missing' as const }
+    return { ...provider, status: 'missing' }
   })
 
   const known = new Set<string>()
