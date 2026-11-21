@@ -20,15 +20,29 @@ export interface SettingsRevealTarget {
 
 const normalize = (value: string): string => value.toLowerCase().replace(/\s+/g, '')
 
-function scoreOf(entry: SettingsSearchEntry, needle: string, lang: string, sectionLabel: string): number {
-  const label = normalize(lang === 'en-US' ? entry.en : entry.zh)
-  const other = normalize(lang === 'en-US' ? entry.zh : entry.en)
+interface SearchFields {
+  zh: string
+  en: string
+  keywords: readonly string[]
+}
+
+const searchFields = new WeakMap<SettingsSearchEntry, SearchFields>()
+
+function fieldsOf(entry: SettingsSearchEntry): SearchFields {
+  const cached = searchFields.get(entry)
+  if (cached) return cached
+  const fields = { zh: normalize(entry.zh), en: normalize(entry.en), keywords: entry.keywords?.map(normalize) ?? [] }
+  searchFields.set(entry, fields)
+  return fields
+}
+
+function scoreOf(fields: SearchFields, needle: string, en: boolean): number {
+  const label = en ? fields.en : fields.zh
+  const other = en ? fields.zh : fields.en
   if (label.startsWith(needle)) return 5
   if (label.includes(needle)) return 4
-  if (entry.keywords?.some((word) => normalize(word).includes(needle))) return 3
-  if (other.includes(needle)) return 2
-  if (normalize(sectionLabel).includes(needle)) return 1
-  return 0
+  if (fields.keywords.some((word) => word.includes(needle))) return 3
+  return other.includes(needle) ? 2 : 0
 }
 
 export function matchSettings(
@@ -40,12 +54,23 @@ export function matchSettings(
 ): SettingsSearchEntry[] {
   const needle = normalize(query)
   if (!needle) return []
-  return entries
-    .map((entry, order) => ({ entry, order, score: scoreOf(entry, needle, lang, sectionLabel(entry.section)) }))
-    .filter((hit) => hit.score > 0)
-    .sort((a, b) => b.score - a.score || a.order - b.order)
-    .slice(0, limit)
-    .map((hit) => hit.entry)
+  const buckets: SettingsSearchEntry[][] = [[], [], [], [], []]
+  const sections = new Map<SettingsSectionId, boolean>()
+  const en = lang === 'en-US'
+  for (const entry of entries) {
+    const score = scoreOf(fieldsOf(entry), needle, en)
+    if (score > 0) {
+      buckets[5 - score].push(entry)
+    } else {
+      let matches = sections.get(entry.section)
+      if (matches === undefined) {
+        matches = normalize(sectionLabel(entry.section)).includes(needle)
+        sections.set(entry.section, matches)
+      }
+      if (matches) buckets[4].push(entry)
+    }
+  }
+  return buckets.flat().slice(0, limit)
 }
 
 let current: SettingsRevealTarget | null = null

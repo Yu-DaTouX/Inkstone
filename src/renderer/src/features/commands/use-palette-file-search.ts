@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
+import { useStore } from '../../state/store'
+import { deriveWorkspaceOwner } from '../workbench/ownership'
 import type { WorkspaceOwner } from '../workbench/types'
 import type { CommandItem, PaletteMode } from './command-items'
 import {
@@ -23,11 +26,30 @@ export interface PaletteFileSearch {
 
 const IDLE: PaletteFileSearch = { phase: 'idle', items: [], issue: null, truncated: false }
 
-export function usePaletteFileSearch(mode: PaletteMode, term: string, owner: Pick<WorkspaceOwner, 'key' | 'cwd' | 'generation'>): PaletteFileSearch {
+export function usePaletteFileOwner(mode: PaletteMode): WorkspaceOwner | null {
+  const scope = useStore(useShallow((s) => {
+    if (mode !== 'file' && mode !== 'content') return null
+    const { session, peekedSessionId, peekedPath, pendingActivation, activeRunnerId, runners, sessions } = s
+    return {
+      peekedSessionId, peekedPath, pendingActivation, activeRunnerId, runners, sessions,
+      hasSession: !!session, sessionId: session?.sessionId, sessionFile: session?.sessionFile, conversationId: session?.conversationId,
+      conversationFile: session?.conversationFile, cwd: session?.cwd
+    }
+  }))
+  return useMemo(() => {
+    if (!scope) return null
+    const { hasSession, sessionId, sessionFile, conversationId, conversationFile, cwd, ...owner } = scope
+    return deriveWorkspaceOwner({ ...owner, session: hasSession ? { sessionId, sessionFile, conversationId, conversationFile, cwd } : null })
+  }, [scope])
+}
+
+export function usePaletteFileSearch(mode: PaletteMode, term: string, owner: Pick<WorkspaceOwner, 'key' | 'cwd' | 'generation'> | null): PaletteFileSearch {
   const [state, setState] = useState<PaletteFileSearch>(IDLE)
   const sequence = useRef(0)
   const searchable = mode === 'file' || mode === 'content'
-  const { key, cwd, generation } = owner
+  const key = owner?.key
+  const cwd = owner?.cwd
+  const generation = owner?.generation
 
   useEffect(() => {
     sequence.current += 1

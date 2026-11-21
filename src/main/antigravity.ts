@@ -180,6 +180,22 @@ export function launchAntigravity(cwd: string): AntigravitySession {
 
 type AcpChoice = AntigravityChoice & { id: string }
 
+function uniqueModelOptions(options: AntigravityChoice['options']): AntigravityChoice['options'] {
+  const byId = new Map<string, AntigravityChoice['options'][number]>()
+  for (const option of options) if (!byId.has(option.id)) byId.set(option.id, option)
+  const nameCounts = new Map<string, number>()
+  for (const { name } of byId.values()) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1)
+  const names = new Set(nameCounts.keys())
+  return [...byId.values()].map((option) => {
+    if (nameCounts.get(option.name) === 1) return option
+    const base = `${option.name} (${option.id})`
+    let name = base
+    for (let suffix = 2; names.has(name); suffix++) name = `${base} #${suffix}`
+    names.add(name)
+    return { ...option, name }
+  })
+}
+
 function choicesFrom(result: RecordValue): Map<string, AcpChoice> {
   const choices = new Map<string, AcpChoice>()
   for (const item of array(result.configOptions).map(object)) {
@@ -188,7 +204,7 @@ function choicesFrom(result: RecordValue): Map<string, AcpChoice> {
     if (!category || !id || item.type !== 'select' || choices.has(category)) continue
     const entries = array(item.options).map(object).flatMap((option) => Array.isArray(option.options) ? option.options.map(object) : [option])
     const options = entries.flatMap((option) => text(option.value) ? [{ id: text(option.value), name: text(option.name) || text(option.value) }] : [])
-    choices.set(category, { id, current: text(item.currentValue), options })
+    choices.set(category, { id, current: text(item.currentValue), options: category === 'model' ? uniqueModelOptions(options) : options })
   }
   return choices
 }
@@ -196,7 +212,8 @@ function choicesFrom(result: RecordValue): Map<string, AcpChoice> {
 function legacyModelsFrom(result: RecordValue): AntigravityModels | undefined {
   if (!result.models) return undefined
   const models = object(result.models)
-  return { current: text(models.currentModelId) || null, available: array(models.availableModels).map(object).flatMap((option) => text(option.modelId) ? [{ id: text(option.modelId), name: text(option.name) || text(option.modelId) }] : []) }
+  const available = array(models.availableModels).map(object).flatMap((option) => text(option.modelId) ? [{ id: text(option.modelId), name: text(option.name) || text(option.modelId) }] : [])
+  return { current: text(models.currentModelId) || null, available: uniqueModelOptions(available) }
 }
 
 function tokenCount(value: unknown): number | undefined {
@@ -254,6 +271,7 @@ export class AntigravitySession {
   private openingContext = new Map<string, AntigravityContext>()
   private openingSession = false
   private imageCapable = false
+  private embeddedContextCapable = false
   busy = false
 
   get context(): AntigravityContext | undefined { return this.contextReading }
@@ -292,6 +310,7 @@ export class AntigravitySession {
     const caps = object(init.agentCapabilities)
     const promptCaps = object(caps.promptCapabilities)
     this.imageCapable = promptCaps.image === true
+    this.embeddedContextCapable = promptCaps.embeddedContext === true
     const sessionCaps = object(caps.sessionCapabilities ?? caps.session_capabilities)
     const mcpServers = Array.isArray(server) ? server : server ? [server] : []
     const resumeId = !this.discoverOnly && typeof options?.resumeSessionId === 'string' ? options.resumeSessionId.trim() : ''
@@ -469,7 +488,8 @@ export class AntigravitySession {
       thinking: thinking?.options.some((item) => item.id === thinking.current) ? { current: thinking.current, options: thinking.options } : undefined,
       mode: this.mode,
       modes: this.mode && options.some(({ id }) => id === this.mode) ? { current: this.mode, options } : undefined,
-      supportsImages: this.imageCapable
+      supportsImages: this.imageCapable,
+      supportsEmbeddedContext: this.embeddedContextCapable
     }
   }
 

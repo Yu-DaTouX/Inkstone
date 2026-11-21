@@ -47,6 +47,7 @@ export interface AntigravityModels {
   mode?: string
   modes?: AntigravityChoice
   supportsImages?: boolean
+  supportsEmbeddedContext?: boolean
 }
 
 export interface AntigravityChoice { current: string; options: AntigravityModel[] }

@@ -1,5 +1,6 @@
 import {
   Suspense,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -241,6 +242,28 @@ function LegacyNotice({
   )
 }
 
+const SettingsSectionContent = memo(function SettingsSectionContent({ section, capsTab, setCapsTab, onShowOnboarding }: {
+  section: SettingsSectionId
+  capsTab: CapabilitiesTabId
+  setCapsTab: (tab: CapabilitiesTabId) => void
+  onShowOnboarding?: () => void
+}): ReactElement | null {
+  switch (section) {
+    case 'appearance': return <AppearanceSettings />
+    case 'session': return <SessionSettings />
+    case 'notifications': return <NotificationsSettings />
+    case 'models': return <SubmoduleHost component={ModelsSettings} props={{}} />
+    case 'capabilities': return <SubmoduleHost component={CapabilitiesSettings} props={{ tab: capsTab, onTabChange: setCapsTab }} />
+    case 'code': return <SubmoduleHost component={CodeSettings} props={{}} />
+    case 'shortcuts': return <ShortcutsSettings />
+    case 'security': return <SecuritySettings />
+    case 'devices': return <DevicesSettings />
+    case 'data': return <DataSettings />
+    case 'about': return <AboutSettings onShowOnboarding={onShowOnboarding} />
+    default: return null
+  }
+})
+
 export interface SettingsPageProps {
   isOpen?: boolean
   onClose: () => void
@@ -250,7 +273,7 @@ export interface SettingsPageProps {
 export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: SettingsPageProps): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
-  const settings = useStore((s) => s.settings)
+  const settingsReady = useStore((s) => !!s.settings)
   const request = useSyncExternalStore(subscribeSettingsRequest, getSettingsRequest)
   const narrow = useSettingsNarrow()
   const [section, setSection] = useState<SettingsSectionId>(lastSettingsSection)
@@ -272,7 +295,7 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
     const targets = new Map<string, SearchTarget>()
     const results: SettingsSearchResult[] = []
     const needle = query.trim().toLowerCase()
-    if (!needle) return { results, targets }
+    if (narrow || !needle) return { results, targets }
     const hits = matchSettings(searchEntries, query, lang, sectionLabel, 60)
     const order: string[] = []
     const byNav = new Map<string, SettingsSearchEntry[]>()
@@ -330,7 +353,7 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
       }
     }
     return { results, targets }
-  }, [query, lang, sectionLabel, navLabel, text, searchEntries])
+  }, [narrow, query, lang, sectionLabel, navLabel, text, searchEntries])
 
   useEffect(() => {
     if (!request) return
@@ -415,8 +438,26 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
     searchInput.current?.select()
   }
 
-  const isCurrent = (entry: SettingsNavEntry): boolean =>
-    !legacy && entry.section === section && (!entry.tab || entry.tab === capsTab)
+  const isCurrent = useCallback((entry: SettingsNavEntry): boolean =>
+    !legacy && entry.section === section && (!entry.tab || entry.tab === capsTab), [legacy, section, capsTab])
+
+  const navGroups = useMemo(() => NAV_GROUPS.map(({ group, entries }) => {
+    const labelKey = GROUP_LABEL[group]
+    return (
+      <SettingsNavGroup key={group} title={labelKey ? text[labelKey] : undefined}>
+        {entries.map((entry) => (
+          <SettingsNavItem
+            key={entry.key}
+            icon={SECTION_ICON[entry.icon]}
+            label={navLabel(entry)}
+            current={isCurrent(entry)}
+            onPress={() => selectEntry(entry)}
+            data-testid={navTestId(entry)}
+          />
+        ))}
+      </SettingsNavGroup>
+    )
+  }), [text, navLabel, isCurrent, selectEntry])
 
   const nav = (
     <SettingsNav
@@ -436,27 +477,11 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
         />
       }
     >
-      {NAV_GROUPS.map(({ group, entries }) => {
-        const labelKey = GROUP_LABEL[group]
-        return (
-          <SettingsNavGroup key={group} title={labelKey ? text[labelKey] : undefined}>
-            {entries.map((entry) => (
-              <SettingsNavItem
-                key={entry.key}
-                icon={SECTION_ICON[entry.icon]}
-                label={navLabel(entry)}
-                current={isCurrent(entry)}
-                onPress={() => selectEntry(entry)}
-                data-testid={navTestId(entry)}
-              />
-            ))}
-          </SettingsNavGroup>
-        )
-      })}
+      {navGroups}
     </SettingsNav>
   )
 
-  const narrowNav = (
+  const narrowNav = useMemo(() => (
     <SettingsTabBar label={text.navLabel}>
       {NAV_ENTRIES.map((entry) => (
         <SettingsTab
@@ -468,7 +493,7 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
         />
       ))}
     </SettingsTabBar>
-  )
+  ), [text, navLabel, isCurrent, selectEntry])
 
   const currentEntry = NAV_ENTRIES.find((entry) => isCurrent(entry))
   const pageTitle = currentEntry ? navLabel(currentEntry) : sectionLabel(section)
@@ -487,7 +512,7 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
       onKeyDown={onDialogKeyDown}
       data-testid="settings-root"
     >
-      {!settings ? (
+      {!settingsReady ? (
         <SettingsLoading label={text.loading} />
       ) : (
         <div
@@ -499,29 +524,9 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
           {legacy ? null : <h2 className="v3-visually-hidden settings-main__title">{pageTitle}</h2>}
           {legacy ? (
             <LegacyNotice view={legacy.view} onDismiss={openDefault} onBack={onClose} />
-          ) : section === 'appearance' ? (
-            <AppearanceSettings />
-          ) : section === 'session' ? (
-            <SessionSettings />
-          ) : section === 'notifications' ? (
-            <NotificationsSettings />
-          ) : section === 'models' ? (
-            <SubmoduleHost component={ModelsSettings} props={{}} />
-          ) : section === 'capabilities' ? (
-            <SubmoduleHost component={CapabilitiesSettings} props={{ tab: capsTab, onTabChange: setCapsTab }} />
-          ) : section === 'code' ? (
-            <SubmoduleHost component={CodeSettings} props={{}} />
-          ) : section === 'shortcuts' ? (
-            <ShortcutsSettings />
-          ) : section === 'security' ? (
-            <SecuritySettings />
-          ) : section === 'devices' ? (
-            <DevicesSettings />
-          ) : section === 'data' ? (
-            <DataSettings />
-          ) : section === 'about' ? (
-            <AboutSettings onShowOnboarding={onShowOnboarding} />
-          ) : null}
+          ) : (
+            <SettingsSectionContent section={section} capsTab={capsTab} setCapsTab={setCapsTab} onShowOnboarding={onShowOnboarding} />
+          )}
         </div>
       )}
     </SettingsDialog>

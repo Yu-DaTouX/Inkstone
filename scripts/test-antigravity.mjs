@@ -258,6 +258,29 @@ await runSuite(import.meta.url, async (ok, compile) => {
     assert.fail('等待 ACP 事件超时')
   }
 
+  for (const args of [['embedded-context'], ['legacy']]) {
+    const fixture = start('gateway-models', ...args)
+    try {
+      const models = await fixture.session.start(cwd)
+      assert.equal(models.supportsEmbeddedContext, args.includes('embedded-context'))
+      assert.deepEqual(models.available.filter(({ id }) => id.startsWith('gateway')), [
+        { id: 'gateway-a', name: 'Gateway (gateway-a)' },
+        { id: 'gateway-b', name: 'Gateway (gateway-b)' },
+        { id: 'gateway-c', name: 'Gateway (gateway-c)' }
+      ])
+      const selected = await fixture.session.selectModel('gateway-b')
+      assert.equal(selected.current, 'gateway-b')
+      await assert.rejects(fixture.session.selectModel('Gateway (gateway-b)'))
+      const refPrompt = '检查文件引用\n\n文件引用：\n- src/example file.txt'
+      await fixture.session.prompt(refPrompt, 'gateway-b')
+      const payload = JSON.parse(fixture.events.filter((event) => event.type === 'text').map((event) => event.text).join(''))
+      assert.deepEqual(payload, { model: 'gateway-b', blocks: [{ type: 'text', text: refPrompt }] })
+    } finally {
+      await fixture.session.close()
+    }
+  }
+  ok(true, '现代和旧 ACP 模型列表按原始 ID 去重并区分同名项；不论是否声明 embeddedContext，输入框文件路径引用原样走文本块')
+
   const { session, events } = start()
   try {
     const models = await session.start(cwd)

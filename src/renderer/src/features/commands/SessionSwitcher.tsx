@@ -116,17 +116,19 @@ export function useSessionSwitcher(): SessionSwitcherControl {
 }
 
 export function SessionSwitcher({ control }: { control: SessionSwitcherControl }): ReactElement | null {
+  return control.state ? <SessionSwitcherBody state={control.state} pick={control.pick} /> : null
+}
+
+function SessionSwitcherBody({ state, pick }: { state: SwitcherState; pick: SessionSwitcherControl['pick'] }): ReactElement {
   const { lang } = useI18n()
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
-  const state = control.state
-  const selected = state?.items[state.index]
+  const selected = state.items[state.index]
   const selectedTitle = selected ? (manualTitles[selected.id] ?? titles[selected.id] ?? selected.title) : ''
-  const position = state ? `${state.index + 1}/${state.items.length}` : ''
+  const position = `${state.index + 1}/${state.items.length}`
   useEffect(() => {
     if (selectedTitle) announce(`${position} ${selectedTitle}`)
   }, [position, selectedTitle])
-  if (!state) return null
   const now = sidebarClockNow()
   const currentPath = currentViewPath()
   const label = lang === 'en-US' ? 'Switch session' : '切换会话'
@@ -149,7 +151,7 @@ export function SessionSwitcher({ control }: { control: SessionSwitcherControl }
                 data-testid="session-switcher-item"
                 onPointerDown={(event) => {
                   event.preventDefault()
-                  control.pick(index)
+                  pick(index)
                 }}
               >
                 {manualTitles[item.id] ?? titles[item.id] ?? item.title}

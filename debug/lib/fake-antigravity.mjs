@@ -18,6 +18,8 @@ const legacy = process.argv.includes('legacy')
 const noAuth = process.argv.includes('auth')
 const loadOnly = process.argv.includes('load-only')
 const noPlan = process.argv.includes('no-plan')
+const gatewayModels = process.argv.includes('gateway-models')
+const embeddedContext = process.argv.includes('embedded-context')
 const effortFailureFile = process.argv.find((arg) => arg.startsWith('--effort-failure='))?.slice('--effort-failure='.length)
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
@@ -51,6 +53,12 @@ const available = [
   { value: 'flash', name: 'Gemini Flash · Fixture' },
   { value: 'pro', name: 'Gemini Pro · Fixture' },
   { value: 'third-party', name: 'Claude Sonnet · Fixture' },
+  ...(gatewayModels ? [
+    { value: 'gateway-a', name: 'Gateway' },
+    { value: 'gateway-b', name: 'Gateway' },
+    { value: 'gateway-b', name: 'Duplicate ID' },
+    { value: 'gateway-c', name: 'Gateway (gateway-c)' },
+  ] : []),
 ]
 const selected = (id, category, currentValue, options) => ({ id, category, type: 'select', name: id, currentValue, options })
 const option = (value, name = value) => ({ value, name })
@@ -90,7 +98,7 @@ for await (const line of input) {
       authMethods: [],
       agentCapabilities: {
         loadSession: true,
-        promptCapabilities: { image: true },
+        promptCapabilities: { image: true, ...(embeddedContext ? { embeddedContext: true } : {}) },
         ...(loadOnly ? {} : { sessionCapabilities: { resume: {}, load: {}, close: {} } })
       }
     })
@@ -166,6 +174,11 @@ for await (const line of input) {
     const blocks = Array.isArray(params.prompt) ? params.prompt : []
     const raw = blocks.filter((block) => block?.type === 'text').map((block) => String(block.text ?? '')).join('\n')
     const images = blocks.filter((block) => block?.type === 'image')
+    if (raw.startsWith('检查文件引用\n')) {
+      chunk(JSON.stringify({ model, blocks }))
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
     knowsFixtureCode ||= raw.includes('记住夹具暗号：砚石')
     const prefix = 'Current user message:\n'
     const divider = '\n\nContinue the same Inkstone conversation.'

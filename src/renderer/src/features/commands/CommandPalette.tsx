@@ -25,7 +25,7 @@ import {
   type LucideIcon
 } from '../../ui/icons'
 import { useI18n } from '../../i18n'
-import type { UIMessage } from '../../../../shared/ipc'
+import type { SessionSummary, UIMessage } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { displayedSessionOf, useSplitView } from '../../state/split-view'
@@ -35,10 +35,9 @@ import { sessionViewIdentity, viewMatchesProjectedSession } from '../session/vie
 import { currentPanelEntry, toolSurface, useRightPanel } from '../../state/right-panel'
 import { activateWorkspaceOwner, captureActivationTarget } from '../workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, type WorkbenchTabId } from '../workbench/types'
-import { useWorkspaceOwner } from '../workbench/use-owner'
 import { showPreview } from '../workbench/preview-bindings'
 import { toAbsolutePath } from '../files/files-model'
-import { usePaletteFileSearch, type PaletteFileSearch } from './use-palette-file-search'
+import { usePaletteFileOwner, usePaletteFileSearch, type PaletteFileSearch } from './use-palette-file-search'
 import {
   CommandSurface,
   CommandSurfaceBody,
@@ -142,6 +141,8 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement | null 
 }
 
 const NO_MESSAGES: readonly UIMessage[] = []
+const NO_SESSIONS: readonly SessionSummary[] = []
+const NO_TITLES: Readonly<Record<string, string>> = {}
 
 function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPaletteProps): ReactElement | null {
   const { lang } = useI18n()
@@ -156,24 +157,21 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const parsed = useMemo(() => parsePaletteQuery(query), [query])
+  const trimmedTerm = parsed.term.trim()
+  const searchSessions = parsed.mode === 'session' || (parsed.mode === 'default' && !!trimmedTerm)
+  const searchArchived = searchSessions && !!trimmedTerm
+  const searchMessages = isOpen && parsed.mode === 'message' && !!trimmedTerm
+  const searchActions = parsed.mode === 'default' || parsed.mode === 'action'
   const theme = useStore((s) => s.settings?.theme ?? 'dark')
-  const session = useStore((s) => s.session)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const sessions = useStore((s) => s.sessions)
-  const titles = useStore((s) => s.titles)
-  const manualTitles = useStore((s) => s.manualTitles)
-  const messageMode = parsePaletteQuery(query).mode === 'message'
-  const messages = useStore((s) => (messageMode ? s.messages : NO_MESSAGES))
-
-  const view = useMemo(
-    () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
-    [peekedSessionId, peekedPath, session]
-  )
-  const running = useMemo(
-    () => viewMatchesProjectedSession(view, session) && (!!session?.isAgentRunning || !!session?.isStreaming),
-    [view, session]
-  )
+  const sessions = useStore((s) => searchSessions ? s.sessions : NO_SESSIONS)
+  const titles = useStore((s) => searchSessions ? s.titles : NO_TITLES)
+  const manualTitles = useStore((s) => searchSessions ? s.manualTitles : NO_TITLES)
+  const messages = useStore((s) => searchMessages ? s.messages : NO_MESSAGES)
+  const running = useStore((s) => {
+    if (!searchActions || !(s.session?.isAgentRunning || s.session?.isStreaming)) return false
+    return viewMatchesProjectedSession(sessionViewIdentity(s), s.session)
+  })
 
   useEffect(() => {
     if (!isOpen) return
@@ -300,7 +298,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
 
   const sessionItemsOf = useCallback(
     (archived: boolean): CommandItem[] =>
-      [...sessions]
+      sessions
         .filter((item) => !item.archivedAt !== archived)
         .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))
         .map((item) => ({
@@ -314,15 +312,11 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
     [sessions, titles, manualTitles]
   )
   const sessionItems = useMemo(() => sessionItemsOf(false), [sessionItemsOf])
-  const archivedSessionItems = useMemo(() => sessionItemsOf(true), [sessionItemsOf])
-
-  const parsed = useMemo(() => parsePaletteQuery(query), [query])
-  const trimmedTerm = parsed.term.trim()
-  const owner = useWorkspaceOwner()
+  const archivedSessionItems = useMemo(() => searchArchived ? sessionItemsOf(true) : [], [searchArchived, sessionItemsOf])
+  const owner = usePaletteFileOwner(parsed.mode)
   const fileSearch = usePaletteFileSearch(parsed.mode, trimmedTerm, owner)
 
   const messageItems = useMemo<CommandItem[]>(() => {
-    if (!isOpen || parsed.mode !== 'message') return []
     return messages
       .filter((message) => message.text.trim().length > 0)
       .map((message) => ({
@@ -332,7 +326,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         keywords: message.text.slice(0, 2000).toLowerCase(),
         messageId: message.id
       }))
-  }, [isOpen, parsed.mode, messages, text])
+  }, [messages, text])
 
   const helpItems = useMemo<CommandItem[]>(
     () =>
@@ -434,7 +428,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
     }
 
     if (item.filePath) {
-      if (!owner.cwd) return { ok: false, error: text.fileNoProject }
+      if (!owner?.cwd) return { ok: false, error: text.fileNoProject }
       onNavigate?.('chat')
       const abs = toAbsolutePath(owner.cwd, item.filePath)
       showPreview(owner.key, abs, item.line ? { preview: true, line: item.line } : { preview: true })
@@ -599,7 +593,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       <CommandSurfaceBody>
         <div ref={listRef} id="cmd-list" className="cmd-list" role="listbox" aria-label={text.paletteLabel}>
           {options.length === 0 ? (
-            <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text, fileSearch, !!owner.cwd)} data-testid="v3-command-empty" />
+            <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text, fileSearch, !!owner?.cwd)} data-testid="v3-command-empty" />
           ) : (
             groups.map((section) => (
               <div key={section.group} className="cmd-group" role="group" aria-label={groupLabel(section.group, text)}>
