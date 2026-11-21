@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
 import { Plus, RefreshCw, SquareTerminal } from '../../ui/icons'
 import { Badge, Button, Dialog, DialogFooter, EmptyState, KbdGroup, Menu, MenuItem, MenuSeparator, MiddleTruncate, Modal, ModalOverlay, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
 import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
@@ -6,7 +6,6 @@ import { useI18n, useT } from '../../i18n'
 import { resourceOwner } from '../../state/resource-owners'
 import { useStore } from '../../state/store'
 import { useTerminalJobs } from '../../state/terminal-jobs'
-import { isLiveTerminalJob, type TerminalJob } from '../../../../shared/terminal-jobs'
 import { showPreview } from '../workbench/preview-bindings'
 import { isMacPlatform, resolveTerminalPath, terminalSelectionBlock, type TerminalFileLink, type TerminalLinkMatch } from './terminal-links'
 import { terminalText } from './terminal-text'
@@ -20,7 +19,8 @@ import {
   terminalTabNames
 } from './terminal-tabs'
 import { terminalViewStore, type TerminalViewSettings } from './terminal-view'
-import { TerminalTabView, type TerminalTabHandle } from './TerminalTabView'
+import { TerminalTabView, type TerminalTabHandle, type TerminalTabViewProps } from './TerminalTabView'
+import { createTerminalPaneJobsSelector, isLiveAgentJob, terminalAwaitingConfirm } from './terminal-pane-state'
 import { TerminalTabStrip, type TerminalTabItem } from './TerminalTabStrip'
 import { TerminalFindBar } from './TerminalFindBar'
 import { TerminalViewMenu } from './TerminalViewMenu'
@@ -83,9 +83,11 @@ const LINK_CACHE_MAX = 200
 const NO_PROCESSES: TerminalProcessList = { ok: false, processes: [] }
 const PROCESS_POLL_MS = 4000
 
-function liveAgentJobs(jobs: readonly TerminalJob[]): TerminalJob[] {
-  return jobs.filter((job) => job.kind !== 'bash' && isLiveTerminalJob(job))
-}
+const TerminalHost = memo(function TerminalHost({ registerHandle, ...props }: TerminalTabViewProps & { registerHandle: (key: string, handle: TerminalTabHandle | null) => void }): JSX.Element {
+  const { tabKey } = props
+  const ref = useCallback((handle: TerminalTabHandle | null) => registerHandle(tabKey, handle), [registerHandle, tabKey])
+  return <TerminalTabView {...props} ref={ref} />
+})
 
 function processLabel(list: TerminalProcessList): string | null {
   if (!list.ok) return null
@@ -106,10 +108,15 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const t = useT()
   const { lang } = useI18n()
   const text = useMemo(() => terminalText(lang), [lang])
+  const runtimeText = useMemo(() => ({ startFailed: text.startFailed, attachFailed: text.attachFailed, bufferOverflow: text.bufferOverflow }), [text])
 
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const menuAnchor = useRef<HTMLSpanElement | null>(null)
   const handles = useRef(new Map<string, TerminalTabHandle>())
+  const registerHandle = useCallback((key: string, handle: TerminalTabHandle | null): void => {
+    if (handle) handles.current.set(key, handle)
+    else handles.current.delete(key)
+  }, [])
   const ownerRef = useRef(owner)
   ownerRef.current = owner
   const loadedFor = useRef<string | null>(null)
@@ -143,13 +150,11 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const agentActivity = useTerminalAgentActivity()
   const agentSeen = useTerminalAgentSeen()
   const agentOn = (key: string): boolean => agentActivity.has(states[key]?.terminalId ?? key)
-  const allJobs = useTerminalJobs((s) => s.jobs)
-  const liveJobs = useMemo(() => liveAgentJobs(allJobs), [allJobs])
+  const paneTerminalIds = tabs.map((tab) => states[tab.key]?.terminalId).filter((id): id is string => !!id)
+  const selectPaneJobs = useMemo(createTerminalPaneJobsSelector, [])
+  const paneJobs = useTerminalJobs((s) => selectPaneJobs(s.jobs, paneTerminalIds))
   const [childProcs, setChildProcs] = useState<Record<string, string | null>>({})
-  const approvals = useStore((s) => s.approvals)
-  const awaitingConfirm = approvals.some(
-    (request) => request.tool === 'terminal' && !request.subagentId && request.phase !== 'resolved' && (!request.sessionId || !owner.sessionId || request.sessionId === owner.sessionId)
-  )
+  const awaitingConfirm = useStore((s) => terminalAwaitingConfirm(s.approvals, owner.sessionId))
 
   useEffect(() => {
     void useTerminalJobs.getState().load()
@@ -411,8 +416,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         useTerminalJobs.getState().load().catch(() => undefined)
       ])
       if (seq !== closeSeq.current) return
-      const jobs = liveAgentJobs(useTerminalJobs.getState().jobs)
-        .filter((job) => ids.has(job.terminalId))
+      const jobs = useTerminalJobs.getState().jobs
+        .filter((job) => ids.has(job.terminalId) && isLiveAgentJob(job))
         .map((job) => job.command)
       const processes = lists.flatMap((list) => list.processes)
       const more = lists.reduce((sum, list) => sum + (list.more ?? 0), 0)
@@ -509,10 +514,10 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
+  const activePhase = activeState?.phase
   useEffect(() => {
-    const state = active ? states[active] : undefined
-    if (state?.phase === 'exited' || state?.phase === 'error') setFindOpen(false)
-  }, [active, states])
+    if (activePhase === 'exited' || activePhase === 'error') setFindOpen(false)
+  }, [activePhase])
 
   const runFind = useCallback(
     (query: string, direction: TerminalFindDirection, reset: boolean): void => {
@@ -593,9 +598,6 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const activeTerminal = activeState?.terminalId ?? null
   const activeChild = activeTerminal && activeState?.phase === 'ready' && !activeState.status ? childProcs[activeTerminal] : undefined
   const badge = statusOf(activeState) ?? (typeof activeChild === 'string' ? { key: 'term.running' as const, tone: 'accent' as BadgeTone } : null)
-  const paneTerminals = new Set(tabs.map((tab) => states[tab.key]?.terminalId).filter((id): id is string => !!id))
-  const paneJobs = liveJobs.filter((job) => paneTerminals.has(job.terminalId))
-  const jobOf = (terminalId: string | null | undefined): TerminalJob | undefined => (terminalId ? paneJobs.find((job) => job.terminalId === terminalId) : undefined)
   const chrome = usePaneChrome()
   const barTitle = <span className="term-pane-title" title={cwd || title}>{title || cwd || text.tabTitle}</span>
   const barActions = <TerminalViewMenu view={view} text={text} onChange={(patch) => terminalViewStore().update(patch)} />
@@ -606,9 +608,9 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
           {text.needsConfirm}
         </Badge>
       ) : null}
-      {paneJobs.length > 0 ? (
+      {paneJobs.count > 0 ? (
         <Badge tone="accent" className="term-pane-badge" data-testid="terminal-background-running">
-          {text.backgroundRunning(paneJobs.length)}
+          {text.backgroundRunning(paneJobs.count)}
         </Badge>
       ) : null}
       {active && agentOn(active) ? (
@@ -635,7 +637,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       const state = states[tab.key]
       const terminalId = state?.terminalId
       const child = terminalId && state?.phase === 'ready' && !state.status ? childProcs[terminalId] : null
-      return { command: jobOf(terminalId)?.command || child || (state?.status?.state === 'working' ? state.status.title ?? '' : ''), cwd: state?.cwd || '', title: state?.title || '' }
+      return { command: (terminalId && paneJobs.commands.get(terminalId)) || child || (state?.status?.state === 'working' ? state.status.title ?? '' : ''), cwd: state?.cwd || '', title: state?.title || '' }
     }),
     text.tabNumber,
     text.tabTitle
@@ -643,16 +645,17 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const items: TerminalTabItem[] = tabs.map((tab, index) => {
     const state = states[tab.key]
     const terminalId = state?.terminalId
-    const job = jobOf(terminalId)
+    const command = terminalId ? paneJobs.commands.get(terminalId) : undefined
+    const hasJob = command !== undefined
     const child = terminalId && state?.phase === 'ready' && !state.status ? childProcs[terminalId] : null
     return {
       key: tab.key,
       label: tabNames[index] ?? text.tabTitle,
-      detail: [job?.command, state?.title, state?.cwd].filter(Boolean).join('\n'),
-      busy: state?.phase !== 'exited' && (state?.status?.state === 'working' || !!job || typeof child === 'string'),
+      detail: [command, state?.title, state?.cwd].filter(Boolean).join('\n'),
+      busy: state?.phase !== 'exited' && (state?.status?.state === 'working' || hasJob || typeof child === 'string'),
       exited: state?.phase === 'exited',
       agent: agentOn(tab.key),
-      agentOwned: !!job || (!!terminalId && agentSeen.has(terminalId))
+      agentOwned: hasJob || (!!terminalId && agentSeen.has(terminalId))
     }
   })
   labelsRef.current = new Map(items.map((item) => [item.key, item.label]))
@@ -677,7 +680,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     <div className="term-pane" data-phase={activeState?.phase ?? (inactive ? 'inactive' : 'idle')} data-visible={visible ? '1' : '0'} data-testid="terminal-pane">
       {chrome ? (
         <>
-          {strip || badge || exited || awaitingConfirm || paneJobs.length > 0 ? (
+          {strip || badge || exited || awaitingConfirm || paneJobs.count > 0 ? (
             <PaneTitle>
               <span className="term-pane-chrome-title">
                 {strip}
@@ -704,23 +707,16 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       <div className="term-pane-body" ref={bodyRef}>
         <div className="term-pane-hosts">
           {tabs.map((tab) => (
-            <TerminalTabView
+            <TerminalHost
               key={tab.key}
-              ref={(handle) => {
-                if (handle) handles.current.set(tab.key, handle)
-                else handles.current.delete(tab.key)
-              }}
+              registerHandle={registerHandle}
               tabKey={tab.key}
               adopt={tab.adopt}
               owner={owner}
               visible={visible && !inactive && !unavailable && !loadFailed}
               active={tab.key === active}
               view={view}
-              text={{
-                startFailed: text.startFailed,
-                attachFailed: text.attachFailed,
-                bufferOverflow: text.bufferOverflow
-              }}
+              text={runtimeText}
               onState={handleState}
               onBell={handleBell}
               onFindRequest={openFind}

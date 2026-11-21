@@ -1,34 +1,30 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { compactNumber, shareText, useMoney, useUsageStatsState } from './UsageOverview'
-import { tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
+import { tokenBreakdownOf, type UsageRange, type UsageStatsView } from '../../../../shared/usage-stats'
+import type { ModelInfo } from '../../../../shared/ipc'
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { providerFavicon } from '../../patterns/provider-favicon'
 import { useStore } from '../../state/store'
 import { AreaChart, Button, Notice, PageHeader } from '../../ui'
 import { settingsText } from '../settings/settings-text'
-import { dailyEntries, peakHourText, usageBars, usageModelFree, usageModelName, type UsageDimension } from '../settings/usage/usage-model'
+import { peakHourText, type UsageDimension } from '../settings/usage/usage-model'
+import { providerOf, usageChartData, usageDayRows, usageModelRows } from './usage-page-data'
 import { UsageCurrency } from './UsageCurrency'
 import './usage-page.css'
 
 const GROUP_KEYS = new Set(['openai-codex', 'anthropic', 'google'])
 const PALETTE = 4
-const MIN_CHART_DAYS = 30
-
-const providerOf = (sources: readonly string[] | undefined): string => {
-  const source = sources?.[0] ?? ''
-  const at = source.indexOf('/')
-  return at > 0 ? source.slice(0, at) : ''
-}
-
-const shortDate = (date: string): string => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
+const EMPTY_HEAT: UsageStatsView['heat'] = []
+const EMPTY_ENTRIES: UsageStatsView['models'] = []
+const EMPTY_MODELS: readonly ModelInfo[] = []
+const UsageChart = memo(AreaChart)
 
 export function UsagePage() {
   const { lang } = useI18n()
   const t = useT()
   const text = settingsText(lang)
   const en = lang === 'en-US'
-  const models = useStore((s) => s.models)
   const authProviders = useStore((s) => s.authProviders)
   const loadAuthProviders = useStore((s) => s.loadAuthProviders)
   useEffect(() => {
@@ -37,24 +33,20 @@ export function UsagePage() {
   const [range, setRange] = useState<UsageRange>('all')
   const [dimension, setDimension] = useState<UsageDimension>('model')
   const { stats, failed, retry } = useUsageStatsState(range)
+  const entries = stats?.models ?? EMPTY_ENTRIES
+  const heat = stats?.heat ?? EMPTY_HEAT
+  const showModels = dimension === 'model' && entries.length > 0
+  const models = useStore((s) => showModels ? s.models : EMPTY_MODELS)
   const money = useMoney()
   const split = stats ? tokenBreakdownOf(stats) : null
   const costSplit = stats?.costBreakdown ?? null
 
-  const chartPoints = useMemo(() => {
-    const heat = stats?.heat ?? []
-    const firstActive = heat.findIndex((day) => day.tokens > 0)
-    const wanted = range === '7d' ? 7 : range === '30d' ? 30 : firstActive < 0 ? MIN_CHART_DAYS : Math.max(MIN_CHART_DAYS, heat.length - firstActive)
-    return heat.slice(Math.max(0, heat.length - wanted)).map((day) => ({ key: day.date, value: day.tokens, title: `${day.date} · ${day.tokens.toLocaleString()} Token` }))
-  }, [stats, range])
-  const axisLabels = chartPoints.length > 1
-    ? [chartPoints[0].key, chartPoints[Math.floor((chartPoints.length - 1) / 2)].key, chartPoints[chartPoints.length - 1].key].map(shortDate)
-    : []
+  const { points: chartPoints, axisLabels } = useMemo(() => usageChartData(heat, range), [heat, range])
 
   const providers = useMemo(() => {
     const order: string[] = []
     const totals = new Map<string, { tokens: number; cost: number }>()
-    for (const model of stats?.models ?? []) {
+    for (const model of entries) {
       const provider = providerOf(model.sources)
       if (!totals.has(provider)) order.push(provider)
       const entry = totals.get(provider) ?? { tokens: 0, cost: 0 }
@@ -65,17 +57,15 @@ export function UsagePage() {
     const listed = order.map((provider) => ({ provider, ...totals.get(provider)! })).sort((a, b) => b.tokens - a.tokens)
     const rest = Math.max(0, (stats?.tokens ?? 0) - listed.reduce((sum, item) => sum + item.tokens, 0))
     return { listed, rest }
-  }, [stats])
+  }, [entries, stats?.tokens])
   const providerTone = (provider: string): number => Math.max(0, providers.listed.findIndex((item) => item.provider === provider)) % PALETTE + 1
   const providerName = (provider: string): string =>
     !provider ? (en ? 'Other' : '其他') : GROUP_KEYS.has(provider) ? t(`quota.group.${provider}` as MessageKey) : authProviders.find((info) => info.id === provider)?.name?.trim() || provider
   const shareTotal = providers.listed.reduce((sum, item) => sum + item.tokens, 0) + providers.rest
 
-  const rows = !stats
-    ? []
-    : dimension === 'day'
-      ? usageBars(dailyEntries(stats.heat, range)).reverse().filter((bar) => bar.value > 0).map((bar) => ({ ...bar, cost: null as number | null, free: false, title: bar.key, provider: null as string | null }))
-      : usageBars(stats.models.map((item) => ({ key: item.key, label: usageModelName(item, models), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost, free: usageModelFree(stats.models[i], models), title: stats.models[i].sources?.join(' · '), provider: providerOf(stats.models[i].sources) }))
+  const modelRows = useMemo(() => showModels ? usageModelRows(entries, models) : [], [showModels, entries, models])
+  const dayRows = useMemo(() => usageDayRows(heat, range), [heat, range])
+  const rows = dimension === 'day' ? dayRows : modelRows
 
   const totals: Array<[string, string]> = [
     [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'],
@@ -123,7 +113,7 @@ export function UsagePage() {
         </div>
         <div className="usage-page-chart">
           <h2>{en ? 'Daily Token' : '每日 Token'}</h2>
-          <AreaChart points={chartPoints} formatValue={compactNumber} axisLabels={axisLabels} aria-label={en ? 'Daily Token activity' : '每日 Token 活动'} />
+          <UsageChart points={chartPoints} formatValue={compactNumber} axisLabels={axisLabels} aria-label={en ? 'Daily Token activity' : '每日 Token 活动'} />
         </div>
       </section>
 

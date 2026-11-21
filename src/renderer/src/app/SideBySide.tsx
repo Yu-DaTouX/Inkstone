@@ -1,17 +1,18 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { ChevronLeft, ChevronRight, GripVertical } from '../ui/icons'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
-import { sameSplitSession, splitColumns, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
+import { splitColumns, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 import { Icon } from '../features/session/Icon'
 import { Badge, Button, IconButton, Splitter } from '../ui'
 import { ChatMain } from './ChatMain'
 import { SessionView } from '../features/session/SessionView'
 import { ComposerV3 } from '../features/composer/ComposerV3'
-import { collapsedPanes } from './SideBySideLayout'
+import { collapsedPanes, createSplitHeaderSelector, createSplitPeerComposerSelector } from './SideBySideLayout'
 import { closeSplitPane, focusSplitSession, runSplitCommand } from '../features/split/split-actions'
 import { startPaneDrag } from '../features/split/pane-drag'
 import { answerSplitSession, usePeerAsk } from '../features/split/peer-ask'
+import { createPeerAskSelector } from '../features/split/peer-ask-view'
 import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
 import { observeHeight, observeWidth } from '../features/split/split-measure'
 import { splitText } from '../features/split/split-text'
@@ -50,8 +51,6 @@ function subscribeLiveComposerFloor(listener: () => void): () => void {
   return () => { liveComposerListeners.delete(listener) }
 }
 
-const readLiveComposerFloor = (): number => liveComposerFloor
-
 export interface SideBySideProps {
   split: SplitLayout | null
   narrow: boolean
@@ -59,7 +58,7 @@ export interface SideBySideProps {
 }
 
 export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }: SideBySideProps): JSX.Element {
-  const layout = collapsedPanes(split, narrow, maxColumns)
+  const layout = useMemo(() => collapsedPanes(split, narrow, maxColumns), [split, narrow, maxColumns])
   const weights = useSplitView((s) => s.weights)
   const storedRow = useSplitView((s) => s.rowSplit)
   const [hostHeight, setHostHeight] = useState(0)
@@ -81,6 +80,7 @@ export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }
   const shown = layout.tiles
   const columns = splitColumns(shown)
   const rowSplit = rowSplitFor(storedRow, hostHeight)
+  const cycleTotal = shown.length < split.tiles.length ? split.tiles.length : 0
   const slotAt = (position: number): number => {
     if (position <= 0) return split.tiles.indexOf(shown[0])
     if (position < shown.length) return split.tiles.indexOf(shown[position])
@@ -101,11 +101,9 @@ export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }
         rightSlot={slotAt(position + 2)}
         movable={movable}
         live={live}
-        onClose={() => closeSplitPane(index)}
-        cycle={shown.length < split.tiles.length ? { at: split.live + 1, total: split.tiles.length } : null}
-      >
-        <PaneBody target={target} live={live} />
-      </PaneFrame>
+        cycleAt={cycleTotal ? split.live + 1 : 0}
+        cycleTotal={cycleTotal}
+      />
     )
   }
 
@@ -149,7 +147,7 @@ function focusGrip(key: string): void {
   })
 }
 
-function PaneFrame({
+const PaneFrame = memo(function PaneFrame({
   target,
   index,
   shown,
@@ -158,9 +156,8 @@ function PaneFrame({
   rightSlot,
   movable,
   live,
-  onClose,
-  cycle,
-  children
+  cycleAt,
+  cycleTotal
 }: {
   target: SplitSessionRef
   index: number
@@ -170,18 +167,20 @@ function PaneFrame({
   rightSlot: number
   movable: boolean
   live: boolean
-  onClose: () => void
-  cycle: { at: number; total: number } | null
-  children: ReactNode
+  cycleAt: number
+  cycleTotal: number
 }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = splitText(lang)
-  const title = useSplitTitle(target)
-  const project = useSplitProject(target)
+  const { title, project } = useStore(useMemo(() => createSplitHeaderSelector(target), [target]))
   const key = splitTileKey(target)
   const inactive = !live
-  const asking = !!usePeerAsk(target) && inactive
+  const asking = useStore(useMemo(() => {
+    const selectAsk = createPeerAskSelector(target.sessionId)
+    return (state: Parameters<typeof selectAsk>[0]) => inactive && !!selectAsk(state)
+  }, [inactive, target.sessionId]))
+  const onClose = useCallback(() => closeSplitPane(index), [index])
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest('[data-tile-action]')) return
@@ -228,10 +227,10 @@ function PaneFrame({
           </IconButton>
         ) : null}
         <span className="v3-split-title" title={title}>{title || t('split.untitled')}</span>
-        {cycle ? (
+        {cycleTotal > 0 ? (
           <span className="v3-split-cycle" data-tile-action data-testid="v3-split-cycle">
             <IconButton size="sm" aria-label={text.prevPane} title={text.prevPane} onPress={() => runSplitCommand('focus-previous')}><ChevronLeft size={14} /></IconButton>
-            <span className="ui-num v3-split-cycle-count">{cycle.at}/{cycle.total}</span>
+            <span className="ui-num v3-split-cycle-count">{cycleAt}/{cycleTotal}</span>
             <IconButton size="sm" aria-label={text.nextPane} title={text.nextPane} onPress={() => runSplitCommand('focus-next')}><ChevronRight size={14} /></IconButton>
           </span>
         ) : null}
@@ -248,58 +247,19 @@ function PaneFrame({
           <Icon name="close" size={14} />
         </IconButton>
       </header>
-      {children}
+      <PaneBody target={target} live={live} />
     </section>
   )
-}
+})
 
-function useSplitSummary(target: SplitSessionRef) {
-  return useStore(
-    (s) =>
-      s.sessions.find((item) => !!target.sessionId && item.id === target.sessionId) ??
-      s.sessions.find((item) => !!target.path && sameSplitSession({ path: item.path }, { path: target.path }))
-  )
-}
-
-function useSplitTitle(target: SplitSessionRef): string {
-  const summary = useSplitSummary(target)
-  const named = useStore((s) => {
-    const id = target.sessionId ?? summary?.id
-    return (id && (s.manualTitles[id] || s.titles[id])) || summary?.title || ''
-  })
-  return named.trim()
-}
-
-function useSplitProject(target: SplitSessionRef): string {
-  const summary = useSplitSummary(target)
-  return useStore((s) => {
-    const record = summary?.projectId ? s.settings?.projects.find((item) => item.id === summary.projectId) : undefined
-    return record?.name || (record?.cwd ?? summary?.cwd ?? '').split(/[\\/]/).filter(Boolean).pop() || ''
-  })
-}
-
-const samePath = (a?: string, b?: string): boolean => !!a && !!b && a.replace(/[\\/]+/g, '/').toLowerCase() === b.replace(/[\\/]+/g, '/').toLowerCase()
-
-function useSameCwdBusy(target: SplitSessionRef, cwd: string | undefined): boolean {
-  return useStore((s) => {
-    if (!cwd) return false
-    const live = s.session
-    if (live && live.sessionId !== target.sessionId && (live.isAgentRunning || live.isStreaming) && samePath(live.cwd, cwd)) return true
-    return Object.entries(s.sessionRuntimes).some(
-      ([id, runtime]) => id !== target.sessionId && (!!runtime.session?.isAgentRunning || !!runtime.session?.isStreaming) && samePath(runtime.session?.cwd, cwd)
-    )
-  })
-}
-
-function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }): JSX.Element {
+const PaneBody = memo(function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }): JSX.Element {
   const pane = useMemo(() => ({ target, live }), [target, live])
   const convRef = useRef<HTMLDivElement | null>(null)
   const ownComposerHeight = useRef(0)
   const lastLiveHeight = useRef(0)
-  const floor = useSyncExternalStore(subscribeLiveComposerFloor, readLiveComposerFloor)
   const applyComposerHeight = useCallback(() => {
     const own = ownComposerHeight.current
-    convRef.current?.style.setProperty('--composer-h', `${Math.max(own, readLiveComposerFloor(), live ? 0 : lastLiveHeight.current)}px`)
+    convRef.current?.style.setProperty('--composer-h', `${Math.max(own, liveComposerFloor, live ? 0 : lastLiveHeight.current)}px`)
   }, [live])
   const composerRef = useCallback((element: HTMLDivElement | null) => {
     let settle = 0
@@ -319,7 +279,10 @@ function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }):
       stop?.()
     }
   }, [live, applyComposerHeight])
-  useLayoutEffect(() => { applyComposerHeight() }, [applyComposerHeight, floor])
+  useLayoutEffect(() => {
+    applyComposerHeight()
+    return subscribeLiveComposerFloor(applyComposerHeight)
+  }, [applyComposerHeight])
   return (
     <div
       className="v3-split-peer"
@@ -335,21 +298,14 @@ function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }):
       <div className="v3-composer" ref={composerRef}>{live ? <ComposerV3 /> : <PeerComposer target={target} />}</div>
     </div>
   )
-}
+})
 
 function PeerComposer({ target }: { target: SplitSessionRef }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = splitText(lang)
-  const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
-  const paneTitle = useSplitTitle(target)
-  const summary = useSplitSummary(target)
-  const draft = runtime?.draft ?? ''
-  const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
+  const { title: paneTitle, draft, running, model, cwdBusy } = useStore(useMemo(() => createSplitPeerComposerSelector(target), [target]))
   const ask = usePeerAsk(target)
-  const waiting = !!ask
-  const model = runtime?.session?.model?.name ?? ''
-  const cwdBusy = useSameCwdBusy(target, runtime?.session?.cwd ?? summary?.cwd)
 
   return ask ? (
     <div className="v3-split-peer-ask" role="group" aria-label={ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')} data-testid="v3-split-peer-ask">
@@ -378,9 +334,7 @@ function PeerComposer({ target }: { target: SplitSessionRef }): JSX.Element {
       />
       <div className="v3-split-peer-bar">
         <div className="v3-split-peer-state">
-          {waiting ? (
-            <span className="v3-split-state" data-tone="ask">{t('split.waiting')}</span>
-          ) : running ? (
+          {running ? (
             <span className="v3-split-state" data-tone="run">{t('split.running')}</span>
           ) : cwdBusy ? (
             <span className="v3-split-state" data-testid="v3-split-peer-cwd-busy">{text.sameCwdRunning}</span>

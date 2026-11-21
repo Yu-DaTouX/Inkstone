@@ -6,8 +6,8 @@ import { useStore } from '../../state/store'
 import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner, StatusDot } from '../../ui'
 import { CondensingHeader, useCondensingHeader } from '../../ui/Motion'
 import type { OfficeDocumentView } from '../../../../shared/office'
-import type { AssistantArtifact, FilePreview, UIMessage } from '../../../../shared/ipc'
-import { latestArtifactVersions, managedArtifactName, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
+import type { FilePreview } from '../../../../shared/ipc'
+import { managedArtifactName, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
 import { preloadPdfView } from './LazyPdfView'
 import { Markdown } from '../session/Markdown'
@@ -23,6 +23,7 @@ import { breadcrumbParent } from '../files/breadcrumb-model'
 import { rootLabel, toAbsolutePath } from '../files/files-model'
 import { usePreviewFreshness } from './use-preview-freshness'
 import { prefersRenderedHtml, useLiveHtml } from './live-html'
+import { createPreviewManifestSelector, livePreviewTarget, samePreviewPath } from './preview-stream'
 import { CodeView, type CodeComment, type CodeViewTarget, type CodeViewText } from './CodeView'
 import { PreviewTabs } from './PreviewTabs'
 import { useFileViewSettings } from './use-file-view-settings'
@@ -130,19 +131,11 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
   const ownerKeyRef = useRef(owner.key)
   ownerKeyRef.current = owner.key
 
-  const storeSessionId = useStore((store) => store.session?.sessionId)
-  const lastMessages = useRef<UIMessage[]>([])
-  const messages = useStore((store) => visible ? store.messages : lastMessages.current)
-  if (visible) lastMessages.current = messages
-  const ownsCurrent = ownerOwnsSession(owner, storeSessionId ?? null)
-  const artifacts = useMemo<AssistantArtifact[]>(
-    () => (ownsCurrent ? latestArtifactVersions(messages.flatMap((message) => message.artifacts ?? [])) : []),
-    [ownsCurrent, messages]
-  )
-  const liveTarget = useLiveHtml((state) => visible ? state.target : null)
-  const liveMatch = !!liveTarget && ownsCurrent && liveTarget.sessionId === storeSessionId && !!activePath && samePath(liveTarget.path, activePath)
-  const liveGenerating = liveMatch && liveTarget.generating
-  const liveRevision = liveMatch ? liveTarget.revision : 0
+  const ownsCurrent = useStore((store) => ownerOwnsSession(owner, store.session?.sessionId ?? null))
+  const liveTarget = useLiveHtml((state) => visible && ownsCurrent ? livePreviewTarget(state.target, owner.sessionId, activePath) : null)
+  const liveMatch = liveTarget !== null
+  const liveGenerating = liveTarget?.generating ?? false
+  const liveRevision = liveTarget?.revision ?? 0
   useEffect(() => {
     if (liveRevision > 0) setReload((value) => value + 1)
   }, [liveRevision])
@@ -304,7 +297,7 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
   const textPreview = view.kind === 'text' && previewFormatUsesText(view.format)
   const tabTarget = previewTabs?.target
   const codeTarget: CodeViewTarget | null =
-    tabTarget && activePath && samePath(tabTarget.path, activePath) ? { line: tabTarget.line, lineEnd: tabTarget.lineEnd, nonce: tabTarget.nonce } : null
+    tabTarget && activePath && samePreviewPath(tabTarget.path, activePath) ? { line: tabTarget.line, lineEnd: tabTarget.lineEnd, nonce: tabTarget.nonce } : null
   const liveRender = (liveMatch || prefersRenderedHtml(activeAbs || activePath)) && view.kind === 'text' && view.format === 'html'
   const sourceMode = sourceChoice ?? (!liveRender && !!codeTarget)
   const reading = textPreview && !sourceMode && !editing
@@ -458,7 +451,7 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
   const tabListKey = tabList.join('\n')
   useEffect(() => {
     const tabs = tabListKey ? tabListKey.split('\n') : []
-    setDrafts((prev) => dropCleanDrafts(prev, (abs) => abs === activeAbs || tabs.some((tab) => samePath(tab, abs))))
+    setDrafts((prev) => dropCleanDrafts(prev, (abs) => abs === activeAbs || tabs.some((tab) => samePreviewPath(tab, abs))))
   }, [drafts, tabListKey, activeAbs])
   const bindings = usePreviewBindings.getState
   const tabStrip = tabList.length && !standalone ? (
@@ -732,7 +725,7 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
           text={text}
           remoteImages={remoteImages}
           remoteNoticeInBar={remoteNoticeInBar}
-          artifacts={artifacts}
+          visible={visible}
           ownsCurrent={ownsCurrent}
           reading={reading}
           settings={viewSettings}
@@ -787,7 +780,7 @@ function PreviewBody({
   text,
   remoteImages,
   remoteNoticeInBar,
-  artifacts,
+  visible,
   ownsCurrent,
   reading,
   settings,
@@ -811,7 +804,7 @@ function PreviewBody({
   text: PreviewText
   remoteImages: RemoteImageGroup
   remoteNoticeInBar: boolean
-  artifacts: AssistantArtifact[]
+  visible: boolean
   ownsCurrent: boolean
   reading: boolean
   settings: FileViewSettings
@@ -848,36 +841,7 @@ function PreviewBody({
   }
   switch (view.kind) {
     case 'empty':
-      return ownsCurrent && artifacts.length ? (
-        <EmptyState
-          data-testid="v3-preview-empty"
-          icon={<Folder size={20} />}
-          title={emptyTitle}
-          action={
-            <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
-              {artifacts.map((artifact) => (
-                <li key={artifact.id}>
-                  <ListRow
-                    icon={<FileText size={14} aria-hidden />}
-                    trailing={(artifact.version ?? 1) > 1 ? <span className="v3-preview-manifest-version">v{artifact.version}</span> : undefined}
-                    title={artifact.path}
-                    onClick={() => onOpenArtifact(artifact.path)}
-                  >
-                    {artifact.filename}
-                  </ListRow>
-                </li>
-              ))}
-            </ul>
-          }
-        />
-      ) : (
-        <EmptyState
-          data-testid="v3-preview-empty"
-          icon={<Folder size={20} />}
-          title={emptyTitle}
-          description={ownsCurrent ? undefined : text.notOwner}
-        />
-      )
+      return <PreviewManifest visible={visible} ownsCurrent={ownsCurrent} title={emptyTitle} notOwner={text.notOwner} onOpen={onOpenArtifact} />
     case 'loading':
       return (
         <div className="v3-preview-loading" data-testid="v3-preview-loading" role="status">
@@ -950,6 +914,35 @@ function PreviewBody({
         />
       )
   }
+}
+
+function PreviewManifest({ visible, ownsCurrent, title, notOwner, onOpen }: { visible: boolean; ownsCurrent: boolean; title: string; notOwner: string; onOpen: (path: string) => void }): ReactElement {
+  const enabled = visible && ownsCurrent
+  const artifacts = useStore(useMemo(() => createPreviewManifestSelector(enabled), [enabled]))
+  return (
+    <EmptyState
+      data-testid="v3-preview-empty"
+      icon={<Folder size={20} />}
+      title={title}
+      description={ownsCurrent ? undefined : notOwner}
+      action={artifacts.length ? (
+        <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
+          {artifacts.map((artifact) => (
+            <li key={artifact.id}>
+              <ListRow
+                icon={<FileText size={14} aria-hidden />}
+                trailing={(artifact.version ?? 1) > 1 ? <span className="v3-preview-manifest-version">v{artifact.version}</span> : undefined}
+                title={artifact.path}
+                onClick={() => onOpen(artifact.path)}
+              >
+                {artifact.filename}
+              </ListRow>
+            </li>
+          ))}
+        </ul>
+      ) : undefined}
+    />
+  )
 }
 
 function TextView({
@@ -1033,10 +1026,6 @@ function writeCanvasChoice(value: boolean): void {
   } catch {
     return
   }
-}
-
-function samePath(a: string, b: string): boolean {
-  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
 }
 
 function viewSettingsMenu(

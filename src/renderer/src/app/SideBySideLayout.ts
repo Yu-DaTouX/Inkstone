@@ -1,3 +1,4 @@
+import type { Store } from '../state/store'
 import { splitColumns, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 
 export function isSessionTile(ref: SplitSessionRef | null | undefined): boolean {
@@ -39,6 +40,88 @@ export interface SideBySideSession {
 
 const normalizePath = (p: string): string => p.replace(/[\\/]+/g, '/').toLowerCase()
 const samePath = (a: string, b: string): boolean => normalizePath(a) === normalizePath(b)
+
+type SplitSummary = Store['sessions'][number]
+type SplitSummaries = Pick<Store, 'sessions' | 'manualTitles' | 'titles'>
+const summaryIndexes = new WeakMap<Store['sessions'], { byId: Map<string, SplitSummary>; byPath: Map<string, SplitSummary> }>()
+
+function splitSummary(sessions: Store['sessions'], target: SplitSessionRef, path: string | undefined): SplitSummary | undefined {
+  let index = summaryIndexes.get(sessions)
+  if (!index) {
+    const byId = new Map<string, SplitSummary>()
+    const byPath = new Map<string, SplitSummary>()
+    for (const item of sessions) {
+      if (item.id && !byId.has(item.id)) byId.set(item.id, item)
+      if (item.path) {
+        const key = normalizePath(item.path)
+        if (!byPath.has(key)) byPath.set(key, item)
+      }
+    }
+    index = { byId, byPath }
+    summaryIndexes.set(sessions, index)
+  }
+  return (target.sessionId ? index.byId.get(target.sessionId) : undefined) ?? (path ? index.byPath.get(path) : undefined)
+}
+
+function splitTitle(state: SplitSummaries, target: SplitSessionRef, summary: SplitSummary | undefined): string {
+  const id = target.sessionId ?? summary?.id
+  return ((id && (state.manualTitles[id] || state.titles[id])) || summary?.title || '').trim()
+}
+
+export function createSplitHeaderSelector(target: SplitSessionRef) {
+  const path = target.path ? normalizePath(target.path) : undefined
+  let previousSummary: SplitSummary | undefined
+  let previousProjects: NonNullable<Store['settings']>['projects'] | undefined
+  let previous = { title: '', project: '' }
+  return (state: SplitSummaries & Pick<Store, 'settings'>) => {
+    const summary = splitSummary(state.sessions, target, path)
+    const title = splitTitle(state, target, summary)
+    const projects = state.settings?.projects
+    let project = previous.project
+    if (summary?.projectId !== previousSummary?.projectId || summary?.cwd !== previousSummary?.cwd || projects !== previousProjects) {
+      const record = summary?.projectId ? projects?.find((item) => item.id === summary.projectId) : undefined
+      project = record?.name || (record?.cwd ?? summary?.cwd ?? '').split(/[\\/]/).filter(Boolean).pop() || ''
+      previousSummary = summary
+      previousProjects = projects
+    }
+    if (title !== previous.title || project !== previous.project) previous = { title, project }
+    return previous
+  }
+}
+
+type SplitRunnerState = Pick<Store, 'session' | 'sessionRuntimes'>
+const running = (session: Store['session'] | undefined): boolean => !!(session?.isAgentRunning || session?.isStreaming)
+
+function sameCwdBusy(state: SplitRunnerState, sessionId: string | undefined, cwd: string | undefined): boolean {
+  if (!cwd) return false
+  const live = state.session
+  if (live && live.sessionId !== sessionId && running(live) && samePath(live.cwd, cwd)) return true
+  for (const id in state.sessionRuntimes) {
+    if (id === sessionId) continue
+    const session = state.sessionRuntimes[id]?.session
+    if (session?.cwd && running(session) && samePath(session.cwd, cwd)) return true
+  }
+  return false
+}
+
+export function createSplitPeerComposerSelector(target: SplitSessionRef) {
+  const path = target.path ? normalizePath(target.path) : undefined
+  let previous = { title: '', draft: '', running: false, model: '', cwdBusy: false }
+  return (state: SplitSummaries & SplitRunnerState) => {
+    const summary = splitSummary(state.sessions, target, path)
+    const runtime = target.sessionId ? state.sessionRuntimes[target.sessionId] : undefined
+    const session = runtime?.session
+    const title = splitTitle(state, target, summary)
+    const draft = runtime?.draft ?? ''
+    const busy = running(session)
+    const model = session?.model?.name ?? ''
+    const cwdBusy = !busy && sameCwdBusy(state, target.sessionId, session?.cwd ?? summary?.cwd)
+    if (title !== previous.title || draft !== previous.draft || busy !== previous.running || model !== previous.model || cwdBusy !== previous.cwdBusy) {
+      previous = { title, draft, running: busy, model, cwdBusy }
+    }
+    return previous
+  }
+}
 
 const sameRefAsSession = (ref: SplitSessionRef, session: SideBySideSession): boolean =>
   (!!ref.sessionId && ref.sessionId === session.id) || (!!ref.path && samePath(ref.path, session.path))
