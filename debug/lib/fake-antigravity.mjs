@@ -47,7 +47,7 @@ const options = [
 
 for await (const line of input) {
   const { id, method, params, result, error } = JSON.parse(line)
-  if (method === 'initialize') reply(id, { protocolVersion: 1, authMethods: [], agentCapabilities: { loadSession: true } })
+  if (method === 'initialize') reply(id, { protocolVersion: 1, authMethods: [], agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } })
   else if (method === 'session/new') {
     const blocked = await readFile(join(params.cwd, '.acp-fixture-login'), 'utf8').catch(() => '')
     if (noAuth || blocked === 'deny') send({ id, error: { code: -32000, message: 'Authentication required' } })
@@ -73,9 +73,20 @@ for await (const line of input) {
     update({ sessionUpdate: 'usage_update', used: 360, size: 20000 })
   } else if (method === 'session/prompt') {
     promptId = id
-    const raw = params.prompt[0].text
+    const blocks = Array.isArray(params.prompt) ? params.prompt : []
+    const raw = blocks.filter((block) => block?.type === 'text').map((block) => String(block.text ?? '')).join('\n')
+    const images = blocks.filter((block) => block?.type === 'image')
     knowsFixtureCode ||= raw.includes('记住夹具暗号：砚石')
-    const text = raw.split('\nCurrent user message:\n').at(-1)
+    const prefix = 'Current user message:\n'
+    const divider = '\n\nContinue the same Inkstone conversation.'
+    const text = raw.startsWith(prefix) && raw.includes(divider)
+      ? raw.slice(prefix.length, raw.indexOf(divider))
+      : raw.split('\nCurrent user message:\n').at(-1)
+    if (images.length > 0) {
+      chunk(`收到 ${images.length} 张图 · ${images[0].mimeType}${text ? ` · ${text}` : ''}`)
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
     if (text === '检查档位') {
       chunk(`当前档位 · ${model}/${effort}`)
       reply(id, { stopReason: 'end_turn' })
@@ -117,6 +128,28 @@ for await (const line of input) {
       await delay(250)
       chunk('请问今天需要处理什么任务？')
       reply(id, { stopReason: 'end_turn', usage: { inputTokens: 100, outputTokens: 30, visibleOutputTokens: 20, cachedReadTokens: 10, totalTokens: 140 } })
+      continue
+    }
+    if (text === '多步进度') {
+      update({ sessionUpdate: 'plan', entries: [
+        { content: '检查配置文件', status: 'in_progress', priority: 'high' },
+        { content: '输出最终结论', status: 'pending', priority: 'medium' }
+      ] })
+      update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '**检查项目入口**\n\n先确认配置文件。' } })
+      chunk('正在检查配置文件。')
+      update({ sessionUpdate: 'tool_call', toolCallId: 'read-1', kind: 'read', title: '读取 package.json', status: 'in_progress', rawInput: { path: 'package.json' } })
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'read-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '{"name":"fixture"}' } }] })
+      update({ sessionUpdate: 'plan', entries: [
+        { content: '检查配置文件', status: 'completed', priority: 'high' },
+        { content: '输出最终结论', status: 'in_progress', priority: 'medium' }
+      ] })
+      update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '**整理结果**\n\n准备输出结论。' } })
+      chunk('多步进度完成。')
+      update({ sessionUpdate: 'plan', entries: [
+        { content: '检查配置文件', status: 'completed', priority: 'high' },
+        { content: '输出最终结论', status: 'completed', priority: 'medium' }
+      ] })
+      reply(id, { stopReason: 'end_turn', usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 } })
       continue
     }
     if (text === '上报文件改动') {

@@ -131,7 +131,9 @@ export function useRunProgress(): RunProgress | null {
 
 function runLabel(call: { name: string; args?: unknown }): string {
   const a = (call.args && typeof call.args === 'object' ? call.args : {}) as Record<string, unknown>
-  if (typeof a.command === 'string' && a.command.trim()) return `$ ${a.command.trim().split(/\r?\n/)[0]}`
-  const target = [a.path, a.file_path, a.pattern, a.query, a.url].find((v) => typeof v === 'string' && v)
+  if (typeof a.toolSummary === 'string' && a.toolSummary.trim()) return a.toolSummary.trim()
+  const cmd = typeof a.command === 'string' && a.command.trim() ? a.command : typeof a.CommandLine === 'string' && a.CommandLine.trim() ? a.CommandLine : ''
+  if (cmd) return `$ ${cmd.trim().split(/\r?\n/)[0]}`
+  const target = [a.path, a.file_path, a.Path, a.FilePath, a.pattern, a.query, a.Query, a.url].find((v) => typeof v === 'string' && v)
   return target ? `${call.name} ${String(target)}` : call.name
 }

@@ -9,16 +9,32 @@ import { showsThinkingInline } from './transcript-view-model'
 import { useToolExpansion, useTranscriptViewScope } from './use-tool-run'
 import { TranslateButton, useThinkingTranslation } from './thinking-translate'
 
+function stripHeadingStars(line: string): string {
+  const match = /^\*\*([^\s*][^*]*?)\*\*[:：]?$/.exec(line)
+  return match ? match[1].trim() : line
+}
+
 function livePeekText(text: string): string {
+  const lines = text.trim().split(/\r?\n/)
+  let heading = ''
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const trimmed = lines[i].trim()
+    const match = /^\*\*([^\s*][^*]*?)\*\*[:：]?$/.exec(trimmed)
+    if (match) {
+      heading = match[1].trim()
+      break
+    }
+  }
+  if (heading) return heading.length > 160 ? heading.slice(0, 160) : heading
   const paragraphs = text.trim().split(/\n\s*\n/)
-  const line = (paragraphs.at(-1) ?? '').split('\n').find((item) => item.trim())?.trim() ?? ''
+  const line = stripHeadingStars((paragraphs.at(-1) ?? '').split('\n').find((item) => item.trim())?.trim() ?? '')
   return line.length > 160 ? line.slice(0, 160) : line
 }
 
 function peekText(text: string): string {
   const lines = text.trimEnd().split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim()
+    const line = stripHeadingStars(lines[i].trim())
     if (line) return line.length > 160 ? line.slice(-160) : line
   }
   return ''

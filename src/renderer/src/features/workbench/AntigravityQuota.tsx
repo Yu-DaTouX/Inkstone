@@ -1,6 +1,7 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ANTIGRAVITY_QUOTA_REFRESH_MS, type AntigravityModel, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot, type AntigravityQuotaWindow } from '../../../../shared/antigravity'
-import { Button, Notice, RailRow } from '../../ui'
+import { IconButton, Notice } from '../../ui'
+import { RefreshCw } from '../../ui/icons'
 
 export function useAntigravityQuota(enabled: boolean, running: boolean) {
   const [snapshot, setSnapshot] = useState<AntigravityQuotaSnapshot>()
@@ -36,7 +37,7 @@ function percent(fraction: number, lang: string): string {
 }
 
 function periodLabel(window: AntigravityQuotaWindow, en: boolean): string {
-  return window.period === '5h' ? (en ? '5 hours' : '5 小时') : window.period === 'weekly' ? (en ? 'Weekly' : '每周') : window.name
+  return window.period === '5h' ? '5h' : window.period === 'weekly' ? (en ? 'Wk' : '每周') : window.name
 }
 
 function orderedWindows(group: AntigravityQuotaGroup): AntigravityQuotaWindow[] {
@@ -51,39 +52,96 @@ export function antigravityQuotaSummary(snapshot: AntigravityQuotaSnapshot | und
   const keys = new Set([model?.id, model?.name].filter((value): value is string => !!value).map(matchKey))
   const direct = groups.find((group) => keys.has(matchKey(group.name)))
   const chosen = direct ?? groups.find((group) => group.models.some((name) => keys.has(matchKey(name))))
-  if (!chosen) return en ? `${groups.length} quota groups` : `${groups.length} 个额度组`
+  if (!chosen) return en ? `${groups.length} groups` : `${groups.length} 组`
   return orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, en)} ${percent(window.remainingFraction, lang)}`).join(' · ')
 }
 
-export function AntigravityQuotaDetails({ quota, turnTokens, lang }: {
+function windowTone(fraction: number): 'ok' | 'ask' | 'fail' {
+  if (fraction <= 0) return 'fail'
+  if (fraction <= 0.2) return 'ask'
+  return 'ok'
+}
+
+function shortReset(resetAt: number | undefined, lang: string): string | undefined {
+  if (resetAt === undefined) return undefined
+  const date = new Date(resetAt)
+  const sameDay = date.toDateString() === new Date().toDateString()
+  return new Intl.DateTimeFormat(lang, sameDay
+    ? { hour: '2-digit', minute: '2-digit', hour12: false }
+    : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+}
+
+export function AntigravityQuotaDetails({ quota, lang }: {
   quota: ReturnType<typeof useAntigravityQuota>
-  turnTokens?: string
   lang: string
 }) {
   const { snapshot, loading, refresh } = quota
   const en = lang === 'en-US'
-  const date = new Intl.DateTimeFormat(lang, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const groups = snapshot?.groups ?? []
+  const refreshLabel = en ? 'Refresh quota' : '刷新额度'
+  const refreshButton = (
+    <IconButton
+      size="sm"
+      variant="ghost"
+      aria-label={refreshLabel}
+      tooltip={refreshLabel}
+      data-testid="antigravity-quota-refresh"
+      isDisabled={loading}
+      isPending={loading}
+      onPress={() => void refresh(true)}
+    >
+      <RefreshCw size={12} aria-hidden />
+    </IconButton>
+  )
   return (
-    <>
-      <ul className="wb-ov-items" data-testid="rail-antigravity-quota">
-        <RailRow label={en ? 'Subscription allowance' : '订阅剩余额度'} action={
-          <Button variant="ghost" size="sm" data-testid="antigravity-quota-refresh" isDisabled={loading} onPress={() => void refresh(true)}>
-            {loading ? (en ? 'Reading…' : '查询中…') : (en ? 'Refresh' : '刷新')}
-          </Button>
-        } />
-        {snapshot?.groups.map((group, index) => (
-          <Fragment key={`${group.name}:${index}`}>
-            <RailRow label={group.name} title={group.models.length ? group.models.join(', ') : group.name} />
-            {orderedWindows(group).map((window) => {
-              const name = periodLabel(window, en)
-              const reset = window.resetAt === undefined ? undefined : `${en ? 'Resets' : '重置'} ${date.format(window.resetAt)}`
-              return <RailRow key={window.id} label={name} hint={reset} title={`${group.name} · ${name}${reset ? ` · ${reset}` : ''}`} value={percent(window.remainingFraction, lang)} />
-            })}
-          </Fragment>
-        ))}
-        {turnTokens !== undefined ? <RailRow label={en ? 'Latest reported turn' : '最近已上报回合'} value={`${turnTokens} tok`} /> : null}
-      </ul>
-      {snapshot && !snapshot.groups.length ? <Notice tone="ask" compact>{snapshot.error ?? (en ? 'Allowance unavailable.' : '暂时无法读取订阅额度。')}</Notice> : null}
-    </>
+    <div className="wb-ov-quota" data-testid="rail-antigravity-quota">
+      {groups.map((group, index) => {
+        const windows = orderedWindows(group)
+        const primaryReset = shortReset(windows[0]?.resetAt, lang)
+        return (
+          <div key={`${group.name}:${index}`} className="wb-ov-qmain" title={group.models.length ? `${group.name}: ${group.models.join(', ')}` : group.name}>
+            <div className="wb-ov-ctx-head">
+              <span className="wb-ov-qmain-name">
+                <span className="wb-ov-qmain-label">{group.name}</span>
+              </span>
+              <span className="wb-ov-qmain-side">
+                {primaryReset ? `${en ? 'Reset ' : '重置 '}${primaryReset}` : null}
+                {index === 0 ? refreshButton : null}
+              </span>
+            </div>
+            <ul className="wb-ov-qminis">
+              {windows.map((window) => {
+                const name = periodLabel(window, en)
+                const used = Math.round(Math.min(100, Math.max(0, (1 - window.remainingFraction) * 100)))
+                const left = percent(window.remainingFraction, lang)
+                const reset = shortReset(window.resetAt, lang)
+                const tip = [
+                  `${group.name} · ${name}`,
+                  `${en ? 'Remaining' : '剩余'} ${left} (${used}% ${en ? 'used' : '已用'})`,
+                  reset ? `${en ? 'Resets' : '重置'} ${reset}` : ''
+                ].filter(Boolean).join('\n')
+                return (
+                  <li key={window.id} className="wb-ov-qmini" data-tone={windowTone(window.remainingFraction)} title={tip}>
+                    <span className="wb-ov-qmini-name">{name}</span>
+                    <div className="wb-ov-ctx-meter">
+                      <div className="wb-ctx-bar" role="img" aria-label={`${group.name} ${name} ${left}`}>
+                        {used > 0 ? <i className="wb-ov-qfill" style={{ width: `${used}%` }} /> : null}
+                      </div>
+                    </div>
+                    <span className="wb-ov-qmini-num">{left}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      })}
+      {!groups.length && snapshot ? (
+        <div className="wb-ov-ctx-head">
+          <Notice tone="ask" compact>{snapshot.error ?? (en ? 'Allowance unavailable.' : '暂时无法读取额度。')}</Notice>
+          {refreshButton}
+        </div>
+      ) : null}
+    </div>
   )
 }

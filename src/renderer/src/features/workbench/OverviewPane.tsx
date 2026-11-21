@@ -777,7 +777,6 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const provider = session?.model?.provider ?? ''
   const antigravity = provider === 'antigravity'
   const unreported = lang === 'en-US' ? 'Not reported' : '未上报'
-  const acpUsage = antigravity ? messages.findLast((message) => message.model?.startsWith('antigravity/') && message.antigravity?.usage)?.antigravity?.usage : undefined
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const foldKey = view.key || 'none'
@@ -1024,13 +1023,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ) : contextSummary,
       summaryWhenOpen: true,
       tone: contextKnown ? glyphTone(usage.tone) : undefined,
-      onOpenView: antigravity ? undefined : () => onOpenView('context'),
-      body: antigravity ? (contextKnown ? (
-        <div className="wb-ov-ctx">
-          <RailBar label={rail.sections.context} used={usage.percent ?? 0} />
-          <span>{shortTokens(usage.tokens)} / {shortTokens(usage.windowSize)}</span>
-        </div>
-      ) : null) : contextData && usage.known ? (
+      onOpenView: () => onOpenView('context'),
+      body: contextData && usage.known ? (
         <ContextDetail data={contextData} rail={rail} />
       ) : (
         <div className="wb-ov-ctx"><RailBar label={rail.sections.context} used={0} /></div>
@@ -1039,7 +1033,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     ...(antigravity
       ? { usage: {
           summary: <RailValue value={antigravityQuotaSummary(antigravityQuota.snapshot, session?.model, lang) ?? (antigravityQuota.loading ? (lang === 'en-US' ? 'Reading…' : '查询中…') : unreported)} />,
-          body: <AntigravityQuotaDetails quota={antigravityQuota} turnTokens={acpUsage?.totalTokens === undefined ? undefined : shortTokens(acpUsage.totalTokens)} lang={lang} />
+          body: <AntigravityQuotaDetails quota={antigravityQuota} lang={lang} />
         } }
       : quotaModel || peakPrice
       ? {

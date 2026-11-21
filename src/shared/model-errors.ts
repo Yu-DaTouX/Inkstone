@@ -7,6 +7,7 @@ export type ModelErrorKind =
   | 'refused'
   | 'request'
   | 'truncated'
+  | 'hostSave'
 
 export type ModelErrorQuotaScope = 'usage' | 'rate'
 
@@ -20,6 +21,11 @@ export interface ModelErrorInfo {
 const NOT_IN_PLAN_RE = /not[ _-]in[ _-](?:(?:your|the|this|current|a)[ _-])*(?:plan|subscription)|not (?:included|available|supported) (?:in|on|with) (?:your|the|this) (?:current )?(?:plan|subscription)|不在.{0,8}(?:套餐|订阅)/i
 
 const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
+  {
+    kind: 'hostSave',
+    label: '会话保存失败',
+    re: /回复未能保存到会话|Could not save the Antigravity turn|回合已写入，但 Pi 未能同步该分支/i
+  },
   {
     kind: 'refused',
     label: '服务商安全审核拦截',
@@ -199,6 +205,7 @@ export type ModelErrorCause =
   | 'timeout'
   | 'overload'
   | 'unreachable'
+  | 'hostSave'
   | 'unknown'
 
 export function modelErrorCause(errorText: unknown): ModelErrorCause {
@@ -258,6 +265,7 @@ export function modelErrorNotice(errorText: unknown): string {
     }
     case 'context': explanation = '请求超过模型的上下文或输入长度限制。请压缩会话、减少附件，或选择支持更长上下文的模型。'; break
     case 'aborted': explanation = '本轮请求已取消。已执行的工具操作可能保留，继续前请先核对进度。'; break
+    case 'hostSave': explanation = '模型已完成回复，但未能写入本地会话记录，重启后本轮内容可能丢失。请查看详情，无需直接重跑模型。'; break
     case 'request': explanation = NOT_IN_PLAN_RE.test(info.text)
       ? '该模型不在当前套餐内，无法使用（这不是登录问题，重新登录没有用）。请升级套餐，或选择套餐内的其他模型。'
       : '服务商拒绝了模型或请求配置。请核对模型 ID、接口地址、工具格式及不受支持的参数。'; break

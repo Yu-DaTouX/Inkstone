@@ -259,7 +259,7 @@ export class SubagentService {
   }
 
   readonly capabilityHost: SubagentCommandHost = {
-    run: (command, params, context) => this.run(command, params, context)
+    run: (command, params, context, signal) => this.run(command, params, context, signal)
   }
 
   private async run(...[command, params, context, signal]: Parameters<SubagentCommandHost['run']>): ReturnType<SubagentCommandHost['run']> {

@@ -71,10 +71,17 @@ export function isAntigravityMode(mode: unknown): mode is string {
   return mode === ANTIGRAVITY_APPROVAL_MODE || mode === 'accept-edits' || mode === 'auto' || mode === 'plan'
 }
 
+export interface AntigravityPlanEntry {
+  content: string
+  status: 'pending' | 'running' | 'done'
+  priority?: string
+}
+
 export type AntigravityEvent =
   | { type: 'text' | 'thought'; text: string }
   | ({ type: 'context' } & AntigravityContext)
   | { type: 'usage'; usage: AntigravityUsage }
+  | { type: 'plan'; entries: AntigravityPlanEntry[] }
   | { type: 'tool'; id: string; title?: string; status?: string; kind?: string; args?: unknown; output?: string; diffs: Array<{ path: string; oldText: string | null; newText: string }> }
   | { type: 'models'; models: AntigravityModels }
   | { type: 'permission'; id: number; title: string; detail: string; options: Array<{ id: string; name: string; allow: boolean }> }

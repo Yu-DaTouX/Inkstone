@@ -120,6 +120,19 @@ export function toolCategory(call: CategorySource): ToolCategory {
 
 function categoryOf(call: CategorySource): ToolCategory {
   if (call.name.startsWith('mcp__')) return 'other'
+  const acp = call.details as { antigravity?: boolean; kind?: unknown; antigravityDiffs?: Array<{ status?: string }> } | undefined
+  if (acp?.antigravity && typeof acp.kind === 'string') {
+    const kind = acp.kind.toLowerCase()
+    if (kind === 'read') return 'read'
+    if (kind === 'search') return 'search'
+    if (kind === 'fetch') return 'fetch'
+    if (kind === 'execute') return 'command'
+    if (kind === 'delete') return 'delete'
+    if (kind === 'edit' || kind === 'move') {
+      const diffs = Array.isArray(acp.antigravityDiffs) ? acp.antigravityDiffs : []
+      return diffs.length > 0 && diffs.every((diff) => diff?.status === 'created') ? 'create' : 'edit'
+    }
+  }
   const bare = bareName(call.name)
   if (READ.has(bare)) return 'read'
   if (SEARCH.has(bare)) return 'search'

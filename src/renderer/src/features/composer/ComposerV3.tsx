@@ -423,8 +423,7 @@ export function ComposerV3(): JSX.Element {
     attachmentCount: attachments.count,
     composing
   })
-  const runningPlaceholder = antigravity ? lang === 'en-US' ? 'Draft your next message' : '可以先写下一条消息' : t('composer.phRunning')
-  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? runningPlaceholder : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
+  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))
@@ -736,7 +735,7 @@ export function ComposerV3(): JSX.Element {
               canInterrupt={submitAdapter.canInterrupt}
               isSendBusy={submitAdapter.isSendBusy}
               sendDisabledReason={submitAdapter.sendDisabledReason}
-              hasSendableContent={submitAdapter.hasSendableContent && !(antigravity && roundRunning)}
+              hasSendableContent={submitAdapter.hasSendableContent}
               preserveComposerFocusOnPointerDown
               onSubmitMessage={(mode) => void submitMessage(mode)}
               onInterrupt={submitAdapter.interrupt}

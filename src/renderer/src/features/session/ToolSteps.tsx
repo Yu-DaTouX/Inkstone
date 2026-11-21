@@ -47,10 +47,11 @@ export function tallyText(parts: readonly ToolTallyPart[], tt: ReturnType<typeof
   return parts.map((part) => toolTallyText(part, tt)).join(' \u00b7 ')
 }
 
-export function detailKind(name: string): 'command' | 'code' | 'change' | 'result' {
+export function detailKind(name: string, details?: unknown): 'command' | 'code' | 'change' | 'result' {
   if (isCodemodeTool(name)) return 'code'
-  if (name === 'bash' || name === 'powershell' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
-  if (name === 'edit' || name === 'write' || name === 'multi_edit' || name === 'multiEdit' || name === 'apply_patch' || name === 'patch') return 'change'
+  const category = stepCategory(name, details)
+  if (category === 'bash') return 'command'
+  if (category === 'edit' || category === 'write') return 'change'
   return 'result'
 }
 
@@ -205,12 +206,12 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   const showImages = useContext(ToolImagePreviewScope)
   const nestedTitle = nestedStepTitle(call, node.children, tt, tallied)
   const title = nestedTitle ?? toolStepTitle(call, tt)
-  const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
+  const selfContained = !!nestedTitle || (stepCategory(call.name, call.details) === 'bash' && !!stepDescription(call))
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
   const nested = collapsedNest(visibleNestedNodes(children, nestAll === true), children, open, running)
   const searches = nestedTitle || blocked || asking ? [] : searchStepsOf(call)
   const failed = call.status === 'error' && !call.cancelled && !denied
-  const kind = detailKind(call.name)
+  const kind = detailKind(call.name, call.details)
   const command = kind === 'command' ? commandOf(call) : ''
   const settledView = !running && call.output && (kind === 'command' || failed) ? toolOutputView(call.name, call.output) : null
   const exitCode = failed && settledView && settledView.exitCode !== null && settledView.exitCode !== 0 ? settledView.exitCode : null
@@ -300,15 +301,15 @@ function nestedStepTitle(call: UIToolCall, children: readonly ToolCallNode[], tt
 function commandOf(call: UIToolCall): string {
   const args = call.args as Record<string, unknown> | undefined
   if (!args || typeof args !== 'object') return ''
-  for (const key of ['command', 'cmd', 'script', 'code']) {
+  for (const key of ['command', 'CommandLine', 'cmd', 'script', 'code']) {
     const value = args[key]
     if (typeof value === 'string' && value.trim()) return value
   }
   return ''
 }
 
-const COMMAND_ARG_KEYS = ['command', 'cmd', 'script', 'code', 'timeout', 'description']
-const READ_ARG_KEYS = ['path', 'file_path', 'file', 'offset', 'limit']
+const COMMAND_ARG_KEYS = ['command', 'CommandLine', 'cmd', 'script', 'code', 'timeout', 'description', 'toolSummary']
+const READ_ARG_KEYS = ['path', 'file_path', 'file', 'Path', 'FilePath', 'offset', 'limit', 'StartLine', 'EndLine']
 
 function hasArgs(call: UIToolCall): boolean {
   return !!call.args && typeof call.args === 'object' && Object.keys(call.args as object).length > 0
@@ -319,10 +320,10 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const tt = useSessionText()
   const cwd = useStore((s) => s.session?.cwd)
   const [copied, setCopied] = useState(false)
-  const kind = detailKind(call.name)
+  const kind = detailKind(call.name, call.details)
   const diff = readFileDiff(call.details)
   const command = kind === 'command' || kind === 'code' ? commandOf(call) : ''
-  const readPath = kind === 'result' && stepCategory(call.name) === 'read' ? callPath(call) : ''
+  const readPath = kind === 'result' && stepCategory(call.name, call.details) === 'read' ? callPath(call) : ''
   const skip = command ? COMMAND_ARG_KEYS : readPath ? READ_ARG_KEYS : []
   const entries = argEntries(call.args, skip)
   const rawArgs = !hasArgs(call) && !command && !readPath ? call.argsRaw ?? '' : ''

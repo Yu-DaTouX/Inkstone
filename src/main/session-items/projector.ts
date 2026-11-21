@@ -122,7 +122,11 @@ export class SessionItemProjector {
     if (m?.role === 'system') return
     const norm = normalizeMessage(m, this.seq, this.localizeImage, entryId)
     if (!norm) return
-    if (m.role === 'assistant') for (const call of norm.toolCalls ?? []) if (!call.serverSide) call.cancelled = true
+    if (m.role === 'assistant') {
+      for (const call of norm.toolCalls ?? []) {
+        if (!call.serverSide && (call.details as { antigravity?: boolean } | undefined)?.antigravity !== true) call.cancelled = true
+      }
+    }
     if (m.role === 'toolResult') {
       const result = norm.toolCalls?.[0]
       const hit = result ? this.callIndex.get(result.id) : undefined

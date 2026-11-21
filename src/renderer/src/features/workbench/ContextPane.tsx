@@ -221,11 +221,12 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [focusKind, setFocusKind] = useState<CellKind | null>(null)
 
+  const antigravity = session?.model?.provider === 'antigravity'
   const [compactRun, setCompactRun] = useState<{ sessionId: string; pending: boolean } | null>(null)
   const ownRun = compactRun && compactRun.sessionId === sessionId ? compactRun : null
   const running = !!(session?.isStreaming || session?.isAgentRunning)
-  const compacting = !!session?.isCompacting || !!ownRun?.pending
-  const compactDisabled = !sessionId || running || compacting || (visible && messages.length === 0)
+  const compacting = !antigravity && (!!session?.isCompacting || !!ownRun?.pending)
+  const compactDisabled = antigravity || !sessionId || running || compacting || (visible && messages.length === 0)
 
   const compactNow = (): void => {
     if (!sessionId || compactDisabled) return
@@ -393,17 +394,19 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
                     ? text.left(`${usage.estimated ? '≈' : ''}${shortTokens(Math.max(0, usage.windowSize - usage.tokens))}`)
                     : ''}
           </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            isDisabled={compactDisabled}
-            icon={compacting ? <Spinner size="xs" /> : undefined}
-            title={running ? text.compactBusy : undefined}
-            data-testid="v3-wb-ctx-compact"
-            onPress={compactNow}
-          >
-            {text.compactNow}
-          </Button>
+          {!antigravity ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              isDisabled={compactDisabled}
+              icon={compacting ? <Spinner size="xs" /> : undefined}
+              title={running ? text.compactBusy : undefined}
+              data-testid="v3-wb-ctx-compact"
+              onPress={compactNow}
+            >
+              {text.compactNow}
+            </Button>
+          ) : null}
         </div>
         {usage.windowAssumed ? (
           <p className="wb-ctx-note" data-testid="v3-wb-ctx-window-assumed">
@@ -438,55 +441,57 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         </div>
       ) : null}
 
-      <div className="wb-ctx-block">
-        <h4 className="wb-ctx-subtitle">{text.compaction}</h4>
-        {unsettledLast && last && !historyItems?.length ? (
-          <ul className="wb-ctx-history">{unsettledRow(last)}</ul>
-        ) : null}
-        {historyItems?.length ? (
-          <>
-            <ul className="wb-ctx-history" data-testid="v3-wb-ctx-history">
-              {unsettledLast && last ? unsettledRow(last) : null}
-              {shownHistory.map((item) => {
-                const reclaim = item.afterEstimated ? null : compactionReclaim(item)
-                return (
-                  <li key={item.id} title={historyDetail(item, text)}>
-                    <span className="wb-ctx-history-time">{compactionTime(item.at, lang)}</span>
-                    <span className="wb-ctx-history-flow">
-                      {item.tokensBefore === undefined
-                        ? '—'
-                        : item.tokensAfter === undefined
-                          ? text.compactionBefore(shortTokens(item.tokensBefore))
-                          : `${shortTokens(item.tokensBefore)} → ${item.afterEstimated ? '≈' : ''}${shortTokens(item.tokensAfter)}`}
-                    </span>
-                    <span className="wb-ctx-history-num">{reclaim === null ? '' : text.reclaim(reclaim)}</span>
-                    <span className="wb-ctx-history-num">{item.summaryTokens > 0 ? text.compactionSummary(shortTokens(item.summaryTokens)) : ''}</span>
-                  </li>
-                )
-              })}
-            </ul>
-            {historyItems.length > HISTORY_PREVIEW ? (
-              <Button
-                variant="plain"
-                size="sm"
-                className="wb-ctx-more"
-                aria-expanded={showAllHistory}
-                data-testid="v3-wb-ctx-history-more"
-                onPress={() => setShowAllHistory((value) => !value)}
-              >
-                {showAllHistory ? text.less : text.more(historyItems.length - HISTORY_PREVIEW)}
-              </Button>
-            ) : null}
-          </>
-        ) : historyItems || unsettledLast || historyPending ? null : lastLine ? (
-          <p className="wb-ctx-record" title={lastTip} data-testid="v3-wb-ctx-compaction">
-            {lastLine}
-          </p>
-        ) : null}
-        {!historyItems?.length && !unsettledLast && !historyPending && history?.ok !== false && (historyItems || !lastLine) ? (
-          <p className="wb-ctx-note">{text.compactionNone}</p>
-        ) : null}
-      </div>
+      {!antigravity ? (
+        <div className="wb-ctx-block">
+          <h4 className="wb-ctx-subtitle">{text.compaction}</h4>
+          {unsettledLast && last && !historyItems?.length ? (
+            <ul className="wb-ctx-history">{unsettledRow(last)}</ul>
+          ) : null}
+          {historyItems?.length ? (
+            <>
+              <ul className="wb-ctx-history" data-testid="v3-wb-ctx-history">
+                {unsettledLast && last ? unsettledRow(last) : null}
+                {shownHistory.map((item) => {
+                  const reclaim = item.afterEstimated ? null : compactionReclaim(item)
+                  return (
+                    <li key={item.id} title={historyDetail(item, text)}>
+                      <span className="wb-ctx-history-time">{compactionTime(item.at, lang)}</span>
+                      <span className="wb-ctx-history-flow">
+                        {item.tokensBefore === undefined
+                          ? '—'
+                          : item.tokensAfter === undefined
+                            ? text.compactionBefore(shortTokens(item.tokensBefore))
+                            : `${shortTokens(item.tokensBefore)} → ${item.afterEstimated ? '≈' : ''}${shortTokens(item.tokensAfter)}`}
+                      </span>
+                      <span className="wb-ctx-history-num">{reclaim === null ? '' : text.reclaim(reclaim)}</span>
+                      <span className="wb-ctx-history-num">{item.summaryTokens > 0 ? text.compactionSummary(shortTokens(item.summaryTokens)) : ''}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+              {historyItems.length > HISTORY_PREVIEW ? (
+                <Button
+                  variant="plain"
+                  size="sm"
+                  className="wb-ctx-more"
+                  aria-expanded={showAllHistory}
+                  data-testid="v3-wb-ctx-history-more"
+                  onPress={() => setShowAllHistory((value) => !value)}
+                >
+                  {showAllHistory ? text.less : text.more(historyItems.length - HISTORY_PREVIEW)}
+                </Button>
+              ) : null}
+            </>
+          ) : historyItems || unsettledLast || historyPending ? null : lastLine ? (
+            <p className="wb-ctx-record" title={lastTip} data-testid="v3-wb-ctx-compaction">
+              {lastLine}
+            </p>
+          ) : null}
+          {!historyItems?.length && !unsettledLast && !historyPending && history?.ok !== false && (historyItems || !lastLine) ? (
+            <p className="wb-ctx-note">{text.compactionNone}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="wb-ctx-block">
         <Button

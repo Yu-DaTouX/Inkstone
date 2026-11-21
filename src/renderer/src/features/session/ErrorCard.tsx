@@ -35,6 +35,7 @@ const CAUSE_HINT: Record<ModelErrorCause, SessionTextKey> = {
   timeout: 'errHintTimeout',
   overload: 'errHintOverload',
   unreachable: 'errHintUnreachable',
+  hostSave: 'errHintHostSave',
   unknown: 'errHintUnknown'
 }
 

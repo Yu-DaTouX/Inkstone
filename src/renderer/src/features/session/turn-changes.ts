@@ -92,7 +92,7 @@ export function editArgLines(args: unknown): CallDiffLine[] | null {
 
 export function callPath(call: UIToolCall): string {
   const a = (call.args ?? {}) as Record<string, unknown>
-  for (const key of ['path', 'file_path', 'filePath']) {
+  for (const key of ['path', 'file_path', 'filePath', 'Path', 'FilePath', 'TargetFile']) {
     if (typeof a[key] === 'string') return a[key] as string
   }
   return ''

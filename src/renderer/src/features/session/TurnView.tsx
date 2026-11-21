@@ -9,7 +9,7 @@ import { TurnArtifacts } from './MessageParts'
 import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { ProcessStrip, TurnProcess } from './TurnProcess'
-import { conciseSegment, processFailuresAlert, processSummary, splitAtCompaction, splitTurnProcess, spreadEndsInGroup, withoutThinking } from './turn-process'
+import { conciseSegment, processFailuresAlert, processSummary, splitAtCompaction, splitTurnProcess, spreadEndsInGroup, withGeminiProgressNotes, withoutThinking } from './turn-process'
 import { processStripParts } from './process-strip'
 import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
@@ -315,7 +315,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
-  const processSegs = split?.process ?? []
+  const processSegs = split ? (inline ? split.process : withGeminiProgressNotes(split.process, sourceTurn.model)) : []
   const compactionCut = compactionSpot !== null && compactionSpot !== COMPACTION_AT_END ? { messageId: compactionSpot, toolId: compactionToolId } : null
   const compactionInProcess = compactionCut && splitAtCompaction(processSegs, compactionCut) ? compactionCut : null
   const showCompaction = compactionSpot !== null && !compactionInProcess

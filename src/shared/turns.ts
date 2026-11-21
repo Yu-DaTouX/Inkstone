@@ -406,7 +406,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (m.turnTiming) cur.timing = m.turnTiming
 
     if (hasText(m.text)) {
-      const ownCalls = m.toolCalls?.filter((call) => !call.serverSide).length ?? 0
+      const ownCalls = m.toolCalls?.filter((call) => !call.serverSide || (call.details as { antigravity?: boolean } | undefined)?.antigravity === true).length ?? 0
       const hasTools = ownCalls > 0
       const target = seg()
       const at = Math.max(0, target.tools.length - ownCalls)

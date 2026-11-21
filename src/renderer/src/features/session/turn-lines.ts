@@ -64,7 +64,8 @@ export function errorTitleKey(model: ErrorCardModel): SessionTextKey {
     aborted: 'errorTitleAborted',
     refused: 'errorTitleRefused',
     request: 'errorTitleRequest',
-    truncated: 'errorTitleTruncated'
+    truncated: 'errorTitleTruncated',
+    hostSave: 'errorTitleHostSave'
   }
   return map[model.kind]
 }

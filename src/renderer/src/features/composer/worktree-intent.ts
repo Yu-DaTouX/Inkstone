@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { HostT } from '../../lib/host-actions'
 import { composerDraftKey } from '../../state/composer-recovery'
-import { nav } from '../../state/slices/runtime'
+import { nav, sessionActionTarget } from '../../state/slices/runtime'
 import { useStore } from '../../state/store'
 import { saveDraft } from './draft-store'
 
@@ -34,6 +34,13 @@ export async function materializeWorktreeIntent(t: HostT): Promise<'none' | 'cre
   if (model?.provider === 'antigravity') {
     const selected = await useStore.getState().setModel(model.provider, model.id)
     if (!selected.ok || gate !== nav.gate || !isCreatedWorktreeView(created)) return 'failed'
+    const mode = before.session?.antigravity?.mode
+    if (mode && useStore.getState().session?.antigravity?.mode !== mode) {
+      const target = await sessionActionTarget(useStore.getState)
+      if (!target || gate !== nav.gate || !isCreatedWorktreeView(created)) return 'failed'
+      const switched = await window.yan.antigravity.setMode(mode, target.expected)
+      if (!switched.ok || gate !== nav.gate || !isCreatedWorktreeView(created) || useStore.getState().session?.antigravity?.mode !== mode) return 'failed'
+    }
     const effort = before.session?.antigravity?.thinking?.current
     if (effort && useStore.getState().session?.thinkingLevel !== effort) {
       await useStore.getState().setThinking(effort)

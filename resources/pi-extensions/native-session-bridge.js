@@ -180,10 +180,60 @@ export function writeEnabledModels(file, patterns) {
   })
 }
 
+function resolveYanDataDir() {
+  const envDir = process.env.YAN_DATA_DIR?.trim()
+  if (envDir) return resolve(envDir)
+  const portable = process.env.PORTABLE_EXECUTABLE_DIR?.trim()
+  if (portable) return join(resolve(portable), '砚数据', 'yan')
+  return join(resolveAgentDir(), 'yan')
+}
+
+function readBridgePayloadFile(file) {
+  if (typeof file !== 'string' || !file.trim()) throw new Error('无效的 payloadFile')
+  const baseDir = resolve(resolveYanDataDir(), 'tmp', 'native-bridge')
+  const resolved = resolve(file)
+  const prefix = baseDir.endsWith('\\') || baseDir.endsWith('/') ? baseDir : `${baseDir}${process.platform === 'win32' ? '\\' : '/'}`
+  const matchPrefix = process.platform === 'win32'
+    ? resolved.toLowerCase().startsWith(prefix.toLowerCase())
+    : resolved.startsWith(prefix)
+  if (!matchPrefix || !resolved.endsWith('.json')) throw new Error('payloadFile 路径不受允许')
+  const realBase = realpathSync(baseDir)
+  const realFile = realpathSync(resolved)
+  const realPrefix = realBase.endsWith('\\') || realBase.endsWith('/') ? realBase : `${realBase}${process.platform === 'win32' ? '\\' : '/'}`
+  const realOk = process.platform === 'win32'
+    ? realFile.toLowerCase().startsWith(realPrefix.toLowerCase())
+    : realFile.startsWith(realPrefix)
+  if (!realOk || !statSync(realFile).isFile()) throw new Error('payloadFile 路径校验失败')
+  try {
+    const parsed = JSON.parse(readFileSync(realFile, 'utf8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('payloadFile 内容无效')
+    return parsed
+  } finally {
+    try {
+      rmSync(realFile, { force: true })
+    } catch {
+    }
+  }
+}
+
+function extractEnvelopeId(encoded) {
+  try {
+    const head = Buffer.from(encoded.slice(0, 512), 'base64url').toString('utf8')
+    const match = /"id"\s*:\s*"([^"]{1,128})"/.exec(head)
+    return match ? match[1] : ''
+  } catch {
+    return ''
+  }
+}
+
 export function parseEnvelope(text) {
   const encoded = String(text ?? '').trim()
   if (!encoded) throw new Error('缺少参数')
-  if (encoded.length > MAX_ARG_BYTES) throw new Error('参数过长')
+  if (encoded.length > MAX_ARG_BYTES) {
+    const err = new Error('参数过长')
+    err.requestId = extractEnvelopeId(encoded)
+    throw err
+  }
   let json
   try {
     json = Buffer.from(encoded, 'base64url').toString('utf8')
@@ -282,29 +332,53 @@ export default function nativeSessionBridge(pi) {
     switch (op) {
       case 'append_antigravity_turn': {
         const manager = ctx.sessionManager
-        const { sessionId, user, assistant, model, startedAt, endedAt, status, error, tools, thinking, timing, antigravity } = args
+        const payload = typeof args?.payloadFile === 'string' ? readBridgePayloadFile(args.payloadFile) : args
+        const { sessionId, user, userImages, assistant, steps, model, startedAt, endedAt, status, error, tools, thinking, thinkingMs, timing, genTiming, antigravity } = payload
         if (sessionId !== manager.getSessionId()) throw new Error('会话已经切换，未写入 Antigravity 回合')
-        if (typeof user !== 'string' || !user.trim() || typeof assistant !== 'string' || typeof model !== 'string' || !model || !Number.isFinite(startedAt) || !Number.isFinite(endedAt)) {
+        const list = Array.isArray(steps) && steps.length
+          ? steps
+          : [{ text: assistant, tools, thinking, thinkingMs, genTiming, timestamp: endedAt }]
+        const validImages = Array.isArray(userImages)
+          ? userImages.filter((item) => item && typeof item.data === 'string' && item.data && typeof item.mimeType === 'string' && item.mimeType)
+          : []
+        if (typeof user !== 'string' || (!user.trim() && validImages.length === 0) || typeof model !== 'string' || !model || !Number.isFinite(startedAt) || !Number.isFinite(endedAt) ||
+          list.some((step) => !step || typeof step.text !== 'string')) {
           throw new Error('Antigravity 回合数据无效')
         }
         const before = manager.getLeafId()
-        const userId = manager.appendMessage({ role: 'user', content: [{ type: 'text', text: user }], timestamp: startedAt })
-        const assistantId = manager.appendMessage({
-          role: 'assistant', api: 'antigravity-acp', provider: 'antigravity', model,
-          content: assistant ? [{ type: 'text', text: assistant }] : [],
-          timestamp: endedAt, stopReason: status === 'error' ? 'error' : status === 'aborted' ? 'aborted' : 'stop',
-          ...(typeof error === 'string' && error ? { errorMessage: error } : {}),
-          ...(Array.isArray(tools) && tools.length ? { yanAntigravityTools: tools } : {}),
-          ...(typeof thinking === 'string' && thinking ? { yanAntigravityThinking: thinking } : {}),
-          ...(timing ? { yanAntigravityTiming: { ...timing, logicalTurnId: userId } } : {}),
-          ...(antigravity ? { yanAntigravityTurn: antigravity } : {}),
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        })
+        const userContent = [
+          ...(user ? [{ type: 'text', text: user }] : []),
+          ...validImages.map((item) => ({ type: 'image', data: item.data, mimeType: item.mimeType }))
+        ]
+        const userId = manager.appendMessage({ role: 'user', content: userContent, timestamp: startedAt })
+        const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+        const assistantIds = []
+        for (let index = 0; index < list.length; index++) {
+          const step = list[index]
+          const isLast = index === list.length - 1
+          const stepTs = Number.isFinite(step.timestamp) ? step.timestamp : isLast ? endedAt : startedAt
+          const stepId = manager.appendMessage({
+            role: 'assistant', api: 'antigravity-acp', provider: 'antigravity', model,
+            content: step.text ? [{ type: 'text', text: step.text }] : [],
+            timestamp: stepTs,
+            stopReason: isLast ? (status === 'error' ? 'error' : status === 'aborted' ? 'aborted' : 'stop') : 'toolUse',
+            ...(isLast && typeof error === 'string' && error ? { errorMessage: error } : {}),
+            ...(Array.isArray(step.tools) && step.tools.length ? { yanAntigravityTools: step.tools } : {}),
+            ...(typeof step.thinking === 'string' && step.thinking ? { yanAntigravityThinking: step.thinking } : {}),
+            ...(typeof step.thinkingMs === 'number' && Number.isFinite(step.thinkingMs) && step.thinkingMs > 0 ? { yanAntigravityThinkingMs: step.thinkingMs } : {}),
+            ...(step.genTiming && typeof step.genTiming === 'object' ? { yanAntigravityGenTiming: step.genTiming } : {}),
+            ...(isLast && timing ? { yanAntigravityTiming: { ...timing, logicalTurnId: userId } } : {}),
+            ...(isLast && antigravity ? { yanAntigravityTurn: antigravity } : {}),
+            usage: zeroUsage,
+          })
+          assistantIds.push(stepId)
+        }
+        const assistantId = assistantIds[assistantIds.length - 1]
         if (before === null) manager.resetLeaf()
         else manager.branch(before)
         const outcome = await ctx.navigateTree(assistantId, { summarize: false })
         if (outcome?.cancelled || manager.getLeafId() !== assistantId) throw new Error('回合已写入，但 Pi 未能同步该分支，请重新打开会话')
-        return { userId, assistantId }
+        return { userId, assistantId, assistantIds }
       }
       case 'navigate_tree': {
         const targetId = String(args?.targetId ?? '')
@@ -383,8 +457,9 @@ export default function nativeSessionBridge(pi) {
       try {
         envelope = parseEnvelope(argText)
       } catch (error) {
+        const failedId = typeof error?.requestId === 'string' ? error.requestId : extractEnvelopeId(String(argText ?? '').trim())
         ctx.ui.notify(
-          buildReceipt({ id: '', op: 'unknown', ok: false, error: { code: 'bad_request', message: String(error?.message ?? error) } }),
+          buildReceipt({ id: failedId, op: 'unknown', ok: false, error: { code: 'bad_request', message: String(error?.message ?? error) } }),
           'error'
         )
         return

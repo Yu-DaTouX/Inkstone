@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { antigravityPreferencePath } from './antigravity-preferences'
 import { isSafeSessionId } from './session-id'
 import { trashSessionSources } from './sources'
 import { taskPlanLogPath, TASK_PLAN_DIRNAME } from './task-plan-store'
@@ -36,6 +37,7 @@ export async function purgeSessionSideData(deps: SessionSideDataDeps, input: { s
   if (bucket) await step('turn-timing', () => trashIfPresent(turnTimingFile(deps.yanDir, bucket)))
   if (isSafeSessionId(input.sessionId)) {
     await step('task-plans', () => trashIfPresent(taskPlanLogPath(input.sessionId, join(deps.yanDir, TASK_PLAN_DIRNAME))))
+    await step('antigravity-sessions', () => trashIfPresent(antigravityPreferencePath(deps.yanDir, input.sessionId)))
     await step('approval-log', () => deps.approvalLog.forget(input.sessionId))
     await step('question-log', () => deps.questionLog.forget(input.sessionId))
   }

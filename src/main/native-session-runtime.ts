@@ -1,5 +1,8 @@
 import { pick } from '../shared/ui-lang'
 import { randomUUID } from 'node:crypto'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { YAN_DIR } from './paths'
 
 export const NATIVE_COMMAND = '__inkstone_native'
 export const RECEIPT_PREFIX = '__inkstone_native_receipt__:'
@@ -7,6 +10,9 @@ export const ENVELOPE_VERSION = 1
 
 export const DEFAULT_TIMEOUT_MS = 15_000
 export const RELOAD_TIMEOUT_MS = 120_000
+const APPEND_TURN_TIMEOUT_MS = 60_000
+const MAX_ENVELOPE_CHARS = 256 * 1024
+const INLINE_TURN_MAX_BYTES = 64 * 1024
 
 export interface NativeReceipt {
   v: number
@@ -246,7 +252,11 @@ export class NativeSessionRuntime {
       )
     }
     const id = `inkstone-native-${randomUUID()}`
-    const message = `/${NATIVE_COMMAND} ${encodeEnvelope(id, op, args)}`
+    const encoded = encodeEnvelope(id, op, args)
+    if (encoded.length > MAX_ENVELOPE_CHARS) {
+      throw new NativeBridgeError(pick(`原生操作 ${op} 参数过大（${encoded.length} 字节）`, `Native operation ${op} payload too large (${encoded.length} bytes)`), 'extension_error')
+    }
+    const message = `/${NATIVE_COMMAND} ${encoded}`
 
     const receiptPromise = new Promise<NativeReceipt>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -293,14 +303,29 @@ export class NativeSessionRuntime {
     return receiptPromise
   }
 
-  async appendAntigravityTurn(args: Record<string, unknown>): Promise<{ userId: string; assistantId: string }> {
+  async appendAntigravityTurn(args: Record<string, unknown>): Promise<{ userId: string; assistantId: string; assistantIds?: string[] }> {
     if (!this.capabilities.includes('append_antigravity_turn')) {
       throw new NativeBridgeError(pick('当前 Pi 会话不能保存 Antigravity 回合。', 'This Pi session cannot save Antigravity turns.'), 'bridge_unavailable')
     }
-    const receipt = await this.invoke('append_antigravity_turn', args, this.defaultTimeoutMs)
-    const { userId, assistantId } = receipt.result ?? {}
-    if (typeof userId !== 'string' || typeof assistantId !== 'string') throw new Error('Invalid Antigravity turn receipt')
-    return { userId, assistantId }
+    const serialized = JSON.stringify(args)
+    let payloadFile: string | undefined
+    let invokeArgs = args
+    if (Buffer.byteLength(serialized, 'utf8') > INLINE_TURN_MAX_BYTES) {
+      const dir = join(YAN_DIR, 'tmp', 'native-bridge')
+      await mkdir(dir, { recursive: true })
+      payloadFile = join(dir, `${randomUUID()}.json`)
+      await writeFile(payloadFile, serialized, 'utf8')
+      invokeArgs = { payloadFile }
+    }
+    try {
+      const receipt = await this.invoke('append_antigravity_turn', invokeArgs, Math.max(this.defaultTimeoutMs, APPEND_TURN_TIMEOUT_MS))
+      const { userId, assistantId, assistantIds } = receipt.result ?? {}
+      if (typeof userId !== 'string' || typeof assistantId !== 'string') throw new Error('Invalid Antigravity turn receipt')
+      const ids = Array.isArray(assistantIds) && assistantIds.every((id): id is string => typeof id === 'string') ? assistantIds : undefined
+      return { userId, assistantId, ...(ids ? { assistantIds: ids } : {}) }
+    } finally {
+      if (payloadFile) void rm(payloadFile, { force: true }).catch(() => undefined)
+    }
   }
 
   async navigateTree(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {

@@ -115,8 +115,18 @@ export function stepDecode(m: UIMessage, floor: number | null = null): StepDecod
   if (m.model?.startsWith(ANTIGRAVITY_PROVIDER + '/')) {
     const tokens = m.antigravity?.usage?.visibleOutput
     const ms = m.antigravity?.outputSpanMs
-    return isNonNegative(tokens) && tokens > 0 && isNonNegative(ms) && ms >= MIN_DECODE_MS &&
-      tokens / (ms / 1000) <= MAX_PLAUSIBLE_TPS ? { tokens, ms } : null
+    if (isNonNegative(tokens) && tokens > 0 && isNonNegative(ms) && ms >= MIN_DECODE_MS &&
+      tokens / (ms / 1000) <= MAX_PLAUSIBLE_TPS) return { tokens, ms }
+    const gt = m.generationTiming
+    const estMs = isNonNegative(gt?.outputDecodeMs) && gt.outputDecodeMs >= MIN_DECODE_MS
+      ? gt.outputDecodeMs
+      : isNonNegative(gt?.decodeMs) && gt.decodeMs >= MIN_DECODE_MS
+        ? gt.decodeMs
+        : 0
+    if (estMs < MIN_DECODE_MS) return null
+    const estTokens = estimateTextTokens(m.text) + (gt?.outputDecodeMs ? 0 : estimateTextTokens(m.thinking))
+    if (estTokens <= 0 || estTokens / (estMs / 1000) > MAX_PLAUSIBLE_TPS) return null
+    return { tokens: estTokens, ms: estMs }
   }
   const gt = m.generationTiming
   const usage = sanitizeUsage(m.usage)
@@ -471,7 +481,7 @@ export function projectSessionMetrics(
   const costEstimated = stats ? nonNegative(stats.costEstimated) : 0
   let externalHit: number | null = null
   if (external) {
-    const turns = msgs.filter((m) => m.role === 'assistant')
+    const turns = msgs.filter((m, index) => m.role === 'assistant' && msgs[index + 1]?.role !== 'assistant')
     const sum = (key: keyof AntigravityUsage): number | null => {
       const reported = turns.flatMap((m) => {
         const value = m.antigravity?.usage?.[key]

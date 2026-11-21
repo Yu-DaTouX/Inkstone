@@ -5,6 +5,7 @@ import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, ty
 import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
+import { modelBrand } from '../../../../shared/model-brand'
 import { messageIndex } from './message-index'
 import { fileBaseName as baseOf } from './tool-title'
 
@@ -208,6 +209,88 @@ function segmentPieces(segment: TurnSegment): SegmentPiece[] {
 
 function quietThinkingGroup(item: SpreadItem): boolean {
   return item.kind === 'group' && item.segments.every((segment) => !segment.tools.length && !segment.thinkingLive)
+}
+
+export function extractGeminiProgressHeadings(text: string): string[] {
+  if (!text) return []
+  const headings: string[] = []
+  const seen = new Set<string>()
+  let fenced = false
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (/^(?:`{3,}|~{3,})/.test(line)) {
+      fenced = !fenced
+      continue
+    }
+    if (fenced || !line) continue
+    const match = /^\*\*([^\s*][^*]*?)\*\*[:：]?$/.exec(line)
+    if (!match) continue
+    const heading = match[1].replace(/\s+/g, ' ').trim()
+    if (heading.length < 2 || heading.length > 120 || seen.has(heading)) continue
+    seen.add(heading)
+    headings.push(heading)
+  }
+  return headings
+}
+
+const FILLER_THOUGHT = /^i['’]m thinking through how to approach this\.?$/i
+
+function firstProgressSentence(paragraph: string): string {
+  const clean = paragraph.replace(/\s+/g, ' ').trim()
+  if (!clean || clean.length < 6 || FILLER_THOUGHT.test(clean)) return ''
+  const end = /[.!?。！？](?:\s|$)/.exec(clean)
+  const sentence = end && end.index >= 8 && end.index <= 140 ? clean.slice(0, end.index + 1).trim() : clean
+  return sentence.length > 140 ? `${sentence.slice(0, 139).trimEnd()}\u2026` : sentence
+}
+
+export function extractAntigravityProgressNotes(text: string): string[] {
+  const headings = extractGeminiProgressHeadings(text)
+  if (headings.length) return headings
+  if (!text) return []
+  const notes: string[] = []
+  const seen = new Set<string>()
+  for (const block of text.split(/\r?\n\s*\r?\n/)) {
+    const trimmed = block.trim()
+    if (!trimmed || /^(?:`{3,}|~{3,})/.test(trimmed)) continue
+    const line = firstProgressSentence(trimmed)
+    if (!line || seen.has(line)) continue
+    seen.add(line)
+    notes.push(line)
+    if (notes.length >= 3) break
+  }
+  return notes
+}
+
+export function withGeminiProgressNotes(segments: readonly TurnSegment[], model?: string): TurnSegment[] {
+  const antigravity = !!model && model.startsWith('antigravity/')
+  if (!model || (!antigravity && modelBrand(model) !== 'gemini')) return segments as TurnSegment[]
+  let changed = false
+  const next = segments.map((segment) => {
+    if (segment.commentary.length > 0) return segment
+    const parts = rawThinkingParts(segment)
+    if (!parts.length) return segment
+    const notes: ProcessNote[] = []
+    const seen = new Set<string>()
+    for (const part of parts) {
+      const extracted = antigravity && segment.tools.length > 0
+        ? extractAntigravityProgressNotes(part.text)
+        : extractGeminiProgressHeadings(part.text)
+      for (const heading of extracted) {
+        if (seen.has(heading)) continue
+        seen.add(heading)
+        notes.push({
+          id: `${segment.id}:gemini:${notes.length}`,
+          text: heading,
+          hasTools: segment.tools.length > 0,
+          ...(part.at > 0 ? { at: part.at } : {})
+        })
+      }
+    }
+    if (!notes.length) return segment
+    changed = true
+    return { ...segment, commentary: notes }
+  })
+  return changed ? next : (segments as TurnSegment[])
 }
 
 export function spreadProcess(process: readonly TurnSegment[], options: { foldThinking?: boolean } = {}): SpreadItem[] {

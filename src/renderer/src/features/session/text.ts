@@ -63,6 +63,7 @@ export type SessionTextKey =
   | 'errorTitleRefused'
   | 'errorTitleRequest'
   | 'errorTitleTruncated'
+  | 'errorTitleHostSave'
   | 'errHintEmpty'
   | 'errHintRefused'
   | 'errHintQuotaRate'
@@ -84,6 +85,7 @@ export type SessionTextKey =
   | 'errHintTimeout'
   | 'errHintOverload'
   | 'errHintUnreachable'
+  | 'errHintHostSave'
   | 'errHintUnknown'
   | 'errStoppedStatus'
   | 'errorRetry'
@@ -364,6 +366,7 @@ const ZH: Record<SessionTextKey, string> = {
   errorTitleRefused: '服务商拦截',
   errorTitleRequest: '模型或参数不受支持',
   errorTitleTruncated: '输出被截断',
+  errorTitleHostSave: '会话保存失败',
   errHintEmpty: '服务商没有返回原因，可稍后重试',
   errHintRefused: '被安全审核拦截，可换个模型',
   errHintQuotaRate: '请求太快或额度窗口已满',
@@ -385,6 +388,7 @@ const ZH: Record<SessionTextKey, string> = {
   errHintTimeout: '等待响应超时，检查网络与代理',
   errHintOverload: '服务暂时故障或过载',
   errHintUnreachable: '连不上模型服务，检查网络与代理',
+  errHintHostSave: '本轮已完成，但未能保存到本地会话记录，无需重跑模型',
   errHintUnknown: '见原文',
   errStoppedStatus: '已停止',
   errorRetry: '重试',
@@ -666,6 +670,7 @@ const EN: Record<SessionTextKey, string> = {
   errorTitleRefused: 'Blocked by provider',
   errorTitleRequest: 'Model or request unsupported',
   errorTitleTruncated: 'Output cut off',
+  errorTitleHostSave: 'Could not save turn',
   errHintEmpty: 'The provider gave no reason; retry later',
   errHintRefused: 'Blocked by safety review; try another model',
   errHintQuotaRate: 'Too fast, or the quota window is full',
@@ -687,6 +692,7 @@ const EN: Record<SessionTextKey, string> = {
   errHintTimeout: 'Response timed out; check network and proxy',
   errHintOverload: 'Service down or overloaded',
   errHintUnreachable: 'Cannot reach the service; check network and proxy',
+  errHintHostSave: 'The turn finished, but saving it to the local session failed; no need to rerun the model',
   errHintUnknown: 'See the raw message',
   errStoppedStatus: 'Stopped',
   errorRetry: 'Retry',

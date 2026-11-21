@@ -29,7 +29,7 @@ export function argsRowDueAt(call: UIToolCall): number | null {
 
 export function summarize(call: UIToolCall): string {
   const target = toolTarget(call)
-  return stepCategory(call.name) === 'bash' ? redactCommandSecrets(target) : target
+  return stepCategory(call.name, call.details) === 'bash' ? redactCommandSecrets(target) : target
 }
 
 export function toolRunningLabel(
@@ -38,7 +38,7 @@ export function toolRunningLabel(
   tt: (key: SessionTextKey, vars?: Record<string, string | number>) => string
 ): string {
   if (generatingArgs(call)) return `${stepVerbKey(call, tt) ?? call.name} ${generating}`.trim()
-  const description = stepCategory(call.name) === 'bash' ? stepDescription(call) : ''
+  const description = stepCategory(call.name, call.details) === 'bash' ? stepDescription(call) : ''
   if (description) return description
   const label = stepVerbKey(call, tt) ?? call.name
   const meta = summarize(call)

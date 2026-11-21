@@ -14,6 +14,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
   private failure?: string
   private active = false
   private closed = false
+  private exited = false
   private runningTurn?: Promise<void>
   private readonly model
 
@@ -25,19 +26,34 @@ export class AntigravitySubagentRpc implements SubagentRpc {
     this.events.on(event, listener as (...args: unknown[]) => void)
   }
 
-  get running(): boolean { return !this.closed && !!this.ready }
+  get running(): boolean { return !this.closed && !this.exited && !!this.ready }
+
+  private handleClosed(error: string): void {
+    if (this.exited) return
+    this.exited = true
+    this.active = false
+    this.failure ??= error
+    if (!this.closed) this.events.emit('exit', 1, null)
+  }
 
   spawn(): void {
     if (this.ready || this.closed) return
     this.ready = (async () => {
       const session = this.session = launchAntigravity(this.cwd)
+      session.onEvent = (event) => {
+        if (event.type === 'closed') this.handleClosed(event.error)
+      }
       const models = await session.start(this.cwd)
       const selected = models.current === this.model.id ? models : await session.selectModel(this.model.id)
       if (selected.current !== this.model.id || !selected.available.some(({ id }) => id === this.model.id)) throw new Error(pick('CLI 未切到指定模型。', 'The CLI did not select the requested model.'))
       this.active = true
     })().catch((error: unknown) => {
       this.failure = error instanceof Error ? error.message : String(error)
-      if (!this.closed) this.events.emit('spawn-error', new Error(this.failure))
+      this.active = false
+      if (!this.closed && !this.exited) {
+        this.exited = true
+        this.events.emit('spawn-error', new Error(this.failure))
+      }
     })
   }
 
@@ -82,7 +98,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       } else if (event.type === 'tool') {
         const old = calls.get(event.id)
         const status = event.status === 'completed' ? 'ok' : event.status === 'failed' ? 'error' : event.status === 'in_progress' ? 'running' : 'pending'
-        const call: UIToolCall = { id: event.id, name: event.title || old?.name || 'Antigravity', status, serverSide: true, args: {} }
+        const call: UIToolCall = { id: event.id, name: event.title || old?.name || 'Antigravity', status, args: event.args ?? old?.args ?? {}, details: { antigravity: true, kind: event.kind } }
         calls.set(event.id, call)
         if (!old) this.events.emit('event', { type: 'tool_execution_start', toolCallId: event.id, toolName: call.name })
         if (status === 'ok' || status === 'error') this.events.emit('event', { type: 'tool_execution_end', toolCallId: event.id, toolName: call.name })
@@ -100,6 +116,8 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       } else if (event.type === 'permission-cleared') {
         approvals.get(event.id)?.abort()
         approvals.delete(event.id)
+      } else if (event.type === 'closed') {
+        this.handleClosed(event.error)
       }
     }
     let stopReason = 'stop'

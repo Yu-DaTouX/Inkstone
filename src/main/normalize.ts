@@ -153,6 +153,8 @@ export function normalizeMessage(
     const acpRecord = m.provider === 'antigravity' ? m as PiMessage & {
       yanAntigravityTools?: UIToolCall[]
       yanAntigravityThinking?: string
+      yanAntigravityThinkingMs?: number
+      yanAntigravityGenTiming?: UIMessage['generationTiming']
       yanAntigravityTiming?: UIMessage['turnTiming']
       yanAntigravityTurn?: UIMessage['antigravity']
     } : undefined
@@ -175,9 +177,11 @@ export function normalizeMessage(
       role: 'assistant',
       text,
       thinking: typeof acpRecord?.yanAntigravityThinking === 'string' ? acpRecord.yanAntigravityThinking : thinking || undefined,
+      ...(typeof acpRecord?.yanAntigravityThinkingMs === 'number' && Number.isFinite(acpRecord.yanAntigravityThinkingMs) && acpRecord.yanAntigravityThinkingMs > 0 ? { thinkingMs: acpRecord.yanAntigravityThinkingMs } : {}),
       ...(thinkingBlocks.length && !thinking.trim() ? { thinkingEmpty: true } : {}),
       toolCalls: toolCalls.length ? toolCalls : undefined,
       usage: acpRecord ? undefined : toUsage(m.usage, m.model),
+      ...(acpRecord?.yanAntigravityGenTiming ? { generationTiming: acpRecord.yanAntigravityGenTiming } : {}),
       ...(acpRecord?.yanAntigravityTiming ? { turnTiming: acpRecord.yanAntigravityTiming } : {}),
       ...(acpRecord?.yanAntigravityTurn ? { antigravity: acpRecord.yanAntigravityTurn } : {}),
       model: assistantModelIdentity(m),

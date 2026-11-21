@@ -347,6 +347,7 @@ let exitRequestInFlight: Promise<{
   action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting'
 }> | null = null
 let runners: RunnerRegistry | null = null
+let disposeAntigravityProbes: (() => Promise<void>) | null = null
 
 function pinSendTarget(id: string): PinnedSendTarget | null {
   const agent = runners?.agentOf(id)
@@ -1266,6 +1267,7 @@ async function runShutdown(): Promise<void> {
       { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
       { name: 'terminals', run: () => disposeTerminals() },
       { name: 'runners', run: () => runners?.stopAll({ parallel: true }) },
+      { name: 'antigravity-probes', run: () => disposeAntigravityProbes?.() },
       {
         name: 'mcp-app-view',
         run: () => {
@@ -2281,7 +2283,7 @@ function registerIpc(): void {
 
   const isTrustedIpc = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean => !!win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
   const ipc = createIpcRegistrar(isTrustedIpc)
-  registerAntigravityIpc(ipc, async (cwd) => {
+  disposeAntigravityProbes = registerAntigravityIpc(ipc, async (cwd) => {
     const settings = await getSettings()
     const resolved = await resolveFileContext(settings, settings.cwd, { cwd })
     if (!resolved.ok) throw new Error(resolved.error)

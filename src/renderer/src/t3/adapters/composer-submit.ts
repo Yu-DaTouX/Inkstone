@@ -66,7 +66,9 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
     })
   )
   const compacting = useStore((s) => !!s.session?.isCompacting)
-  const antigravity = useStore((s) => s.session?.model?.provider === 'antigravity')
+  const model = useStore((s) => s.session?.model)
+  const antigravity = model?.provider === 'antigravity'
+  const antigravityNoImage = antigravity && Array.isArray(model?.input) && !model.input.includes('image')
   const attachmentCount = useStore((s) => s.attachments.length)
   const hasImages = useStore((s) => s.attachments.some((attachment) => attachment.kind !== 'file'))
   const send = useStore((s) => s.send)
@@ -113,7 +115,7 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
       const raw = value.trim()
       const attachments = useStore.getState().attachments
       if (!raw && attachments.length === 0) return
-      if (antigravity && (roundRunning || hasImages)) return
+      if (antigravityNoImage && attachments.some((attachment) => attachment.kind !== 'file')) return
       if (submittingRef.current) return
       submittingRef.current = true
       setBusy(true)
@@ -197,7 +199,7 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
         setBusy(false)
       }
     },
-    [t, lang, antigravity, roundRunning, hasImages, runCommandPath, send]
+    [t, lang, antigravityNoImage, roundRunning, hasImages, runCommandPath, send]
   )
 
   const interrupt = useCallback((): void => {
@@ -209,7 +211,7 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
     canInterrupt: roundRunning,
     isSendBusy: busy,
     hasSendableContent: hasComposerText(ports.value) || attachmentCount > 0,
-    sendDisabledReason: antigravity && hasImages ? lang === 'en-US' ? 'Remove images to send with Antigravity' : '移除图片后可用 Antigravity 发送' : null,
+    sendDisabledReason: antigravityNoImage && hasImages ? lang === 'en-US' ? 'Remove images to send with Antigravity' : '移除图片后可用 Antigravity 发送' : null,
     submit,
     interrupt
   }

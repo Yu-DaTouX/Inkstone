@@ -6,12 +6,14 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import type { AntigravityMcpServer } from './antigravity'
 import type { CapabilityCommandResult } from './capability-server'
 import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
+import { mcpApprovalNeeded } from '../shared/mcp-approval'
 import { runMcpCommand, type McpCommandHost } from './agent-commands/mcp-command'
 import type { AntigravityMcpService } from './antigravity-mcp'
-import type { McpCallOutcome } from './mcp/tool-service'
+import { describeMcpTool, type McpCallOutcome } from './mcp/tool-service'
 
 interface DelegationTurn {
   signal: AbortSignal
+  mode?: string
   run?(command: 'subagent.start' | 'subagent.get', params: Record<string, unknown>): Promise<CapabilityCommandResult>
 }
 
@@ -41,6 +43,10 @@ export async function openAntigravityDelegation(script: string, active: () => De
         if (service) {
           if (service.exposes?.(params.name) === false) return result({ error: 'This MCP tool is hidden.' }, true)
           const signal = AbortSignal.any([turn.signal, requestSignal])
+          if (turn.mode === 'plan') {
+            const described = await describeMcpTool(service.manager, service.name, params.name, signal)
+            if (mcpApprovalNeeded(described.annotations)) return result({ error: 'Plan mode only permits read-only MCP tools.' }, true)
+          }
           const response = await runMcpCommand({ ...options.commandHost, mcpConnectionManager: () => service.manager, permissionMode: async () => 'danger' },
             'call', { serverId: service.name, toolName: params.name, arguments: args }, signal)
           const data = response.data as McpCallOutcome
@@ -48,6 +54,7 @@ export async function openAntigravityDelegation(script: string, active: () => De
         }
         if (!turn.run) return result({ error: 'The Pi subagent bridge is unavailable.' }, true)
         if (params.name === 'start_pi_subagent') {
+          if (turn.mode === 'plan' && args.readOnly !== true) return result({ error: 'Plan mode only permits read-only Pi subagents (set readOnly: true).' }, true)
           if (owned.size + starting >= 32 || typeof args.task !== 'string' || !args.task.trim() || args.task.length > 16_000 || (args.readOnly !== undefined && typeof args.readOnly !== 'boolean') ||
             (args.model !== undefined && (typeof args.model !== 'string' || !args.model.trim() || args.model.length > 200 || !args.model.includes('/') || args.model.trim().toLowerCase().startsWith(`${ANTIGRAVITY_PROVIDER}/`)))) return result({ error: 'Invalid Pi subagent task or session limit reached.' }, true)
           starting += 1

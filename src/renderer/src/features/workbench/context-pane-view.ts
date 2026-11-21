@@ -81,7 +81,6 @@ export function contextUsageSummary(
   const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
   const external = session?.model?.provider === 'antigravity'
   const matchesModel = !!usage && (external ? usage.modelKey === modelKey : !usage.modelKey || usage.modelKey === modelKey)
-  if (external) autoCompactLimit = undefined
   const reported = matchesModel ? usage?.contextWindow : undefined
   const modelWindow =
     typeof reported === 'number' && Number.isFinite(reported) && reported > 0
@@ -194,23 +193,27 @@ export function largestToolCalls(
 }
 
 function contextRange(input: ContextPaneInput, usage: ContextUsageSummary): { settled: readonly UIMessage[]; inContext: readonly UIMessage[] } | null {
-  if (!usage.known || input.session?.model?.provider === 'antigravity') return null
+  if (!usage.known) return null
   const settled = settledMessages(input.session, input.messages)
-  return { settled, inContext: inContextMessages(settled, contextFromOf(input.session)) }
+  const from = input.session?.model?.provider === 'antigravity' ? undefined : contextFromOf(input.session)
+  return { settled, inContext: inContextMessages(settled, from) }
 }
 
 export function contextPaneData(input: ContextPaneInput): ContextPaneData {
   const usage = contextUsageSummary(input.session, input.stats, input.autoCompactLimit)
-  if (input.session?.model?.provider === 'antigravity') return { usage, slices: [], parts: [], compacted: false, sources: null }
-  const compacted = !!contextFromOf(input.session)
+  const external = input.session?.model?.provider === 'antigravity'
+  const compacted = !external && !!contextFromOf(input.session)
   const range = contextRange(input, usage)
-  const sources = input.sources ?? null
+  const sources = external ? null : input.sources ?? null
   if (!range) return { usage, slices: [], parts: [], compacted, sources }
-  const measured = measuredSystemTokens(range.settled)
+  const measured = external ? 0 : measuredSystemTokens(range.settled)
   const system = measured > 0 ? measured : sourcesTotal(sources)
   const floor = system > 0 && compacted ? system + Math.max(0, input.summaryTokens ?? 0) : system
   const slices = contextBreakdown(range.inContext, usage.tokens, floor)
-  return { usage, slices, parts: contextParts(slices, sources, compacted, usage.estimated || measured <= 0), compacted, sources }
+  const parts = external
+    ? slices.map((slice) => ({ ...slice, approx: true }))
+    : contextParts(slices, sources, compacted, usage.estimated || measured <= 0)
+  return { usage, slices, parts, compacted, sources }
 }
 
 export function contextParts(slices: readonly ContextSlice[], sources: ContextSources | null, compacted: boolean, approx: boolean): ContextPart[] {

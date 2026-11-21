@@ -28,7 +28,19 @@ export function bareName(name: string): string {
   return tail.toLowerCase().replace(/-/g, '_')
 }
 
-export function stepCategory(name: string): StepCategory {
+export function stepCategory(name: string, details?: unknown): StepCategory {
+  const acp = details as { antigravity?: boolean; kind?: unknown; antigravityDiffs?: Array<{ status?: string }> } | undefined
+  if (acp?.antigravity && typeof acp.kind === 'string') {
+    const kind = acp.kind.toLowerCase()
+    if (kind === 'read') return 'read'
+    if (kind === 'execute') return 'bash'
+    if (kind === 'search') return 'grep'
+    if (kind === 'fetch') return 'web'
+    if (kind === 'edit' || kind === 'move' || kind === 'delete') {
+      const diffs = Array.isArray(acp.antigravityDiffs) ? acp.antigravityDiffs : []
+      return diffs.length > 0 && diffs.every((diff) => diff?.status === 'created') ? 'write' : 'edit'
+    }
+  }
   return CATEGORY_NAMES[bareName(name)] ?? 'other'
 }
 
@@ -68,8 +80,8 @@ export function stepState(call: StepStateCall): 'running' | 'failed' | 'done' | 
   return 'done'
 }
 
-export function stepVerbKey(call: Pick<UIToolCall, 'name' | 'status' | 'cancelled' | 'denied' | 'output'>, tt: StepTextKey): string | null {
-  const category = stepCategory(call.name)
+export function stepVerbKey(call: Pick<UIToolCall, 'name' | 'status' | 'cancelled' | 'denied' | 'output'> & { details?: unknown }, tt: StepTextKey): string | null {
+  const category = stepCategory(call.name, call.details)
   if (category === 'other') return null
   const [done, running, failed] = VERBS[category]
   const state = stepState(call)
@@ -82,7 +94,7 @@ export { REDACTED, redactCommandSecrets } from '../../../../shared/command-redac
 function commandText(call: Pick<UIToolCall, 'args'>): string {
   const args = call.args as Record<string, unknown> | undefined
   if (!args || typeof args !== 'object') return ''
-  for (const key of ['command', 'cmd', 'script', 'code']) {
+  for (const key of ['command', 'CommandLine', 'cmd', 'script', 'code']) {
     const value = args[key]
     if (typeof value === 'string' && value.trim()) return value
   }
@@ -106,27 +118,27 @@ export function fileBaseName(path: string): string {
 const DESCRIPTION_MAX = 120
 
 export function stepDescription(call: Pick<UIToolCall, 'args'>): string {
-  const value = textArg(call, ['description']).replace(/\s+/g, ' ').trim()
+  const value = textArg(call, ['description', 'toolSummary']).replace(/\s+/g, ' ').trim()
   return value.length > DESCRIPTION_MAX ? `${value.slice(0, DESCRIPTION_MAX - 1)}\u2026` : value
 }
 
-export function toolTarget(call: Pick<UIToolCall, 'name' | 'args'>): string {
-  const category = stepCategory(call.name)
+export function toolTarget(call: Pick<UIToolCall, 'name' | 'args'> & { details?: unknown }): string {
+  const category = stepCategory(call.name, call.details)
   if (category === 'bash') return stepDescription(call) || redactCommandSecrets(commandText(call))
   if (category === 'read' || category === 'edit' || category === 'write') {
-    const path = textArg(call, ['file_path', 'path', 'file'])
+    const path = textArg(call, ['file_path', 'path', 'file', 'Path', 'FilePath', 'TargetFile'])
     if (path) return fileBaseName(path)
   }
   if (category === 'grep') {
-    const pattern = textArg(call, ['pattern', 'query', 'regex'])
+    const pattern = textArg(call, ['pattern', 'query', 'regex', 'Query', 'Pattern'])
     if (pattern) return pattern
   }
   if (category === 'ls') {
-    const path = textArg(call, ['path', 'dir', 'directory', 'cwd'])
+    const path = textArg(call, ['path', 'dir', 'directory', 'cwd', 'Path', 'DirectoryPath'])
     if (path) return path.length > 1 ? path.replace(/[\\/]+$/, '') : path
   }
   if (category === 'web') {
-    const target = textArg(call, ['url', 'query', 'q', 'pattern'])
+    const target = textArg(call, ['url', 'query', 'q', 'pattern', 'Url', 'Query'])
     if (target) return target
   }
   const args = call.args as Record<string, unknown> | undefined
@@ -134,6 +146,7 @@ export function toolTarget(call: Pick<UIToolCall, 'name' | 'args'>): string {
   if (typeof args.code === 'string') return args.code.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
   if (typeof args.file_path === 'string') return fileBaseName(args.file_path)
   if (typeof args.path === 'string') return fileBaseName(args.path)
+  if (typeof args.Path === 'string') return fileBaseName(args.Path)
   if (typeof args.pattern === 'string') return args.pattern
   if (typeof args.query === 'string') return args.query
   if (typeof args.url === 'string') return args.url
@@ -168,7 +181,7 @@ export function toolStepTitle(
   tt: StepTextKey
 ): ToolStepTitle {
   if (TODO_NAMES.has(bareName(call.name))) return todoStepTitle(call, tt)
-  const category = stepCategory(call.name)
+  const category = stepCategory(call.name, call.details)
   const description = category === 'bash' ? stepDescription(call) : ''
   if (description) return { label: description, meta: firstLinePreview(redactCommandSecrets(commandText(call)), COMMAND_PREVIEW), code: true }
   const overwrote = category === 'write' && stepState(call) === 'done' && readFileDiff(call.details)?.status === 'modified'

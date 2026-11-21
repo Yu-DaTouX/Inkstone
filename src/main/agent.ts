@@ -72,7 +72,7 @@ import {
 import { serverSearchCalls } from './server-search-calls'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { snapshotQueue } from './queue-items'
-import type { QueueRewriteResult } from './queue-edit'
+import { planQueueEditOp, type QueueRewriteResult } from './queue-edit'
 import { contextWindowAssumed } from './custom-providers'
 import { attributeCompaction, clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_ORIGIN, EMPTY_COMPACTION_STATE, measuredAfterCompaction, reduceCompaction, type CompactionOrigin, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -657,8 +657,10 @@ export class AgentController extends EventEmitter {
     this.stream.streaming = next
   }
   private acpPreferenceSessionId?: string
-  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean }
-  private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null }
+  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean }
+  private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null }
+  private acpQueue: QueueState = { steering: [], followUp: [] }
+  private acpTodos: SessionTodo[] = []
   private agentRunning = false
   private runFromUser = false
   private liveItemEdits = 0
@@ -1449,6 +1451,11 @@ export class AgentController extends EventEmitter {
   }
 
   async refreshTodos(): Promise<SessionTodo[]> {
+    if (this.acpConnection && this.acpTodos.length > 0) {
+      const todos = [...this.acpTodos]
+      this.push({ ch: 'todos', payload: todos })
+      return todos
+    }
     const current = this.sessionReadCurrent()
     const sessionId = this.state?.sessionId
     try {
@@ -2053,7 +2060,7 @@ export class AgentController extends EventEmitter {
       void this.closeAntigravity()
       this.acpPreferenceSessionId = sessionId
       const saved = sessionId ? readAntigravityPreference(sessionId) : undefined
-      if (saved) this.acpConnection = { sessionId, model: this.antigravityModel(saved.model, saved.thinking), thinking: saved.thinking, modes: saved.modes, hasContext: false }
+      if (saved) this.acpConnection = { sessionId, model: this.antigravityModel(saved.model, saved.thinking, saved.supportsImages), thinking: saved.thinking, modes: saved.modes, supportsImages: saved.supportsImages, hasContext: false }
     }
     const acp = this.acpConnection
     const external = acp?.model
@@ -2107,10 +2114,10 @@ export class AgentController extends EventEmitter {
       ...(this.retryRun ? { retry: this.retryRun } : {}),
       ...(!acp && this.contextFrom ? { contextFrom: this.contextFrom } : {}),
       messageCount: Number(data.messageCount ?? 0),
-      pendingMessageCount: Number(data.pendingMessageCount ?? 0),
+      pendingMessageCount: acp ? this.acpQueue.steering.length + this.acpQueue.followUp.length : Number(data.pendingMessageCount ?? 0),
       cwd: this.cwd,
       autoCompactionEnabled:
-        acp || data.autoCompactionEnabled === undefined ? undefined : !!data.autoCompactionEnabled,
+        data.autoCompactionEnabled === undefined ? undefined : !!data.autoCompactionEnabled,
       steeringMode: normalizeQueueMode(data.steeringMode),
       followUpMode: normalizeQueueMode(data.followUpMode)
     }
@@ -3117,8 +3124,9 @@ export class AgentController extends EventEmitter {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (!autoContinue) this.loopGuardContinuationVersion += 1
     if (this.acpConnection) {
-      if (autoContinue || mode || images?.length) return { ok: false, error: pick('Antigravity 此处仅支持空闲时发送文字。', 'Antigravity here accepts text only while idle.') }
-      return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text)))
+      if (autoContinue) return { ok: false, error: pick('Antigravity 不支持流式自动续跑。', 'Antigravity does not support automatic stream continuation.') }
+      if (this.acpTurn) return this.enqueueAntigravity(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration)
+      return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
     }
     const local = await this.startLocalModel()
     if (!local.ok) return { ok: false, error: local.error }
@@ -3264,7 +3272,10 @@ export class AgentController extends EventEmitter {
   }
 
   async steer(text: string, images?: QueueItem['images'], expectGeneration?: number): Promise<{ ok: boolean; error?: string }> {
-    if (this.acpConnection) return { ok: false, error: pick('Antigravity 回复中不支持插话。', 'Antigravity does not support interjecting.') }
+    if (this.acpConnection) {
+      if (this.acpTurn) return this.enqueueAntigravity('steering', text, images, expectGeneration)
+      return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
+    }
     return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.steerAdmitted(text, images)))
   }
 
@@ -3285,7 +3296,10 @@ export class AgentController extends EventEmitter {
   }
 
   async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
-    if (this.acpConnection) return { ok: false, error: pick('Antigravity 不支持排队发送。', 'Antigravity does not support queued messages.') }
+    if (this.acpConnection) {
+      if (this.acpTurn) return this.enqueueAntigravity('followUp', text, images)
+      return this.withOperation('send', undefined, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
+    }
     return this.withOperation('send', undefined, () => this.withExecutionAdmission(() => this.followUpAdmitted(text, images)))
   }
 
@@ -3314,10 +3328,12 @@ export class AgentController extends EventEmitter {
   }
 
   queueSnapshot(): QueueSnapshot {
+    if (this.acpConnection) return snapshotQueue(this.acpQueue)
     return this.queue.snapshot()
   }
 
   queueItems(): QueueState {
+    if (this.acpConnection) return { steering: [...this.acpQueue.steering], followUp: [...this.acpQueue.followUp] }
     return { steering: [...this.queue.state.steering], followUp: [...this.queue.state.followUp] }
   }
 
@@ -3326,33 +3342,61 @@ export class AgentController extends EventEmitter {
   }
 
   async steerQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; error?: string }> {
+    if (this.acpConnection) return this.editAntigravityQueueItem(queueId, true, guard)
     return this.queue.editItem(queueId, true, guard)
   }
 
   async removeQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
+    if (this.acpConnection) return this.editAntigravityQueueItem(queueId, false, guard)
     return this.queue.editItem(queueId, false, guard)
   }
 
   async planQueue(plan: (state: QueueState) => { next: QueueState } | { error: string }): Promise<QueueRewriteResult> {
+    if (this.acpConnection) {
+      const outcome = plan(this.queueItems())
+      if ('error' in outcome) return { ok: false, error: outcome.error }
+      return this.rewriteQueue(outcome.next)
+    }
     return this.queue.rewriteWith(plan)
   }
 
   async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {
+    if (this.acpConnection) {
+      this.acpQueue = {
+        steering: next.steering.map((item) => ({ ...item, ...(item.images?.length ? { images: item.images.map((img) => ({ ...img })) } : {}) })),
+        followUp: next.followUp.map((item) => ({ ...item, ...(item.images?.length ? { images: item.images.map((img) => ({ ...img })) } : {}) }))
+      }
+      this.publishAcpQueue()
+      if (this.acpQueue.steering.length && this.acpTurn && !this.acpTurn.stopped) {
+        this.acpTurn.interjected = true
+        this.acpTurn.session.cancel()
+      }
+      return { ok: true }
+    }
     return this.queue.rewrite(next)
   }
 
   async editQueue(op: QueueEditOp): Promise<QueueRewriteResult> {
+    if (this.acpConnection) {
+      const plan = planQueueEditOp(this.queueItems(), op)
+      if ('error' in plan) return { ok: false, error: plan.error }
+      return this.rewriteQueue(plan.next)
+    }
     return this.queue.edit(op)
   }
 
   async abort(expectGeneration?: number): Promise<QueueSnapshot & { error?: string }> {
     if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { steering: [], followUp: [], error: GENERATION_MISMATCH_ERROR }
     if (this.acpTurn) {
+      const reclaimed = snapshotQueue(this.acpQueue)
+      this.acpQueue = { steering: [], followUp: [] }
+      this.publishAcpQueue()
+      this.acpTurn.interjected = false
       this.acpTurn.stopped = true
       this.acpTurn.delegation.abort()
       this.acpTurn.session.cancel()
       await this.acpTurn.done
-      return { steering: [], followUp: [] }
+      return reclaimed
     }
     this.pendingAborts += 1
     try {
@@ -4055,14 +4099,89 @@ export class AgentController extends EventEmitter {
     })
   }
 
+  private publishAcpQueue(): void {
+    this.push({ ch: 'queue', payload: { steering: [...this.acpQueue.steering], followUp: [...this.acpQueue.followUp] } })
+    if (this.state) {
+      const pendingMessageCount = this.acpQueue.steering.length + this.acpQueue.followUp.length
+      if (this.state.pendingMessageCount !== pendingMessageCount) {
+        this.state = { ...this.state, pendingMessageCount }
+        this.push({ ch: 'state', payload: this.state })
+      }
+    }
+  }
+
+  private enqueueAntigravity(
+    lane: 'steering' | 'followUp',
+    text: string,
+    images?: QueueItem['images'],
+    expectGeneration?: number
+  ): { ok: boolean; error?: string } {
+    if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+    const media = (images ?? []).filter((item) => item.data && item.mimeType)
+    if (!text.trim() && media.length === 0) return { ok: false, error: pick('消息为空，无法发送。', 'Cannot send an empty message.') }
+    if (media.length > 0 && this.acpConnection?.supportsImages === false) {
+      return { ok: false, error: pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.') }
+    }
+    const item: QueueItem = {
+      id: randomUUID(),
+      text,
+      ...(media.length ? { images: media.map((img) => ({ data: img.data, mimeType: img.mimeType })) } : {})
+    }
+    this.acpQueue = {
+      steering: lane === 'steering' ? [...this.acpQueue.steering, item] : this.acpQueue.steering,
+      followUp: lane === 'followUp' ? [...this.acpQueue.followUp, item] : this.acpQueue.followUp
+    }
+    this.publishAcpQueue()
+    if (lane === 'steering' && this.acpTurn && !this.acpTurn.stopped) {
+      this.acpTurn.interjected = true
+      this.acpTurn.session.cancel()
+    }
+    return { ok: true }
+  }
+
+  private editAntigravityQueueItem(
+    queueId: string,
+    steer: boolean,
+    guard?: (state: QueueState) => string | null
+  ): { ok: boolean; text?: string; images?: QueueItem['images']; error?: string } {
+    const blocked = guard?.(this.queueItems())
+    if (blocked) return { ok: false, error: blocked }
+    const next: QueueState = { steering: [...this.acpQueue.steering], followUp: [...this.acpQueue.followUp] }
+    let target: QueueItem | undefined
+    for (const lane of ['steering', 'followUp'] as const) {
+      const idx = next[lane].findIndex((item) => item.id === queueId)
+      if (idx >= 0) {
+        target = next[lane].splice(idx, 1)[0]
+        break
+      }
+    }
+    if (!target) return { ok: false, error: pick('排队消息已不存在', 'Queued message no longer exists') }
+    if (steer) next.steering.push(target)
+    this.acpQueue = next
+    this.publishAcpQueue()
+    if (steer && this.acpTurn && !this.acpTurn.stopped) {
+      this.acpTurn.interjected = true
+      this.acpTurn.session.cancel()
+    }
+    return { ok: true, text: target.text, ...(target.images?.length ? { images: target.images } : {}) }
+  }
+
   private async closeAntigravity(): Promise<void> {
     const connection = this.acpConnection
     this.acpConnection = undefined
+    if (this.acpQueue.steering.length || this.acpQueue.followUp.length) {
+      this.acpQueue = { steering: [], followUp: [] }
+      this.publishAcpQueue()
+    }
+    if (this.acpTodos.length) {
+      this.acpTodos = []
+      this.push({ ch: 'todos', payload: [] })
+    }
     await connection?.session?.close()
   }
 
-  private antigravityModel(model: AntigravityModel, thinking?: AntigravityModels['thinking']): ModelInfo {
-    return { ...model, provider: ANTIGRAVITY_PROVIDER, reasoning: !!thinking, input: ['text'], contextWindow: 0 }
+  private antigravityModel(model: AntigravityModel, thinking?: AntigravityModels['thinking'], supportsImages?: boolean): ModelInfo {
+    return { ...model, provider: ANTIGRAVITY_PROVIDER, reasoning: !!thinking, input: supportsImages === false ? ['text'] : ['text', 'image'], contextWindow: 0 }
   }
 
   private bindAntigravity(connection: NonNullable<AgentController['acpConnection']>, session: AntigravitySession): void {
@@ -4082,7 +4201,8 @@ export class AgentController extends EventEmitter {
         connection.thinking = event.models.thinking
         connection.mode = event.models.mode
         connection.modes = event.models.modes
-        connection.model = this.antigravityModel(connection.model, connection.thinking)
+        if (typeof event.models.supportsImages === 'boolean') connection.supportsImages = event.models.supportsImages
+        connection.model = this.antigravityModel(connection.model, connection.thinking, connection.supportsImages)
         void this.refreshState()
       }
     }
@@ -4108,10 +4228,10 @@ export class AgentController extends EventEmitter {
       const bridge = mcp && script && (host || mcp.services.length) ? await openAntigravityDelegation(script, () => {
         const turn = this.acpTurn
         if (!turn || turn.session !== proc || !this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) return undefined
-        return { signal: turn.delegation.signal, run: host ? (command, params) => host.run(command, params, {
+        return { signal: turn.delegation.signal, mode: this.acpConnection?.mode, run: host ? (command, params) => host.run(command, params, {
           cwd: this.cwd, parentSessionId: sessionId, parentSessionFile: this.state?.sessionFile,
           parentRunId: this.capabilityOpts?.sessionId, parentGeneration: owner.generation,
-          parentMessageId: turn.messages[1]?.id, projectId: this.capabilityOpts?.projectId, fromAntigravity: true
+          parentMessageId: turn.messages.at(-1)?.id, projectId: this.capabilityOpts?.projectId, fromAntigravity: true
         }, turn.delegation.signal) : undefined }
       }, { delegate: !!host, services: mcp.services, commandHost: this.commandHost }) : undefined
       if (bridge && mcp) proc.setCleanup(async () => { await bridge.close(); await mcp.close() })
@@ -4127,10 +4247,10 @@ export class AgentController extends EventEmitter {
       const chosen = models.available.find(({ id }) => id === modelId && id === models.current)
       if (!chosen) throw new Error(pick('Antigravity 未切到选中的模型。', 'Antigravity did not switch to the selected model.'))
       if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId || this.executionActive() || this.state.pendingMessageCount) throw new Error(pick('会话状态已变化，未切换模型。', 'The session changed; model not switched.'))
-      await saveAntigravityPreference(sessionId, { model: chosen, thinking: models.thinking, modes: models.modes })
+      await saveAntigravityPreference(sessionId, { model: chosen, thinking: models.thinking, modes: models.modes, supportsImages: models.supportsImages })
       if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
-      const selected = this.acpConnection = { sessionId, model: this.antigravityModel(chosen, models.thinking), thinking: models.thinking,
-        mode: models.mode, modes: models.modes, bridgeConfigured: reuse ? previous?.bridgeConfigured : !!bridge && !!host,
+      const selected = this.acpConnection = { sessionId, model: this.antigravityModel(chosen, models.thinking, models.supportsImages), thinking: models.thinking,
+        mode: models.mode, modes: models.modes, supportsImages: models.supportsImages, bridgeConfigured: reuse ? previous?.bridgeConfigured : !!bridge && !!host,
         mcpServers: reuse ? previous?.mcpServers : mcp?.services.map(({ name }) => name), session, hasContext: !!reuse && previous?.hasContext === true }
       this.bindAntigravity(selected, session)
       if (!reuse) await previous?.session?.close()
@@ -4153,10 +4273,11 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async sendAntigravity(text: string): Promise<{ ok: boolean; error?: string }> {
+  private async sendAntigravity(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }> {
     const initial = this.acpConnection
     const native = this.nativeRuntime
-    if (!initial || !native || this.executionActive() || this.state?.pendingMessageCount || !this.queue.isEmpty() || !text.trim()) {
+    const media = (images ?? []).filter((item) => item.data && item.mimeType)
+    if (!initial || !native || this.executionActive() || !this.queue.isEmpty() || (!text.trim() && media.length === 0)) {
       return { ok: false, error: pick('当前不能发送 Antigravity 消息。', 'Cannot send an Antigravity message right now.') }
     }
     if (this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
@@ -4167,6 +4288,9 @@ export class AgentController extends EventEmitter {
     const connection = this.acpConnection
     const session = connection?.session
     if (!connection || !session || connection.sessionId !== initial.sessionId || this.executionActive()) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+    if (media.length > 0 && connection.supportsImages === false) {
+      return { ok: false, error: pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.') }
+    }
     const owner = this.asyncOwner()
     const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection.sessionId && this.acpConnection === connection
     let history = connection.hasContext ? [] : this.messages
@@ -4187,66 +4311,152 @@ export class AgentController extends EventEmitter {
     if (!this.confirmExecutionAdmission()) return { ok: false, error: pick('会话运行许可已失效，请重新发送。', 'Execution admission expired. Send the message again.') }
     const startedAt = Date.now()
     const startedMono = performance.now()
-    const user: UIMessage = { id: `acp-${randomUUID()}`, role: 'user', text, timestamp: startedAt }
-    const reply: UIMessage = { id: `acp-${randomUUID()}`, role: 'assistant', text: '', model: `${ANTIGRAVITY_PROVIDER}/${connection.model.id}`, timestamp: startedAt }
-    const calls = new Map<string, UIToolCall>()
+    const modelId = `${ANTIGRAVITY_PROVIDER}/${connection.model.id}`
+    const userImages = media.length
+      ? media.map(({ data, mimeType }) => ({ mimeType, data: '', url: this.localizeHistoryImage(mimeType, data) }))
+      : undefined
+    const user: UIMessage = { id: `acp-${randomUUID()}`, role: 'user', text, ...(userImages ? { images: userImages } : {}), timestamp: startedAt }
+    const makeStep = (timestamp: number): UIMessage => ({ id: `acp-${randomUUID()}`, role: 'assistant', text: '', model: modelId, timestamp })
+    let currentStep = makeStep(startedAt)
+    const steps: UIMessage[] = [currentStep]
+    const stepCalls = new Map<string, Map<string, UIToolCall>>([[currentStep.id, new Map()]])
+    const toolStep = new Map<string, UIMessage>()
     const approvals = new Map<number, AbortController>()
     const runContext = this.runObserverContext()
     const observe = (signal: RunSignal): void => {
       if (runContext) this.runObserver?.(runContext, signal)
     }
-    const turn = this.acpTurn = { session, done: Promise.resolve(), stopped: false, messages: [user, reply], delegation: new AbortController(), startedAt, runContext }
+    const turn = this.acpTurn = { session, done: Promise.resolve(), stopped: false, interjected: false, messages: [user, currentStep], delegation: new AbortController(), startedAt, runContext }
+    let stepStartMono = startedMono
+    let firstTokenMono: number | undefined
+    let lastTokenMono: number | undefined
     let firstTextAt: number | undefined
     let lastTextAt: number | undefined
     let continuousOutput = true
-    reply.antigravity = {}
+    let turnContext: NonNullable<UIMessage['antigravity']>['context']
+    let turnUsage: NonNullable<UIMessage['antigravity']>['usage']
+    const buildStepGenTiming = (): UIMessage['generationTiming'] | undefined => {
+      if (firstTokenMono === undefined || lastTokenMono === undefined) return undefined
+      const ttftMs = Math.max(0, Math.round(firstTokenMono - stepStartMono))
+      const decodeMs = Math.max(0, Math.round(lastTokenMono - firstTokenMono))
+      const outputDecodeMs = firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt
+        ? Math.max(0, Math.round(lastTextAt - firstTextAt))
+        : undefined
+      const durationMs = Math.max(ttftMs + decodeMs, Math.round(lastTokenMono - stepStartMono))
+      return {
+        startEvent: 'turn_start',
+        ttftMs,
+        decodeMs,
+        ...(outputDecodeMs !== undefined ? { outputDecodeMs } : {}),
+        durationMs
+      }
+    }
+    const settleStepThinking = (step: UIMessage, now: number): boolean => {
+      if (!step.thinkingLive) return false
+      step.thinkingLive = false
+      if (step.thinkingStartedAt !== undefined) {
+        step.thinkingMs = (step.thinkingMs ?? 0) + Math.max(0, now - step.thinkingStartedAt)
+      }
+      return true
+    }
+    const advanceStep = (now: number): UIMessage => {
+      if (!currentStep.toolCalls?.length) return currentStep
+      const prevTiming = buildStepGenTiming()
+      if (prevTiming) currentStep.generationTiming = prevTiming
+      const settled = settleStepThinking(currentStep, now)
+      if (settled || prevTiming) {
+        this.push({ ch: 'msg-update', payload: { id: currentStep.id, patch: { ...(settled ? { thinkingLive: false, thinkingMs: currentStep.thinkingMs } : {}), ...(prevTiming ? { generationTiming: prevTiming } : {}) } } })
+      }
+      currentStep = makeStep(now)
+      steps.push(currentStep)
+      stepCalls.set(currentStep.id, new Map())
+      turn.messages.push(currentStep)
+      stepStartMono = performance.now()
+      firstTokenMono = undefined
+      lastTokenMono = undefined
+      firstTextAt = undefined
+      lastTextAt = undefined
+      continuousOutput = true
+      this.push({ ch: 'msg-add', payload: { ...currentStep } })
+      return currentStep
+    }
+    currentStep.antigravity = {}
+    if (this.acpTodos.length) {
+      this.acpTodos = []
+      this.push({ ch: 'todos', payload: [] })
+    }
     this.runFromUser = true
     this.setAgentRunning(true)
     this.markStreaming(true)
     observe({ type: 'agent-start' })
     observe({ type: 'activity', activity: 'waiting-model' })
     this.push({ ch: 'msg-add', payload: user })
-    this.push({ ch: 'msg-add', payload: { ...reply } })
+    this.push({ ch: 'msg-add', payload: { ...currentStep } })
     session.onEvent = (event) => {
       if (!ownsTurn()) return
-      if (event.type === 'text' && !turn.stopped) {
+      if (event.type === 'text' && !turn.stopped && !turn.interjected) {
         if (!event.text) return
-        lastTextAt = performance.now()
-        firstTextAt ??= lastTextAt
-        reply.text += event.text
-        this.push({ ch: 'msg-update', payload: { id: reply.id, patch: { textDelta: event.text, thinkingLive: false } } })
+        const now = Date.now()
+        const step = advanceStep(now)
+        const settled = settleStepThinking(step, now)
+        const mono = performance.now()
+        firstTokenMono ??= mono
+        lastTokenMono = mono
+        lastTextAt = mono
+        firstTextAt ??= mono
+        step.text += event.text
+        const gt = buildStepGenTiming()
+        if (gt) step.generationTiming = gt
+        this.push({ ch: 'msg-update', payload: { id: step.id, patch: { textDelta: event.text, thinkingLive: false, ...(settled ? { thinkingMs: step.thinkingMs } : {}), ...(gt ? { generationTiming: gt } : {}) } } })
         observe({ type: 'activity', activity: 'streaming' })
-      } else if (event.type === 'thought' && !turn.stopped && event.text) {
+      } else if (event.type === 'thought' && !turn.stopped && !turn.interjected && event.text) {
+        const now = Date.now()
+        const step = advanceStep(now)
         if (firstTextAt !== undefined) continuousOutput = false
-        reply.thinkingStartedAt ??= Date.now()
-        reply.thinking = (reply.thinking ?? '') + event.text
-        this.push({ ch: 'msg-update', payload: { id: reply.id, patch: { thinkingDelta: event.text, thinkingStartedAt: reply.thinkingStartedAt, thinkingLive: true } } })
+        const mono = performance.now()
+        firstTokenMono ??= mono
+        lastTokenMono = mono
+        if (!step.thinkingLive) step.thinkingStartedAt = now
+        step.thinkingLive = true
+        step.thinking = (step.thinking ?? '') + event.text
+        const gt = buildStepGenTiming()
+        if (gt) step.generationTiming = gt
+        this.push({ ch: 'msg-update', payload: { id: step.id, patch: { thinkingDelta: event.text, thinkingStartedAt: step.thinkingStartedAt, thinkingLive: true, ...(gt ? { generationTiming: gt } : {}) } } })
         observe({ type: 'activity', activity: 'thinking' })
       } else if (event.type === 'context' && !turn.stopped) {
-        reply.antigravity = { ...reply.antigravity, context: { used: event.used, size: event.size } }
-        this.push({ ch: 'msg-update', payload: { id: reply.id, patch: { antigravity: reply.antigravity } } })
+        turnContext = { used: event.used, size: event.size }
+        currentStep.antigravity = { ...currentStep.antigravity, context: turnContext }
+        this.push({ ch: 'msg-update', payload: { id: currentStep.id, patch: { antigravity: currentStep.antigravity } } })
         observe({ type: 'context', used: event.used, window: event.size })
         void this.refreshStats()
       } else if (event.type === 'usage') {
-        reply.antigravity = { ...reply.antigravity, usage: event.usage }
+        turnUsage = event.usage
+      } else if (event.type === 'plan' && !turn.stopped) {
+        const todos: SessionTodo[] = event.entries.map((entry) => ({ text: entry.content, done: entry.status === 'done', status: entry.status }))
+        this.acpTodos = todos
+        this.push({ ch: 'todos', payload: todos })
       } else if (event.type === 'tool') {
         continuousOutput = false
-        const id = `${reply.id}:${event.id}`
+        const now = Date.now()
+        const ownerStep = toolStep.get(event.id) ?? currentStep
+        toolStep.set(event.id, ownerStep)
+        const calls = stepCalls.get(ownerStep.id)!
+        const settled = settleStepThinking(ownerStep, now)
+        const id = `${ownerStep.id}:${event.id}`
         const previous = calls.get(id)
         const status = event.status === 'completed' ? 'ok' : event.status === 'failed' ? 'error' : event.status === 'in_progress' ? 'running' : previous?.status ?? 'pending'
-        const now = Date.now()
         const completed = status === 'ok' || status === 'error'
         const name = event.title || previous?.name || 'Antigravity'
         const diffs = status === 'ok' ? antigravityFileDiffs(this.cwd, event.diffs) : []
-        calls.set(id, { id, name, args: event.args ?? previous?.args ?? {}, status, serverSide: true, output: event.output,
+        calls.set(id, { id, name, args: event.args ?? previous?.args ?? {}, status, output: event.output,
           details: { antigravity: true, kind: event.kind, antigravityDiffs: diffs },
-          startedAt: previous?.startedAt ?? (status === 'running' ? now : undefined),
+          startedAt: previous?.startedAt ?? (status === 'running' || completed ? now : undefined),
           endedAt: completed ? previous?.endedAt ?? now : undefined })
         if (!previous) observe({ type: 'tool-start', tool: { name, callId: id } })
         if (completed && !previous?.endedAt) observe({ type: 'tool-end', callId: id, isError: status === 'error' })
         else if (!completed && previous) observe({ type: 'tool-update' })
-        reply.toolCalls = [...calls.values()]
-        this.push({ ch: 'msg-update', payload: { id: reply.id, patch: { toolCalls: reply.toolCalls, thinkingLive: false } } })
+        ownerStep.toolCalls = [...calls.values()]
+        this.push({ ch: 'msg-update', payload: { id: ownerStep.id, patch: { toolCalls: ownerStep.toolCalls, thinkingLive: false, ...(settled ? { thinkingMs: ownerStep.thinkingMs } : {}) } } })
       } else if (event.type === 'permission') {
         continuousOutput = false
         const allow = event.options.find((option) => option.allow)
@@ -4257,7 +4467,7 @@ export class AgentController extends EventEmitter {
         void this.ui.requestHostUi({ method: 'select', purpose: 'approval', nativeConfirmation: 'inline', sensitive: true,
           title: `Antigravity · ${event.title}`, message: event.detail, signal: controller.signal, timeout: 180_000,
           options: [pick('仅允许这一次', 'Allow once'), pick('拒绝', 'Deny')] }).then(
-          (answer) => session.reply(event.id, answer.confirmed && !turn.stopped && ownsTurn() ? allow.id : deny?.id ?? null),
+          (answer) => session.reply(event.id, answer.confirmed && !turn.stopped && !turn.interjected && ownsTurn() ? allow.id : deny?.id ?? null),
           () => session.reply(event.id, deny?.id ?? null)
         )
       } else if (event.type === 'permission-cleared') {
@@ -4269,20 +4479,22 @@ export class AgentController extends EventEmitter {
         connection.mode = undefined
       }
     }
-    const running = session.prompt(prompt, connection.model.id, connection.thinking?.current, connection.mode)
+    const running = session.prompt(prompt, connection.model.id, connection.thinking?.current, connection.mode, media)
+    let nextQueued: QueueItem | undefined
     turn.done = (async () => {
       let status = 'stop'
+      let turnError: string | undefined
       try {
         const reason = await running
-        if (reason === 'cancelled' || turn.stopped) status = 'aborted'
+        if (reason === 'cancelled' || turn.stopped || turn.interjected) status = 'aborted'
         else if (reason !== 'end_turn') {
           status = 'error'
-          reply.error = `Antigravity: ${reason || 'missing stop reason'}`
+          turnError = `Antigravity: ${reason || 'missing stop reason'}`
         }
         connection.hasContext = status === 'stop'
       } catch (error) {
-        status = turn.stopped ? 'aborted' : 'error'
-        if (!turn.stopped) reply.error = error instanceof Error ? error.message : String(error)
+        status = turn.stopped || turn.interjected ? 'aborted' : 'error'
+        if (!turn.stopped && !turn.interjected) turnError = error instanceof Error ? error.message : String(error)
         connection.hasContext = false
       }
       turn.delegation.abort()
@@ -4292,27 +4504,61 @@ export class AgentController extends EventEmitter {
       }
       const elapsedMs = Math.max(0, Math.round(performance.now() - startedMono))
       const endedAt = startedAt + elapsedMs
-      reply.toolCalls = reply.toolCalls?.map((call) => call.status === 'pending' || call.status === 'running' ? { ...call, status: 'error', cancelled: true, endedAt } : call)
-      reply.thinkingLive = false
-      const usage = reply.antigravity?.usage
-      if (status === 'stop' && continuousOutput && usage && firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt) {
-        const visible = usage.visibleOutput ?? (reply.thinking ? undefined : usage.output)
+      const lastStep = steps[steps.length - 1]
+      const finalGenTiming = buildStepGenTiming()
+      if (finalGenTiming) lastStep.generationTiming = finalGenTiming
+      if (turnError) lastStep.error = turnError
+      for (const step of steps) {
+        step.toolCalls = step.toolCalls?.map((call) => call.status === 'pending' || call.status === 'running' ? { ...call, status: 'error', cancelled: true, endedAt } : call)
+        settleStepThinking(step, endedAt)
+        if (step !== lastStep) delete step.antigravity
+      }
+      lastStep.antigravity = {
+        ...(turnContext ? { context: turnContext } : {}),
+        ...(turnUsage ? { usage: turnUsage } : {})
+      }
+      const usage = lastStep.antigravity.usage
+      if (status === 'stop' && continuousOutput && !lastStep.toolCalls?.length && usage && firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt) {
+        const visible = usage.visibleOutput ?? (lastStep.thinking ? undefined : usage.output)
         if (visible !== undefined && (usage.output === undefined || visible <= usage.output)) {
-          reply.antigravity = { ...reply.antigravity, usage: { ...usage, visibleOutput: visible }, outputSpanMs: lastTextAt - firstTextAt }
+          lastStep.antigravity = { ...lastStep.antigravity, usage: { ...usage, visibleOutput: visible }, outputSpanMs: lastTextAt - firstTextAt }
         }
       }
-      reply.turnTiming = { logicalTurnId: user.id, startedAt, endedAt, elapsedMs, terminalReason: status === 'aborted' ? 'stopped' : status === 'error' ? 'failed' : 'completed' }
+      lastStep.turnTiming = { logicalTurnId: user.id, startedAt, endedAt, elapsedMs, terminalReason: status === 'aborted' ? 'stopped' : status === 'error' ? 'failed' : 'completed' }
       try {
-        const ids = await native.appendAntigravityTurn({ sessionId: connection.sessionId, user: text, assistant: reply.text, model: connection.model.id, startedAt, endedAt, status,
-          error: reply.error, tools: reply.toolCalls, thinking: reply.thinking, timing: reply.turnTiming, antigravity: reply.antigravity })
+        const ids = await native.appendAntigravityTurn({
+          sessionId: connection.sessionId,
+          user: text,
+          ...(media.length ? { userImages: media } : {}),
+          steps: steps.map((step) => ({
+            text: step.text,
+            ...(step.toolCalls?.length ? { tools: step.toolCalls } : {}),
+            ...(step.thinking ? { thinking: step.thinking } : {}),
+            ...(step.thinkingMs ? { thinkingMs: step.thinkingMs } : {}),
+            ...(step.generationTiming ? { genTiming: step.generationTiming } : {}),
+            timestamp: step.timestamp
+          })),
+          model: connection.model.id,
+          startedAt,
+          endedAt,
+          status,
+          ...(lastStep.error ? { error: lastStep.error } : {}),
+          timing: lastStep.turnTiming,
+          antigravity: lastStep.antigravity
+        })
         user.entryId = ids.userId
-        reply.entryId = ids.assistantId
+        const stepIds = ids.assistantIds
+        if (stepIds && stepIds.length === steps.length) {
+          steps.forEach((step, index) => { step.entryId = stepIds[index] })
+        } else {
+          lastStep.entryId = ids.assistantId
+        }
       } catch (error) {
-        reply.error = pick(`回复未能保存到会话：${error instanceof Error ? error.message : String(error)}`, `Could not save the Antigravity turn: ${error instanceof Error ? error.message : String(error)}`)
+        lastStep.error = pick(`回复未能保存到会话：${error instanceof Error ? error.message : String(error)}`, `Could not save the Antigravity turn: ${error instanceof Error ? error.message : String(error)}`)
         connection.hasContext = false
         if (status !== 'aborted') {
           status = 'error'
-          reply.turnTiming.terminalReason = 'failed'
+          lastStep.turnTiming.terminalReason = 'failed'
         }
       }
       if (!ownsTurn()) {
@@ -4331,14 +4577,21 @@ export class AgentController extends EventEmitter {
       }
       turn.messages = []
       this.items.appendMessage(user)
-      this.items.appendMessage(reply)
+      for (const step of steps) this.items.appendMessage(step)
       this.push({ ch: 'msg-update', payload: { id: user.id, patch: { entryId: user.entryId } } })
-      this.push({ ch: 'msg-update', payload: { id: reply.id, patch: reply } })
-      if (status === 'error') observe({ type: 'host-fail', message: reply.error ?? 'Antigravity' })
+      for (const step of steps) this.push({ ch: 'msg-update', payload: { id: step.id, patch: step } })
+      const outcome = status === 'error' ? 'failed' as const : status === 'aborted' ? 'stopped' as const : 'completed' as const
+      if (status === 'error') observe({ type: 'host-fail', message: lastStep.error ?? 'Antigravity' })
       else if (status === 'aborted') observe({ type: 'stopped', by: 'user' })
       else {
         observe({ type: 'agent-end' })
         observe({ type: 'agent-settled', aborted: false })
+        void this.maybeGenerateTitle()
+      }
+      this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome } })
+      if (!turn.stopped && (this.acpQueue.steering.length || this.acpQueue.followUp.length)) {
+        nextQueued = this.acpQueue.steering.shift() ?? this.acpQueue.followUp.shift()
+        this.publishAcpQueue()
       }
     })().finally(() => {
       for (const approval of approvals.values()) approval.abort()
@@ -4350,6 +4603,15 @@ export class AgentController extends EventEmitter {
           this.setAgentRunning(false)
           void this.refreshState()
           void this.refreshStats()
+          if (nextQueued) {
+            const queued = nextQueued
+            void this.withOperation('send', owner.generation, () => this.withExecutionAdmission(() => this.sendAntigravity(queued.text, queued.images)))
+              .then((res) => {
+                if (!res.ok && res.error) {
+                  this.push({ ch: 'notify', payload: { id: `acp-queue-fail-${Date.now()}`, method: 'notify', notifyType: 'error', message: res.error } })
+                }
+              })
+          }
         }
       }
     })
@@ -4471,10 +4733,10 @@ export class AgentController extends EventEmitter {
     try {
       const models = await (kind === 'thinking' ? session.selectThinking(value) : session.selectMode(value))
       if (!this.ownerCurrent(owner) || this.acpConnection !== previous || models.current !== previous.model.id) throw new Error(GENERATION_MISMATCH_ERROR)
-      await saveAntigravityPreference(previous.sessionId, { model: previous.model, thinking: models.thinking, modes: models.modes })
+      await saveAntigravityPreference(previous.sessionId, { model: previous.model, thinking: models.thinking, modes: models.modes, supportsImages: previous.supportsImages })
       if (!this.ownerCurrent(owner) || this.acpConnection !== previous) throw new Error(GENERATION_MISMATCH_ERROR)
       previous.thinking = models.thinking
-      previous.model = this.antigravityModel(previous.model, models.thinking)
+      previous.model = this.antigravityModel(previous.model, models.thinking, previous.supportsImages)
       previous.mode = models.mode
       previous.modes = models.modes
       await this.refreshState()

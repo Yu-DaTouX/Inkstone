@@ -1,13 +1,58 @@
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import { ANTIGRAVITY_QUOTA_REFRESH_MS, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot } from '../shared/antigravity'
 import { pick } from '../shared/ui-lang'
 import { antigravityExecutable } from './antigravity'
 import { YAN_DIR } from './paths'
+import { killProcessTree } from './process-tree'
 
-const execute = promisify(execFile)
+const ERROR_CACHE_MS = 10_000
+const MAX_OUTPUT_BYTES = 256_000
+
+function execute(executable: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; timeout: number }): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { cwd: opts.cwd, env: opts.env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    let bytes = 0
+    let killed = false
+    let settled = false
+    const finish = (error: Error | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) reject(error)
+      else resolve({ stdout, stderr })
+    }
+    const abort = (reason: Error) => {
+      killed = true
+      if (child.pid && child.exitCode === null && child.signalCode === null) void killProcessTree(child.pid)
+      finish(reason)
+    }
+    const timer = setTimeout(() => {
+      const err = Object.assign(new Error('timeout'), { stdout, stderr, killed: true })
+      abort(err)
+    }, opts.timeout)
+    timer.unref()
+    const append = (kind: 'stdout' | 'stderr', chunk: string) => {
+      bytes += Buffer.byteLength(chunk, 'utf8')
+      if (bytes > MAX_OUTPUT_BYTES) {
+        abort(Object.assign(new Error('maxBuffer exceeded'), { stdout, stderr, code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }))
+        return
+      }
+      if (kind === 'stdout') stdout += chunk
+      else stderr += chunk
+    }
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => append('stdout', chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => append('stderr', chunk))
+    child.once('error', (err) => finish(Object.assign(err, { stdout, stderr, killed })))
+    child.once('close', (code) => {
+      if (code === 0) finish(null)
+      else finish(Object.assign(new Error(`exit ${code ?? 'signal'}`), { stdout, stderr, code: code ?? 1, killed }))
+    })
+  })
+}
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const items = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const label = (value: unknown): string => typeof value === 'string' ? value.trim().slice(0, 160) : ''
@@ -40,7 +85,7 @@ async function readQuota(): Promise<AntigravityQuotaGroup[]> {
   const cwd = join(YAN_DIR, 'antigravity-quota')
   await mkdir(cwd, { recursive: true })
   const { executable, env } = antigravityExecutable(cwd)
-  const opts = { cwd, env, windowsHide: true, timeout: 18_000, maxBuffer: 256_000, encoding: 'utf8' as const }
+  const opts = { cwd, env, timeout: 18_000 }
   const { stdout: version } = await execute(executable, ['--version'], { ...opts, timeout: 5000 })
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version.trim())
   const [, major, minor, patch] = match?.map(Number) ?? []
@@ -59,7 +104,8 @@ let pending: Promise<AntigravityQuotaSnapshot> | undefined
 
 export function antigravityQuota(force = false): Promise<AntigravityQuotaSnapshot> {
   if (pending) return pending
-  if (latest && Date.now() - latest.checkedAt < (force ? 5000 : ANTIGRAVITY_QUOTA_REFRESH_MS)) return Promise.resolve(latest)
+  const ttl = latest?.error ? (force ? 0 : ERROR_CACHE_MS) : (force ? 5000 : ANTIGRAVITY_QUOTA_REFRESH_MS)
+  if (latest && ttl > 0 && Date.now() - latest.checkedAt < ttl) return Promise.resolve(latest)
   pending = readQuota().then(
     (groups): AntigravityQuotaSnapshot => ({ checkedAt: Date.now(), groups,
       ...(groups.length ? {} : { error: pick('CLI 没有返回订阅额度。', 'The CLI returned no subscription allowance.') }) }),
