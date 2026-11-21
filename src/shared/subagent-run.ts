@@ -81,6 +81,22 @@ export interface SubagentQuotaWait {
   since: number
   resetAt?: number
   accounts: number
+  needsAccount?: boolean
+}
+
+export function subagentQuotaProvider(model: string | undefined): string | undefined {
+  const slash = model?.indexOf('/') ?? -1
+  return slash > 0 ? model?.slice(0, slash).trim().toLowerCase() || undefined : undefined
+}
+
+export function subagentQuotaAttentionProviders(runs: readonly Pick<SubagentRun, 'model' | 'status' | 'quotaWait'>[]): Set<string> {
+  const providers = new Set<string>()
+  for (const run of runs) {
+    if (run.status !== 'running' || !run.quotaWait?.needsAccount) continue
+    const provider = subagentQuotaProvider(run.model)
+    if (provider) providers.add(provider)
+  }
+  return providers
 }
 
 export interface SubagentRecovery {

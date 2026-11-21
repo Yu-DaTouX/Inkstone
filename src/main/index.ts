@@ -138,7 +138,7 @@ import { createSubagentNoticeStore } from './subagent-notice-store'
 import { buildSubagentOvertimeNotice } from '../shared/subagent-notice'
 import { createSubagentPushBatch } from './subagent-push-batch'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
-import { activeAccountKey, switchToSpareAccount } from './account-autoswitch'
+import { activeAccountKey, switchToSpareAccount, type SpareAccountOptions } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, DANGER_CONFIRM_TIMEOUT_MS, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
@@ -379,19 +379,21 @@ const notifySubagentFinished = createSubagentNotifier({
   runningSiblings: (run) => (subagentService.current()?.list() ?? []).filter((other) => (other.status === 'running' || other.status === 'starting') && !workflowService.owns(other) &&
     ((!!run.parentSessionId && other.parentSessionId === run.parentSessionId) || (!!run.parentRunId && other.parentRunId === run.parentRunId))).length
 })
+async function switchSpareAccount(provider: string, options?: SpareAccountOptions) {
+  const account = await switchToSpareAccount(provider, options)
+  if (account && !shuttingDown) void subagentService.current()?.quotaAccountChanged(provider, account).catch((error) => reportMainError('subagent-quota', error))
+  return account
+}
+
 const subagentQuotaWatch = createSubagentQuotaWatch({
-  switchAccount: switchToSpareAccount,
-  notifyUser: ({ run, title, body }) => {
-    push({ ch: 'notify', payload: { id: `subagent-quota-${run.id}`, method: 'notify', notifyType: 'warning', message: `${title}：${body}` } })
-    void getSettings().then((settings) => {
-      if (!win || win.isDestroyed() || win.isFocused() || settings.sound?.notifications === false || !Notification.isSupported()) return
-      attentionNotices.show({ key: `subagent-quota:${run.id}`, title, body, icon: botNotificationIcon(run.model, 'question'), link: sessionNoticeLink(run.parentSessionId) })
-    }).catch(() => undefined)
-  },
+  activeAccount: activeAccountKey,
+  switchAccount: switchSpareAccount,
   notifyParent: (run, text) => {
     void (async () => {
       if ((await getSettings()).subagentNotify === false || !runners || workflowService.owns(run)) return
-      const target = findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)
+      const latest = subagentService.current()?.get(run.id)
+      if (!latest?.quotaWait || latest.quotaWait.since !== run.quotaWait?.since) return
+      const target = findNoticeTarget(latest, runners)
       if (!target || target.holdsNotices()) return
       await target.send(text, undefined, 'followUp')
     })().catch(() => undefined)
@@ -1916,7 +1918,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
         subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context, signal) },
-        switchSpareAccount: switchToSpareAccount,
+        switchSpareAccount,
         activeAccountKey,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         ensureMcpAppTools: (projectId) => mcpAppProxyService().ensureFresh({ callerProjectId: projectId }).then(() => undefined),
@@ -2451,7 +2453,13 @@ function registerIpc(): void {
   })
 
   registerAuthIpc(ipc, {
-    restartAgent: (reason: string) => restartAgent(reason),
+    restartAgent: (reason: string) => {
+      if (!shuttingDown && (reason === 'ChatGPT 账号已切换' || reason === '订阅账号已切换')) {
+        const provider = reason === 'ChatGPT 账号已切换' ? 'openai-codex' : undefined
+        void subagentService.current()?.quotaAccountChanged(provider).catch((error) => reportMainError('subagent-quota', error))
+      }
+      return restartAgent(reason)
+    },
     sendOAuthEvent: (event) => {
       if (win && !win.isDestroyed()) win.webContents.send('yan:oauth', event)
     }

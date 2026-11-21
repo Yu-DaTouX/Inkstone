@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react'
+import { subagentQuotaAttentionProviders, type SubagentRun } from '../../../shared/subagent-run'
+import { pick } from '../../../shared/ui-lang'
 import { useT, type TFunc } from '../i18n'
 import { useStore, type Notice } from '../state/store'
 import { showToast, toastQueue, ToastRegion, type ToastContent } from '../ui'
@@ -57,11 +59,43 @@ function noticeAction(notice: Notice, t: TFunc): ToastContent['action'] {
   return undefined
 }
 
+function useSubagentQuotaToasts(): void {
+  useEffect(() => {
+    const open = new Map<string, string>()
+    const reconcile = (runs: readonly SubagentRun[]): void => {
+      const providers = subagentQuotaAttentionProviders(runs)
+      for (const [provider, key] of open) {
+        if (providers.has(provider)) continue
+        open.delete(provider)
+        toastQueue.close(key)
+      }
+      for (const provider of providers) {
+        if (open.has(provider)) continue
+        const key = showToast(pick(`${provider} 的子 Agent 在等额度`, `${provider} subagents are waiting for quota`), {
+          tone: 'warning',
+          description: pick('可在额度页手动换号，或等额度恢复后自动继续。', 'Switch accounts on the quota page, or wait for quota to reset and the subagents will continue.'),
+          timeout: 10000
+        })
+        open.set(provider, key)
+      }
+    }
+    const unsubscribe = useStore.subscribe((state, previous) => {
+      if (state.subagents !== previous.subagents) reconcile(state.subagents)
+    })
+    reconcile(useStore.getState().subagents)
+    return () => {
+      unsubscribe()
+      for (const key of open.values()) toastQueue.close(key)
+    }
+  }, [])
+}
+
 export function NoticeBridge() {
   const t = useT()
   const notices = useStore((state) => state.notices)
   const forwarded = useRef(new Set<string>())
   useToastClearance()
+  useSubagentQuotaToasts()
   useEffect(() => {
     for (const notice of notices) {
       if (forwarded.current.has(notice.id)) continue

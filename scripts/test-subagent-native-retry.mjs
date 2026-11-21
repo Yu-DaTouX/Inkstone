@@ -515,9 +515,12 @@ await withQuotaController([async () => ({ windows: [{ id: 'five', label: '5 小�
   const card = (key, used, extra = {}) => ({ key, source: 'yan', provider: 'openai-codex', name: 'ChatGPT', switchable: true, status: used >= 100 ? 'limited' : 'ok', windows: [{ id: 'five', label: '5 小时', used, total: 100 }], checkedAt: 0, ...extra })
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 70), card('c', 20), card('d', 100)], 'openai-codex')?.key === 'c', '挑剩余额度最多的可用账号')
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 100), card('c', 5, { staleError: '读取失败' })], 'openai-codex') === null, '都用完或额度读不准时不换')
-  ok(pickSpareAccount([card('a', 10, { active: true }), card('b', 0)], 'openai-codex')?.key === 'a', '当前账号已可用时不再换（别的子代理刚换过）')
+  ok(pickSpareAccount([card('a', 10, { active: true }), card('b', 0)], 'openai-codex')?.key === 'a', '没有撞限账号身份时保留默认择号行为')
+  ok(pickSpareAccount([card('a', 10, { active: true }), card('b', 0)], 'openai-codex', new Set(), 'a')?.key === 'b', '刚撞限的账号即使额度报告仍有余额，也不再被选中')
+  ok(pickSpareAccount([card('a', 0), card('b', 40, { active: true })], 'openai-codex', new Set(), 'a')?.key === 'b', '活动账号已换时继续用新号，不选回旧号')
   ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 0, { provider: 'anthropic' }), card('c', 0, { source: 'codex-cli' })], 'openai-codex') === null, '只在同一服务商、砚自己管理的账号间换')
   const expired = (key, extra = {}) => card(key, 0, { status: 'expired', refreshable: true, windows: [], ...extra })
+  ok(pickSpareAccount([card('a', 10), expired('b', { active: true }), card('c', 0)], 'openai-codex', new Set(), 'a')?.key === 'b', '前一个请求换到待刷新账号时，后到请求沿用它')
   ok(pickSpareAccount([card('a', 100, { active: true }), expired('b')], 'openai-codex', new Set())?.key === 'b', '备用账号访问令牌过期但有刷新令牌时视为可用（pi 使用时会刷新）')
   ok(pickSpareAccount([card('a', 100, { active: true }), expired('b'), card('c', 90)], 'openai-codex', new Set())?.key === 'c', '额度已知的账号优先，过期的排在最后')
   ok(pickSpareAccount([card('a', 100, { active: true }), expired('b', { refreshable: false })], 'openai-codex', new Set()) === null, '没有刷新令牌的过期账号不换')
@@ -562,18 +565,14 @@ await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) =
 
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
-  await build({ entryPoints: ['src/main/subagent-quota-watch.ts'], outfile: `${BUILD_DIR}/subagent-quota-watch.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [{ name: 'stub-deps', setup(b) { b.onResolve({ filter: /^\.\/(quota|codex-accounts|oauth-accounts)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const providerQuotaWithFallback = async () => ({}); export const codexAccountTargets = async () => []; export const oauthAccountTargets = async () => []', loader: 'js' })) } }] })
+  await build({ entryPoints: ['src/main/subagent-quota-watch.ts'], outfile: `${BUILD_DIR}/subagent-quota-watch.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [{ name: 'stub-deps', setup(b) { b.onResolve({ filter: /^\.\/(quota|codex-accounts|oauth-accounts)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const providerQuota = async () => ({}); export const listCodexAccounts = async () => []; export const oauthAccountTargets = async () => []', loader: 'js' })) } }] })
   const { createSubagentQuotaWatch } = await import(`../${BUILD_DIR}/subagent-quota-watch.mjs`)
   for (const accounts of [1, 3]) {
-    const sent = { user: [], parent: [] }
-    const watch = createSubagentQuotaWatch({ notifyUser: (input) => sent.user.push(input), notifyParent: (_run, text) => sent.parent.push(text) })
+    const sent = []
+    const watch = createSubagentQuotaWatch({ notifyParent: (_run, text) => sent.push(text) })
     watch.waiting({ id: 'sub-q', task: '删输入方案', model: 'openai-codex/gpt-6.1', quotaWait: { since: 1, resetAt: Date.UTC(2026, 10, 8, 8, 37), accounts } })
-    ok(sent.user.length === 1 && sent.parent.length === 1, `${accounts} 个账号时主会话也收到等额度通知`, JSON.stringify({ user: sent.user.length, parent: sent.parent.length }))
-    ok(/yan subagent stop --id sub-q/.test(sent.parent[0] ?? '') && /换号/.test(sent.parent[0] ?? '') === (accounts > 1), `${accounts} 个账号时主会话通知写明可停止接手${accounts > 1 ? '、可换号' : ''}`, sent.parent[0])
-    const switched = { user: [] }
-    const swWatch = createSubagentQuotaWatch({ notifyUser: (input) => switched.user.push(input), notifyParent: () => {}, switchAccount: async (provider) => accounts > 1 ? { label: `${provider}-备用`, switched: true } : null })
-    const label = await swWatch.switchAccount({ id: 'sub-q', task: '删输入方案', model: 'openai-codex/gpt-6.1' })
-    ok(accounts > 1 ? label === 'openai-codex-备用' && switched.user.length === 1 && /已自动换号/.test(switched.user[0].title) : label === null && switched.user.length === 0, `${accounts} 个账号时自动换号${accounts > 1 ? '成功并提醒' : '失败不提醒'}`, JSON.stringify({ label, user: switched.user.map((u) => u.title) }))
+    ok(sent.length === 1, `${accounts} 个账号时主会话收到等额度通知`)
+    ok(/yan subagent stop --id sub-q/.test(sent[0] ?? '') && /换号/.test(sent[0] ?? '') === (accounts > 1), `${accounts} 个账号时主会话通知写明可停止接手${accounts > 1 ? '、可换号' : ''}`, sent[0])
   }
 }
 

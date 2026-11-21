@@ -10,12 +10,12 @@ import { findActiveOAuthAccountKey, switchOAuthAccount } from './oauth-accounts'
 const known = (card: AccountQuotaCard): boolean => card.status === 'ok' && !card.staleError && card.windows.length > 0 && blockedQuotaWindows(card.windows).length === 0
 const refreshFailed = new Set<string>()
 
-export function pickSpareAccount(cards: readonly AccountQuotaCard[], provider: string, failed: ReadonlySet<string> = refreshFailed): AccountQuotaCard | null {
+export function pickSpareAccount(cards: readonly AccountQuotaCard[], provider: string, failed: ReadonlySet<string> = refreshFailed, exhaustedKey?: string): AccountQuotaCard | null {
   const usable = (card: AccountQuotaCard): boolean => known(card) || (card.status === 'expired' && card.refreshable === true && !failed.has(card.key))
   const usage = (card: AccountQuotaCard): number => known(card) ? Math.max(0, ...card.windows.filter((w) => !w.informational && w.total > 0).map((w) => w.used / w.total)) : 2
-  const own = cards.filter((card) => card.source === 'yan' && card.provider === provider && card.switchable)
+  const own = cards.filter((card) => card.source === 'yan' && card.provider === provider && card.switchable && card.key !== exhaustedKey)
   const active = own.find((card) => card.active)
-  if (active && known(active)) return active
+  if (active && (known(active) || (exhaustedKey !== undefined && usable(active)))) return active
   return own.filter((card) => !card.active && usable(card)).sort((a, b) => usage(a) - usage(b))[0] ?? null
 }
 
@@ -35,6 +35,7 @@ let chain: Promise<unknown> = Promise.resolve()
 
 export interface SpareAccountOptions {
   refreshFailed?: boolean
+  quotaExhausted?: boolean
   failedKey?: string
 }
 
@@ -50,13 +51,14 @@ async function switchNow(provider: string, opts: SpareAccountOptions): Promise<{
   invalidateAccountQuotaReport()
   const cards = (await accountQuotaReport()).cards
   for (const card of cards) if (card.status === 'ok') refreshFailed.delete(card.key)
+  const current = cards.find((card) => card.source === 'yan' && card.provider === provider && card.switchable && card.active)
   if (opts.refreshFailed) {
     if (!opts.failedKey) return null
     markRefreshFailed(cards, provider, opts.failedKey)
-    const current = cards.find((card) => card.source === 'yan' && card.provider === provider && card.switchable && card.active)
     if (current && current.key !== opts.failedKey) return { key: current.key, label: current.label || current.email || current.name, switched: false }
   }
-  const target = pickSpareAccount(cards, provider)
+  const exhaustedKey = opts.quotaExhausted ? opts.failedKey ?? current?.key : undefined
+  const target = pickSpareAccount(cards, provider, refreshFailed, exhaustedKey)
   if (!target) return null
   const label = target.label || target.email || target.name
   if (target.active) return { key: target.key, label, switched: false }

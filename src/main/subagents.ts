@@ -13,6 +13,7 @@ import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { reserveWorkspaceMutation, workspaceMutationInProgress } from './workspace-mutation'
 import type { QuotaWindow, SubagentEndReason, SubagentPatch, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS } from '../shared/quota-resume'
+import { subagentQuotaProvider } from '../shared/subagent-run'
 import { continuationPrompt, SUBAGENT_QUOTA_RESUME_PROMPT } from '../shared/continuation-prompt'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { SessionItemProjector } from './session-items/projector'
@@ -153,6 +154,11 @@ export interface SubagentRpc {
   hasBackgroundWork?(): boolean
 }
 
+interface QuotaRecovery {
+  provider: string
+  failedAccount: Promise<string | undefined>
+}
+
 interface Run extends SubagentRun {
   rpc: SubagentRpc
   timer: NodeJS.Timeout
@@ -171,6 +177,8 @@ interface Run extends SubagentRun {
   retryMaxAttempts?: number
   lastModelErrorText?: string
   quotaBounces?: number
+  quotaAccount?: Promise<string | undefined>
+  quotaRecovery?: QuotaRecovery
   overtimeNoticed?: boolean
   workspace: PreparedWorkspace
   outputsOverflow?: { skipped: string[]; skippedSizes?: SkippedOutput[] }
@@ -311,7 +319,8 @@ export interface SubagentOptions {
 }
 
 export interface SubagentQuotaWatch {
-  switchAccount?(run: SubagentRun): Promise<string | null>
+  activeAccount?(provider: string): Promise<string | undefined>
+  switchAccount?(run: SubagentRun, failedKey?: string): Promise<string | null>
   check(model: string): Promise<{ windows: QuotaWindow[]; accounts: number } | null>
   waiting(run: SubagentRun): void
 }
@@ -1107,6 +1116,7 @@ export class SubagentController {
       if (invalidated()) { await this.fail(id, pick('派发已取消', 'Delegation was cancelled'), 'startup'); return this.startupAbort(run) }
       this.emit(run)
 
+      this.noteQuotaAccount(run)
       const res = await rpc.command('prompt', { message: fork?.sideQuestion ? sideQuestionPrompt(text) : fork ? forkPrompt(briefPrompt(brief, text)) : briefPrompt(brief, text) })
       if (!res.success) {
         await this.fail(id, res.error ?? pick('启动任务失败', 'Could not start the task'))
@@ -1276,7 +1286,7 @@ export class SubagentController {
     if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子 Agent正在启动，稍后再发', 'Subagent is starting; send again shortly') }
     if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from)
     if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子 Agent正在收尾，等它结束后再发即可续接', 'Subagent is wrapping up; send again after it finishes to resume it') }
-    if (live.quotaWait) {
+    if (live.quotaRecovery) {
       const queued = live.queued ?? (live.queued = [])
       queued.push({ text, mode, from })
       if (mode === 'followUp') live.followUp = text
@@ -1414,7 +1424,7 @@ export class SubagentController {
         settling: undefined, finalizing: undefined, notified: false, reviewDecided: false, worktreeDone: false,
         endedAt: undefined, endReason: undefined, error: undefined, stopReason: undefined, wrapUp: undefined,
         progressWarning: undefined, recovery: undefined, retryAttempt: undefined, retryMaxAttempts: undefined,
-        lastModelErrorText: undefined, quotaBounces: undefined, overtimeNoticed: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
+        lastModelErrorText: undefined, quotaBounces: undefined, quotaAccount: undefined, quotaRecovery: undefined, overtimeNoticed: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
       })
       this.runs.set(id, run)
       release()
@@ -1458,6 +1468,7 @@ export class SubagentController {
         await this.writeMetadata(run)
         if (!current('running')) return stoppedError()
         this.emit(run)
+        this.noteQuotaAccount(run)
         const res = await rpc.command('prompt', { message: forwardedMessage(text, snapshot.endReason === 'interrupted' ? 'interrupted' : 'resume', from) }, { timeoutMs: 10_000 })
         if (!current('running')) return stoppedError()
         if (!res.success) {
@@ -1497,6 +1508,7 @@ export class SubagentController {
       }
     }
     const endReason: SubagentEndReason = interrupted ? 'interrupted' : 'stopped'
+    run.quotaRecovery = undefined
     run.status = 'cancelled'
     run.endReason = endReason
     run.error = undefined
@@ -1567,6 +1579,7 @@ export class SubagentController {
     run.status = 'error'
     run.endReason = 'exited'
     run.wrapUp = undefined
+    run.quotaRecovery = undefined
     run.quotaWait = undefined
     run.queued = undefined
     run.error = run.error ?? describeProcessExit(run.exitInfo ?? {}, run.stderrTail)
@@ -1589,6 +1602,7 @@ export class SubagentController {
     run.status = cancelled ? 'cancelled' : 'error'
     run.endReason = cancelled ? (run.endReason === 'interrupted' ? 'interrupted' : 'stopped') : reason
     run.wrapUp = undefined
+    run.quotaRecovery = undefined
     run.quotaWait = undefined
     run.progressWarning = undefined
     if (cancelled) {
@@ -1988,7 +2002,7 @@ export class SubagentController {
   }
 
   private armWatch(run: Run): void {
-    if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
+    if (run.wrapUp || run.quotaRecovery || (run.status !== 'running' && run.status !== 'starting')) return
     clearTimeout(run.timer)
     const at = Math.min(run.totalMs && !run.overtimeNoticed ? run.activeSince + run.totalMs : Infinity, run.lastProgressAt + this.stallLimit(run))
     run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
@@ -2078,14 +2092,17 @@ export class SubagentController {
     return run.settled || run.status === 'cancelled' || run.status === 'error'
   }
 
-  private handleEvent(run: Run, evt: Record<string, unknown>): void {
-    if (this.opts.onEvent) {
-      try {
-        this.opts.onEvent(run.id, evt, run)
-      } catch {
-      }
+  private reportEvent(run: Run, evt: Record<string, unknown>): void {
+    try {
+      this.opts.onEvent?.(run.id, evt, run)
+    } catch {
     }
+  }
+
+  private handleEvent(run: Run, evt: Record<string, unknown>): void {
     const type = String(evt.type ?? '')
+    if (!this.closedForEvents(run) && type !== 'agent_settled' && (type !== 'auto_retry_end' || evt.success === true)) this.reportEvent(run, evt)
+    if (type === 'turn_start' && !run.quotaRecovery && !this.closedForEvents(run)) this.noteQuotaAccount(run)
     if (PROGRESS_EVENTS.has(type)) {
       run.lastProgressAt = Date.now()
       run.awaitingBackground = false
@@ -2199,11 +2216,12 @@ export class SubagentController {
     }
 
     if (type === 'auto_retry_end') {
-      if (this.closedForEvents(run)) return
+      if (this.closedForEvents(run) || run.quotaRecovery) return
       logModelEvent('retry-end', { success: typeof evt.success === 'boolean' ? evt.success : 'unknown', attempt: run.retryAttempt, ...(evt.success === false ? modelErrorLogFields(evt.finalError ?? evt.error) : {}), model: run.model, subagent: run.id })
       if (evt.success === false) {
         run.stopReason = 'error'
         run.error = run.error ?? modelErrorNotice(evt.finalError ?? evt.error)
+        run.lastModelErrorText ||= modelErrorText(evt.finalError ?? evt.error)
         run.latestActivity = run.retryAttempt !== undefined
           ? pick(`自动重试失败（已观察到第 ${run.retryAttempt} 次）`, `Auto-retry failed (attempt ${run.retryAttempt} seen)`)
           : pick('自动重试失败', 'Auto-retry failed')
@@ -2222,7 +2240,7 @@ export class SubagentController {
     }
 
     if (type === 'agent_settled') {
-      if (this.closedForEvents(run)) return
+      if (this.closedForEvents(run) || run.quotaRecovery) return
       if (this.canWaitForQuota(run)) {
         void this.waitForQuota(run)
         return
@@ -2267,30 +2285,61 @@ export class SubagentController {
   }
 
   private canWaitForQuota(run: Run): boolean {
-    return !!this.opts.quotaWatch && !!run.model && run.status === 'running' && run.stopReason === 'error' && !run.wrapUp &&
+    return !!this.opts.quotaWatch && !!subagentQuotaProvider(run.model) && run.status === 'running' && run.stopReason === 'error' && !run.wrapUp &&
       (run.quotaBounces ?? 0) < QUOTA_BOUNCE_LIMIT && isQuotaWaitError(run.lastModelErrorText)
+  }
+
+  private noteQuotaAccount(run: Run): void {
+    const provider = subagentQuotaProvider(run.model)
+    run.quotaAccount = provider ? this.opts.quotaWatch?.activeAccount?.(provider).catch(() => undefined) : undefined
+  }
+
+  private quotaRecoveryIsLive(run: Run, recovery: QuotaRecovery): boolean {
+    return this.runs.get(run.id) === run && run.quotaRecovery === recovery && run.status === 'running' && !run.settled
+  }
+
+  async quotaAccountChanged(provider?: string, account?: { key: string; label: string; switched: boolean }): Promise<void> {
+    const activeKeys = new Map<string, Promise<string | undefined>>()
+    await Promise.all([...this.runs.values()].map(async (run) => {
+      const recovery = run.quotaRecovery
+      if (!recovery || !this.quotaRecoveryIsLive(run, recovery) || (provider && provider !== recovery.provider)) return
+      let activeKey = activeKeys.get(recovery.provider)
+      if (!activeKey) {
+        activeKey = account ? Promise.resolve(account.key) : this.opts.quotaWatch?.activeAccount?.(recovery.provider).catch(() => undefined)
+        if (!activeKey) return
+        activeKeys.set(recovery.provider, activeKey)
+      }
+      const [key, failedKey] = await Promise.all([activeKey, recovery.failedAccount])
+      if (!key || key === failedKey || (!failedKey && !account?.switched) || !this.quotaRecoveryIsLive(run, recovery)) return
+      await this.resumeAfterQuota(run, { label: account?.label })
+    }))
   }
 
   private async quotaDecision(run: Run): Promise<{ ready: boolean; resetAt?: number; nextCheckAt: number; accounts: number } | null> {
     const info = await this.opts.quotaWatch!.check(run.model!).catch(() => null)
-    if (!info?.windows.length) return null
-    return { ...decideQuotaResume(info.windows, Date.now()), accounts: info.accounts }
+    if (!info) return null
+    const now = Date.now()
+    return { ...(info.windows.length ? decideQuotaResume(info.windows, now) : { ready: false, nextCheckAt: now + QUOTA_RESUME_POLL_MS }), accounts: info.accounts }
   }
 
   private async waitForQuota(run: Run): Promise<void> {
-    const activation = run.activation
-    const live = (): boolean => this.runs.get(run.id) === run && run.activation === activation && run.status === 'running' && !run.settled
+    const recovery: QuotaRecovery = { provider: subagentQuotaProvider(run.model)!, failedAccount: run.quotaAccount ?? Promise.resolve(undefined) }
+    run.quotaRecovery = recovery
+    const live = (): boolean => this.quotaRecoveryIsLive(run, recovery)
+    clearTimeout(run.timer)
+    run.quotaBounces = (run.quotaBounces ?? 0) + 1
+    this.reportEvent(run, { type: 'subagent_quota_recovery' })
     const first = await this.quotaDecision(run)
     if (!live()) return
     if (!first) {
       this.settle(run)
       return
     }
-    clearTimeout(run.timer)
-    run.quotaBounces = (run.quotaBounces ?? 0) + 1
-    if (!first.ready && await this.avoidLongQuotaWait(run, first, live)) return
-    if (!live()) return
-    run.quotaWait = { since: Date.now(), ...(first.resetAt !== undefined ? { resetAt: first.resetAt } : {}), accounts: first.accounts }
+    const needsAccount = (decision: { resetAt?: number; accounts: number }): boolean =>
+      decision.accounts > 1 && (decision.resetAt === undefined || decision.resetAt - Date.now() > QUOTA_SWITCH_AFTER_MS)
+    if (needsAccount(first) && await this.trySpareAccount(run, recovery)) return
+    if (!live() || (!first.ready && this.stopForLongQuotaWait(run, first))) return
+    run.quotaWait = { since: Date.now(), resetAt: first.resetAt, accounts: first.accounts, needsAccount: needsAccount(first) }
     run.stopReason = undefined
     run.error = undefined
     run.latestActivity = quotaWaitActivity(run.quotaWait)
@@ -2307,27 +2356,25 @@ export class SubagentController {
       if (!live() || !run.quotaWait) return
       const next = await this.quotaDecision(run)
       if (!live() || !run.quotaWait) return
-      if (next && !next.ready && await this.avoidLongQuotaWait(run, next, live)) return
-      if (!live() || !run.quotaWait) return
-      if (!next?.ready) {
-        if (next && next.resetAt !== run.quotaWait.resetAt) {
-          run.quotaWait = { ...run.quotaWait, ...(next.resetAt !== undefined ? { resetAt: next.resetAt } : {}) }
-          run.latestActivity = quotaWaitActivity(run.quotaWait)
-          this.emit(run)
-        }
-        schedule(next?.nextCheckAt ?? Date.now() + QUOTA_RESUME_POLL_MS)
+      if (next?.ready) {
+        await this.resumeAfterQuota(run)
         return
       }
-      await this.resumeAfterQuota(run)
+      if (next && needsAccount(next) && await this.trySpareAccount(run, recovery)) return
+      if (!live() || !run.quotaWait || (next && this.stopForLongQuotaWait(run, next))) return
+      if (next && (next.resetAt !== run.quotaWait.resetAt || next.accounts !== run.quotaWait.accounts || needsAccount(next) !== run.quotaWait.needsAccount)) {
+        run.quotaWait = { ...run.quotaWait, resetAt: next.resetAt, accounts: next.accounts, needsAccount: needsAccount(next) }
+        run.latestActivity = quotaWaitActivity(run.quotaWait)
+        this.emit(run)
+      }
+      schedule(next?.nextCheckAt ?? Date.now() + QUOTA_RESUME_POLL_MS)
     }
     schedule(first.ready ? Date.now() + QUOTA_RESUME_POLL_MS : first.nextCheckAt)
   }
 
-  private async avoidLongQuotaWait(run: Run, decision: { resetAt?: number; accounts: number }, live: () => boolean): Promise<boolean> {
+  private stopForLongQuotaWait(run: Run, decision: { resetAt?: number; accounts: number }): boolean {
     const remaining = decision.resetAt === undefined ? Infinity : decision.resetAt - Date.now()
-    if (remaining <= QUOTA_SWITCH_AFTER_MS) return false
-    if (decision.accounts > 1 && await this.trySpareAccount(run, live)) return true
-    if (!live() || remaining <= QUOTA_GIVE_UP_AFTER_MS) return !live()
+    if (remaining <= QUOTA_GIVE_UP_AFTER_MS) return false
     const reset = decision.resetAt === undefined ? '' : new Date(decision.resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     const resetEn = decision.resetAt === undefined ? '' : new Date(decision.resetAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     const noSpare = decision.accounts > 1 ? pick('其他账号也没有额度，', 'no other account has quota, ') : ''
@@ -2340,22 +2387,34 @@ export class SubagentController {
     return true
   }
 
-  private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {
-    const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run)).catch(() => null)
-    logModelEvent('account-switch', { reason: 'quota', outcome: label ? 'switched' : 'none', model: run.model, subagent: run.id })
-    if (!label || !live()) return false
-    await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`), continuationPrompt('account-switch', 'subagent'))
+  private async trySpareAccount(run: Run, recovery: QuotaRecovery): Promise<boolean> {
+    const failedKey = await recovery.failedAccount
+    if (!this.quotaRecoveryIsLive(run, recovery)) return true
+    const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run), failedKey).catch(() => null)
+    logModelEvent('account-switch', { reason: 'quota', outcome: label ? 'continuing' : 'none', model: run.model, subagent: run.id })
+    if (!this.quotaRecoveryIsLive(run, recovery)) return true
+    if (!label) return false
+    await this.resumeAfterQuota(run, { label })
     return true
   }
 
-  private async resumeAfterQuota(run: Run, activity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…'), message = SUBAGENT_QUOTA_RESUME_PROMPT): Promise<void> {
+  private async resumeAfterQuota(run: Run, account?: { label?: string }): Promise<void> {
     const waited = run.quotaWait ? Date.now() - run.quotaWait.since : 0
+    const message = account ? continuationPrompt('account-switch', 'subagent') : SUBAGENT_QUOTA_RESUME_PROMPT
     run.activeSince += waited
+    run.quotaRecovery = undefined
     run.quotaWait = undefined
+    run.stopReason = undefined
+    run.error = undefined
     run.lastModelErrorText = undefined
     run.retryAttempt = undefined
     run.lastProgressAt = Date.now()
-    run.latestActivity = activity
+    run.latestActivity = account?.label
+      ? pick(`额度用完，已换到 ${account.label} 继续…`, `Quota exhausted; continuing on ${account.label}…`)
+      : account ? pick('账号已切换，继续原任务…', 'Account changed; continuing the task…')
+        : pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…')
+    this.noteQuotaAccount(run)
+    this.reportEvent(run, { type: 'subagent_quota_resumed' })
     this.armWatch(run)
     this.emit(run)
     try {
@@ -2442,6 +2501,7 @@ export class SubagentController {
 
   private settle(run: Run): void {
     run.settled = true
+    run.quotaRecovery = undefined
     clearTimeout(run.timer)
     const unsent = run.queued?.length ?? 0
     run.queued = undefined

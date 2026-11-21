@@ -29,6 +29,12 @@ export function signalsFromPiEvent(evt: Record<string, unknown>, now: number = D
     case 'agent_start':
       return [{ type: 'agent-start' }]
 
+    case 'subagent_quota_recovery':
+      return [{ type: 'rate-limit' }]
+
+    case 'subagent_quota_resumed':
+      return [{ type: 'error-cleared' }, { type: 'activity', activity: 'waiting-model' }]
+
     case 'turn_start':
       return [{ type: 'activity', activity: 'waiting-model' }]
 

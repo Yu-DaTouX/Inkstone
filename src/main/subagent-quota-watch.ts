@@ -1,57 +1,46 @@
-import { pick } from '../shared/ui-lang'
-import type { SubagentRun } from '../shared/ipc'
 import { supportsOAuthAccounts } from '../shared/oauth-accounts'
 import { buildSubagentQuotaNotice } from '../shared/subagent-notice'
-import { codexAccountTargets } from './codex-accounts'
+import { subagentQuotaProvider, type SubagentRun } from '../shared/subagent-run'
+import { listCodexAccounts } from './codex-accounts'
 import { oauthAccountTargets } from './oauth-accounts'
-import { providerQuotaWithFallback } from './quota'
+import { providerQuota } from './quota'
+import type { SpareAccountOptions } from './account-autoswitch'
 import type { SubagentQuotaWatch } from './subagents'
 
 export interface SubagentQuotaWatchDeps {
-  notifyUser(input: { run: SubagentRun; title: string; body: string }): void
   notifyParent(run: SubagentRun, text: string): void
-  switchAccount?(provider: string): Promise<{ label: string; switched: boolean } | null>
+  activeAccount?(provider: string): Promise<string | undefined>
+  switchAccount?(provider: string, options: SpareAccountOptions): Promise<{ label: string; switched: boolean } | null>
 }
 
 async function accountCount(provider: string): Promise<number> {
   try {
-    if (provider === 'openai-codex') return Math.max(1, (await codexAccountTargets()).length)
+    if (provider === 'openai-codex') return Math.max(1, (await listCodexAccounts()).length)
     if (supportsOAuthAccounts(provider)) return Math.max(1, (await oauthAccountTargets(provider)).length)
   } catch {
   }
   return 1
 }
 
-function subagentName(run: SubagentRun): string {
-  const name = (run.brief?.title || run.followUp || run.task).replace(/\s+/g, ' ').trim()
-  return name.length > 40 ? `${name.slice(0, 40)}…` : name
-}
-
-const providerOf = (model: string): string => model.slice(0, Math.max(0, model.indexOf('/'))).trim().toLowerCase()
-
 export function createSubagentQuotaWatch(deps: SubagentQuotaWatchDeps): SubagentQuotaWatch {
   return {
+    activeAccount: deps.activeAccount,
     ...(deps.switchAccount ? {
-      async switchAccount(run) {
-        const provider = run.model ? providerOf(run.model) : ''
-        const result = provider ? await deps.switchAccount!(provider).catch(() => null) : null
-        if (!result) return null
-        if (result.switched) deps.notifyUser({ run, title: pick('子 Agent额度用完，已自动换号', 'Subagent ran out of quota; switched accounts'), body: pick(`「${subagentName(run)}」的账号额度用完了，已换到 ${result.label} 继续。`, `"${subagentName(run)}" ran out of quota and continues on ${result.label}.`) })
-        return result.label
+      async switchAccount(run, failedKey) {
+        const provider = subagentQuotaProvider(run.model)
+        if (!provider) return null
+        const result = await deps.switchAccount!(provider, { quotaExhausted: true, failedKey }).catch(() => null)
+        return result?.label ?? null
       }
     } : {}),
     async check(model) {
-      const provider = providerOf(model)
+      const provider = subagentQuotaProvider(model)
       if (!provider) return null
-      const [quota, accounts] = await Promise.all([providerQuotaWithFallback(provider), accountCount(provider)])
-      if (!quota.windows?.length || quota.staleError) return null
-      return { windows: quota.windows, accounts }
+      const [quota, accounts] = await Promise.all([providerQuota(provider).catch(() => null), accountCount(provider)])
+      const windows = quota?.windows ?? []
+      return windows.length || accounts > 1 ? { windows, accounts } : null
     },
     waiting(run) {
-      const accounts = run.quotaWait?.accounts ?? 1
-      const name = subagentName(run)
-      if (accounts > 1) deps.notifyUser({ run, title: pick('子 Agent撞上额度上限，可以换号', 'Subagent hit its quota limit. You can switch accounts'), body: pick(`「${name}」用的账号额度用完了。在额度页换一个账号后它会自动继续；不换就等额度恢复。`, `The account used by "${name}" ran out of quota. Switch accounts on the quota page and it continues automatically, or wait for the quota to reset.`) })
-      else deps.notifyUser({ run, title: pick('子 Agent在等额度', 'Subagent is waiting for quota'), body: pick(`「${name}」的额度用完了，额度恢复后会自动继续。`, `"${name}" ran out of quota. It continues automatically when the quota resets.`) })
       deps.notifyParent(run, buildSubagentQuotaNotice(run))
     }
   }

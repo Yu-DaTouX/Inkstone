@@ -71,7 +71,8 @@ export function RunAttentionToasts({ onOpen }: { onOpen: (run: RunSnapshot) => v
     const inSplit = (run: RunSnapshot): boolean =>
       !!splitTiles?.some((tile) => (!!tile.sessionId && tile.sessionId === run.sessionId) || (!!tile.path && tile.path === run.sessionPath))
     const approvalShownAsCard = (run: RunSnapshot): boolean => run.phase.kind === 'needs-you' && approvalRequest(run.phase.request.type)
-    const current = new Map(attentionPills(runs, visible, 8).filter((run) => !inSplit(run) && !approvalShownAsCard(run)).map((run) => [phaseSignature(run), run]))
+    const eligible = runs.filter((run) => !(run.kind === 'subagent' && run.phase.kind === 'stalled' && run.phase.cause === 'rate-limit'))
+    const current = new Map(attentionPills(eligible, visible, 8).filter((run) => !inSplit(run) && !approvalShownAsCard(run)).map((run) => [phaseSignature(run), run]))
 
     for (const [signature, key] of open.current) {
       if (current.has(signature)) continue
