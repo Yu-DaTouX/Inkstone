@@ -1,5 +1,6 @@
 export const ANTIGRAVITY_PROVIDER = 'antigravity'
 export const ANTIGRAVITY_QUOTA_REFRESH_MS = 60_000
+export const ANTIGRAVITY_QUOTA_STALE_MS = 5 * ANTIGRAVITY_QUOTA_REFRESH_MS
 
 export interface AntigravityQuotaWindow {
   id: string
@@ -19,6 +20,14 @@ export interface AntigravityQuotaSnapshot {
   checkedAt: number
   groups: AntigravityQuotaGroup[]
   error?: string
+  staleSince?: number
+}
+
+export function antigravityQuotaFailure(previous: AntigravityQuotaSnapshot | undefined, checkedAt: number, error: string): AntigravityQuotaSnapshot {
+  const staleSince = previous?.staleSince ?? previous?.checkedAt
+  return previous?.groups.length && staleSince !== undefined && checkedAt - staleSince < ANTIGRAVITY_QUOTA_STALE_MS
+    ? { checkedAt, groups: previous.groups, error, staleSince }
+    : { checkedAt, groups: [], error }
 }
 
 export interface AntigravityModel {
@@ -84,7 +93,7 @@ export type AntigravityEvent =
   | { type: 'plan'; entries: AntigravityPlanEntry[] }
   | { type: 'tool'; id: string; title?: string; status?: string; kind?: string; args?: unknown; output?: string; diffs: Array<{ path: string; oldText: string | null; newText: string }> }
   | { type: 'models'; models: AntigravityModels }
-  | { type: 'permission'; id: number; title: string; detail: string; options: Array<{ id: string; name: string; allow: boolean }> }
+  | { type: 'permission'; id: number; title: string; detail: string; blocked?: string; options: Array<{ id: string; name: string; allow: boolean }> }
   | { type: 'permission-cleared'; id: number }
   | { type: 'closed'; error: string }
 

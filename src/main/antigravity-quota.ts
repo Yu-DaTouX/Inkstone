@@ -1,13 +1,15 @@
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ANTIGRAVITY_QUOTA_REFRESH_MS, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot } from '../shared/antigravity'
+import { ANTIGRAVITY_QUOTA_REFRESH_MS, ANTIGRAVITY_QUOTA_STALE_MS, antigravityQuotaFailure, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot } from '../shared/antigravity'
 import { pick } from '../shared/ui-lang'
 import { antigravityExecutable } from './antigravity'
 import { YAN_DIR } from './paths'
 import { killProcessTree } from './process-tree'
 
 const ERROR_CACHE_MS = 10_000
+const FORCE_ERROR_CACHE_MS = 2_000
+const FORCE_SUCCESS_CACHE_MS = 5_000
 const MAX_OUTPUT_BYTES = 256_000
 
 function execute(executable: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; timeout: number }): Promise<{ stdout: string; stderr: string }> {
@@ -36,6 +38,7 @@ function execute(executable: string, args: string[], opts: { cwd: string; env: N
     }, opts.timeout)
     timer.unref()
     const append = (kind: 'stdout' | 'stderr', chunk: string) => {
+      if (settled) return
       bytes += Buffer.byteLength(chunk, 'utf8')
       if (bytes > MAX_OUTPUT_BYTES) {
         abort(Object.assign(new Error('maxBuffer exceeded'), { stdout, stderr, code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }))
@@ -57,11 +60,20 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 const items = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const label = (value: unknown): string => typeof value === 'string' ? value.trim().slice(0, 160) : ''
 
-export function parseAntigravityQuota(stdout: string): AntigravityQuotaGroup[] {
+function usageGroups(stdout: string): unknown[] | undefined {
   const envelope = record(JSON.parse(stdout.replace(/^\uFEFF/, '')))
   const command = record(envelope.command)
-  if (envelope.status !== 'SUCCESS' || envelope.conversation_id !== '' || envelope.num_turns !== 0 || command.name !== 'usage') return []
-  return items(record(command.data).groups).slice(0, 40).flatMap((rawGroup) => {
+  const groups = record(command.data).groups
+  if (envelope.status !== 'SUCCESS' || envelope.conversation_id !== '' || envelope.num_turns !== 0 || command.name !== 'usage' || !Array.isArray(groups)) return undefined
+  return groups
+}
+
+export function parseAntigravityQuota(stdout: string): AntigravityQuotaGroup[] {
+  return parseGroups(usageGroups(stdout) ?? [])
+}
+
+function parseGroups(groups: unknown[]): AntigravityQuotaGroup[] {
+  return groups.slice(0, 40).flatMap((rawGroup) => {
     const group = record(rawGroup)
     const name = label(group.name)
     if (!name) return []
@@ -92,37 +104,55 @@ async function readQuota(): Promise<AntigravityQuotaGroup[]> {
   if (!match || major < 1 || major === 1 && (minor < 1 || minor === 1 && patch < 11)) {
     throw new Error(pick('当前 CLI 版本不支持只读额度查询。请更新 Antigravity CLI。', 'Update Antigravity CLI to use its read-only quota command.'))
   }
-  const { stdout } = await execute(executable, [
+  const { stdout, stderr } = await execute(executable, [
     '--sandbox', '--settings', JSON.stringify({ disableSlashCommands: false }), '--disable-slash-commands=false',
     '--print', '/usage', '--output-format', 'json', '--print-timeout', '12s'
   ], opts)
-  return parseAntigravityQuota(stdout)
+  return readAntigravityQuotaOutput(stdout, stderr)
 }
 
-let latest: AntigravityQuotaSnapshot | undefined
-let pending: Promise<AntigravityQuotaSnapshot> | undefined
+export function readAntigravityQuotaOutput(stdout: string, stderr: string): AntigravityQuotaGroup[] {
+  let groups: unknown[] | undefined
+  try { groups = usageGroups(stdout) } catch { }
+  if (!groups) throw Object.assign(new Error('Invalid usage response'), { stdout, stderr, code: 'INVALID_USAGE' })
+  return parseGroups(groups)
+}
 
-export function antigravityQuota(force = false): Promise<AntigravityQuotaSnapshot> {
-  if (pending) return pending
-  const ttl = latest?.error ? (force ? 0 : ERROR_CACHE_MS) : (force ? 5000 : ANTIGRAVITY_QUOTA_REFRESH_MS)
-  if (latest && ttl > 0 && Date.now() - latest.checkedAt < ttl) return Promise.resolve(latest)
-  pending = readQuota().then(
-    (groups): AntigravityQuotaSnapshot => ({ checkedAt: Date.now(), groups,
-      ...(groups.length ? {} : { error: pick('CLI 没有返回订阅额度。', 'The CLI returned no subscription allowance.') }) }),
-    (error: unknown): AntigravityQuotaSnapshot => {
-      const failure = error as { stdout?: string; stderr?: string; code?: number | string; killed?: boolean }
-      const diagnostic = `${failure?.stdout ?? ''}\n${failure?.stderr ?? ''}`
-      const message = /authentication required|not authenticated|not logged in|sign in|run agy.*login/i.test(diagnostic)
-        ? pick('请先登录 Antigravity CLI。', 'Sign in to Antigravity CLI first.')
-        : /api.?key|no account quota/i.test(diagnostic) && failure?.code === 2
-          ? pick('CLI 当前登录方式没有订阅额度。', 'The current CLI authentication method has no subscription allowance.')
-          : failure?.killed
-            ? pick('Antigravity 额度查询超时。', 'The Antigravity quota query timed out.')
-            : failure?.code !== undefined || error instanceof SyntaxError
-              ? pick('无法读取 Antigravity 订阅额度。', 'Could not read the Antigravity subscription allowance.')
-              : error instanceof Error ? error.message : pick('额度查询失败。', 'Quota query failed.')
-      return { checkedAt: Date.now(), groups: [], error: message }
+export function createAntigravityQuota(read = readQuota, now = Date.now): (force?: boolean) => Promise<AntigravityQuotaSnapshot> {
+  let latest: AntigravityQuotaSnapshot | undefined
+  let pending: Promise<AntigravityQuotaSnapshot> | undefined
+
+  return (force = false) => {
+    if (pending) return pending
+    const ttl = latest?.error
+      ? (force ? FORCE_ERROR_CACHE_MS : ERROR_CACHE_MS)
+      : (force ? FORCE_SUCCESS_CACHE_MS : ANTIGRAVITY_QUOTA_REFRESH_MS)
+    const at = now()
+    if (latest?.staleSince !== undefined && at - latest.staleSince >= ANTIGRAVITY_QUOTA_STALE_MS) {
+      latest = { checkedAt: latest.checkedAt, groups: [], error: latest.error }
     }
-  ).then((snapshot) => { latest = snapshot; return snapshot }).finally(() => { pending = undefined })
-  return pending
+    if (latest && at - latest.checkedAt < ttl) return Promise.resolve(latest)
+    pending = Promise.resolve().then(read).then((groups): AntigravityQuotaSnapshot => ({ checkedAt: now(), groups,
+      ...(groups.length ? {} : { error: pick('CLI 没有返回订阅额度。', 'The CLI returned no subscription allowance.') }) }), (error: unknown) => {
+      const failure = error as { stdout?: string; stderr?: string; code?: number | string; killed?: boolean } | null
+      const diagnostic = `${failure?.stdout ?? ''}\n${failure?.stderr ?? ''}`
+      const checkedAt = now()
+      if (/authentication required|unauthenticated|unauthorized|not authenticated|not logged in|sign[ -]?in|run agy.*login|invalid.grant|(?:HTTP(?: status)?\s*[:=]?\s*|"(?:code|status)"\s*:\s*)401\b/i.test(diagnostic)) {
+        return { checkedAt, groups: [], error: pick('请先登录 Antigravity CLI。', 'Sign in to Antigravity CLI first.') }
+      }
+      if (/no (?:account quota|subscription allowance|subscription)|subscription (?:is )?required/i.test(diagnostic) ||
+        (failure?.code === 2 && /api.?key/i.test(diagnostic))) {
+        return { checkedAt, groups: [], error: pick('CLI 当前登录方式没有订阅额度。', 'The current CLI authentication method has no subscription allowance.') }
+      }
+      const message = failure?.killed
+        ? pick('Antigravity 额度查询超时。', 'The Antigravity quota query timed out.')
+        : failure?.code !== undefined || !(error instanceof Error)
+          ? pick('无法读取 Antigravity 订阅额度。', 'Could not read the Antigravity subscription allowance.')
+          : error.message
+      return antigravityQuotaFailure(latest, checkedAt, message)
+    }).then((snapshot) => { latest = snapshot; return snapshot }).finally(() => { pending = undefined })
+    return pending
+  }
 }
+
+export const antigravityQuota = createAntigravityQuota()

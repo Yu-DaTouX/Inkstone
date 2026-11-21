@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, normalizeAntigravityImages } = await compile('src/main/antigravity.ts')
+  const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout } = await compile('src/main/antigravity.ts')
   const longHistory = [{ role: 'user', text: 'A' + 'x'.repeat(110_000) + 'Z' }, { role: 'assistant', text: '答复', thinking: 'internal thought should be omitted', toolCalls: [{ id: 'tc-1', name: 'read', status: 'ok', args: { Path: 'a.ts' }, output: 'ok', details: { antigravity: true, kind: 'read', antigravityDiffs: [{ path: 'a.ts', patch: 'huge-diff' }] }, startedAt: 1, endedAt: 2 }] }]
   const handoff = antigravityPrompt('继续', longHistory)
   ok(handoff.startsWith('Current user message:\n继续\n') && handoff.includes(longHistory[0].text) && !handoff.includes('internal thought should be omitted') && !handoff.includes('huge-diff'), '超过旧字符上限但在安全字节内时置顶当前消息、交接完整历史并剔除 UI 冗余字段')
@@ -20,7 +20,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   assert.throws(() => antigravityPrompt('a'.repeat(100_001), []), /消息太长/)
   assert.throws(() => antigravityPrompt('继续', [{ role: 'user', text: '砚'.repeat(110_000) }]), (err) => err instanceof AntigravityHandoffLimitError && err.bytes > err.limit && /历史未裁剪/.test(err.message))
   ok(true, '分别限制新消息字符数和冷交接安全字节数，防止触发 CLI 静默截断')
-  const { parseAntigravityQuota } = await compile('src/main/antigravity-quota.ts')
+  const { parseAntigravityQuota, createAntigravityQuota, readAntigravityQuotaOutput } = await compile('src/main/antigravity-quota.ts')
   const quota = { status: 'SUCCESS', num_turns: 0, conversation_id: '', command: { name: 'usage', data: { groups: [{
     name: 'Gemini Models', description: 'Models within this group: Gemini 4 Neon, Gemini 3.8 Flash', buckets: [
       { id: 'gemini-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 0.925, reset_time: '2026-11-21T00:30:00Z' },
@@ -52,7 +52,58 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(inactive.windows.length === 3 && inactive.windows.every((window) => !Object.hasOwn(window, 'resetAt')), '零时间、无效日期及早于有效纪元的时间不输出 resetAt，额度窗口保留')
   ok(!Object.hasOwn(mixed.windows[0], 'resetAt') && mixed.windows[1].resetAt === Date.UTC(2020, 0, 1), '部分有效时独立保留有效窗口，包含纪元下界')
 
-  const { AntigravityQuotaDetails } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
+  {
+    let time = 1000
+    let reads = 0
+    let query = () => [group]
+    const refresh = createAntigravityQuota(() => { reads++; return query() }, () => time)
+    const initial = refresh()
+    assert.equal(refresh(true), initial)
+    const fresh = await initial
+    time += 4999
+    assert.equal(await refresh(true), fresh)
+    assert.equal(reads, 1)
+    time++
+    query = () => { throw Object.assign(new Error('timeout'), { killed: true }) }
+    const stale = await refresh(true)
+    assert.deepEqual(stale.groups, fresh.groups)
+    assert.equal(stale.staleSince, fresh.checkedAt)
+    assert.match(stale.error, /超时/)
+    time += 1999
+    assert.equal(await refresh(true), stale)
+    assert.equal(await refresh(), stale)
+    assert.equal(reads, 2)
+    time++
+    query = () => readAntigravityQuotaOutput('{broken', '')
+    const malformed = await refresh(true)
+    assert.equal(malformed.staleSince, fresh.checkedAt)
+    time += 9999
+    assert.equal(await refresh(), malformed)
+    time = fresh.checkedAt + 300_000
+    assert.deepEqual((await refresh()).groups, [])
+    assert.equal(reads, 4)
+    ok(true, '合并额度请求，区分手动与自动节流；超时和坏回执保留成功值但不延长旧数据寿命')
+    for (const [failure, expected] of [
+      [() => readAntigravityQuotaOutput('{"status":"FAILED","error":"UNAUTHENTICATED"}', ''), /先登录/],
+      [() => { throw Object.assign(new Error('exit'), { code: 2, stderr: 'API key detected' }) }, /登录方式/],
+      [() => [], /没有返回/]
+    ]) {
+      time += 60_000
+      query = () => [group]
+      assert.equal((await refresh()).groups.length, 1)
+      time += 5000
+      query = failure
+      const invalid = await refresh(true)
+      assert.deepEqual(invalid.groups, [])
+      assert.match(invalid.error, expected)
+      time += 2000
+      query = () => { throw Object.assign(new Error('timeout'), { killed: true }) }
+      assert.deepEqual((await refresh(true)).groups, [])
+    }
+    ok(true, '认证失效、API Key 无订阅和明确空额度立即清空，后续抖动不会恢复旧账号数据')
+  }
+
+  const { AntigravityQuotaDetails, antigravityQuotaSummary } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
     jsx: 'automatic', loader: { '.css': 'empty' }, packages: 'external'
   })
   const now = new Date()
@@ -69,6 +120,127 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(fallback.includes(`Wk Reset ${weeklyTime}`) && fallback.includes(`Resets ${weeklyTime}`) && !fallback.includes('5h Reset'), '主窗口无有效时间时组头标明每周重置，只有每周 tooltip 有时间')
   const both = renderQuota([{ ...weekly, resetAt: nextWeek.getTime() }, { ...fiveHour, resetAt: today.getTime() }])
   ok(both.includes('5h Reset 00:07') && !both.includes('Wk Reset') && both.includes('Resets 00:07') && both.includes(`Resets ${weeklyTime}`), '5h 优先且同日只显示时间、跨日带日期，各窗口 tooltip 保留自己的重置时间')
+  const staleQuota = { checkedAt: 10_000, staleSince: 5000, groups: [group], error: 'Fixture timeout.' }
+  const staleMarkup = renderToStaticMarkup(createElement(AntigravityQuotaDetails, {
+    lang: 'en-US', quota: { snapshot: staleQuota, loading: false, refresh() {} }
+  }))
+  ok(staleMarkup.includes('Fixture timeout.') && staleMarkup.includes('Showing the last successful allowance') && staleMarkup.includes('92.5%') &&
+    antigravityQuotaSummary(staleQuota, { id: 'Gemini 4 Neon' }, 'en-US').includes('Stale'), '折叠摘要和额度详情都明确标记旧数据，同时保留进度条')
+
+  const deferred = () => {
+    let resolve, reject
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+    return { promise, resolve, reject }
+  }
+  const modelsFixture = (id) => ({ current: id, available: id ? [{ id, name: id }] : [] })
+  {
+    const { createAntigravityDiscoveryProbes } = await compile('src/main/ipc/antigravity-ipc.ts')
+    const resolving = deferred()
+    const launches = []
+    const probes = createAntigravityDiscoveryProbes(async (cwd) => cwd === 'resolving' ? resolving.promise : cwd, () => {
+      const task = deferred()
+      const proc = { ...task, closed: false }
+      launches.push(proc)
+      return {
+        start: (_cwd, _server, opts) => { assert.equal(opts.discoverOnly, true); return task.promise },
+        close: async () => { proc.closed = true; task.reject(new Error('fixture closed')) }
+      }
+    })
+    const same = ['A', './A'].map((cwd) => probes.discover(cwd))
+    const others = ['B', 'C', 'D'].map((cwd) => probes.discover(cwd).catch((err) => err))
+    await assert.rejects(probes.discover('E'), /稍后重试/)
+    assert.equal(launches.length, 4)
+    launches[0].resolve(modelsFixture('A'))
+    assert.deepEqual(await Promise.all(same), [modelsFixture('A'), modelsFixture('A')])
+    assert.equal(launches[0].closed, true)
+    const retry = probes.discover('A').catch((err) => err)
+    const delayed = probes.discover('resolving')
+    await Promise.resolve()
+    await probes.dispose()
+    resolving.resolve('late')
+    await assert.rejects(delayed, /已关闭/)
+    assert.equal(launches.length, 5)
+    assert.ok((await Promise.all([...others, retry])).every((value) => value instanceof Error))
+    assert.ok(launches.every((item) => item.closed))
+    ok(true, '发现探针同目录合并、并发限额、完成即清退，以及退出期间不启动待解析的目录')
+  }
+  {
+    const { createAntigravityDiscovery } = await compile('src/renderer/src/state/antigravity-discovery.ts', { packages: 'external' })
+    let time = 0
+    const requests = []
+    const store = createAntigravityDiscovery((cwd) => {
+      const task = deferred()
+      requests.push({ cwd, ...task })
+      return task.promise
+    }, () => time)
+    const old = store.discover('old')
+    assert.equal(store.discover('old', true), old)
+    const other = store.discover('next')
+    await Promise.resolve()
+    requests[1].resolve(modelsFixture('next'))
+    await other
+    requests[0].reject(new Error("Error invoking remote method 'yan:antigravity:discover': Error: fixture denied"))
+    await old
+    assert.equal(store.snapshot('next').models[0].id, 'next')
+    assert.equal(store.snapshot('old').error, 'fixture denied')
+    const retried = store.discover('old')
+    await Promise.resolve()
+    assert.equal(store.snapshot('old').error, undefined)
+    requests[2].resolve(modelsFixture(null))
+    await retried
+    assert.equal(store.discover('old'), undefined)
+    time += 60_000
+    const expired = store.discover('old')
+    const fill = Array.from({ length: 32 }, (_, i) => store.discover(`fill-${i}`))
+    assert.equal(store.snapshot('old'), undefined)
+    const latest = store.discover('old')
+    await Promise.resolve()
+    requests.at(-1).resolve(modelsFixture('latest'))
+    await latest
+    requests[3].resolve(modelsFixture('expired'))
+    for (const request of requests.slice(4, -1)) request.resolve(modelsFixture(null))
+    await Promise.all([expired, ...fill])
+    assert.equal(store.snapshot('old').models[0].id, 'latest')
+    ok(true, '发现缓存按目录隔离，失败可重试，空结果按 TTL 缓存，淘汰请求的迟到响应不能覆盖新结果')
+  }
+  {
+    const { inheritAntigravitySelection } = await compile('src/renderer/src/features/composer/worktree-intent.ts', {
+      alias: { '@/state/store': './src/renderer/src/state/store' }, define: { 'import.meta.env.DEV': 'false', 'import.meta.env.PROD': 'true' }, packages: 'external'
+    })
+    const selection = { modelId: 'pro', mode: 'plan', effort: 'xhigh' }
+    const calls = []
+    let current = true
+    let state = { model: { provider: 'pi', id: 'pro' } }
+    let resetMode = true
+    const ports = {
+      current: () => current,
+      snapshot: () => state,
+      select: async (id) => {
+        calls.push('model')
+        state = { model: { provider: 'antigravity', id }, antigravity: { mode: 'default', thinking: { current: 'high' } } }
+        return { ok: true }
+      },
+      setMode: async (mode) => { calls.push('mode'); state.antigravity.mode = mode; return { ok: true } },
+      setThinking: async (effort) => {
+        calls.push('effort')
+        state.antigravity.thinking.current = effort
+        if (resetMode) state.antigravity.mode = 'default'
+        return { ok: true }
+      }
+    }
+    assert.equal((await inheritAntigravitySelection(selection, ports)).ok, false)
+    assert.deepEqual(calls, ['model', 'mode', 'effort'])
+    resetMode = false
+    assert.equal((await inheritAntigravitySelection(selection, ports)).ok, true)
+    assert.deepEqual(calls, ['model', 'mode', 'effort', 'mode'])
+    state.antigravity.mode = 'default'
+    assert.deepEqual(await inheritAntigravitySelection(selection, { ...ports, setMode: async () => ({ ok: false, error: 'fixture unavailable' }) }), { ok: false, error: 'fixture unavailable' })
+    state = null
+    assert.equal((await inheritAntigravitySelection(selection, { ...ports, select: async () => { current = false; return { ok: true } } })).ok, false)
+    assert.deepEqual(calls, ['model', 'mode', 'effort', 'mode'])
+    ok(true, '工作树先切模型再应用权限与思考档；任一失败、回执相互覆盖或切走时禁止继续')
+  }
+
   const cwd = process.cwd()
   const start = (...args) => {
     const child = spawn(process.execPath, [resolve('debug/lib/fake-antigravity.mjs'), ...args], { windowsHide: true })
@@ -134,6 +306,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await delay(50)
     ok(!events.some((e) => e.type === 'closed'), '非 prompt 期间取消内部后台续跑不误断整个 ACP 连接')
     events.length = 0
+    await session.prompt('后台工具无回执')
+    await wait(() => events.some((e) => e.type === 'tool' && e.id === 'stalled-tool' && e.status === 'in_progress'))
+    const timeout = deferred()
+    const outdated = scheduleAntigravityToolIdleTimeout(() => assert.fail('已被下一次更新清除'), 10)
+    clearTimeout(outdated)
+    const timer = scheduleAntigravityToolIdleTimeout(timeout.resolve, 20)
+    assert.equal(timer.hasRef(), false)
+    assert.match((await timeout.promise).message, /后台工具长时间没有更新/)
+    assert.ok(!events.some((e) => e.id === 'stalled-tool' && e.status === 'completed'))
+    ok(true, '后台工具缺终态时提供可重置且不阻塞进程退出的故障超时')
+    events.length = 0
     await session.prompt('看这张图', 'pro', 'xhigh', 'default', [{ data: 'iVBORw0KGgo=', mimeType: 'image/png' }])
     ok(events.filter((e) => e.type === 'text').map((e) => e.text).join('') === '收到 1 张图 · image/png · 看这张图', '支持发送 ACP 图片内容块')
     events.length = 0
@@ -162,6 +345,31 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(denyOnly.options.every((e) => !e.allow), '缺少操作详情时只允许拒绝')
     session.cancel()
     ok(await missing === 'cancelled' && events.some((e) => e.type === 'permission-cleared' && e.id === denyOnly.id), '停止回复并清除待审批')
+    for (const mode of ['default', 'accept-edits', 'plan']) {
+      await session.selectMode(mode)
+      events.length = 0
+      const full = session.prompt('完整审批详情', 'pro', 'xhigh', mode)
+      const approval = await wait(() => events.find((e) => e.type === 'permission'))
+      assert.deepEqual(approval.options.map((o) => o.id), ['once', 'deny'])
+      for (const field of ['CommandLine', 'echo fixture', 'BypassSandbox', 'true', 'fixture.txt', 'first', 'second\\u{202e}third', '审批说明', 'execute']) assert.ok(approval.detail.includes(field))
+      assert.ok(!approval.detail.includes('\u202e') && approval.title.includes('\\u{202e}'))
+      session.reply(approval.id, 'deny')
+      assert.equal(await full, 'end_turn')
+    }
+    ok(true, 'default、accept-edits 与 plan 都保留完整审批命令、路径、参数及 BypassSandbox，并显式显示不可见字符')
+    for (const request of ['详情超限', '空参数审批', '重复审批选项']) {
+      events.length = 0
+      const requested = session.prompt(request, 'pro', 'xhigh', 'plan')
+      const approval = await wait(() => events.find((e) => e.type === 'permission'))
+      assert.deepEqual(approval.options.map((o) => o.id), ['deny'])
+      if (request === '详情超限') assert.ok(approval.blocked && approval.detail.includes('无法完整显示') && !approval.detail.includes('xxxx'))
+      session.reply(approval.id, 'once')
+      session.reply(approval.id, 'deny')
+      assert.equal(await requested, 'end_turn')
+      assert.ok(events.some((e) => e.text === '审批结果 · deny'))
+    }
+    ok(true, '超限、空参数或重复批准 ID 均不能获批，超限不再给出伪装成完整内容的截断片段')
+    await session.selectMode('default')
     const crash = session.prompt('崩溃')
     await assert.rejects(crash, /断开连接/)
     ok(events.some((e) => e.type === 'closed'), '进程退出时结束待处理请求并通知界面')

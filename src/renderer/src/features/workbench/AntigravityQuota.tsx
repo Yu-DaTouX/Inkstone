@@ -1,20 +1,26 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ANTIGRAVITY_QUOTA_REFRESH_MS, type AntigravityModel, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot, type AntigravityQuotaWindow } from '../../../../shared/antigravity'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ANTIGRAVITY_QUOTA_REFRESH_MS, antigravityQuotaFailure, type AntigravityModel, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot, type AntigravityQuotaWindow } from '../../../../shared/antigravity'
+import { pick } from '../../../../shared/ui-lang'
 import { IconButton, Notice } from '../../ui'
 import { RefreshCw } from '../../ui/icons'
 
 export function useAntigravityQuota(enabled: boolean, running: boolean) {
   const [snapshot, setSnapshot] = useState<AntigravityQuotaSnapshot>()
   const [loading, setLoading] = useState(false)
-  const refresh = useCallback(async (force = false) => {
+  const pending = useRef<Promise<void> | undefined>(undefined)
+  const refresh = useCallback((force = false) => {
+    if (pending.current) return pending.current
     setLoading(true)
-    try {
-      setSnapshot(await window.yan.antigravity.quota(force))
-    } catch {
-      setSnapshot({ checkedAt: Date.now(), groups: [] })
-    } finally {
+    const request = Promise.resolve().then(() => window.yan.antigravity.quota(force)).then(setSnapshot, () => {
+      const checkedAt = Date.now()
+      const error = pick('无法刷新 Antigravity 额度。请重试。', 'Could not refresh Antigravity allowance. Try again.')
+      setSnapshot((previous) => antigravityQuotaFailure(previous, checkedAt, error))
+    }).finally(() => {
+      pending.current = undefined
       setLoading(false)
-    }
+    })
+    pending.current = request
+    return request
   }, [])
 
   useEffect(() => {
@@ -52,8 +58,10 @@ export function antigravityQuotaSummary(snapshot: AntigravityQuotaSnapshot | und
   const keys = new Set([model?.id, model?.name].filter((value): value is string => !!value).map(matchKey))
   const direct = groups.find((group) => keys.has(matchKey(group.name)))
   const chosen = direct ?? groups.find((group) => group.models.some((name) => keys.has(matchKey(name))))
-  if (!chosen) return en ? `${groups.length} groups` : `${groups.length} 组`
-  return orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, en)} ${percent(window.remainingFraction, lang)}`).join(' · ')
+  const summary = chosen
+    ? orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, en)} ${percent(window.remainingFraction, lang)}`).join(' · ')
+    : en ? `${groups.length} groups` : `${groups.length} 组`
+  return snapshot?.staleSince === undefined ? summary : `${summary} · ${en ? 'Stale' : '旧数据'}`
 }
 
 function windowTone(fraction: number): 'ok' | 'ask' | 'fail' {
@@ -138,9 +146,14 @@ export function AntigravityQuotaDetails({ quota, lang }: {
           </div>
         )
       })}
-      {!groups.length && snapshot ? (
+      {snapshot?.staleSince !== undefined && snapshot.error ? (
+        <Notice tone="ask" compact>{en ? 'Showing the last successful allowance. ' : '正在显示上次成功查询的额度。'}{snapshot.error}</Notice>
+      ) : null}
+      {!groups.length ? (
         <div className="wb-ov-ctx-head">
-          <Notice tone="ask" compact>{snapshot.error ?? (en ? 'Allowance unavailable.' : '暂时无法读取额度。')}</Notice>
+          <Notice tone="ask" compact>{snapshot?.error ?? (loading
+            ? (en ? 'Checking allowance…' : '正在查询额度…')
+            : (en ? 'Allowance unavailable.' : '暂时无法读取额度。'))}</Notice>
           {refreshButton}
         </div>
       ) : null}

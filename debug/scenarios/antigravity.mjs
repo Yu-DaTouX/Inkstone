@@ -12,6 +12,8 @@ export default async function run({ box, cdp, fake, runDir, check, waitFor, slee
   mkdirSync(dir, { recursive: true })
   const fixture = join(dir, 'fixture.cs')
   const executable = join(dir, 'agy.exe')
+  const quotaState = join(dir, 'quota-state.txt')
+  const effortFailure = join(dir, 'effort-failure.txt')
   const literal = (value) => `@"${value.replaceAll('"', '""')}"`
   const quota = { status: 'SUCCESS', num_turns: 0, conversation_id: '', command: { name: 'usage', data: { groups: [
     { name: 'Gemini Models', description: 'Models within this group: Gemini Pro · Fixture, Gemini Flash · Fixture', buckets: [
@@ -33,10 +35,16 @@ class Fixture {
     if (args.Length == 1 && args[0] == "--version") { Console.WriteLine("1.5.13"); return 0; }
     if (args.Length == 10 && args[0] == "--sandbox" && args[3] == "--disable-slash-commands=false" && args[4] == "--print" && args[5] == "/usage" && args[6] == "--output-format" && args[7] == "json") {
       Console.OutputEncoding = new UTF8Encoding(false);
+      var quotaState = ${literal(quotaState)};
+      if (File.Exists(quotaState)) {
+        var state = File.ReadAllText(quotaState);
+        if (state == "offline") { Console.Error.WriteLine("fixture network unavailable"); return 1; }
+        if (state == "signed-out") { Console.Error.WriteLine("Authentication required"); return 2; }
+      }
       Console.WriteLine(${literal(JSON.stringify(quota))}); return 0;
     }
     if (args.Length != 2 || args[0] != "acp" || args[1] != "--sandbox") return 2;
-    var settings = new ProcessStartInfo(${literal(process.execPath)}, ${literal(`"${resolve('debug/lib/fake-antigravity.mjs')}"`)}) {
+    var settings = new ProcessStartInfo(${literal(process.execPath)}, ${literal(`"${resolve('debug/lib/fake-antigravity.mjs')}" "--effort-failure=${effortFailure}"`)}) {
       UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true
     };
     using (var child = Process.Start(settings)) {
@@ -143,9 +151,14 @@ class Fixture {
   await waitFor(`s.session?.cwd === ${JSON.stringify(project)} && s.conn === 'ready'`)
   await ev(`${app}.openSettings('models')`)
   await waitFor('!!document.querySelector(\'[data-testid="ms-antigravity-connect"]\')')
+  const loginFixture = join(project, '.acp-fixture-login')
+  writeFileSync(loginFixture, 'deny')
+  await click('[data-testid="ms-antigravity-connect"]')
+  await waitFor(`${has('[data-testid="ms-service-antigravity"]', 'agy acp --login')} && ${has('[data-testid="ms-antigravity-connect"]', '重新检测')}`)
+  writeFileSync(loginFixture, 'allow')
   await click('[data-testid="ms-antigravity-connect"]')
   await waitFor(has('[data-testid="ms-service-antigravity"]', '3 个模型'))
-  check('设置的模型订阅页能连接 CLI、读取模型', true)
+  check('设置能显示官方登录指引，点击重新检测后读取模型并清除错误', !(await ev(has('[data-testid="ms-service-antigravity"]', 'agy acp --login'))))
   await kit.shot('antigravity-settings', { native: false })
   await ev(`${app}.closeSettings()`)
   await waitFor('!document.querySelector(\'[data-testid="ms-antigravity-connect"]\')')
@@ -252,6 +265,21 @@ class Fixture {
   await ev(`document.querySelector('${rail('usage')}')?.scrollIntoView({ block: 'end' })`)
   await kit.shot('antigravity-reported-metrics', { native: false })
   await kit.clip('antigravity-quota-resets', '[data-testid="rail-antigravity-quota"]')
+  const quotaRefresh = '[data-testid="antigravity-quota-refresh"]'
+  writeFileSync(quotaState, 'offline')
+  await sleep(5100)
+  await click(quotaRefresh)
+  await waitFor(`${has(rail('usage'), '正在显示上次成功查询的额度')} && ${has(rail('usage'), '92.5%')}`)
+  check('额度查询暂时失败时，仍显示上次额度和旧数据提示', true)
+  writeFileSync(quotaState, 'signed-out')
+  await sleep(2100)
+  await click(quotaRefresh)
+  await waitFor(`${has(rail('usage'), '请先登录 Antigravity CLI')} && !(${has(rail('usage'), '92.5%')})`)
+  check('CLI 认证失效后立即隐藏旧账号的额度', true)
+  writeFileSync(quotaState, 'ok')
+  await sleep(2100)
+  await click(quotaRefresh)
+  await waitFor(has(rail('usage'), '92.5%'))
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
   await ev(`${app}.addAttachments([{ id: 'acp-img-1', kind: 'image', data: ${JSON.stringify(png)}, mimeType: 'image/png', name: 'shot.png', size: ${Buffer.from(png, 'base64').length} }])`)
   await send('看这张图')
@@ -313,7 +341,7 @@ class Fixture {
   await waitFor(`!document.querySelector('${menu}')`)
   const sinceDefault = await ev(`${app}.messages.length`)
   await send('检查命令权限')
-  await waitFor(`${has(sheet, 'echo fixture')} && ${has(sheet, '仅允许这一次')}`)
+  await waitFor(`${has(sheet, 'echo fixture')} && ${has(sheet, 'BypassSandbox')} && ${has(sheet, '仅允许这一次')}`)
   await click('[data-testid="v3-question-option-1"]')
   await settled('审批结果 · deny', sinceDefault)
   check('切回 default 后命令仍弹出审批，拒绝后 CLI 收到 deny', true)
@@ -384,7 +412,6 @@ class Fixture {
   await send('崩溃')
   await waitFor(`${idle} && s.messages.at(-1)?.error?.includes('断开连接')`)
   check('CLI 断线结算失败并保留已选后端', await phase(baseSession, 'failed') && await ev(`${app}.session.model.provider === 'antigravity'`))
-  const loginFixture = join(project, '.acp-fixture-login')
   const piRequests = fake.requests.length
   writeFileSync(loginFixture, 'deny')
   const sent = await ev(`${app}.send('重连失败测试')`)
@@ -428,8 +455,15 @@ class Fixture {
   await waitFor(`!!document.querySelector('${worktree} .ui-switch__track')`)
   assert.ok(await kit.click(`${worktree} .ui-switch__track`))
   await waitFor(`document.querySelector('${worktree}')?.hasAttribute('data-selected')`)
+  writeFileSync(effortFailure, 'fail once')
   await send('检查权限档')
+  await waitFor("[...document.querySelectorAll('.ui-toast')].some(n => n.textContent.includes('未能继承 Antigravity 设置'))")
+  await waitFor(`${has('[data-testid="composer-input"]', '检查权限档')} && !!document.querySelector('.composer-v3 .t3-send:not(:disabled)')`)
+  const worktreeRunner = await ev(`${app}.activeRunnerId`)
+  check('工作树思考档设置失败时保留草稿，第一条消息没有发出', await ev(`!${app}.messages.some(m => m.role === 'user' && m.text === '检查权限档')`))
+  await click('.composer-v3 .t3-send')
   await settled('当前权限档 · plan')
+  assert.equal(await ev(`${app}.activeRunnerId`), worktreeRunner)
   check('首条消息进入独立工作树时保留 ACP 后端、模型、思考档和权限档', await ev(`${app}.session.cwd !== ${JSON.stringify(project)} &&
     ${app}.session.model.provider === 'antigravity' && ${app}.session.thinkingLevel === 'xhigh' && ${app}.session.antigravity?.mode === 'plan'`))
   await click(picker)

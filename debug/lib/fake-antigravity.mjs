@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -18,6 +18,7 @@ const legacy = process.argv.includes('legacy')
 const noAuth = process.argv.includes('auth')
 const loadOnly = process.argv.includes('load-only')
 const noPlan = process.argv.includes('no-plan')
+const effortFailureFile = process.argv.find((arg) => arg.startsWith('--effort-failure='))?.slice('--effort-failure='.length)
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
 let effort = 'low'
@@ -70,6 +71,11 @@ const options = [
 const permissionCalls = new Map([
   ['权限', { title: '查看夹具项目', rawInput: { path: 'README.md' } }],
   ['详情缺失', { title: '查看夹具项目' }],
+  ['空参数审批', { title: '查看夹具项目', rawInput: {} }],
+  ['重复审批选项', { title: '查看夹具项目', rawInput: { path: 'README.md' } }],
+  ['完整审批详情', { kind: 'execute', title: '查看夹具\u202e审批', locations: [{ path: 'fixture.txt' }],
+    rawInput: { CommandLine: 'echo fixture', BypassSandbox: true, Args: ['first', 'second\u202ethird'] },
+    content: [{ type: 'content', content: { type: 'text', text: '审批说明' } }] }],
   ['详情超限', { kind: 'edit', title: '写入大段夹具内容', rawInput: { text: 'x'.repeat(32_769) } }],
   ['检查 MCP 权限', { kind: 'other', title: 'Run mcp_inkstone-pi_start_pi_subagent', rawInput: { task: 'inspect' } }],
   ['检查命令权限', { kind: 'execute', title: 'echo fixture', rawInput: { CommandLine: 'echo fixture', BypassSandbox: true } }],
@@ -146,6 +152,10 @@ for await (const line of input) {
     saveSession()
     reply(id, config())
   } else if (method === 'session/set_config_option' && params.configId === `effort-${model}`) {
+    if (effortFailureFile && await unlink(effortFailureFile).then(() => true, () => false)) {
+      send({ id, error: { code: -32603, message: 'Fixture effort unavailable' } })
+      continue
+    }
     await delay(700)
     effort = params.value
     saveSession()
@@ -330,6 +340,15 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
+    if (text === '后台工具无回执') {
+      chunk('已启动等待中的后台任务')
+      reply(id, { stopReason: 'end_turn' })
+      setTimeout(() => {
+        update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查等待中的后台工具' } })
+        update({ sessionUpdate: 'tool_call', toolCallId: 'stalled-tool', kind: 'read', title: '等待夹具文件', status: 'in_progress' })
+      }, 250)
+      continue
+    }
     if (text === '后台自唤醒') {
       chunk('已启动内部后台任务')
       reply(id, { stopReason: 'end_turn' })
@@ -416,7 +435,8 @@ for await (const line of input) {
         call('foreign', 'session/request_permission', { sessionId: 'foreign-session', toolCall, options })
         call('unsupported', 'fs/write_text_file', { sessionId: sid, path: 'not-written.txt', content: 'fixture' })
       }
-      call('permission', 'session/request_permission', { sessionId: sid, toolCall, options })
+      call('permission', 'session/request_permission', { sessionId: sid, toolCall,
+        options: text === '重复审批选项' ? [...options, { ...options[1], optionId: 'once' }] : options })
     } else {
       chunk('不应出现', 'foreign-session')
       chunk('模拟'); chunk(`回复 · ${model}`)

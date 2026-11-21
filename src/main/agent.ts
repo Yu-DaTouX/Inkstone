@@ -1,6 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
-import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, normalizeAntigravityImages, type AntigravitySession } from './antigravity'
+import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout, type AntigravitySession } from './antigravity'
 import {
   buildChunkCompactPrompt,
   buildCompactAppendices,
@@ -4910,7 +4910,11 @@ export class AgentController extends EventEmitter {
     const scheduleSettle = (overrideMs?: number): void => {
       if (prompted || unsolicitedSettled) return
       clearSettleTimer()
-      if (hasActiveWork()) return
+      if (approvals.size > 0) return
+      if (hasActiveWork()) {
+        settleTimer = scheduleAntigravityToolIdleTimeout((error) => failUnsolicited?.(error), customIdle ? customIdle * 4 : undefined)
+        return
+      }
       const delay = overrideMs ?? (
         currentStep.text.trim().length > 0 && !currentStep.toolCalls?.length && !currentStep.thinkingLive
           ? textIdleMs
@@ -5009,7 +5013,11 @@ export class AgentController extends EventEmitter {
         continuousOutput = false
         const allow = event.options.find((option) => option.allow)
         const deny = event.options.find((option) => !option.allow)
-        if (!allow) { session.reply(event.id, deny?.id ?? null); return }
+        if (!allow) {
+          session.reply(event.id, deny?.id ?? null)
+          if (event.blocked) this.push({ ch: 'notify', payload: { id: `acp-denied-${currentStep.id}-${event.id}`, method: 'notify', notifyType: 'warning', message: event.blocked } })
+          return
+        }
         const controller = new AbortController()
         approvals.set(event.id, controller)
         clearSettleTimer()
@@ -5027,6 +5035,7 @@ export class AgentController extends EventEmitter {
         connection.session = undefined
         connection.bridgeConfigured = undefined
         connection.mode = undefined
+        connection.hasContext = false
         if (!prompted) failUnsolicited?.(new Error(event.error || pick('Antigravity 已断开连接。', 'Antigravity disconnected.')))
       }
     }
@@ -5079,7 +5088,7 @@ export class AgentController extends EventEmitter {
           status = 'error'
           turnError = `Antigravity: ${reason || 'missing stop reason'}`
         }
-        connection.hasContext = status === 'stop' || (status === 'aborted' && cleanCancel && connection.session === session)
+        connection.hasContext = connection.session === session && (status === 'stop' || (status === 'aborted' && cleanCancel))
       } catch (error) {
         status = turn.stopped || turn.interjected ? 'aborted' : 'error'
         if (!turn.stopped && !turn.interjected) turnError = error instanceof Error ? error.message : String(error)

@@ -119,6 +119,20 @@ export function normalizeAntigravityImages(images: readonly AntigravityImage[] =
 }
 
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
+const MAX_APPROVAL_DETAIL = 32_000
+const DISCOVERY_RPC_TIMEOUT_MS = 15_000
+const visibleApprovalText = (value: string) => value.replace(/[\p{Cf}\p{Zl}\p{Zp}\u007f-\u009f]/gu, (char) =>
+  `\\u{${char.codePointAt(0)!.toString(16)}}`)
+
+export function scheduleAntigravityToolIdleTimeout(onTimeout: (error: Error) => void, idleMs = 300_000): NodeJS.Timeout {
+  const timer = setTimeout(() => onTimeout(new Error(pick(
+    'Antigravity 后台工具长时间没有更新，已结束本次回合。',
+    'The Antigravity background tool stopped reporting progress. The turn was ended.'
+  ))), idleMs)
+  timer.unref()
+  return timer
+}
+
 const ENV_KEYS = /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|SYSTEMDRIVE|COMSPEC|USERPROFILE|USERNAME|USERDOMAIN|HOMEDRIVE|HOMEPATH|HOME|LOCALAPPDATA|APPDATA|PROGRAMDATA|PROGRAMFILES(?:\(X86\))?|PROGRAMW6432|TEMP|TMP|LANG|LC_ALL|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR)$/i
 
 type RecordValue = Record<string, unknown>
@@ -486,7 +500,7 @@ export class AntigravitySession {
     if (!this.closed) this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
   }
 
-  private request(method: string, params: RecordValue, timeout = 30_000): Promise<RecordValue> {
+  private request(method: string, params: RecordValue, timeout = this.discoverOnly ? DISCOVERY_RPC_TIMEOUT_MS : 30_000): Promise<RecordValue> {
     if (this.closed) return Promise.reject(new Error(pick('Antigravity 已断开。', 'Antigravity disconnected.')))
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
@@ -597,11 +611,26 @@ export class AntigravitySession {
     }
     const update = object(params.toolCall)
     const tool = { ...this.tools.get(text(update.toolCallId)), ...update }
-    const detail = JSON.stringify({ kind: tool.kind, locations: tool.locations, input: tool.rawInput, content: tool.content }, null, 2)
-    const options = array(params.options).map(object).flatMap((option) => {
+    const rawInput = tool.rawInput
+    const locations = array(tool.locations)
+    const content = array(tool.content)
+    const hasInput = typeof rawInput === 'string' ? !!rawInput.trim()
+      : Array.isArray(rawInput) ? rawInput.length > 0 : Object.keys(object(rawInput)).length > 0
+    const detail = visibleApprovalText(JSON.stringify({ input: rawInput, locations: tool.locations, content: tool.content, kind: tool.kind }, null, 2))
+    const tooLong = detail.length > MAX_APPROVAL_DETAIL
+    const blocked = tooLong ? pick('工具审批详情过长，无法完整显示，已拒绝。', 'Tool details were too long to display in full. The request was denied.')
+      : !hasInput && !locations.length && !content.length
+        ? pick('工具未提供可核对的审批详情，已拒绝。', 'The tool did not provide details to review. The request was denied.') : undefined
+    const offered = array(params.options).map(object)
+    const counts = new Map<string, number>()
+    for (const option of offered) {
+      const id = text(option.optionId)
+      counts.set(id, (counts.get(id) ?? 0) + 1)
+    }
+    const options = offered.flatMap((option) => {
       const id = text(option.optionId)
       const allow = option.kind === 'allow_once'
-      if (!id || (allow && (detail.length > 32_000 || (!tool.rawInput && !array(tool.locations).length && !array(tool.content).length))) || (!allow && option.kind !== 'reject_once')) return []
+      if (!id || counts.get(id) !== 1 || (allow && blocked) || (!allow && option.kind !== 'reject_once')) return []
       return [{ id, name: (text(option.name) || id).slice(0, 120), allow }]
     })
     const activeMode = this.promptMode ?? this.mode
@@ -612,6 +641,7 @@ export class AntigravitySession {
     }
     const id = ++this.nextId
     this.permissions.set(id, { rpcId, choices: new Set(options.map((option) => option.id)) })
-    this.onEvent({ type: 'permission', id, title: text(tool.title).slice(0, 1000), detail: detail === '{}' ? '' : detail.slice(0, 32_000), options })
+    this.onEvent({ type: 'permission', id, title: visibleApprovalText(text(tool.title).slice(0, 1000)), detail: tooLong ? blocked! : detail === '{}' ? '' : detail, options,
+      ...(blocked && activeMode !== 'auto' ? { blocked } : {}) })
   }
 }
