@@ -87,6 +87,18 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await session.prompt('你好')
     ok(events.filter((e) => e.type === 'text').map((e) => e.text).join('') === '模拟回复 · pro', '增量文本按序输出，忽略其他会话的事件')
     events.length = 0
+    await session.prompt('后台自唤醒')
+    await wait(() => events.some((e) => e.type === 'text' && e.text.includes('内部后台任务已完成')))
+    ok(
+      events.some((e) => e.type === 'thought' && e.text === '检查内部后台任务结果') &&
+      events.some((e) => e.type === 'tool' && e.id === 'bg-check-1' && e.status === 'completed') &&
+      events.some((e) => e.type === 'text' && e.text === '内部后台任务已完成，结果 45/45 通过。'),
+      'end_turn 后 CLI 内部后台任务主动推送的思考、工具与正文不被静默丢弃'
+    )
+    session.cancel()
+    await delay(50)
+    ok(!events.some((e) => e.type === 'closed'), '非 prompt 期间取消内部后台续跑不误断整个 ACP 连接')
+    events.length = 0
     await session.prompt('看这张图', 'pro', 'xhigh', 'default', [{ data: 'iVBORw0KGgo=', mimeType: 'image/png' }])
     ok(events.filter((e) => e.type === 'text').map((e) => e.text).join('') === '收到 1 张图 · image/png · 看这张图', '支持发送 ACP 图片内容块')
     events.length = 0
@@ -172,26 +184,70 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const { openAntigravityDelegation } = await compile('src/main/antigravity-delegation.ts')
     const controller = new AbortController()
     let mode = 'plan'
-    let ran = 0
+    const calls = []
+    const sharedOwned = new Set()
     const bridge = await openAntigravityDelegation(
       resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
-      () => ({ signal: controller.signal, mode, run: async () => { ran += 1; return { summary: { id: 'sub-11112222' } } } }),
-      { delegate: true, services: [], commandHost: { cwd: () => cwd, mcpConnectionManager: () => ({ list: () => [] }), mcpConfigError: () => undefined, permissionMode: async () => 'danger', confirmDanger: async () => null, approvalOwner: () => ({}) } }
+      () => ({
+        signal: controller.signal,
+        mode,
+        run: async (command, params) => {
+          calls.push({ command, params })
+          if (command === 'subagent.get') {
+            return {
+              summary: { id: params.id, status: 'done', latestActivity: '已完成' },
+              data: { model: 'openai-codex/gpt-6.2-sol', thinkingLevel: 'high', finalMessage: '审查结论', changedFiles: ['src/a.ts'] }
+            }
+          }
+          return { summary: { id: 'sub-11112222', status: 'running', model: params.model, thinkingLevel: params.thinkingLevel } }
+        }
+      }),
+      { delegate: true, services: [], commandHost: { cwd: () => cwd, mcpConnectionManager: () => ({ list: () => [] }), mcpConfigError: () => undefined, permissionMode: async () => 'danger', confirmDanger: async () => null, approvalOwner: () => ({}) }, owned: sharedOwned }
     )
     try {
       const env = Object.fromEntries(bridge.configs[0].env.map(({ name, value }) => [name, value]))
-      const callMcp = async (method, params) => {
-        const res = await fetch(env.INKSTONE_PI_MCP_URL, {
+      const callMcp = async (url, auth, method, params) => {
+        const res = await fetch(url, {
           method: 'POST',
-          headers: { Authorization: env.INKSTONE_PI_MCP_AUTH, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          headers: { Authorization: auth, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
         })
         return (await res.json()).result
       }
-      const denied = await callMcp('tools/call', { name: 'start_pi_subagent', arguments: { task: 'edit files' } })
-      ok(denied.isError === true && ran === 0, 'Plan 模式下拒绝派发可写 Pi 子代理')
-      const allowed = await callMcp('tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', readOnly: true } })
-      ok(!allowed.isError && ran === 1, 'Plan 模式下允许派发只读 Pi 子代理')
+      const listed = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/list', {})
+      const startSchema = listed.tools.find((tool) => tool.name === 'start_pi_subagent')?.inputSchema
+      ok(Array.isArray(startSchema?.properties?.thinkingLevel?.enum) && startSchema.properties.thinkingLevel.enum.includes('high') && startSchema.properties.thinkingLevel.enum.includes('max'), 'start_pi_subagent 工具模式公开合法 thinkingLevel 枚举')
+      const denied = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'edit files' } })
+      ok(denied.isError === true && calls.length === 0, 'Plan 模式下拒绝派发可写 Pi 子代理')
+      const badThinking = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', readOnly: true, thinkingLevel: 'turbo' } })
+      ok(badThinking.isError === true && calls.length === 0, '拒绝非法 thinkingLevel 参数')
+      const allowed = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', model: 'openai-codex/gpt-6.2-sol', thinkingLevel: ' HIGH ', readOnly: true } })
+      const startedPayload = JSON.parse(allowed.content[0].text)
+      ok(!allowed.isError && calls.length === 1 && calls[0].params.thinkingLevel === 'high' && startedPayload.thinkingLevel === 'high', 'Plan 模式下允许派发只读 Pi 子代理并透传 thinkingLevel', JSON.stringify({ calls, startedPayload }))
+      const fetched = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'get_pi_subagent', arguments: { id: 'sub-11112222' } })
+      const fetchedPayload = JSON.parse(fetched.content[0].text)
+      ok(!fetched.isError && fetchedPayload.thinkingLevel === 'high' && fetchedPayload.latestActivity === '已完成' && fetchedPayload.changedFiles?.[0] === 'src/a.ts', 'get_pi_subagent 返回思考档位、最新进度和改动文件', JSON.stringify(fetchedPayload))
+
+      const reconnected = await openAntigravityDelegation(
+        resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
+        () => ({
+          signal: controller.signal,
+          mode,
+          run: async () => ({
+            summary: { id: 'sub-11112222', status: 'done' },
+            data: { model: 'openai-codex/gpt-6.2-sol', thinkingLevel: 'high', finalMessage: '压缩后可读' }
+          })
+        }),
+        { delegate: true, services: [], commandHost: { cwd: () => cwd, mcpConnectionManager: () => ({ list: () => [] }), mcpConfigError: () => undefined, permissionMode: async () => 'danger', confirmDanger: async () => null, approvalOwner: () => ({}) }, owned: sharedOwned }
+      )
+      try {
+        const env2 = Object.fromEntries(reconnected.configs[0].env.map(({ name, value }) => [name, value]))
+        const afterReconnect = await callMcp(env2.INKSTONE_PI_MCP_URL, env2.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'get_pi_subagent', arguments: { id: 'sub-11112222' } })
+        const stranger = await callMcp(env2.INKSTONE_PI_MCP_URL, env2.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'get_pi_subagent', arguments: { id: 'sub-99999999' } })
+        ok(!afterReconnect.isError && JSON.parse(afterReconnect.content[0].text).finalMessage === '压缩后可读' && stranger.isError === true, 'ACP 重连或压缩后仍可读取本会话已派发的 Pi 子代理，且继续拦截陌生子代理')
+      } finally {
+        await reconnected.close()
+      }
     } finally {
       await bridge.close()
     }
@@ -403,6 +459,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
         assistantEntry?.yanAntigravityGenTiming?.outputDecodeMs === 400,
         '超大回合（> 256 KB、150 次工具调用）经临时文件成功落盘并保存图片与速度计时',
         JSON.stringify({ saved, count: appended.length })
+      )
+
+      const contSaved = await runtime.appendAntigravityTurn({
+        sessionId: 'sess-big-1',
+        continuation: true,
+        steps: [{ text: '后台续跑完成', timestamp: 2500 }],
+        model: 'gemini-4-neon',
+        startedAt: 2100,
+        endedAt: 2500,
+        status: 'stop'
+      })
+      ok(
+        appended.length === 3 &&
+        contSaved.userId === undefined &&
+        appended[2].msg.role === 'assistant' &&
+        appended[2].msg.content?.[0]?.text === '后台续跑完成',
+        'append_antigravity_turn 支持无伪造用户消息的助手续跑落盘',
+        JSON.stringify(contSaved)
       )
 
       let errWithId

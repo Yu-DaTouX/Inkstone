@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
 import { stripTitleMarkdown } from '../shared/title-text'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
@@ -191,6 +192,7 @@ export async function generateTitle(opts: {
     if (cached[sessionId]) return { title: cached[sessionId], fromCache: true }
   }
 
+  const model = opts.model && !opts.model.startsWith(`${ANTIGRAVITY_PROVIDER}/`) ? opts.model : undefined
   const rpc = new PiRpc({
     cwd,
     piBin,
@@ -202,7 +204,7 @@ export async function generateTitle(opts: {
       '--no-prompt-templates',
       '--no-tools',
       ...(opts.extensions ?? []).flatMap((path) => ['--extension', path]),
-      ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : opts.model ? ['--model', opts.model] : [])
+      ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : model ? ['--model', model] : [])
     ],
     env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
   })

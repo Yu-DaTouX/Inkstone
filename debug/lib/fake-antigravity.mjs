@@ -195,6 +195,22 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
+    if (text === '后台自唤醒') {
+      chunk('已启动内部后台任务')
+      reply(id, { stopReason: 'end_turn' })
+      setTimeout(() => {
+        update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查内部后台任务结果' } })
+        update({ sessionUpdate: 'tool_call', toolCallId: 'bg-check-1', kind: 'execute', title: '读取后台任务日志', status: 'in_progress', rawInput: { CommandLine: 'check-bg' } })
+        setTimeout(() => {
+          update({ sessionUpdate: 'tool_call_update', toolCallId: 'bg-check-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '45/45 PASS' } }] })
+          setTimeout(() => {
+            chunk('内部后台任务已完成，结果 45/45 通过。')
+            update({ sessionUpdate: 'usage_update', used: 41_000, size: 1_000_000 })
+          }, 60)
+        }, 80)
+      }, 160)
+      continue
+    }
     if (text === '派 Pi 子代理' || text === '后台派 Pi 子代理') {
       let transport
       try {
@@ -224,14 +240,16 @@ for await (const line of input) {
         const tool = (name, args) => rpc('tools/call', { name, arguments: args })
         if (text === '派 Pi 子代理' && !(await tool('get_pi_subagent', { id: 'sub-12345678' })).isError) throw new Error('陌生子代理可读')
         const item = text === '后台派 Pi 子代理' ? 'WFAGENT WFITEM=ACP-WAKE WFDELAY3' : 'WFAGENT WFITEM=ACP-FIXTURE WFDELAY10'
-        const started = JSON.parse((await tool('start_pi_subagent', { task: item, model: 'fake/fake-model', readOnly: true })).content[0].text)
+        const started = JSON.parse((await tool('start_pi_subagent', { task: item, model: 'fake/fake-reasoning', thinkingLevel: 'high', readOnly: true })).content[0].text)
         if (!started.id) throw new Error(started.error || '没有子代理 id')
+        if (started.thinkingLevel !== 'high') throw new Error(`子代理思考档位未生效：${started.thinkingLevel ?? '缺失'}`)
         if (text === '后台派 Pi 子代理') {
           chunk(`已派发后台子代理 · ${started.id}`)
         } else {
           for (let attempt = 0; attempt < 100; attempt++) {
             const result = JSON.parse((await tool('get_pi_subagent', { id: started.id })).content[0].text)
             if (result.status === 'done' && result.finalMessage?.includes('ACP-FIXTURE')) {
+              if (result.thinkingLevel !== 'high') throw new Error(`子代理结果思考档位未回传：${result.thinkingLevel ?? '缺失'}`)
               chunk('收到 Pi 子代理结果 · ' + result.finalMessage)
               break
             }

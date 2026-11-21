@@ -341,16 +341,20 @@ export default function nativeSessionBridge(pi) {
         const validImages = Array.isArray(userImages)
           ? userImages.filter((item) => item && typeof item.data === 'string' && item.data && typeof item.mimeType === 'string' && item.mimeType)
           : []
-        if (typeof user !== 'string' || (!user.trim() && validImages.length === 0) || typeof model !== 'string' || !model || !Number.isFinite(startedAt) || !Number.isFinite(endedAt) ||
+        const continuation = payload.continuation === true && user === undefined
+        if ((!continuation && (typeof user !== 'string' || (!user.trim() && validImages.length === 0))) || typeof model !== 'string' || !model || !Number.isFinite(startedAt) || !Number.isFinite(endedAt) ||
           list.some((step) => !step || typeof step.text !== 'string')) {
           throw new Error('Antigravity 回合数据无效')
         }
         const before = manager.getLeafId()
-        const userContent = [
-          ...(user ? [{ type: 'text', text: user }] : []),
-          ...validImages.map((item) => ({ type: 'image', data: item.data, mimeType: item.mimeType }))
-        ]
-        const userId = manager.appendMessage({ role: 'user', content: userContent, timestamp: startedAt })
+        let userId
+        if (!continuation) {
+          const userContent = [
+            ...(user ? [{ type: 'text', text: user }] : []),
+            ...validImages.map((item) => ({ type: 'image', data: item.data, mimeType: item.mimeType }))
+          ]
+          userId = manager.appendMessage({ role: 'user', content: userContent, timestamp: startedAt })
+        }
         const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
         const assistantIds = []
         for (let index = 0; index < list.length; index++) {
@@ -367,7 +371,7 @@ export default function nativeSessionBridge(pi) {
             ...(typeof step.thinking === 'string' && step.thinking ? { yanAntigravityThinking: step.thinking } : {}),
             ...(typeof step.thinkingMs === 'number' && Number.isFinite(step.thinkingMs) && step.thinkingMs > 0 ? { yanAntigravityThinkingMs: step.thinkingMs } : {}),
             ...(step.genTiming && typeof step.genTiming === 'object' ? { yanAntigravityGenTiming: step.genTiming } : {}),
-            ...(isLast && timing ? { yanAntigravityTiming: { ...timing, logicalTurnId: userId } } : {}),
+            ...(isLast && timing ? { yanAntigravityTiming: { ...timing, ...(userId ? { logicalTurnId: userId } : {}) } } : {}),
             ...(isLast && antigravity ? { yanAntigravityTurn: antigravity } : {}),
             usage: zeroUsage,
           })
@@ -378,7 +382,7 @@ export default function nativeSessionBridge(pi) {
         else manager.branch(before)
         const outcome = await ctx.navigateTree(assistantId, { summarize: false })
         if (outcome?.cancelled || manager.getLeafId() !== assistantId) throw new Error('回合已写入，但 Pi 未能同步该分支，请重新打开会话')
-        return { userId, assistantId, assistantIds }
+        return { ...(userId ? { userId } : {}), assistantId, assistantIds }
       }
       case 'append_antigravity_compaction': {
         const manager = ctx.sessionManager

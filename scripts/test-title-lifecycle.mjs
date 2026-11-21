@@ -171,6 +171,18 @@ try {
     assert.equal(await agent.maybeGenerateTitle({ prompt: { text: '首条消息' } }), null, '回退标题同样不覆盖生成期间的手动改名')
     assert.equal(pushes.some(event => event.ch === 'session-title'), false)
   }
+  {
+    const { agent } = firstSend()
+    agent.messages = [{ id: 'm0', role: 'user', text: '用 Antigravity 审查项目', timestamp: 1 }]
+    agent.state.model = { provider: 'antigravity', id: 'gemini-4-neon', name: 'Gemini 4 Neon' }
+    agent.piModelLabel = 'openai-codex/gpt-6.2-sol'
+    globalThis.__titleFixture = { promise: Promise.resolve({ title: '审查项目代码' }) }
+    assert.equal(await agent.maybeGenerateTitle({ force: true }), '审查项目代码')
+    assert.equal(globalThis.__titleCalls.at(-1)?.model, 'openai-codex/gpt-6.2-sol', 'Antigravity 会话生成标题时改用底层 Pi 模型，不把 antigravity/* 传给 Pi')
+    agent.piModelLabel = undefined
+    assert.equal(await agent.maybeGenerateTitle({ force: true }), '审查项目代码')
+    assert.equal(globalThis.__titleCalls.at(-1)?.model, undefined, '无已知 Pi 模型时省略 --model 由 Pi 默认模型处理')
+  }
   const titleOut = join(root, 'clean-title.mjs')
   await build({
     entryPoints: ['src/main/title.ts'], outfile: titleOut, bundle: true, platform: 'node', format: 'esm',

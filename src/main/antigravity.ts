@@ -160,6 +160,8 @@ export class AntigravitySession {
   private closing?: Promise<void>
   private cleanup?: () => Promise<void>
   private prompting = false
+  private discoverOnly = false
+  private hadPrompt = false
   private contextReading?: AntigravityContext
   private openingContext?: { sessionId: string; value: AntigravityContext }
   private openingSession = false
@@ -167,6 +169,10 @@ export class AntigravitySession {
   busy = false
 
   get context(): AntigravityContext | undefined { return this.contextReading }
+
+  private get acceptsActivity(): boolean { return this.prompting || (!this.discoverOnly && this.hadPrompt) }
+
+  clearTools(): void { this.tools.clear() }
 
   constructor(private child: ChildProcessWithoutNullStreams, private killTree: (pid: number) => Promise<void>) {
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
@@ -187,6 +193,7 @@ export class AntigravitySession {
   }
 
   async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[], options?: { discoverOnly?: boolean; mode?: string }): Promise<AntigravityModels> {
+    this.discoverOnly = options?.discoverOnly === true
     const init = await this.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'inkstone', title: 'Inkstone', version: '1.0.0' } })
     if (init.protocolVersion !== 1) throw new Error(pick('Antigravity 的 ACP 协议版本不兼容。', 'Incompatible Antigravity ACP version.'))
     const promptCaps = object(object(init.agentCapabilities).promptCapabilities)
@@ -273,7 +280,9 @@ export class AntigravitySession {
       const result = await this.request('session/prompt', { sessionId: this.sessionId, prompt: blocks }, 0)
       const usage = turnUsage(result.usage)
       if (Object.keys(usage).length) this.onEvent({ type: 'usage', usage })
-      return text(result.stopReason)
+      const stopReason = text(result.stopReason)
+      if (stopReason === 'end_turn' && !this.discoverOnly) this.hadPrompt = true
+      return stopReason
     } finally {
       this.busy = false
       this.prompting = false
@@ -292,9 +301,10 @@ export class AntigravitySession {
   }
 
   cancel(): void {
-    if (!this.sessionId || !this.prompting || this.closed || this.cancelTimer) return
+    if (!this.sessionId || !this.acceptsActivity || this.closed || this.cancelTimer) return
     this.send({ method: 'session/cancel', params: { sessionId: this.sessionId } })
     this.clearPermissions()
+    if (!this.prompting) return
     this.cancelTimer = setTimeout(() => this.close(new Error(pick('Antigravity 未响应停止请求，已断开会话。', 'Antigravity did not acknowledge cancellation; the session was disconnected.'))), 5000)
     this.cancelTimer.unref()
   }
@@ -410,7 +420,7 @@ export class AntigravitySession {
 
   private update(update: RecordValue): void {
     const kind = update.sessionUpdate
-    if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && this.prompting) {
+    if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && this.acceptsActivity) {
       const content = object(update.content)
       if (content.type === 'text' && typeof content.text === 'string') this.onEvent({ type: kind === 'agent_thought_chunk' ? 'thought' : 'text', text: content.text })
     } else if (kind === 'usage_update') {
@@ -428,7 +438,7 @@ export class AntigravitySession {
         return
       }
       this.onEvent({ type: 'models', models })
-    } else if (kind === 'plan' && this.prompting) {
+    } else if (kind === 'plan' && this.acceptsActivity) {
       const entries: AntigravityPlanEntry[] = array(update.entries).map(object).flatMap((entry) => {
         const content = text(entry.content).trim()
         if (!content) return []
@@ -438,7 +448,7 @@ export class AntigravitySession {
         return [{ content, status, ...(priority ? { priority } : {}) }]
       })
       this.onEvent({ type: 'plan', entries })
-    } else if (this.prompting && (kind === 'tool_call' || kind === 'tool_call_update')) {
+    } else if (this.acceptsActivity && (kind === 'tool_call' || kind === 'tool_call_update')) {
       const id = text(update.toolCallId)
       if (!id) return
       const tool = { ...this.tools.get(id), ...update }
@@ -457,7 +467,7 @@ export class AntigravitySession {
 
   private ask(rpcId: RpcId, params: RecordValue): void {
     if ([...this.permissions.values()].some((pending) => pending.rpcId === rpcId)) return
-    if (!this.prompting || !this.sessionId || params.sessionId !== this.sessionId || this.cancelTimer || this.permissions.size >= 32) {
+    if (!this.acceptsActivity || !this.sessionId || params.sessionId !== this.sessionId || this.cancelTimer || this.permissions.size >= 32) {
       this.send({ id: rpcId, result: CANCELLED })
       return
     }

@@ -430,4 +430,16 @@ class Fixture {
   await settled('已派发后台子代理')
   await waitFor(`s.messages.some(m => m.role === 'assistant' && m.entryId && m.text.includes('后台通知自动唤醒成功')) && !s.session?.isAgentRunning && !s.session?.isStreaming`, 20000)
   check('后台任务完成后无需人工提醒，自动唤醒 Antigravity 继续执行', true)
+
+  const userCountBeforeBg = await ev(`${app}.messages.filter(m => m.role === 'user').length`)
+  await send('后台自唤醒')
+  await settled('已启动内部后台任务')
+  await waitFor(`s.messages.some(m => m.role === 'assistant' && m.entryId && m.text.includes('内部后台任务已完成，结果 45/45 通过。')) && !s.session?.isAgentRunning && !s.session?.isStreaming`, 20000)
+  const bgState = await ev(`(() => {
+    const msgs = ${app}.messages
+    const users = msgs.filter(m => m.role === 'user').length
+    const hasTool = msgs.some(m => m.role === 'assistant' && m.entryId && m.toolCalls?.some(t => t.name === '读取后台任务日志' && t.status === 'ok'))
+    return { ok: users === ${userCountBeforeBg} + 1 && hasTool, users, hasTool }
+  })()`)
+  check('Antigravity CLI 内部后台任务在 end_turn 后主动推送进度与答复时正常展示并落盘', bgState.ok, bgState.ok ? undefined : bgState)
 }
