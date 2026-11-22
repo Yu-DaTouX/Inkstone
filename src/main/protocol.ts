@@ -418,13 +418,18 @@ export class PiRpc extends EventEmitter {
   }
 
   private handleLine(line: string): void {
-    let obj: Record<string, unknown>
+    let parsed: unknown
     try {
-      obj = JSON.parse(line) as Record<string, unknown>
+      parsed = JSON.parse(line)
     } catch {
       this.emit('stderr', `[非 JSON 输出] ${line.slice(0, 500)}`)
       return
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.emit('stderr', '[yan] RPC 记录不是 JSON 对象，已忽略')
+      return
+    }
+    const obj = parsed as Record<string, unknown>
     if (line.length > 4 * 1024 * 1024) {
       const kind = [obj.type, obj.command, (obj as { event?: { type?: unknown } }).event?.type].filter((v) => typeof v === 'string').join('/')
       this.emit('stderr', `[yan] 大 RPC 记录 ${kind || '?'}：${(line.length / 1024 / 1024).toFixed(1)}MB`)
@@ -457,28 +462,38 @@ export class PiRpc extends EventEmitter {
     payload: Record<string, unknown> = {},
     opts: { id?: string; timeoutMs?: number } = {}
   ): Promise<RpcResponse & { data?: T }> {
-    if (!this.child || this.closed) {
-      return Promise.reject(new Error(pick('pi 未运行', 'pi is not running')))
-    }
+    const child = this.child
+    if (!child || this.closed) return Promise.reject(new Error(pick('pi 未运行', 'pi is not running')))
 
-    const id = opts.id ?? `yan-${++this.seq}`
+    let id = opts.id
+    if (id === undefined) {
+      do { id = `yan-${++this.seq}` } while (this.pending.has(id))
+    }
+    if (!id || this.pending.has(id)) return Promise.reject(new Error(pick(`RPC 请求 ID 无效或正在使用：${id}`, `RPC request ID is invalid or already in use: ${id}`)))
     const limit = opts.timeoutMs ?? REQUEST_TIMEOUT
 
     return new Promise((resolve, reject) => {
+      const line = JSON.stringify({ ...payload, id, type }) + '\n'
+      const fail = (error: Error): void => {
+        if (this.pending.get(id) !== pending) return
+        clearTimeout(pending.timer)
+        this.pending.delete(id)
+        reject(error)
+      }
+      const writeError = (error: unknown): void => {
+        const message = error instanceof Error ? error.message : String(error)
+        fail(new Error(pick(`写入 stdin 失败：${message}`, `Could not write to stdin: ${message}`)))
+      }
       const timer = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error(pick(`命令 ${type} 超时（${limit}ms）`, `Command ${type} timed out (${limit}ms)`)))
+        fail(new Error(pick(`命令 ${type} 超时（${limit}ms）`, `Command ${type} timed out (${limit}ms)`)))
       }, limit)
-
-      this.pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
-
-      const line = JSON.stringify({ id, type, ...payload }) + '\n'
-      this.child!.stdin.write(line, 'utf8', (err) => {
-        if (!err) return
-        clearTimeout(timer)
-        this.pending.delete(id)
-        reject(new Error(pick(`写入 stdin 失败：${err.message}`, `Could not write to stdin: ${err.message}`)))
-      })
+      const pending: Pending = { resolve: resolve as Pending['resolve'], reject, timer }
+      this.pending.set(id, pending)
+      try {
+        child.stdin.write(line, 'utf8', (error) => { if (error) writeError(error) })
+      } catch (error) {
+        writeError(error)
+      }
     })
   }
 
