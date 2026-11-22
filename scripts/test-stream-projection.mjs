@@ -339,12 +339,13 @@ const scenarios = {
     ev({ type: 'turn_start' })
     ev({ type: 'message_start', message: { role: 'assistant' } })
     ev(delta('text_delta', { delta: '我来画一张。' }))
-    const result = await ctl.runImageCommand({ prompt: '一只猫', provider: 'mock' }).catch((error) => ({ error: String(error?.message ?? error) }))
     await tick(5)
     ev(delta('toolcall_start', { contentIndex: 1, id: 'call-image', toolName: 'job_runner' }))
     ev(delta('toolcall_end', { contentIndex: 1, toolCall: { type: 'toolCall', id: 'call-image', name: 'job_runner', arguments: { command: 'yan image generate --prompt cat' } } }))
     ev({ type: 'message_end', message: assistantEnd({ stopReason: 'toolUse' }) })
     ev({ type: 'tool_execution_start', toolCallId: 'call-image', toolName: 'job_runner', args: { command: 'yan image generate --prompt cat' } })
+    const result = await ctl.runImageCommand({ prompt: '一只猫', provider: 'mock' })
+    assert.equal(result.summary?.provider, 'mock', '对拍必须走本地图像夹具')
     await tick(3)
     ev({ type: 'tool_execution_update', toolCallId: 'call-image', partialResult: { content: [{ type: 'text', text: '正在生成…\n' }] } })
     await tick(12)
@@ -679,6 +680,10 @@ for (const [name, run] of Object.entries(scenarios)) {
   const next = await record(after.AgentController, name, run, 'after')
   recorded[name] = next
   ok(next.length > 3, `${name}：录到 ${next.length} 条推送`)
+  if (name === '图片生成进度') {
+    const stages = next.flatMap((line) => JSON.parse(line.slice(line.indexOf(' ') + 1)).payload?.patch?.imageProgress?.map((item) => item.stage) ?? [])
+    assert.deepEqual(stages.filter((stage, index) => stage !== stages[index - 1]), ['queued', 'preparing', 'generating', 'saving', 'done'], '本地图片夹具必须按序经过完整的五段进度')
+  }
   if (before) {
     const prev = await record(before.AgentController, name, run, 'before')
     recordedBefore[name] = prev
