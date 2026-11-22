@@ -1,5 +1,5 @@
 import './lib/test-isolate.mjs'
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -163,6 +163,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
         ok(registered.get(regName('grow'))?.parameters.properties.updated?.type === 'boolean', '热更新：已注册工具的 schema 随快照替换')
         ok((await registered.get(regName('note')).execute()).isError, '热更新：移除后的工具不可调用')
         ok((await host.callToolWithMeta('fx', 'late3', {})).text === 'note', '热更新：新增工具使用原连接可调用')
+        const path = proxy.snapshotPath()
+        const saved = await readFile(path, 'utf8')
+        active = [regName('late3'), 'read']
+        await rename(path, `${path}.previous`)
+        await waitFor(() => registered.get(regName('late3'))?.exposure === 'hidden' && active.join() === 'read', '热更新：文件监听发现快照消失后撤下原工具和激活项')
+        await writeFile(path, saved)
+        hooks.get('tool_call')({ toolName: 'tool_search' })
+        ok(registered.get(regName('late3'))?.exposure === 'deferred', '热更新：字节完全相同的快照重建后也会恢复工具')
       } finally {
         off()
         hooks.get('session_shutdown')()

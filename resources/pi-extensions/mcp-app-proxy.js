@@ -160,12 +160,13 @@ export default function mcpAppProxy(pi) {
     let text
     try {
       text = readFileSync(file, 'utf8')
-    } catch {
-      return
+    } catch (error) {
+      if (error?.code !== 'ENOENT') return
+      text = null
     }
     if (text === previousText) return
     previousText = text
-    const snapshot = parseSnapshot(text)
+    const snapshot = text === null ? { tools: [] } : parseSnapshot(text)
     const built = snapshot.error ? snapshot : buildToolDefinitions(snapshot.tools, projectId)
     if (built.error) {
       report(`工具快照不可用：${built.error}`)
