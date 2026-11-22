@@ -206,9 +206,13 @@ const ok = (condition, label) => {
     rpc.on('spawn-error', (err) => events.push(`spawn-error:${err.message}`))
     rpc.on('exit', () => events.push('exit'))
     rpc.spawn()
-    const started = Date.now()
-    while (!events.includes('exit') && Date.now() - started < 10_000) await sleep(20)
-    ok(events.filter((e) => e === 'exit').length === 1, 'spawn 失败也只发一次 exit', JSON.stringify(events))
+    let runningWhenError
+    await new Promise((resolve, reject) => rpc.child.once('error', () => {
+      runningWhenError = rpc.running
+      rpc.close().then(resolve, reject)
+    }))
+    ok(runningWhenError === false, '子进程报告启动失败后立即停止接收请求，不等 close')
+    ok(events.filter((e) => e === 'exit').length === 1, 'spawn 失败的 close 也完成收尾并只发一次 exit', JSON.stringify(events))
     ok(/ENOENT/.test(events[0] ?? ''), 'spawn-error 带 ENOENT 原因', JSON.stringify(events))
     ok(events.indexOf(events.find((e) => e.startsWith('spawn-error'))) < events.indexOf('exit'), 'spawn-error 先于 exit', JSON.stringify(events))
   } finally {

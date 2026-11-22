@@ -329,7 +329,8 @@ export class PiRpc extends EventEmitter {
     })
 
     child.on('error', (err: Error) => {
-      if (!current()) return
+      if (!current() || this.finished) return
+      this.closed = true
       this.spawnError = err
       this.failAll(new Error(pick(`无法启动 pi：${err.message}`, `Could not start pi: ${err.message}`)))
     })
@@ -549,10 +550,12 @@ export class PiRpc extends EventEmitter {
         done = true
         if (timer) clearTimeout(timer)
         child.off('exit', finish)
+        child.off('close', finish)
         resolve()
       }
 
       child.once('exit', finish)
+      child.once('close', finish)
       const snapshot = watch && watch.snapshotAge() > PI_TREE_FRESH_MS
         ? Promise.race([watch.snapshot(), new Promise<void>((done) => setTimeout(done, PI_TREE_SNAPSHOT_CAP_MS).unref?.())]).catch(() => undefined)
         : Promise.resolve()
