@@ -6,7 +6,7 @@ import { CapabilityCommandError, type CapabilityCommandResult } from '../capabil
 import { YAN_DIR } from '../paths'
 import { loadMcpServersCached } from './config'
 import { truncateUtf8 } from '../../shared/mcp'
-import type { McpAppCsp, McpAppServerConfig } from './app-spec'
+import { isInkstoneManaged, type McpAppCsp, type McpAppServerConfig } from './app-spec'
 import {
   McpAppUnmanagedError,
   mcpAppHost,
@@ -38,9 +38,19 @@ interface McpAppProxyTool {
   serverId: string
   toolName: string
   projectScope?: string
+  enabled?: boolean
+  projectEnabled?: Record<string, boolean>
   description?: string
   inputSchema?: unknown
   annotations?: unknown
+}
+
+function toolAvailability(config: McpAppServerConfig): Pick<McpAppProxyTool, 'enabled' | 'projectEnabled'> {
+  if (config.projectScope) return {}
+  return {
+    ...(config.enabled === false ? { enabled: false } : {}),
+    ...(config.projectEnabled ? { projectEnabled: config.projectEnabled } : {})
+  }
 }
 
 interface McpAppProxySnapshotServer {
@@ -212,6 +222,9 @@ export class McpAppProxyService {
   private readonly records = new Map<string, McpAppProxyCallRecord>()
   private readonly ensuring = new Map<string, Promise<{ refreshed: boolean; error?: string }>>()
   private readonly ensureFailedAt = new Map<string, number>()
+  private readonly refreshingChanges = new Map<string, { projectId?: string; task: Promise<void> }>()
+  private readonly publishedRefresh = new Map<string, number>()
+  private refreshSequence = 0
 
   constructor(options: McpAppProxyServiceOptions = {}) {
     this.host = options.host ?? mcpAppHost()
@@ -290,6 +303,8 @@ export class McpAppProxyService {
     signal?: AbortSignal
     allowEmpty?: boolean
   } = {}): Promise<McpAppProxyRefreshResult> {
+    const sequence = ++this.refreshSequence
+    const configured = new Map(loadMcpServersCached(this.env).servers.map((server) => [server.id, server]))
     const managed = this.host.listManagedServers(options.callerProjectId)
     const callerProjectId =
       typeof options.callerProjectId === 'string' && options.callerProjectId.trim()
@@ -332,6 +347,7 @@ export class McpAppProxyService {
           ...(callerProjectId ? { projectId: callerProjectId } : {}),
           ...(options.signal ? { signal: options.signal } : {})
         })
+        const original = configured.get(server.id) ?? server
         let count = 0
         for (const tool of list) {
           if (!tool.modelVisible) {
@@ -343,6 +359,7 @@ export class McpAppProxyService {
             serverId: server.id,
             toolName: tool.name,
             ...(server.projectScope ? { projectScope: server.projectScope } : {}),
+            ...toolAvailability(original),
             ...(tool.description ? { description: tool.description } : {}),
             ...(tool.inputSchema !== undefined ? { inputSchema: tool.inputSchema } : {}),
             ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {})
@@ -379,30 +396,52 @@ export class McpAppProxyService {
       for (const server of servers) server.toolCount = tools.filter((tool) => tool.serverId === server.id).length
     }
 
-    const targetIds = new Set(targets.map((server) => server.id))
+    const replaced = new Set<string>()
+    const removed = new Set<string>()
     const managedIds = new Set(managed.map((server) => server.id))
-    await this.commitSnapshot((current) => {
-      const keptFromOtherScopes = (current?.tools ?? []).filter((tool) => {
-        if (targetIds.has(tool.serverId)) return false
-        const scope = typeof tool.projectScope === 'string' ? tool.projectScope : ''
-        return managedIds.has(tool.serverId) || (!!scope && scope !== callerProjectId)
+    const publishedAfter = (id: string) => (this.publishedRefresh.get(id) ?? 0) > sequence
+    const written = await this.commitSnapshot((current) => {
+      for (const server of requested ? servers : targets) {
+        if (!publishedAfter(server.id)) replaced.add(server.id)
+      }
+      if (requested && !replaced.size) return null
+      const keep = (id: string, scope?: string) => {
+        if (replaced.has(id)) return false
+        if (requested || managedIds.has(id) || publishedAfter(id) || (scope && scope !== callerProjectId)) return true
+        const original = configured.get(id)
+        if (original && isInkstoneManaged({ ...original, enabled: original.enabled !== false || Object.values(original.projectEnabled ?? {}).some(Boolean) })) return true
+        removed.add(id)
+        return false
+      }
+      const scopes = new Map(current?.tools.map((tool) => [tool.serverId, tool.projectScope]))
+      const scopeOf = (id: string) => configured.get(id)?.projectScope ?? scopes.get(id)
+      const keptTools = (current?.tools ?? []).filter((tool) => keep(tool.serverId, tool.projectScope)).map((tool) => {
+        const original = configured.get(tool.serverId)
+        if (requested || !original || publishedAfter(tool.serverId)) return tool
+        const { enabled: _enabled, projectEnabled: _projectEnabled, ...entry } = tool
+        return { ...entry, ...toolAvailability(original) }
       })
-      const keptServerIds = new Set(keptFromOtherScopes.map((tool) => tool.serverId))
-      const keptServers = (current?.servers ?? []).filter((server) => keptServerIds.has(server.id) && !targetIds.has(server.id))
+      const keptServers = (current?.servers ?? []).filter((server) => keep(server.id, scopeOf(server.id)))
+      const keptExcluded = (current?.excluded ?? []).filter((item) => keep(item.serverId, scopeOf(item.serverId)))
       return {
         version: SNAPSHOT_VERSION,
-        generatedAt,
+        generatedAt: requested && current?.generatedAt ? current.generatedAt : generatedAt,
         source: SNAPSHOT_SOURCE,
-        tools: [...keptFromOtherScopes, ...tools],
-        servers: [...keptServers, ...servers],
-        excluded
+        tools: [...keptTools, ...tools.filter((tool) => replaced.has(tool.serverId))],
+        servers: [...keptServers, ...servers.filter((server) => replaced.has(server.id))],
+        excluded: [...keptExcluded, ...excluded.filter((item) => replaced.has(item.serverId))]
       }
+    }, () => {
+      for (const id of replaced) this.publishedRefresh.set(id, sequence)
+      for (const id of removed) this.publishedRefresh.set(id, sequence)
     })
-    for (const entry of acknowledged) this.host.acknowledgeToolsChanged?.(entry.serverId, entry.version)
+    for (const entry of acknowledged) {
+      if (replaced.has(entry.serverId)) this.host.acknowledgeToolsChanged?.(entry.serverId, entry.version)
+    }
     return {
       ok: errors.length === 0,
       path: this.snapshotPath(),
-      written: true,
+      written,
       generatedAt,
       toolCount: tools.length,
       tools,
@@ -411,6 +450,31 @@ export class McpAppProxyService {
       collisions,
       errors
     }
+  }
+
+  refreshChanged(serverId: string, callerProjectId?: string): Promise<void> {
+    const existing = this.refreshingChanges.get(serverId)
+    if (existing) {
+      existing.projectId = callerProjectId
+      return existing.task
+    }
+    const entry = { projectId: callerProjectId, task: Promise.resolve() }
+    entry.task = Promise.resolve().then(async () => {
+      try {
+        let seen: number | undefined
+        for (;;) {
+          const version = this.host.toolsChangedVersions?.().get(serverId)
+          if (version === undefined || version === seen) return
+          seen = version
+          const result = await this.refresh({ serverIds: [serverId], callerProjectId: entry.projectId })
+          if (result.errors.length && this.host.toolsChangedVersions?.().get(serverId) === version) throw new Error(result.errors[0].error)
+        }
+      } finally {
+        this.refreshingChanges.delete(serverId)
+      }
+    })
+    this.refreshingChanges.set(serverId, entry)
+    return entry.task
   }
 
   toolsChangedServers(callerProjectId?: string): string[] {
@@ -429,7 +493,9 @@ export class McpAppProxyService {
     if (managed.some((server) => !knownIds.has(server.id))) return true
     const orphaned = snapshot.tools.some((tool) => {
       const scope = typeof tool.projectScope === 'string' ? tool.projectScope : ''
-      return !managedIds.has(tool.serverId) && !(scope && scope !== callerProjectId)
+      const disabledHere = callerProjectId && Object.hasOwn(tool.projectEnabled ?? {}, callerProjectId)
+        ? tool.projectEnabled?.[callerProjectId] === false : tool.enabled === false
+      return !managedIds.has(tool.serverId) && !(scope && scope !== callerProjectId) && !disabledHere
     })
     if (orphaned) return true
     return this.snapshotStatus().stale && (managed.length > 0 || snapshot.tools.length > 0)
@@ -474,10 +540,14 @@ export class McpAppProxyService {
     }
   }
 
-  private commitSnapshot(build: (current: McpAppProxySnapshot | null) => McpAppProxySnapshot): Promise<void> {
+  private commitSnapshot(build: (current: McpAppProxySnapshot | null) => McpAppProxySnapshot | null, onWritten: () => void): Promise<boolean> {
     const path = this.snapshotPath()
     const run = (snapshotWrites.get(path) ?? Promise.resolve()).catch(() => undefined).then(async () => {
-      await writeAtomicText(path, `${JSON.stringify(build(this.readSnapshot()), null, 2)}\n`)
+      const snapshot = build(this.readSnapshot())
+      if (!snapshot) return false
+      await writeAtomicText(path, `${JSON.stringify(snapshot, null, 2)}\n`)
+      onWritten()
+      return true
     })
     snapshotWrites.set(path, run)
     return run

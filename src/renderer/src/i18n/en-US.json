@@ -270,7 +270,7 @@
   "cap.nativeMcpActionTimeout": "No result from pi yet. Use “View native server status” to check.",
   "cap.nativeMcpLoading": "Reading native server status…",
   "cap.nativeMcpTimeout": "No status response from pi within 30 seconds. Please retry.",
-  "cap.mcpToolsChanged": "The tool list of a hosted service changed ({names}). New sessions pick it up; when this session is idle, use \"Apply to this conversation\". Running tasks are not interrupted.",
+  "cap.mcpToolsChanged": "Tool changes are pending for hosted services ({names}). Inkstone refreshes them automatically. If they stay pending, use “Apply to this conversation” to retry.",
   "ctx.compactingReason": "Compacting · {reason}",
   "ctx.compactingElapsed": "{seconds}s elapsed",
   "ctx.growthAfter": "{tokens} added since",

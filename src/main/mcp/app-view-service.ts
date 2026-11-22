@@ -43,7 +43,7 @@ export interface McpAppViewCallRecordLike {
 export interface McpAppViewProxyLike {
   getCallResult(callId: string, owner: { sessionId: string; projectId: string; runnerId?: string; epoch?: number }): McpAppViewCallRecordLike | null
   snapshotStatus(): { present: boolean; stale: boolean; needsRefresh: boolean }
-  registrableTools(): Array<{ serverId?: string; projectScope?: string }>
+  registrableTools(): Array<{ serverId?: string; projectScope?: string; enabled?: boolean; projectEnabled?: Record<string, boolean> }>
   refresh(options?: {
     serverIds?: string[]
     callerProjectId?: string
@@ -276,9 +276,10 @@ function isFacts(value: unknown): value is McpAppViewRunnerFacts {
   return typeof facts.generation === 'number' && Number.isFinite(facts.generation) && facts.generation >= 0
 }
 
-function isVisibleToProject(projectScope: string | undefined | null, callerProjectId: string | null): boolean {
-  if (!projectScope) return true
-  return callerProjectId !== null && projectScope === callerProjectId
+function isVisibleToProject(tool: ReturnType<McpAppViewProxyLike['registrableTools']>[number], callerProjectId: string | null): boolean {
+  if (tool.projectScope) return tool.projectScope === callerProjectId
+  const projectEnabled = callerProjectId && Object.hasOwn(tool.projectEnabled ?? {}, callerProjectId) ? tool.projectEnabled?.[callerProjectId] : undefined
+  return (projectEnabled ?? tool.enabled) !== false
 }
 
 interface ParsedRpcOk {
@@ -540,7 +541,7 @@ export class McpAppViewService implements McpAppViewApi {
       needsRefresh = status.needsRefresh
       toolCount = this.proxy
         .registrableTools()
-        .filter((tool) => isVisibleToProject(tool.projectScope, callerProjectId)).length
+        .filter((tool) => isVisibleToProject(tool, callerProjectId)).length
     } catch {
     }
     return { needsRefresh, toolCount }

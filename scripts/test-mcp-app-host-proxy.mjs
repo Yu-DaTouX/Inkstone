@@ -1,7 +1,7 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile, copyFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, copyFile, readFile, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -734,23 +734,26 @@ try {
     await writeSnapshot(snapshotA, [
       { name: 'mcp__app_stdio__client_capabilities', serverId: 'app-stdio', toolName: 'client_capabilities' }
     ])
-    ok(piA.registered.has('mcp__app_stdio__read_only_note'), '刷新需 reload：已运行扩展的工具表不变')
+    startHooks[0]({ systemPrompt: 'BASE' })
+    ok(piA.registered.get('mcp__app_stdio__read_only_note')?.exposure === 'hidden' && piA.registered.has('mcp__app_stdio__client_capabilities'), '热更新：同一扩展重读快照，隐藏旧工具、注册新工具')
     process.env.YAN_MCP_APP_TOOLS = snapshotB
     const piB = makePi()
     extension.default(piB)
-    ok(piB.registered.has('mcp__app_stdio__client_capabilities') && !piB.registered.has('mcp__app_stdio__read_only_note'), '刷新需 reload：新启动才读到新快照')
+    ok(piB.registered.has('mcp__app_stdio__client_capabilities') && !piB.registered.has('mcp__app_stdio__read_only_note'), '新启动的会话直接注册新工具')
 
     const scopedSnap = join(root, 'ext-scoped.json')
     await writeSnapshot(scopedSnap, [
       { name: 'mcp__g__a', serverId: 'g', toolName: 'a' },
       { name: 'mcp__p_a__b', serverId: 'p-a', toolName: 'b', projectScope: 'project-alpha' },
-      { name: 'mcp__p_b__c', serverId: 'p-b', toolName: 'c', projectScope: 'project-beta' }
+      { name: 'mcp__p_b__c', serverId: 'p-b', toolName: 'c', projectScope: 'project-beta' },
+      { serverId: 'only-alpha', toolName: 'tool', enabled: false, projectEnabled: { 'project-alpha': true } },
+      { serverId: 'not-alpha', toolName: 'tool', projectEnabled: { 'project-alpha': false } }
     ])
     process.env.YAN_MCP_APP_TOOLS = scopedSnap
     delete process.env.YAN_MCP_APP_PROJECT_ID
     const piNoProject = makePi()
     extension.default(piNoProject)
-    ok(piNoProject.registered.has('mcp__g__a') && piNoProject.registered.size === 1, '扩展：无项目身份只注册全局工具')
+    ok(piNoProject.registered.has('mcp__g__a') && piNoProject.registered.has('mcp__not_alpha__tool') && piNoProject.registered.size === 2, '扩展：无项目身份只注册全局启用的工具')
     process.env.YAN_MCP_APP_PROJECT_ID = 'project-alpha'
     const piAlpha = makePi()
     extension.default(piAlpha)
@@ -758,6 +761,7 @@ try {
       piAlpha.registered.has('mcp__g__a') && piAlpha.registered.has('mcp__p_a__b') && !piAlpha.registered.has('mcp__p_b__c'),
       '扩展：只注册全局 + 本项目，别的项目 schema / 描述不注册'
     )
+    ok(piAlpha.registered.has('mcp__only_alpha__tool') && !piAlpha.registered.has('mcp__not_alpha__tool'), '扩展：按当前项目开关过滤全局工具')
 
     const collisionSnap = join(root, 'ext-collision.json')
     await writeSnapshot(collisionSnap, [
@@ -810,12 +814,15 @@ try {
         if (request) providerRequests.push(request)
         const sse = (delta, finish) => `data: ${JSON.stringify({ id: 'proxy-fix', object: 'chat.completion.chunk', created: 0, model: 'proxy-physical', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
         res.writeHead(200, { 'content-type': 'text/event-stream' })
-        const searched = (request?.messages ?? []).some((message) => message?.role === 'tool')
+        const messages = request?.messages ?? []
+        const lastUser = messages.findLastIndex((message) => message.role === 'user')
+        const hot = JSON.stringify(messages[lastUser] ?? {}).includes('MCP_APP_PROXY_HOT')
+        const searched = messages.slice(lastUser + 1).some((message) => message?.role === 'tool')
         if (searched) {
           res.write(sse({ role: 'assistant', content: 'PROXY-BOOT-OK' }))
           res.write(sse({}, 'stop'))
         } else {
-          res.write(sse({ role: 'assistant', tool_calls: [{ index: 0, id: 'search-1', type: 'function', function: { name: 'tool_search', arguments: JSON.stringify({ query: 'read only note' }) } }] }))
+          res.write(sse({ role: 'assistant', tool_calls: [{ index: 0, id: hot ? 'search-2' : 'search-1', type: 'function', function: { name: 'tool_search', arguments: JSON.stringify({ query: hot ? 'late colab cell' : 'read only note' }) } }] }))
           res.write(sse({}, 'tool_calls'))
         }
         res.end('data: [DONE]\n\n')
@@ -961,6 +968,19 @@ try {
       ok(secondTools.includes('mcp__app_stdio__read_only_note'), '真实 pi：tool_search 命中后下一次请求声明该工具', secondTools.join(','))
       const searchResult = (second?.messages ?? []).find((message) => message?.role === 'tool')
       ok(String(typeof searchResult?.content === 'string' ? searchResult.content : JSON.stringify(searchResult?.content)).includes('mcp__app_stdio__read_only_note'), '真实 pi：tool_search 结果里列出加载的工具')
+
+      const snapshot = service.readSnapshot()
+      const updated = `${service.snapshotPath()}.test-tmp`
+      await writeFile(updated, JSON.stringify({ ...snapshot, tools: [{ serverId: 'app-stdio', toolName: 'late_colab_cell', description: 'late colab cell' }] }))
+      await rename(updated, service.snapshotPath())
+      const hotStart = frames.length
+      const firstHotRequest = providerRequests.length
+      await command('prompt', { message: 'MCP_APP_PROXY_HOT' }, 60000)
+      const hotDeadline = Date.now() + 60000
+      while (Date.now() < hotDeadline && !frames.slice(hotStart).some((frame) => frame.type === 'agent_settled')) await delay(20)
+      const [hotFirst, hotSecond] = providerRequests.slice(firstHotRequest)
+      ok(declared(hotFirst).includes('tool_search') && !declared(hotFirst).includes('mcp__app_stdio__read_only_note'), '真实 pi：同一会话撤下已激活的旧工具')
+      ok(declared(hotSecond).includes('mcp__app_stdio__late_colab_cell'), '真实 pi：同一会话的 tool_search 可发现并激活新工具', declared(hotSecond).join(','))
     } finally {
       try { child.stdin.end() } catch { }
       const killTimer = setTimeout(() => child.kill(), 3000)

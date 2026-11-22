@@ -107,6 +107,7 @@ export interface McpAppHostOptions {
 interface PooledServer {
   fingerprint: string
   manager: McpConnectionManager
+  projectId?: string
 }
 
 type OwnershipEvaluation =
@@ -182,7 +183,7 @@ export class McpAppHost {
   private readonly pool = new Map<string, PooledServer>()
   private readonly poolTails = new Map<string, Promise<unknown>>()
   private readonly toolsChanged = new Map<string, number>()
-  private readonly toolsChangedListeners = new Set<(serverId: string) => void>()
+  private readonly toolsChangedListeners = new Set<(serverId: string, projectId?: string) => void>()
   private toolsChangedSeq = 0
   private ownership: McpAppOwnershipGuard
 
@@ -212,19 +213,19 @@ export class McpAppHost {
     if (this.toolsChanged.get(serverId) === version) this.toolsChanged.delete(serverId)
   }
 
-  onToolsChanged(listener: (serverId: string) => void): () => void {
+  onToolsChanged(listener: (serverId: string, projectId?: string) => void): () => void {
     this.toolsChangedListeners.add(listener)
     return () => {
       this.toolsChangedListeners.delete(listener)
     }
   }
 
-  private noteToolsChanged(serverId: string, manager: McpConnectionManager): void {
-    if (this.pool.get(serverId)?.manager !== manager) return
+  private noteToolsChanged(serverId: string, pooled: PooledServer): void {
+    if (this.pool.get(serverId) !== pooled) return
     this.toolsChanged.set(serverId, ++this.toolsChangedSeq)
     for (const listener of [...this.toolsChangedListeners]) {
       try {
-        listener(serverId)
+        listener(serverId, pooled.projectId)
       } catch (error) {
         console.warn('[mcp-app] tools-changed listener failed:', messageOf(error))
       }
@@ -301,17 +302,20 @@ export class McpAppHost {
     return true
   }
 
-  private acquire(serverId: string, config: McpAppServerConfig, fingerprint: string): Promise<PooledServer> {
+  private acquire(serverId: string, config: McpAppServerConfig, fingerprint: string, projectId?: string): Promise<PooledServer> {
     return this.runPool(serverId, async () => {
       const existing = this.pool.get(serverId)
-      if (existing && existing.fingerprint === fingerprint) return existing
+      if (existing?.fingerprint === fingerprint) {
+        existing.projectId = projectId
+        return existing
+      }
       if (existing) {
         this.pool.delete(serverId)
         await existing.manager.close().catch(() => undefined)
       }
-      const pooled: PooledServer = { fingerprint, manager: this.createManager(config, this.timeoutMs) }
+      const pooled: PooledServer = { fingerprint, manager: this.createManager(config, this.timeoutMs), projectId }
       this.pool.set(serverId, pooled)
-      pooled.manager.onToolsListChanged?.((changedId) => this.noteToolsChanged(changedId, pooled.manager))
+      pooled.manager.onToolsListChanged?.((changedId) => this.noteToolsChanged(changedId, pooled))
       return pooled
     })
   }
@@ -322,7 +326,7 @@ export class McpAppHost {
       if (!evaluation.preservePool) await this.runPool(serverId, () => this.dropPooled(serverId))
       throw evaluation.error
     }
-    return this.acquire(serverId, evaluation.config, evaluation.fingerprint)
+    return this.acquire(serverId, evaluation.config, evaluation.fingerprint, options.projectId)
   }
 
   private async assertStillOwned(

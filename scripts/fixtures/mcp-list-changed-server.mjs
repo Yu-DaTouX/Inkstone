@@ -7,7 +7,11 @@ let grown = 0
 
 const server = new Server({ name: 'yan-list-changed-fixture', version: '1.0.0' }, { capabilities: { tools: { listChanged: true } } })
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [tool('note'), tool('grow'), ...Array.from({ length: grown }, (_, index) => tool(`late${index + 1}`))]
+  tools: [
+    ...(grown < 3 ? [tool('note')] : []),
+    ...(grown < 3 ? [tool('grow')] : [{ ...tool('grow'), description: 'updated grow', inputSchema: { type: 'object', properties: { updated: { type: 'boolean' } } } }]),
+    ...Array.from({ length: grown }, (_, index) => tool(`late${index + 1}`))
+  ]
 }))
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === 'grow') {

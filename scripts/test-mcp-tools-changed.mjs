@@ -99,6 +99,51 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(refreshed.refreshed && proxy.registrableTools().map((tool) => tool.toolName).includes('late1'), '托管快照：下一个 runner 启动前的 ensureFresh 刷新出新工具')
       ok(!proxy.needsRefreshFor() && proxy.toolsChangedServers().length === 0 && !proxy.snapshotStatus().needsRefresh, '托管快照：刷新成功后清掉变化标记')
 
+      const { default: extension } = await import('../resources/pi-extensions/mcp-app-proxy.js')
+      const registered = new Map()
+      const hooks = new Map()
+      const regName = (toolName) => `mcp__fx__${toolName}`
+      let active = [regName('note'), 'read']
+      const savedFile = process.env.YAN_MCP_APP_TOOLS
+      process.env.YAN_MCP_APP_TOOLS = join(root, 'proxy', 'not-yet-created.json')
+      extension({
+        registerTool: (definition) => registered.set(definition.name, definition),
+        on: (name, handler) => hooks.set(name, handler)
+      })
+      ok(registered.size === 0, '热更新：快照还未写入时扩展仍能启动')
+      const delayedFile = process.env.YAN_MCP_APP_TOOLS
+      const stopDelayed = hooks.get('session_shutdown')
+      try {
+        await writeFile(delayedFile, JSON.stringify(proxy.readSnapshot()))
+        await waitFor(() => registered.has(regName('late1')), '热更新：启动后首次出现快照也会注册工具')
+      } finally {
+        stopDelayed()
+      }
+
+      process.env.YAN_MCP_APP_TOOLS = proxy.snapshotPath()
+      extension({
+        registerTool: (definition) => registered.set(definition.name, definition),
+        on: (name, handler) => hooks.set(name, handler),
+        getActiveTools: () => active,
+        setActiveTools: (names) => { active = names }
+      })
+      const off = host.onToolsChanged((serverId, projectId) => { void proxy.refreshChanged(serverId, projectId) })
+      try {
+        await host.callToolWithMeta('fx', 'grow', {})
+        await waitFor(() => registered.has(regName('late2')), '热更新：同一已启动会话不重连、不发新消息，自动注册新增工具')
+        await host.callToolWithMeta('fx', 'grow', {})
+        await waitFor(() => registered.get(regName('note'))?.exposure === 'hidden' && registered.has(regName('late3')), '热更新：自动隐藏删除的工具并注册新增工具')
+        ok(active.join() === 'read', '热更新：撤下已激活的旧工具，不影响其他工具')
+        ok(registered.get(regName('grow'))?.parameters.properties.updated?.type === 'boolean', '热更新：已注册工具的 schema 随快照替换')
+        ok((await registered.get(regName('note')).execute()).isError, '热更新：移除后的工具不可调用')
+        ok((await host.callToolWithMeta('fx', 'late3', {})).text === 'note', '热更新：新增工具使用原连接可调用')
+      } finally {
+        off()
+        hooks.get('session_shutdown')()
+        if (savedFile === undefined) delete process.env.YAN_MCP_APP_TOOLS
+        else process.env.YAN_MCP_APP_TOOLS = savedFile
+      }
+
       await writeFile(configFile, JSON.stringify({ servers: [] }))
       await host.callToolWithMeta('fx', 'grow', {}).catch(() => undefined)
       await host.reconcile('fx')
@@ -112,10 +157,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
   {
     const versions = new Map()
     let version = 0
+    let listings = 0
     const acknowledged = []
     const fakeHost = {
       listManagedServers: () => [{ id: 'alpha', transport: 'stdio', command: 'x', enabled: true, ownedBy: 'inkstone', appHost: {} }],
       listToolsWithMeta: async () => {
+        listings++
         versions.set('alpha', ++version)
         return [{ name: 'tool', modelVisible: true, appVisible: false, visibility: ['model'], resourceUri: null }]
       },
@@ -129,5 +176,59 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await proxy.refresh({ allowEmpty: true })
     ok(versions.has('alpha') && acknowledged[0][1] < version, '托管快照：刷新期间又收到变化时标记保留，下次仍会刷新')
     ok(proxy.needsRefreshFor(), '托管快照：保留的标记让下一次判定仍为过期')
+    let next = true
+    fakeHost.listToolsWithMeta = async () => {
+      listings++
+      if (next) versions.set('alpha', ++version)
+      next = false
+      return []
+    }
+    const pending = proxy.refreshChanged('alpha')
+    ok(proxy.refreshChanged('alpha') === pending, '托管快照：同一服务的重复通知合并')
+    await pending
+    ok(listings === 3 && !versions.has('alpha'), '托管快照：刷新中收到新通知会再读一次，写出空列表并清除标记')
+  }
+
+  {
+    const configFile = join(root, 'project-overrides.json')
+    const only = stdioConfig('only', { ownedBy: 'inkstone', appHost: { at: 'fixture', natives: [] }, enabled: false, projectEnabled: { a: true } })
+    const global = stdioConfig('global', { ownedBy: 'inkstone', appHost: { at: 'fixture', natives: [] } })
+    await writeFile(configFile, JSON.stringify({ servers: [only, global] }))
+    const env = { YAN_MCP_SERVERS_FILE: configFile }
+    const versions = new Map()
+    let release
+    let reached
+    const gate = new Promise((resolve) => { release = resolve })
+    const started = new Promise((resolve) => { reached = resolve })
+    let onlyLists = 0
+    let globalLists = 0
+    const fakeHost = {
+      listManagedServers: (projectId) => [...(projectId === 'a' ? [{ ...only, enabled: true }] : []), ...(projectId === 'a' && global.projectEnabled?.a === false ? [] : [global])],
+      listToolsWithMeta: async (id) => {
+        const count = id === 'only' ? ++onlyLists : ++globalLists
+        if (id === 'only' && count === 2) {
+          reached()
+          await gate
+        }
+        return [{ name: `${id}-${count}`, modelVisible: true }]
+      },
+      statusOf: () => ({ status: 'ready' }),
+      toolsChangedVersions: () => versions,
+      acknowledgeToolsChanged: (id, seen) => { if (versions.get(id) === seen) versions.delete(id) }
+    }
+    const proxy = new mod.McpAppProxyService({ env, host: fakeHost, dir: join(root, 'overrides') })
+    await proxy.refresh({ callerProjectId: 'a' })
+    const older = proxy.refresh({ callerProjectId: 'a' })
+    await started
+    versions.set('only', 1)
+    await proxy.refreshChanged('only', 'a')
+    ok(proxy.registrableTools().some((tool) => tool.toolName === 'global-1') && globalLists === 1, '目标刷新：保留其他服务工具且不重查其他连接')
+    release()
+    await older
+    ok(proxy.registrableTools().some((tool) => tool.toolName === 'only-3' && tool.enabled === false && tool.projectEnabled?.a === true), '目标刷新：旧请求不能覆盖较新的工具列表，也不能放宽启用范围')
+    global.projectEnabled = { a: false }
+    await writeFile(configFile, JSON.stringify({ servers: [only, global] }))
+    await proxy.refresh({ callerProjectId: 'a' })
+    ok(proxy.registrableTools().some((tool) => tool.serverId === 'global' && tool.projectEnabled?.a === false), '全量刷新：保留其他项目在用的工具，并同步更新项目开关')
   }
 })

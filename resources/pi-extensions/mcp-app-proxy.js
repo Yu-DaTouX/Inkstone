@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, unwatchFile, watchFile } from 'node:fs'
 
 const MAX_TOOL_NAME_LENGTH = 64
 
@@ -21,13 +21,7 @@ function errorResult(text) {
   return { content: [{ type: 'text', text }], details: {}, isError: true }
 }
 
-function readSnapshot(file) {
-  let text
-  try {
-    text = readFileSync(file, 'utf8')
-  } catch (error) {
-    return { error: `快照读取失败（${String(error?.message ?? error)}）` }
-  }
+function parseSnapshot(text) {
   let parsed
   try {
     parsed = JSON.parse(text)
@@ -62,6 +56,8 @@ function buildToolDefinitions(tools, projectId) {
     if (!serverId || !toolName) return { error: '工具项缺少 serverId 或 toolName' }
     const scope = typeof entry.projectScope === 'string' ? entry.projectScope.trim() : ''
     if (scope && scope !== projectId) continue
+    const projectEnabled = projectId && Object.hasOwn(entry.projectEnabled ?? {}, projectId) ? entry.projectEnabled[projectId] : undefined
+    if ((projectEnabled ?? entry.enabled) === false) continue
     const name = toolNameFor(serverId, toolName)
     const label = `${serverId}/${toolName}`
     candidates.push({ entry, serverId, toolName, name, label })
@@ -148,38 +144,68 @@ export default function mcpAppProxy(pi) {
     return
   }
   const projectId = process.env.YAN_MCP_APP_PROJECT_ID || ''
-  const snapshot = readSnapshot(file)
-  if (snapshot.error) {
-    report(`工具快照不可用，未注册任何托管 MCP 工具：${snapshot.error}`)
-    return
-  }
-  if (snapshot.tools.length === 0) {
-    report('工具快照为空；托管 MCP 工具未注册（请刷新或确认服务已连接）')
-    return
-  }
-  const built = buildToolDefinitions(snapshot.tools, projectId)
-  if (built.error) {
-    report(`工具快照被拒绝，未注册任何托管 MCP 工具：${built.error}`)
-    return
-  }
-  for (const collision of built.collisions) {
-    report(`名字规范化后碰撞：${collision.name}（${collision.labels.join('、')}），这些工具未注册，其余托管工具不受影响`)
-  }
-  const registered = []
-  for (const definition of built.definitions) {
+  const registered = new Map()
+  let previousText
+  let note = ''
+  function register(definition) {
     try {
       pi.registerTool(definition)
-      registered.push(definition)
+      return true
     } catch (error) {
-      report(`注册 ${definition.name} 失败：${String(error?.message ?? error)}（可能已存在同名工具，已跳过）`)
+      report(`注册 ${definition.name} 失败：${String(error?.message ?? error)}`)
+      return false
     }
   }
-  const note = hostedServersNote(registered)
-  if (!note) return
+  function syncTools() {
+    let text
+    try {
+      text = readFileSync(file, 'utf8')
+    } catch {
+      return
+    }
+    if (text === previousText) return
+    previousText = text
+    const snapshot = parseSnapshot(text)
+    const built = snapshot.error ? snapshot : buildToolDefinitions(snapshot.tools, projectId)
+    if (built.error) {
+      report(`工具快照不可用：${built.error}`)
+      return
+    }
+    for (const collision of built.collisions) {
+      report(`名字规范化后碰撞：${collision.name}（${collision.labels.join('、')}），这些工具未注册，其余托管工具不受影响`)
+    }
+    const nextNames = new Set(built.definitions.map((definition) => definition.name))
+    const removed = new Set()
+    for (const [name, { definition }] of registered) {
+      if (nextNames.has(name)) continue
+      if (register({ ...definition, exposure: 'hidden', execute: () => errorResult(`Hosted MCP tool ${definition.label} is no longer available.`) })) {
+        registered.delete(name)
+        removed.add(name)
+      }
+    }
+    if (removed.size) {
+      const active = pi.getActiveTools?.() ?? []
+      if (active.some((name) => removed.has(name))) pi.setActiveTools(active.filter((name) => !removed.has(name)))
+    }
+    for (const definition of built.definitions) {
+      const fingerprint = JSON.stringify(definition)
+      if (registered.get(definition.name)?.fingerprint === fingerprint) continue
+      if (register(definition)) registered.set(definition.name, { definition, fingerprint })
+    }
+    note = hostedServersNote([...registered.values()].map(({ definition }) => definition))
+  }
+  watchFile(file, { persistent: false, interval: 500 }, syncTools)
+  pi.on('session_shutdown', () => unwatchFile(file, syncTools))
+  syncTools()
   pi.on('before_agent_start', (event) => {
+    syncTools()
     const base = String(event?.systemPrompt ?? '')
-    if (base.includes(note)) return
     const sections = event?.systemPromptOptions?.sections
+    if (!note) {
+      if (sections) delete sections[HOSTED_SERVERS_SECTION]
+      return
+    }
+    if (base.includes(note)) return
     if (sections && typeof sections === 'object') {
       sections[HOSTED_SERVERS_SECTION] = note
       return

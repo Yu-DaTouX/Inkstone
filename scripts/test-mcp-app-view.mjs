@@ -538,17 +538,19 @@ await (async () => {
   const tools = [
     { serverId: 'global-app' },
     { serverId: 'proj-a-app', projectScope: 'p-a' },
-    { serverId: 'proj-b-app', projectScope: 'p-b' }
+    { serverId: 'proj-b-app', projectScope: 'p-b' },
+    { serverId: 'only-a', enabled: false, projectEnabled: { 'p-a': true } },
+    { serverId: 'not-a', projectEnabled: { 'p-a': false } }
   ]
   const a = makeHarness({ name: 'refresh-proj-a', registrableTools: () => tools, currentProject: async () => 'p-a' })
   const snapA = await a.service.snapshot()
-  ok(snapA.toolCount === 2, '项目 A：只计全局 + 本项目（不泄 B 的条目数）', String(snapA.toolCount))
+  ok(snapA.toolCount === 3, '项目 A：只计本项目启用的工具（不泄 B 的条目数）', String(snapA.toolCount))
   const refreshedA = await a.service.refresh()
   ok(refreshedA.ok === true && a.state.refreshLog[0].callerProjectId === 'p-a', '刷新带 A 的可信 caller')
 
   const none = makeHarness({ name: 'refresh-no-project', registrableTools: () => tools, currentProject: async () => null })
   const snapNone = await none.service.snapshot()
-  ok(snapNone.toolCount === 1, '无项目事实：只计全局条目（项目目标不可见）', String(snapNone.toolCount))
+  ok(snapNone.toolCount === 2, '无项目事实：只计全局启用的工具（项目目标不可见）', String(snapNone.toolCount))
   await none.service.refresh()
   ok(!('callerProjectId' in none.state.refreshLog[0]), '无项目事实：不带 caller（由代理 fail-closed）')
 

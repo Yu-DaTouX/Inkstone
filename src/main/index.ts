@@ -3159,8 +3159,14 @@ app.whenReady().then(async () => {
     }
   })
 
-  mcpAppHost().onToolsChanged(() => {
+  const pushMcpToolsChanged = () => {
     if (win && !win.isDestroyed()) win.webContents.send('yan:push', { ch: 'mcp-tools-changed', payload: null } satisfies MainPush)
+  }
+  mcpAppHost().onToolsChanged((serverId, projectId) => {
+    pushMcpToolsChanged()
+    void mcpAppProxyService().refreshChanged(serverId, projectId).catch((error) => {
+      console.warn('[mcp-app] automatic tools refresh failed:', error)
+    }).then(pushMcpToolsChanged)
   })
 
   try {
