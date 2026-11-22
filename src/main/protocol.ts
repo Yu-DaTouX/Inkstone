@@ -426,7 +426,7 @@ export class PiRpc extends EventEmitter {
       return
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      this.emit('stderr', '[yan] RPC 记录不是 JSON 对象，已忽略')
+      this.emit('stderr', pick('[yan] RPC 记录不是 JSON 对象，已忽略', '[yan] Ignored an RPC record that is not a JSON object'))
       return
     }
     const obj = parsed as Record<string, unknown>
