@@ -146,6 +146,22 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok(!fake.calls.some((call) => call === 'smoke' || call.startsWith('install:')), `恢复 ${stage}：不试跑、不安装未通过复核的内容`)
     }
 
+    for (const stage of ['acquiring', 'verifying']) {
+      const service = new AcquisitionService({ root: join(root, `revoked-${stage}`) })
+      const tx = await makeTransaction(service, `revoked-${stage}`)
+      await service.markAcquiring(tx.operationId, 'resume fixture', at)
+      if (stage === 'verifying') await service.markVerifying(tx.operationId, 'smoke passed', at)
+      let authorized = true
+      const fake = makePorts({
+        async authorization() { return authorized ? { allowLifecycleScripts: false } : null },
+        async verifyStaged() { authorized = false; return { ok: true, problems: [] } }
+      })
+      const scheduler = new PiPackageActivationScheduler(service, fake.ports)
+      const result = await scheduler.schedule(tx.operationId)
+      ok(result.state === 'deferred', `阶段 ${stage}：校验中撤销授权时保留待处理事务`, result.detail)
+      ok(!fake.calls.some((call) => call === 'smoke' || call.startsWith('install:')), `阶段 ${stage}：不使用已撤销的授权试跑或安装`)
+    }
+
     {
       const service = new AcquisitionService({ root: join(root, 'smoke-fail') })
       const tx = await makeTransaction(service, 'smoke-fail')

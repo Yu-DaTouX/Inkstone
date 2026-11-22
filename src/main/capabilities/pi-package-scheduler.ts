@@ -114,6 +114,7 @@ export class PiPackageActivationScheduler {
     if (tx.state === 'acquiring') {
       const staged = await this.ports.verifyStaged(tx)
       if (!staged.ok) return this.fail(tx, stagedProblem(staged.problems))
+      if (!(await this.ports.authorization(tx))) return { operationId, state: 'deferred', detail: pick('试跑前精确授权复核未通过', 'Exact authorization could not be confirmed before the load check') }
       const smoke = await this.ports.smoke(tx)
       if (!smoke.ok) return this.fail(tx, `临时环境加载验证（smoke）未通过：${smoke.problems.join('；')}`)
       tx = await this.service.markVerifying(operationId, '临时环境加载验证（smoke）通过，复核后执行固定版本项目级安装')
@@ -122,14 +123,15 @@ export class PiPackageActivationScheduler {
     if (tx.state === 'verifying') {
       const latestBlock = await this.preflight(target)
       if (latestBlock) return { operationId, state: 'deferred', detail: latestBlock }
-      const currentGrant = await this.ports.authorization(tx)
-      if (!currentGrant) return { operationId, state: 'deferred', detail: '安装前精确授权复核未通过' }
-
       let installed = await this.ports.verifyInstalled(tx)
       if (!installed.ok) return this.fail(tx, `安装清单无法复核：${installed.problems.join('；')}`)
       if (!installed.installed) {
         const staged = await this.ports.verifyStaged(tx)
         if (!staged.ok) return this.fail(tx, stagedProblem(staged.problems))
+      }
+      const currentGrant = await this.ports.authorization(tx)
+      if (!currentGrant) return { operationId, state: 'deferred', detail: '安装前精确授权复核未通过' }
+      if (!installed.installed) {
         const install = await this.ports.install(tx, currentGrant)
         if (!install.ok) return this.fail(tx, install.error ?? 'pi install 失败')
         installed = await this.ports.verifyInstalled(tx)
