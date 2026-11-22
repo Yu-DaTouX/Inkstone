@@ -6,6 +6,7 @@
 <p align="center">基于 pi 的个人 AI 工作台。把代码、文件、网页和终端放在同一个会话里，让 Agent 动手，也让你看见它做了什么。</p>
 
 <p align="center">
+  <a href="https://inkstone-site.yudatou.workers.dev/">项目官网</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载 Windows x64</b></a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/tag/v0.16.0#assets">下载 Android 测试版</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases">更新日志</a> ·
@@ -24,10 +25,18 @@
 
 | 平台 | 从哪里下载 | 如何开始 |
 | --- | --- | --- |
-| Windows x64 | [桌面发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)的 `*-setup.exe`；免安装选 `*-portable.exe` | 在 **设置 → 模型** 登录或配置 API Key，新建会话并选好项目文件夹。 |
+| Windows x64 | [桌面发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)：安装选 `*-setup.exe`；免安装选 `*-portable.exe` 或解压 `*-portable-fast.zip`。可用同页的 `SHA256SUMS.txt` 校验下载文件。 | 在 **设置 → 模型** 登录或配置 API Key，新建会话并选好项目文件夹。 |
 | Android（测试） | [桌面 0.16.0 的发布附件](https://github.com/Yu-DaTouX/Inkstone/releases/tag/v0.16.0#assets)中的 `Inkstone-mobile-0.3.3.apk` | 在电脑端 **设置 → 手机与远程** 显示配对码，用手机扫码连接。 |
 
 Windows 安装包未签名，可能出现「未知发布者」提示，请从本仓库 Releases 下载。macOS、Linux 和 iOS 尚未交付；源码中的改动不一定已进入发布包。
+
+## 桌面 0.17.0 有什么新变化？
+
+- **用 Antigravity 聊天**：在主会话里选择模型和思考档，发送图片、继续长会话，也可以查看订阅额度。
+- **切换本地模型**：为不同模型保存各自的启动配置；如果它们共用端口，砚会协调切换。
+- **读长会话、查改动**：从小地图跳到早先的回复，或一键回到最新消息时，画面更少跳动。本轮改动卡也会列出文件变更。
+
+[查看 0.17.0 完整更新日志](https://github.com/Yu-DaTouX/Inkstone/releases/tag/v0.17.0)。此版只发布 Windows 包，Android 测试版仍从上表单独下载。
 
 ## 你可以用它做什么
 
@@ -43,7 +52,7 @@ Windows 安装包未签名，可能出现「未知发布者」提示，请从本
 
 ## 与 pi 的关系
 
-模型循环和工具执行由 [pi](https://github.com/badlogic/pi-mono)（`@earendil-works/pi-coding-agent`）提供，砚以独立 RPC 子进程的方式运行它，随包带一份固定版本的运行时。上下文、会话恢复、技能和 MCP 由 pi 原生管理，压缩沿用 pi 的触发与记录机制。砚在此之上提供：
+使用 pi 后端时，模型循环和工具执行由 [pi](https://github.com/badlogic/pi-mono)（`@earendil-works/pi-coding-agent`）提供，砚以独立 RPC 子进程的方式运行它，随包带一份固定版本的运行时。上下文、会话恢复、技能和 MCP 由 pi 原生管理，压缩沿用 pi 的触发与记录机制。砚在此之上提供：
 
 - **界面**：把 pi 的工作过程呈现出来；
 - **宿主能力**：审批、文件、Git、终端、浏览器等；
