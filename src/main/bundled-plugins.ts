@@ -153,6 +153,7 @@ export class BundledPlugins {
   private queues = new Map<string, Promise<unknown>>()
   private sequence = 0
   private closed = false
+  private closing?: Promise<void>
   constructor(private options: Options) {}
 
   private root(id: string): string { return join(this.options.dataDir, 'plugins', id, 'plugin') }
@@ -518,8 +519,12 @@ export class BundledPlugins {
     await Promise.all(tops.map(row => (this.options.killTree ?? taskkillTree)(row.pid).catch(() => undefined)))
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
     this.closed = true
+    return this.closing ??= Promise.resolve().then(() => this.finishClose())
+  }
+
+  private async finishClose(): Promise<void> {
     const pending = [...this.connecting.values(), ...this.queues.values()]
     await Promise.all([...this.connections.keys()].map(id => this.disconnect(id).catch(() => undefined)))
     await Promise.allSettled(pending)

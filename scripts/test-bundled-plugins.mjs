@@ -265,11 +265,13 @@ process.send({ type: 'ready' })
       const updating = host.action('upgrade', 'install')
       await rollbackStarted
       const closing = host.close()
-      const prematurely = await Promise.race([closing.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 60))])
+      const duplicate = host.close()
+      const prematurely = await Promise.race([closing.then(() => true), duplicate.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 60))])
       finishRollback()
-      await closing
+      await Promise.all([closing, duplicate])
       ok(!(await updating).ok && await readFile(join(target, 'version.txt'), 'utf8') === 'close-base', '关闭后旧版本已恢复')
       ok(!prematurely, '插件宿主关闭不能早于在途回滚完成')
+      ok(closing === duplicate, '并发关闭共用一次断开与回滚收尾')
     } finally {
       finishRollback()
       await host.close()
