@@ -279,7 +279,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
 function StepElapsed({ call, paused = false }: { call: UIToolCall; paused?: boolean }): JSX.Element | null {
   const now = useRunNow(isRunning(call) && !paused)
   if (call.startedAt === undefined) return null
-  return <span className="v3-step-time ui-num" data-testid="v3-step-elapsed">{formatDuration(Math.max(0, now - call.startedAt))}</span>
+  return <span className="v3-step-time ui-num" aria-hidden="true" data-testid="v3-step-elapsed">{formatDuration(Math.max(0, now - call.startedAt))}</span>
 }
 
 const MemoToolGroupRow = memo(ToolGroupRow)

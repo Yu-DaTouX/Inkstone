@@ -1,4 +1,4 @@
-export const meta = { description: '长命令不挤掉步骤标签，展开后可读完整命令' }
+export const meta = { description: '长命令的窄窗布局、键盘展开与运行计时的读屏名称' }
 
 export default async function run({ cdp, newSession, waitFor, check, shot }) {
   const ev = expr => cdp.evaluate(expr)
@@ -26,4 +26,28 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
     if(name==='codemode') await shot('command-label-expanded')
     await ev(`document.querySelector('${trigger}').click()`)
   }
+
+  const startedAt = Date.now() - 2000
+  const running = { id: 'timed-tool', name: 'bash', args: { command: 'timed-fixture', description: 'ACTION_TIMER_FIXTURE' }, startedAt, status: 'running' }
+  await ev(`window.__yanStore.setState(s=>({messages:[{id:'timed-user',role:'user',text:'计时'},{id:'timed-assistant',role:'assistant',text:'',toolCalls:${JSON.stringify([running])}}],session:{...s.session,isStreaming:true,isAgentRunning:true}}))`)
+  const row = '[data-turn-id="timed-assistant"] [data-testid="v3-step"]'
+  const time = `${row} [data-testid="v3-step-elapsed"]`
+  const processTime = '[data-turn-id="timed-assistant"] [data-testid="v3-process-toggle"] [data-kind="elapsed"]'
+  await waitFor(`!!document.querySelector('${time}')`, 6000)
+  const sample = () => ev(`(() => {const step=document.querySelector('${time}');const process=document.querySelector('${processTime}');return {text:step.textContent,stepHidden:step.getAttribute('aria-hidden'),processHidden:process?.getAttribute('aria-hidden')}})()`)
+  const before = await sample()
+  await cdp.call('Accessibility.enable')
+  const names = async () => (await cdp.call('Accessibility.getFullAXTree')).result.nodes.filter(n=>!n.ignored&&n.role?.value==='button').map(n=>n.name?.value ?? '').filter(name=>name.includes('timed-fixture') || name.includes('ACTION_TIMER_FIXTURE'))
+  const beforeNames = await names()
+  await waitFor(`document.querySelector('${time}')?.textContent!==${JSON.stringify(before.text)}`, 3500)
+  const after = await sample()
+  const afterNames = await names()
+  check('计时继续更新，但不会改变工具按钮读屏名称', before.text !== after.text && before.stepHidden === 'true' && beforeNames.length > 0 && JSON.stringify(beforeNames) === JSON.stringify(afterNames), { before, after, beforeNames, afterNames })
+  check('外层过程计时也不加进按钮读屏名称', before.processHidden === 'true', before)
+  await ev(`document.querySelector('${row}').focus()`)
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await waitFor(`document.querySelector('${row}')?.getAttribute('aria-expanded')==='true'`, 5000)
+  check('键盘可展开运行中的工具，焦点保留在按钮', await ev(`document.activeElement===document.querySelector('${row}')`))
+  await shot('timed-tool-expanded-by-keyboard')
 }

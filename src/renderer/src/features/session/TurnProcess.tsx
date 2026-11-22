@@ -387,7 +387,7 @@ function LiveProcessIcon(): JSX.Element {
 function LiveElapsed(): JSX.Element | null {
   const progress = useRunProgress()
   if (!progress) return null
-  return <span className="v3-process-count ui-num" data-kind="elapsed">{formatDuration(progress.elapsedMs)}</span>
+  return <span className="v3-process-count ui-num" data-kind="elapsed" aria-hidden="true">{formatDuration(progress.elapsedMs)}</span>
 }
 
 function joinActivities(phrases: readonly string[], join: string): string {
