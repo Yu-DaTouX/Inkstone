@@ -184,6 +184,21 @@ try {
   }
 
   {
+    const duplicate = new m.SessionItemProjector()
+    duplicate.liveMessageStart({ role: 'assistant' }, 100)
+    const start = { type: 'toolcall_start', contentIndex: 0, id: 'repeat', toolName: 'read' }
+    const original = duplicate.liveAssistantDelta(start, 101)
+    duplicate.liveAssistantDelta({ type: 'toolcall_delta', contentIndex: 0, delta: '{"path":' }, 102)
+    assert.equal(duplicate.liveAssistantDelta(start, 103), null, '已开启的块不再重复创建工具')
+    duplicate.liveAssistantDelta({ type: 'toolcall_delta', contentIndex: 0, delta: '"note.txt"}' }, 104)
+    duplicate.liveAssistantDelta({ type: 'toolcall_end', contentIndex: 0, toolCall: { type: 'toolCall', id: 'repeat' } }, 105)
+    const final = duplicate.liveMessageEnd()
+    assert.deepEqual(final.toolCalls, [original], '只留下原调用，不出现第二个同 ID 卡片')
+    assert.deepEqual(original.args, { path: 'note.txt' }, '重复起始帧不丢失之前的参数片段')
+    assert.equal(original.startedAt, 101)
+  }
+
+  {
     const parallel = new m.SessionItemProjector()
     const a = parallel.liveToolStart({ toolCallId: 'a', toolName: 'read' }, 110)
     const b = parallel.liveToolStart({ toolCallId: 'b', toolName: 'read' }, 110)

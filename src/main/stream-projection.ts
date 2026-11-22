@@ -157,14 +157,14 @@ export class StreamProjection {
     } else if (kind === 'text_delta') {
       this.deps.checkDelta('text', String(ev.delta ?? ''))
       this.markDirty()
-    } else if (kind === 'toolcall_start') {
+    } else if (kind === 'toolcall_start' && call) {
       const index = typeof ev.contentIndex === 'number' ? ev.contentIndex : undefined
       const blocks = this.streaming.openToolBlocks ??= new Set()
       blocks.add(index)
       this.streaming.toolOpen = true
       this.dirty = true
       this.flushNow()
-      if (call) this.pushTool(call)
+      this.pushTool(call)
     } else if (kind === 'toolcall_delta') {
       if (call && streamsHtmlWriteArgs(call)) {
         const now = this.clock.now()

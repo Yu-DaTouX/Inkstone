@@ -265,6 +265,7 @@ export class SessionItemProjector {
       return null
     }
     if (kind === 'toolcall_start') {
+      if (typeof ev.contentIndex === 'number' && slot.toolBlocks?.has(ev.contentIndex)) return null
       if (slot.progressUpdates && typeof ev.contentIndex === 'number' && !slot.signedBlocks?.has(ev.contentIndex - 1)) {
         const previousId = assistantBlockId(slot.turnId, slot.step, ev.contentIndex - 1)
         if (promoteProgressUpdate(slot.items.find((item) => item.id === previousId))) this.clearComposed(slot)
