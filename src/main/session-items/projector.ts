@@ -270,8 +270,9 @@ export class SessionItemProjector {
       if (typeof ev.contentIndex === 'number') (slot.toolBlocks ??= new Map()).set(ev.contentIndex, item)
       return call
     }
-    const target = (typeof ev.contentIndex === 'number' ? slot.toolBlocks?.get(ev.contentIndex) : undefined)
-      ?? [...slot.items].reverse().find((item): item is ToolItem => item.kind === 'tool')
+    const target = typeof ev.contentIndex === 'number'
+      ? slot.toolBlocks?.get(ev.contentIndex)
+      : slot.items.findLast((item): item is ToolItem => item.kind === 'tool')
     if (kind === 'toolcall_delta' && target) {
       appendToolCallArgs(target.call, ev.delta)
       return target.call
