@@ -92,7 +92,12 @@ export function previewOutput(text: string, options: { tail: boolean; maxLines: 
     size -= dropped.length + 1
   }
   if (picked.length === 1 && picked[0].length > options.maxChars) {
-    picked[0] = options.tail ? `\u2026${picked[0].slice(-options.maxChars)}` : `${picked[0].slice(0, options.maxChars)}\u2026`
+    const line = picked[0]
+    const boundary = options.tail ? line.length - options.maxChars : options.maxChars
+    const splitsPair = (line.codePointAt(boundary - 1) ?? 0) > 0xffff
+    picked[0] = options.tail
+      ? `\u2026${line.slice(boundary + (splitsPair ? 1 : 0))}`
+      : `${line.slice(0, boundary - (splitsPair ? 1 : 0))}\u2026`
   }
   return { text: picked.join('\n'), hidden: total - picked.length, total }
 }

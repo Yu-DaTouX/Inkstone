@@ -669,7 +669,7 @@ async function main() {
     ok(textOf(byTestId(shortView.tree, 'v3-step-output')).includes('one'), '短输出正常显示')
     ok(byTestId(shortView.tree, 'v3-step-output-toggle') === null, '短输出不给展开控件')
 
-    const oneLine = `prefix-${'x'.repeat(5000)}-suffix`
+    const oneLine = `prefix-${'x'.repeat(1592)}🧪${'x'.repeat(2000)}🧪${'x'.repeat(1592)}-suffix`
     for (const [name, head, tail] of [['read', 'prefix-', '\u2026'], ['bash', '\u2026', '-suffix']]) {
       const id = `long-one-${name}`
       const longNode = renderStepNode(renderStepsOpen([tool({ id, name, output: oneLine })]).tree, id)
@@ -678,6 +678,7 @@ async function main() {
       const longView = renderSub(renderSub(longOpen, 'StepDetail').tree, 'StepOutput')
       const preview = textOf(byTestId(longView.tree, 'v3-step-output'))
       ok(preview.length < 1700 && preview.startsWith(head) && preview.endsWith(tail), `${name} 单行超长也截断预览`, preview.length)
+      ok(preview.isWellFormed(), `${name} 预览边界不拆开 emoji`)
       const expand = byTestId(longView.tree, 'v3-step-output-toggle')
       ok(expand?.props['aria-expanded'] === false && !byTestId(longView.tree, 'v3-step-output-earlier'), `${name} 可展开单行，且不误报有更早的整行`)
       if (!expand) continue

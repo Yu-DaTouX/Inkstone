@@ -81,7 +81,7 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
   await ev(`document.querySelector('${reused}').click()`)
   await waitFor(`document.querySelector('${reused}')?.getAttribute('aria-expanded')==='true'`, 6000)
   await newSession()
-  const longOutput = `prefix-${'x'.repeat(5000)}-suffix`
+  const longOutput = `prefix-${'x'.repeat(3300)}🧪${'x'.repeat(1592)}-suffix`
   const secondSession = await loadRepeatedTool('dir second-scope', longOutput)
   check('两个真实会话复用工具 ID 时，展开状态不会带到新会话', !!firstSession && !!secondSession && firstSession !== secondSession && await ev(`document.querySelector('${reused}')?.getAttribute('aria-expanded')==='false'`))
   await ev(`document.querySelector('${reused}').click()`)
@@ -89,7 +89,7 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
   const toggle = '[data-turn-id="scope-answer"] [data-testid="v3-step-output-toggle"]'
   await waitFor(`!!document.querySelector('${output}')`, 5000)
   const preview = await ev(`document.querySelector('${output}').textContent`)
-  check('单行命令输出默认只渲染尾部预览且不虚报隐藏行数', preview.length < 1700 && !preview.includes('prefix-') && preview.endsWith('-suffix') && await ev(`!document.querySelector('[data-turn-id="scope-answer"] [data-testid="v3-step-output-earlier"]')`), { previewLength: preview.length })
+  check('单行输出尾部预览不拆开 emoji，也不虚报隐藏行数', preview.isWellFormed() && preview.length < 1700 && !preview.includes('prefix-') && preview.endsWith('-suffix') && await ev(`!document.querySelector('[data-turn-id="scope-answer"] [data-testid="v3-step-output-earlier"]')`), { previewLength: preview.length })
   await ev(`document.querySelector('${toggle}').focus()`)
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
   await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
