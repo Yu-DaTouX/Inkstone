@@ -12,6 +12,9 @@ export type WebSearchTextKey =
   | 'sources'
   | 'expand'
   | 'collapse'
+  | 'replySources'
+  | 'backToCitation'
+  | 'backToCitationShort'
   | 'citationAria'
   | 'citationOpenHint'
   | 'openSource'
@@ -35,6 +38,9 @@ const ZH: Record<WebSearchTextKey, string> = {
   sources: '来源',
   expand: '展开来源',
   collapse: '收起来源',
+  replySources: '引用来源 · {n}',
+  backToCitation: '回到第 {n} 条引用',
+  backToCitationShort: '回到引用',
   citationAria: '引用来源：{site} 第 {n} 条',
   citationOpenHint: '单击在砚里打开，双击用系统浏览器打开',
   openSource: '打开来源：{title}',
@@ -59,6 +65,9 @@ const EN: Record<WebSearchTextKey, string> = {
   sources: 'Sources',
   expand: 'Show sources',
   collapse: 'Hide sources',
+  replySources: 'Cited sources · {n}',
+  backToCitation: 'Back to citation {n}',
+  backToCitationShort: 'Back to citation',
   citationAria: 'Citation {n} from {site}',
   citationOpenHint: 'Click to open in Inkstone, double-click for the system browser',
   openSource: 'Open source: {title}',

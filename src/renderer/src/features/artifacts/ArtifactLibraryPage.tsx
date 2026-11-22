@@ -1,15 +1,16 @@
 import { formatBytes } from '../diff/limits'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff, Search } from '../../ui/icons'
+import { ExternalLink, FolderOpen, Layers, MessageSquare, MoreHorizontal, Pin, PinOff, Search } from '../../ui/icons'
 import type { ArtifactLibraryItem as ArtifactLibraryEntry } from '../../../../shared/artifact-library'
 import { isHtmlArtifact } from '../../../../shared/html-artifact-preview'
 import { useI18n, useT } from '../../i18n'
-import { Button, EmptyState, IconButton, MiddleTruncate, Notice, PageHeader, SearchField, SegmentedControl } from '../../ui'
+import { Button, EmptyState, IconButton, Menu, MenuItem, MenuTrigger, MiddleTruncate, Notice, PageHeader, Popover, SearchField, SegmentedControl } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { previewFormatOf } from '../preview/preview-format'
+import { ImageViewer } from '../composer/image-viewer'
 import { HtmlArtifactThumb } from './HtmlArtifactThumb'
 import { usePreviewSnapshot, useNearViewport } from './widget-lifecycle'
 import './artifacts.css'
@@ -103,6 +104,7 @@ export function ArtifactLibraryPage(): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [query, setQuery] = useState('')
   const [view, setView] = useState<LibraryView>(readView)
+  const [imageId, setImageId] = useState<string | null>(null)
   const [pinned, setPinned] = useState<Set<string>>(readPinned)
   const switchSession = useStore((s) => s.switchSession)
   const previewFile = useStore((s) => s.previewFile)
@@ -141,6 +143,10 @@ export function ArtifactLibraryPage(): JSX.Element {
     const found = state.entries.filter((entry) => matches(entry, query.trim()))
     return [...found.filter((entry) => pinned.has(libraryEntryKey(entry))), ...found.filter((entry) => !pinned.has(libraryEntryKey(entry)))]
   }, [state, query, pinned])
+  const gallery = useMemo(() => imageId === null ? [] : visible.filter((entry) => !entry.artifact.unavailable && isImageEntry(entry)).map(({ artifact }) => ({
+    id: artifact.id, src: filePreviewUrl(artifact.path), alt: artifact.filename, caption: artifact.description
+  })), [imageId, visible])
+  const shownImage = gallery.find((image) => image.id === imageId)
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(lang === 'en-US' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' }), [lang])
 
   const changeView = (next: LibraryView): void => {
@@ -167,7 +173,8 @@ export function ArtifactLibraryPage(): JSX.Element {
 
   const openEntry = (entry: ArtifactLibraryEntry): void => {
     if (entry.artifact.unavailable) return
-    if (canPreviewEntry(entry)) void previewFile(entry.artifact.path)
+    if (isImageEntry(entry)) setImageId(entry.artifact.id)
+    else if (canPreviewEntry(entry)) void previewFile(entry.artifact.path)
     else void window.yan.openPath(entry.artifact.path)
   }
 
@@ -190,15 +197,29 @@ export function ArtifactLibraryPage(): JSX.Element {
         <IconButton size="sm" aria-label={isPinned ? t('artifactLibrary.unpin') : t('artifactLibrary.pin')} tooltip={isPinned ? t('artifactLibrary.unpin') : t('artifactLibrary.pin')} onPress={() => togglePin(entry)}>
           {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
         </IconButton>
-        <IconButton size="sm" aria-label={t('artifactLibrary.openSession')} tooltip={t('artifactLibrary.openSession')} isDisabled={!entry.sessionPath} onPress={() => openSession(entry)}>
-          <MessageSquare size={14} />
-        </IconButton>
-        <IconButton size="sm" aria-label={t('artifact.reveal')} tooltip={t('artifact.reveal')} isDisabled={unavailable} onPress={() => void window.yan.revealPath(artifact.path)}>
-          <FolderOpen size={14} />
-        </IconButton>
-        <IconButton size="sm" aria-label={t('artifactLibrary.openFile')} tooltip={t('artifactLibrary.openFile')} isDisabled={unavailable} onPress={() => void window.yan.openPath(artifact.path)}>
-          <ExternalLink size={14} />
-        </IconButton>
+        <span className="artifact-library-secondary-actions">
+          <IconButton size="sm" aria-label={t('artifactLibrary.openSession')} tooltip={t('artifactLibrary.openSession')} isDisabled={!entry.sessionPath} onPress={() => openSession(entry)}>
+            <MessageSquare size={14} />
+          </IconButton>
+          <IconButton size="sm" aria-label={t('artifact.reveal')} tooltip={t('artifact.reveal')} isDisabled={unavailable} onPress={() => void window.yan.revealPath(artifact.path)}>
+            <FolderOpen size={14} />
+          </IconButton>
+          <IconButton size="sm" aria-label={t('artifactLibrary.openFile')} tooltip={t('artifactLibrary.openFile')} isDisabled={unavailable} onPress={() => void window.yan.openPath(artifact.path)}>
+            <ExternalLink size={14} />
+          </IconButton>
+        </span>
+        <span className="artifact-library-more">
+          <MenuTrigger>
+            <IconButton size="sm" aria-label={t('artifact.moreActions')} data-testid="artifact-library-more"><MoreHorizontal size={16} /></IconButton>
+            <Popover placement="bottom end">
+              <Menu aria-label={t('artifact.moreActions')}>
+                <MenuItem isDisabled={!entry.sessionPath} onAction={() => openSession(entry)} icon={<MessageSquare size={14} />}>{t('artifactLibrary.openSession')}</MenuItem>
+                <MenuItem isDisabled={unavailable} onAction={() => void window.yan.revealPath(artifact.path)} icon={<FolderOpen size={14} />}>{t('artifact.reveal')}</MenuItem>
+                <MenuItem isDisabled={unavailable} onAction={() => void window.yan.openPath(artifact.path)} icon={<ExternalLink size={14} />}>{t('artifactLibrary.openFile')}</MenuItem>
+              </Menu>
+            </Popover>
+          </MenuTrigger>
+        </span>
       </div>
     )
   }
@@ -284,6 +305,7 @@ export function ArtifactLibraryPage(): JSX.Element {
           ))}
         </ul>
       ) : null}
+      <ImageViewer isOpen={!!shownImage} src={shownImage?.src ?? null} alt={shownImage?.alt} gallery={gallery} onOpenChange={(open) => { if (!open) setImageId(null) }} />
     </div>
   )
 }

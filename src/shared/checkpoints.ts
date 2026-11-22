@@ -54,6 +54,7 @@ export function matchCheckpoint(records: readonly CheckpointRecord[], text: stri
     if (record.kind !== 'turn' || record.textHash !== hash) continue
     const gap = timestamp ? Math.abs(record.at - timestamp) : 0
     if (timestamp && gap > 10 * 60 * 1000) continue
+    if (gap === bestGap) best = null
     if (gap < bestGap) {
       best = record
       bestGap = gap

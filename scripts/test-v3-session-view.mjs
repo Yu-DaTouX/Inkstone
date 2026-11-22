@@ -634,7 +634,7 @@ async function main() {
     const arts = byStub(tree, 'turn-artifacts')
     ok(arts.length === 1, '成果列表照常渲染（已完成成果不退回 placeholder）', arts.length)
     ok(arts[0].props.sessionId === 'sess-a' && arts[0].props.messageId === turn.id, '成果用 AssistantTurn.id 做整回合组身份', { sessionId: arts[0].props.sessionId, messageId: arts[0].props.messageId })
-    ok(byTypeName(tree, 'ImageProgressFallbackNote').length === 0, '全部生图已 done：不显示生图回退提示')
+    ok(byStub(tree, 'turn-artifacts')[0]?.props.imageProgress?.every((item) => item.stage === 'done'), '已完成生图事件传给成果视图归位')
 
     const nullTree = renderTurn(turn, { sessionId: null, streaming: false })
     const nullMds = byStub(nullTree, 'markdown')
@@ -734,14 +734,15 @@ async function main() {
     ok(String(errored.failed?.props.className).includes('err'), '以错误结束：失败计数标红', errored.failed?.props.className)
   }
 
-  group('TurnView 生图进度：只有仍在生成的图片用回退提示')
+  group('TurnView 生图进度：和成图使用同一成果视图')
   {
     const live = baseMessages()
     live[2] = { ...live[2], imageProgress: [{ id: 'img1', stage: 'generating', startedAt: 1, updatedAt: 2 }] }
     const turn = assistantOf(live)
     const tree = renderTurn(turn, { sessionId: 'sess-a', streaming: true })
-    ok(byTypeName(tree, 'ImageProgressFallbackNote').length === 1, '有未完成的生图：显示回退提示')
-    ok(byStub(tree, 'turn-artifacts').length === 1, '已完成成果卡与生图进度并存，不被回退提示遮掉')
+    const card = byStub(tree, 'turn-artifacts')[0]
+    ok(card?.props.imageProgress?.[0]?.stage === 'generating', '未完成的生图事件进入成果视图')
+    ok(card?.props.artifacts?.length > 0, '已完成成果与生图占位共用一个成果视图')
   }
 
   group('分屏格数据源：焦点格走 store，非焦点格走 runtime，peek 回退，target 变化')

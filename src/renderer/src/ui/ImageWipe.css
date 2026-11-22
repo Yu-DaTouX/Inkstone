@@ -1,0 +1,83 @@
+@layer primitives {
+  .ui-image-wipe__track {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    max-height: 60vh;
+    overflow: hidden;
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    box-shadow: var(--ring-line);
+    touch-action: pan-y;
+    cursor: ew-resize;
+  }
+
+  .ui-image-wipe__track > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  .ui-image-wipe__before {
+    background: var(--sunken);
+    clip-path: inset(0 calc(100% - var(--wipe)) 0 0);
+  }
+
+  .ui-image-wipe__line, .ui-image-wipe__label {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .ui-image-wipe__line {
+    inset: 0 auto 0 var(--wipe);
+    width: var(--hair, 1px);
+    background: var(--ink);
+  }
+
+  .ui-image-wipe__label {
+    inset-block-start: var(--s-8);
+    padding: var(--s-2) var(--s-6);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: var(--t-footnote);
+    box-shadow: var(--ring-line);
+  }
+
+  .ui-image-wipe__label[data-side='before'] { inset-inline-start: var(--s-8); }
+  .ui-image-wipe__label[data-side='after'] { inset-inline-end: var(--s-8); }
+
+  .ui-image-wipe__thumb {
+    top: 50%;
+    width: var(--s-20);
+    height: var(--s-24);
+    border-radius: var(--r-full);
+    transform: translate(-50%, -50%);
+    background: var(--surface);
+    box-shadow: var(--ring-line2), var(--shadow-sm);
+  }
+
+  .ui-image-wipe__thumb[data-focus-visible] { box-shadow: var(--ring-focus); }
+
+  .ui-image-wipe--frameless {
+    display: grid;
+    place-items: center;
+    container-type: size;
+    min-height: 0;
+  }
+
+  .ui-image-wipe--frameless .ui-image-wipe__track {
+    width: min(100cqw, calc(100cqh * var(--wipe-ratio)));
+    aspect-ratio: var(--wipe-ratio);
+    max-height: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ui-image-wipe--frameless .ui-image-wipe__before { background: transparent; }
+  .ui-image-wipe--frameless .ui-image-wipe__after { clip-path: inset(0 0 0 var(--wipe)); }
+}

@@ -121,10 +121,11 @@ function settled(call: UIToolCall): boolean {
 function normalizeParts(path: string): { root: string; parts: string[] } {
   const slashed = path.replace(/\\/g, '/')
   const drive = /^[a-zA-Z]:/.exec(slashed)
-  const folds = !slashed.startsWith('/')
-  const root = drive ? drive[0].toLowerCase() : slashed.startsWith('/') ? '/' : ''
+  const share = /^\/\/[^/]+\/[^/]+(?=\/|$)/.exec(slashed)?.[0]
+  const folds = !!share || !slashed.startsWith('/')
+  const root = share?.toLowerCase() ?? (drive ? drive[0].toLowerCase() : slashed.startsWith('/') ? '/' : '')
   const parts: string[] = []
-  for (const part of slashed.slice(drive ? 2 : 0).split('/')) {
+  for (const part of slashed.slice(share?.length ?? (drive ? 2 : 0)).split('/')) {
     if (!part || part === '.') continue
     if (part === '..') parts.pop()
     else parts.push(folds ? part.toLowerCase() : part)
@@ -132,40 +133,48 @@ function normalizeParts(path: string): { root: string; parts: string[] } {
   return { root, parts }
 }
 
-export function isInsideCwd(path: string, cwd?: string): boolean {
-  if (!cwd?.trim()) return true
+export function scopedPathKey(path: string, cwd?: string): string | null {
+  if (!cwd?.trim()) return path
   const base = normalizeParts(cwd)
   const absolute = /^[a-zA-Z]:[\\/]|^[\\/]/.test(path)
   const target = normalizeParts(absolute ? path : `${cwd.replace(/[\\/]+$/, '')}/${path}`)
-  if (target.root !== base.root || target.parts.length < base.parts.length) return false
-  return base.parts.every((part, i) => target.parts[i] === part)
+  if (target.root !== base.root || !base.parts.every((part, i) => target.parts[i] === part)) return null
+  return `${target.root}/${target.parts.join('/')}`
 }
 
-export function collectTurnChanges(tools: readonly UIToolCall[], cwd?: string): TurnChanges | null {
+export function isInsideCwd(path: string, cwd?: string): boolean {
+  return scopedPathKey(path, cwd) !== null
+}
+
+export function callFileDiffs(call: UIToolCall): FileDiff[] {
+  const acp = call.details as { antigravity?: boolean; antigravityDiffs?: FileDiff[] } | undefined
+  if (acp?.antigravity && call.status === 'ok' && Array.isArray(acp.antigravityDiffs)) return acp.antigravityDiffs
+  const diff = readFileDiff(call.details)
+  return diff ? [diff] : []
+}
+
+export function collectTurnChanges(tools: readonly UIToolCall[], cwd?: string, fallback?: (call: UIToolCall) => TurnFileChange | null): TurnChanges | null {
   const byPath = new Map<string, TurnFileChange>()
   let countable = true
   for (const call of tools) {
     if (!settled(call)) continue
-    const acp = call.details as { antigravity?: boolean; antigravityDiffs?: FileDiff[] } | undefined
-    const fileDiff = readFileDiff(call.details)
-    const diffs = acp?.antigravity && call.status === 'ok' && Array.isArray(acp.antigravityDiffs) ? acp.antigravityDiffs : fileDiff ? [fileDiff] : []
-    for (const diff of diffs) {
+    const diffs = callFileDiffs(call)
+    for (const diff of !diffs.length && fallback ? [fallback(call)] : diffs) {
       if (!diff || diff.status === 'unchanged') continue
       const path = diff.path || callPath(call) || call.id
-      if (!isInsideCwd(path, cwd)) continue
+      const key = scopedPathKey(path, cwd)
+      if (key === null) continue
       const known = diff.added >= 0 && diff.removed >= 0
       if (!known) countable = false
-      const prev = byPath.get(path)
+      const prev = byPath.get(key)
       const status: TurnFileStatus = diff.status === 'created' || diff.status === 'deleted'
         ? diff.status
         : prev?.status === 'created' ? 'created' : 'modified'
       const row: TurnFileChange = prev ?? { path, status, added: 0, removed: 0 }
       row.status = status
-      if (known) {
-        row.added += diff.added
-        row.removed += diff.removed
-      }
-      byPath.set(path, row)
+      row.added = known && row.added >= 0 ? row.added + diff.added : -1
+      row.removed = known && row.removed >= 0 ? row.removed + diff.removed : -1
+      byPath.set(key, row)
     }
   }
   if (!byPath.size) return null

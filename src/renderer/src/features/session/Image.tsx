@@ -2,7 +2,7 @@ import { useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as R
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
-import { ImageViewer } from '../composer/image-viewer'
+import { ImageViewer, type ViewerImage } from '../composer/image-viewer'
 import { InlineImage } from '../../ui/InlineImage'
 import { createFailedImageCache } from './message-cache'
 
@@ -144,12 +144,14 @@ export function MessageImage({
   src,
   alt,
   sourceCwd,
-  className
+  className,
+  gallery
 }: {
   src: string
   alt?: string
   sourceCwd?: string
   className?: string
+  gallery?: readonly ViewerImage[]
 }): JSX.Element {
   const t = useT()
   const notify = useStore((s) => s.notify)
@@ -243,7 +245,7 @@ export function MessageImage({
         role="button"
         tabIndex={0}
       />
-      <ImageViewer isOpen={viewerOpen} src={src} alt={alt} onOpenChange={setViewerOpen} />
+      <ImageViewer isOpen={viewerOpen} src={src} alt={alt} gallery={gallery} onOpenChange={setViewerOpen} />
     </>
   )
 }

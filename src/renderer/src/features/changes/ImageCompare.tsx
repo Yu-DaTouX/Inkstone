@@ -1,4 +1,7 @@
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
+import { useT } from '../../i18n'
+import { Button } from '../../ui'
+import { ImageWipe } from '../../ui/ImageWipe'
 import type { GitImageSide } from '../../../../shared/git'
 import { formatBytes } from './changes-scope'
 import type { ChangesText } from './text'
@@ -39,10 +42,20 @@ export function ImageCompare({
   after: GitImageSide
   text: ChangesText
 }): ReactElement {
+  const t = useT()
+  const [wipe, setWipe] = useState(false)
+  const paired = before.dataUrl && after.dataUrl && !before.missing && !after.missing && !before.tooLarge && !after.tooLarge
   return (
-    <div className="changes-pane__images">
-      <ImageSideView label={text.imageBefore} side={before} text={text} />
-      <ImageSideView label={text.imageAfter} side={after} text={text} />
+    <div className="changes-pane__image-compare">
+      {paired ? <Button size="sm" variant="ghost" aria-pressed={wipe} data-testid="changes-image-compare" onPress={() => setWipe((value) => !value)}>{t(wipe ? 'artifact.imageSideBySide' : 'artifact.imageCompare')}</Button> : null}
+      {wipe && paired ? (
+        <ImageWipe before={before.dataUrl!} after={after.dataUrl!} beforeLabel={text.imageBefore} afterLabel={text.imageAfter} label={t('artifact.imageDivider')} />
+      ) : (
+        <div className="changes-pane__images">
+          <ImageSideView label={text.imageBefore} side={before} text={text} />
+          <ImageSideView label={text.imageAfter} side={after} text={text} />
+        </div>
+      )}
     </div>
   )
 }

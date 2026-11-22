@@ -67,7 +67,7 @@ function changesText(lang: Lang): ChangesText {
 
 function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string[]): { text: string; timestamp?: number } | null {
   const first = messages.findIndex((m) => m.id === sourceIds[0])
-  for (let i = (first < 0 ? messages.length : first) - 1; i >= 0; i--) {
+  for (let i = first - 1; i >= 0; i--) {
     const m = messages[i]
     if (m.role === 'user' && m.text) return { text: m.text, timestamp: m.timestamp }
   }
@@ -77,27 +77,24 @@ function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string
 const NO_DELIVERABLES: readonly ReplyFileLink[] = []
 
 function useIgnoredCount(cwd: string | undefined, paths: readonly string[]): number {
-  const key = cwd && paths.length ? `${cwd}\n${paths.join('\n')}` : ''
-  const [count, setCount] = useState(0)
+  const key = paths.length ? JSON.stringify(paths) : ''
+  const [result, setResult] = useState<{ cwd: string; key: string; count: number } | null>(null)
   useEffect(() => {
-    if (!key || !cwd) {
-      setCount(0)
-      return undefined
-    }
+    if (!key || !cwd) return undefined
     const git = typeof window === 'undefined' ? undefined : window.yan?.git
     if (typeof git?.screenPaths !== 'function') return undefined
     let alive = true
     git
-      .screenPaths(cwd, key.split('\n').slice(1))
-      .then((result) => {
-        if (alive) setCount(result?.ignored?.length ?? 0)
+      .screenPaths(cwd, JSON.parse(key) as string[])
+      .then((screen) => {
+        if (alive) setResult({ cwd, key, count: screen?.ignored?.length ?? 0 })
       })
-      .catch(() => undefined)
+      .catch(() => { if (alive) setResult(null) })
     return () => {
       alive = false
     }
   }, [key, cwd])
-  return count
+  return result && result.cwd === cwd && result.key === key ? result.count : 0
 }
 
 export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd, previewCwd, readOnly, rewindOwner }: {

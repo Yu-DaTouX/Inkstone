@@ -14,7 +14,12 @@
   .artifact-library-name:disabled { cursor: default; }
   .artifact-library-meta, .artifact-library-desc { overflow: hidden; color: var(--fg3); font-size: var(--t-footnote); text-overflow: ellipsis; white-space: nowrap; }
   .artifact-library-desc { color: var(--fg2); }
-  .artifact-library-actions { display: flex; align-items: center; gap: var(--s-4); }
+  .artifact-library-actions, .artifact-library-secondary-actions { display: flex; align-items: center; gap: var(--s-4); }
+  .artifact-library-more { display: none; }
+  @container artifact-library (max-width: 520px) {
+    .artifact-library-secondary-actions { display: none; }
+    .artifact-library-more { display: block; }
+  }
   .artifact-library-head .ui-page-head__actions { flex: 0 1 auto; min-width: 0; }
   .artifact-library-tools { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: var(--s-8); min-width: 0; }
   .artifact-library-tools > .ui-seg { flex: none; }
@@ -26,8 +31,13 @@
   .artifact-library-card { display: grid; grid-template-rows: max-content max-content max-content; gap: var(--s-8); min-width: 0; padding: var(--s-8); border: var(--hair, 1px) solid var(--line); border-radius: var(--r-md); background: var(--bg); transition: border-color var(--dur-base) var(--ease); }
   .artifact-library-card:hover { border-color: var(--line2); }
   .artifact-library-card[data-unavailable] { opacity: 0.6; }
+  .artifact-library-card { container: artifact-card / inline-size; }
   .artifact-library-card .artifact-library-main { padding: 0 var(--s-4); }
   .artifact-library-card .artifact-library-actions { justify-content: flex-end; }
+  @container artifact-card (max-width: 340px) {
+    .artifact-library-secondary-actions { display: none; }
+    .artifact-library-more { display: block; }
+  }
   .artifact-library-thumb { position: relative; overflow: hidden; width: 100%; aspect-ratio: 16 / 10; border: var(--hair, 1px) solid var(--line); border-radius: var(--r-sm); background: var(--sunken); }
   @container artifact-library (max-width: 640px) { .artifact-library-thumb { aspect-ratio: 2 / 1; max-height: 12rem; } }
   .artifact-library-thumb .v3-artifact-thumb { position: absolute; inset: 0; height: 100% !important; min-height: 0; margin: 0; border-radius: 0; }

@@ -43,6 +43,15 @@ try {
   ok(merged?.files[0].added === 5 && merged?.files[0].removed === 3, '同一路径行数累加', merged?.files[0])
   ok(merged?.added === 10 && merged?.removed === 3, '合计行数', merged)
 
+  const aliases = collectTurnChanges([call('a', diff('src/A.ts', 1, 0, 'created')), call('b', diff('e:/PROJ/src/./a.ts', 2, 1))], 'E:/proj')
+  ok(aliases?.files.length === 1 && aliases.files[0].path === 'src/A.ts' && aliases.counts.created === 1 && aliases.added === 3, 'Windows 同一文件的相对和绝对写法只列一次，保留第一次的可打开路径', aliases)
+  const distinct = collectTurnChanges([call('a', diff('src/A.ts', 1, 0)), call('b', diff('/proj/src/a.ts', 2, 1))], '/proj')
+  ok(distinct?.files.length === 2, 'POSIX 下仅大小写不同的文件仍分别列出', distinct)
+  for (const edits of [[diff('a.ts', -1, -1), diff('a.ts', 2, 1)], [diff('a.ts', 2, 1), diff('a.ts', -1, -1)]]) {
+    const mixed = collectTurnChanges([...edits, diff('b.ts', 1, 0)].map((entry, i) => call(String(i), entry)))
+    ok(mixed?.files[0].added === -1 && mixed.files[0].removed === -1 && mixed.files[1].added === 1 && mixed.added === -1, '同一文件有缺失统计时不显示局部行数，其他文件仍保留准确数字', mixed)
+  }
+
   const unknown = collectTurnChanges([call('a', diff('a.ts', -1, -1)), call('b', diff('b.ts', 2, 1))])
   ok(unknown?.files.length === 2 && unknown.added === -1 && unknown.removed === -1, '任一处拿不到行数时合计记 -1（界面省略数字）', unknown)
 
@@ -53,6 +62,10 @@ try {
   ok(isInsideCwd('E:\\Proj\\Src\\a.ts', 'e:\\proj\\src'), 'Windows 盘符路径折叠大小写')
   ok(isInsideCwd('/proj/src/a.ts', '/proj/src'), 'POSIX 路径同大小写算 cwd 内')
   ok(!isInsideCwd('/proj/Src/a.ts', '/proj/src'), 'POSIX 路径大小写敏感，不同大小写不算同一目录')
+
+  ok(isInsideCwd('//SERVER/Share/Project/a.ts', '//server/share/project'), '共享目录对服务名、共享名和路径按 Windows 大小写规则比较')
+  ok(!isInsideCwd('/server/share/project/a.ts', '//server/share/project') && !isInsideCwd('//server/other/project/a.ts', '//server/share/project'), '单根路径和其他共享不能混入当前共享目录')
+  ok(!isInsideCwd('//server/other/../share/project/a.ts', '//server/share/project'), '点段不会把文件从另一个共享根移入当前共享')
 
   const scoped = collectTurnChanges([call('a', diff('E:\\proj\\src\\a.ts', 1, 0)), call('b', diff('C:\\Temp\\yan-news\\na.json', 1, 2)), call('c', diff('rel/b.ts', 2, 0, 'created'))], 'E:\\proj')
   ok(scoped?.files.length === 2 && scoped.files.every((f) => !f.path.includes('yan-news')), '统计只含工作目录内的文件', scoped?.files)

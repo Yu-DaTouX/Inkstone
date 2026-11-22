@@ -51,6 +51,20 @@ const paths = (list) => list.map((item) => item.path)
 }
 
 {
+  const messages = [assistant([call('docs/report.md', 'created', 100), call('later.md', 'created', 150), call('E:/work/app/DOCS/report.md', 'modified', 200)])]
+  assert.deepEqual(outputCandidates(messages, CWD), [{ path: 'docs/report.md', at: 200 }, { path: 'later.md', at: 150 }], '产出列表按同一文件最近一次真正改动排序，保留原始路径')
+  messages.push(assistant([call('E:/work/app/docs/report.md', 'deleted', 250)]))
+  assert.deepEqual(paths(outputCandidates(messages, CWD)), ['later.md'], '换路径写法删除后，产出列表不残留旧文件')
+}
+
+{
+  const batch = { id: 'acp-outputs', name: 'edit', status: 'ok', endedAt: 400, details: { antigravity: true, antigravityDiffs: [diff('batch-a.md', 'created').fileDiff, diff('batch-b.md', 'created').fileDiff] } }
+  const outputs = outputCandidates([assistant([call('older.md', 'created', 300), batch])], CWD)
+  assert.deepEqual(outputs.map(f => f.at), [400, 400, 300], '多文件回执各项沿用真实完成时间，不排在旧产出后面')
+  assert.deepEqual(new Set(paths(outputs)), new Set(['batch-a.md', 'batch-b.md', 'older.md']))
+}
+
+{
   const excluded = [
     'E:/work/app/.tmp/probe.json',
     'E:/work/app/.local-docs/STATUS.md',
@@ -165,12 +179,31 @@ const paths = (list) => list.map((item) => item.path)
   const running = [assistant([call('pending.md', 'created', 300, { status: 'running' })])]
   assert.equal(rail.sessionLineTotals(running, CWD).files, 0, '未完成的改动不提前计数')
   const estimated = [assistant([{ id: 'est', name: 'edit', status: 'ok', args: { path: 'notes.md', edits: [{ oldText: 'a', newText: 'b\nc' }] } }])]
+  const nativeEdit = { id: 'native-edit', name: 'edit', status: 'ok', args: { path: 'notes.md' }, details: { diff: '-1 old\n+1 new' } }
+  const mixedTurn = turns.groupIntoTurns([assistant([edits[0], nativeEdit])])[0]
+  assert.deepEqual(process.turnChangeSet(mixedTurn, CWD)?.files.map(f => [f.path, f.added]), [['src/money.js', 35], ['notes.md', 1]], '有快照的编辑不遮住同轮其他文件的原生 diff')
+  const sameFile = turns.groupIntoTurns([assistant([edits[0], { ...nativeEdit, args: { path: 'E:/work/app/SRC/money.js' } }])])[0]
+  assert.deepEqual(process.turnChangeSet(sameFile, CWD)?.files.map(f => [f.path, f.added, f.removed]), [['src/money.js', 36, 7]], '同一文件的快照和原生差异跨路径写法只累计一次')
+  for (const flags of [{ denied: true }, { cancelled: true }, { status: 'pending' }, { status: 'error' }]) {
+    const skipped = turns.groupIntoTurns([assistant([edits[0], { ...nativeEdit, ...flags }])])[0]
+    assert.deepEqual(process.turnChangeSet(skipped, CWD)?.files.map(f => f.path), ['src/money.js'], '被拒绝、取消、待执行或失败的调用不凭参数或原生回执补记改动')
+  }
+  const multiRoot = [
+    { ...assistant([call('README.md', 'modified', 1)]), text: '第一份', sourceCwd: 'E:/one' },
+    { id: 'other-project', role: 'user', text: '下一份' },
+    { ...assistant([call('README.md', 'modified', 2)]), text: '第二份', sourceCwd: 'E:/two' }
+  ]
+  assert.deepEqual(rail.sessionLineTotals(multiRoot, CWD).entries.map(f => f.path), ['E:/one/README.md', 'E:/two/README.md'], '不同来源项目的同名文件各自保留正确的预览目标')
+  const unchangedTurn = turns.groupIntoTurns([assistant([call('noop.md', 'unchanged', 301)])])[0]
+  assert.equal(process.turnChangeSet(unchangedTurn, CWD), null, '已确认没有变化的快照不回退为推测的改动')
   const estimatedTurn = turns.groupIntoTurns(estimated).find((turn) => turn.kind === 'assistant')
   const estimatedCard = process.turnChangeSet(estimatedTurn, CWD)
   const estimatedRail = rail.sessionLineTotals(estimated, CWD)
   assert.ok(estimatedCard && estimatedCard.files.length === 1, '没有 diff 时对话卡退回估算')
   assert.deepEqual([estimatedRail.files, estimatedRail.added, estimatedRail.removed], [estimatedCard.files.length, estimatedCard.added, estimatedCard.removed], '估算时右栏与对话卡同源')
   const unknown = rail.sessionLineTotals([assistant([call('binary.png', 'modified', 300, { details: { fileDiff: { ...diff('binary.png', 'modified').fileDiff, added: -1, removed: -1 } } })])], CWD)
+  const partial = rail.sessionLineTotals([...messages, secondTurn.at(-2), assistant([call('binary.png', 'modified', 301, { details: { fileDiff: { ...diff('binary.png', 'modified').fileDiff, added: -1, removed: -1 } } }), call('e:/WORK/app/src/MONEY.js', 'modified', 302)])], CWD)
+  assert.deepEqual([partial.files, partial.added, partial.entries.map(f => [f.path, f.added, f.removed])], [2, -1, [['src/money.js', 71, 12], ['binary.png', null, null]]], '跨轮合并同一文件；无法计行的文件不抹掉其他文件的统计')
   assert.equal(unknown.added, -1)
   assert.equal(unknown.entries[0].added, null, '无法计行时不伪造零行数')
 }

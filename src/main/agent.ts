@@ -1139,8 +1139,7 @@ export class AgentController extends EventEmitter {
       undefined,
       (receipt) => {
         if (this.rpc !== rpc || receipt.op !== 'model_select') return
-        void this.refreshState()
-        void this.listThinkingLevels()
+        void this.refreshStateWithThinkingLevels()
       }
     )
 
@@ -1265,9 +1264,8 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: pick('pi 启动在复核归属事实期间被取消', 'pi start was cancelled while rechecking ownership facts') }
     }
 
-    void this.listThinkingLevels().catch(() => undefined)
-
     await this.hydrate()
+    if (this.rpc === rpc && this.state?.thinkingLevelsStatus === 'unknown') void this.listThinkingLevels().catch(() => undefined)
     return { ok: true }
   }
 
@@ -1791,21 +1789,24 @@ export class AgentController extends EventEmitter {
     let provider: Exclude<NonNullable<ImageGenerationRequest['provider']>, 'auto'> | undefined
     let model = ''
     let terminal = false
-    const publishProgress = (stage: ImageGenerationProgress['stage'], detail?: string): void => {
+    const publishProgress = (stage: ImageGenerationProgress['stage'], detail?: string, artifactId?: string): void => {
       if (terminal || (controller.signal.aborted && stage !== 'error')) return
       if (this.state?.sessionFile !== sessionFile) return
       terminal = stage === 'done' || stage === 'error'
       const progress: ImageGenerationProgress = {
         id: progressId, stage, startedAt, updatedAt: Date.now(),
+        ...(artifactId ? { artifactId } : {}),
         ...(terminal ? { endedAt: Date.now() } : {}),
         ...(provider ? { provider } : {}), model,
         ...(detail ? { detail } : {})
       }
       const message = this.messages.find((item) => item.id === messageId)
-      if (message) {
-        message.imageProgress = [...(message.imageProgress ?? []).filter((item) => item.id !== progressId), progress]
-      }
-      this.push({ ch: 'msg-update', payload: { id: messageId, patch: { imageProgress: [progress] } } })
+      if (!message) return
+      const previous = message.imageProgress ?? []
+      message.imageProgress = previous.some((item) => item.id === progressId)
+        ? previous.map((item) => item.id === progressId ? progress : item)
+        : [...previous, progress]
+      this.push({ ch: 'msg-update', payload: { id: messageId, patch: { imageProgress: message.imageProgress } } })
     }
     const checkCancelled = (): void => {
       if (controller.signal.aborted) throw new CapabilityCommandError('image_cancelled', '已停止生图')
@@ -1833,8 +1834,9 @@ export class AgentController extends EventEmitter {
         onProgress: (stage, detail) => { if (stage !== 'done') publishProgress(stage, detail) }
       })
       checkCancelled()
+      publishProgress('saving', undefined, result.artifact.id)
       await this.attachArtifact(result.artifact, messageId, sessionFile)
-      publishProgress('done', `${result.artifact.filename} · ${result.artifact.bytes} bytes`)
+      publishProgress('done', `${result.artifact.filename} · ${result.artifact.bytes} bytes`, result.artifact.id)
       return {
         data: { artifact: result.artifact, provider: result.provider, model: result.model, revisedPrompt: result.revisedPrompt },
         summary: { provider: result.provider, model: result.model, artifactId: result.artifact.id, filename: result.artifact.filename, path: result.artifact.path, bytes: result.artifact.bytes }
@@ -2108,11 +2110,11 @@ export class AgentController extends EventEmitter {
     const previous = this.state
     const levels = resolveThinkingLevels(
       data,
-      previous
+      previous && previous.sessionId === sessionId
         ? {
             levels: previous.availableThinkingLevels,
             status: previous.thinkingLevelsStatus ?? 'unknown',
-            modelKey: modelKeyOf(previous.model)
+            modelKey: previous.capabilities?.modelKey ?? modelKeyOf(previous.model)
           }
         : undefined,
       modelKeyOf(model)
@@ -5472,23 +5474,27 @@ export class AgentController extends EventEmitter {
   }
 
   async listThinkingLevels(): Promise<string[]> {
-    if (!this.rpc) return []
-    const rpc = this.rpc
-    const res = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels')
-    const owner = await rpc.command('get_state').catch(() => undefined)
-    const normalized = normalizeThinkingLevels(res.data?.levels, res.success)
-    const levels = normalized.values
-    const ownerKey = owner?.success ? stateModelKey(owner.data) : undefined
-    if (this.state && ownerKey && ownerKey === modelKeyOf(this.state.model)) {
-      this.state = {
-        ...this.state,
-        availableThinkingLevels: levels,
-        thinkingLevelsStatus: normalized.status,
-        capabilities: capabilitySnapshot(this.state.model, levels, normalized.status)
-      }
-      this.push({ ch: 'state', payload: this.state })
+    if (this.acpConnection) return this.acpConnection.thinking?.options.map(({ id }) => id) ?? []
+    const owner = this.asyncOwner()
+    const rpc = owner.rpc
+    const sessionId = this.state?.sessionId
+    const modelKey = modelKeyOf(this.state?.model)
+    if (!rpc || !sessionId || !modelKey) return []
+    const current = () => this.ownerCurrent(owner) && !this.acpConnection && this.state?.sessionId === sessionId && modelKeyOf(this.state.model) === modelKey
+    const res = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels').catch(() => undefined)
+    if (!current()) return []
+    const normalized = normalizeThinkingLevels(res?.data?.levels, res?.success === true)
+    if (normalized.status === 'unknown') return this.state?.availableThinkingLevels ?? []
+    const state = await rpc.command<{ sessionId?: string }>('get_state').catch(() => undefined)
+    if (!current() || !this.state || !state?.success || state.data?.sessionId !== sessionId || stateModelKey(state.data) !== modelKey) return []
+    this.state = {
+      ...this.state,
+      availableThinkingLevels: normalized.values,
+      thinkingLevelsStatus: normalized.status,
+      capabilities: capabilitySnapshot(this.state.model, normalized.values, normalized.status)
     }
-    return levels
+    this.push({ ch: 'state', payload: this.state })
+    return normalized.values
   }
 
   async setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }> {

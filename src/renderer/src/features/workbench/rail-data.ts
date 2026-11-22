@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GitPathScreen } from '../../../../shared/git'
 import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
-import { callPath, collectTurnChanges, isInsideCwd, readFileDiff } from '../session/turn-changes'
+import { callPath, callFileDiffs, isInsideCwd, scopedPathKey } from '../session/turn-changes'
 import { groupIntoTurns } from '../../../../shared/turns'
 import { countedProcessCalls } from '../session/tool-run-model'
 import { turnChangeSet } from '../session/turn-process'
@@ -57,15 +57,18 @@ export function sessionLineTotals(messages: readonly UIMessage[], cwd?: string):
   const files = new Map<string, RailChangedFile>()
   let countable = true
   for (const turn of turns) {
-    const changes = turnChangeSet(turn, turn.response?.sourceCwd || cwd)
+    const root = turn.response?.sourceCwd || cwd
+    const changes = turnChangeSet(turn, root)
     if (!changes) continue
     if (changes.added < 0 || changes.removed < 0) countable = false
     for (const file of changes.files) {
-      const previous = files.get(file.path)
-      files.set(file.path, {
-        path: file.path,
-        added: (previous?.added ?? 0) + file.added,
-        removed: (previous?.removed ?? 0) + file.removed,
+      const key = scopedPathKey(file.path, root) ?? file.path
+      const previous = files.get(key)
+      const path = previewPath(file.path, root, cwd)
+      files.set(key, {
+        path: previous?.path ?? path,
+        added: previous?.added === null || file.added < 0 ? null : (previous?.added ?? 0) + file.added,
+        removed: previous?.removed === null || file.removed < 0 ? null : (previous?.removed ?? 0) + file.removed,
         untracked: file.status === 'created'
       })
     }
@@ -75,7 +78,7 @@ export function sessionLineTotals(messages: readonly UIMessage[], cwd?: string):
     added: countable ? entries.reduce((sum, file) => sum + (file.added ?? 0), 0) : -1,
     removed: countable ? entries.reduce((sum, file) => sum + (file.removed ?? 0), 0) : -1,
     files: entries.length,
-    entries: countable ? entries : entries.map((file) => ({ ...file, added: null, removed: null }))
+    entries
   }
 }
 
@@ -114,6 +117,10 @@ const TEMP_ROOTS = [
 
 function isAbsolutePath(path: string): boolean {
   return /^[a-zA-Z]:[\\/]|^[\\/]/.test(path)
+}
+
+function previewPath(path: string, root?: string, cwd?: string): string {
+  return root && root !== cwd && !isAbsolutePath(path) ? `${root.replace(/[\\/]+$/, '')}/${path}` : path
 }
 
 function pathParts(path: string): string[] {
@@ -167,27 +174,32 @@ function callTime(call: UIToolCall, message: UIMessage): number {
 
 export function outputCandidates(messages: readonly UIMessage[], cwd?: string): RailOutput[] {
   const calls: UIToolCall[] = []
-  const seen = new Map<string, { at: number; seq: number }>()
+  const created = new Map<string, RailOutput & { seq: number }>()
   for (const message of messages) {
     if (message.role !== 'assistant' || !message.toolCalls) continue
     for (const call of message.toolCalls) {
       calls.push(call)
-      const diff = readFileDiff(call.details)
-      if (!diff) continue
-      const path = diff.path || callPath(call) || call.id
-      seen.set(path, { at: callTime(call, message), seq: calls.length })
+      if (call.status === 'running' || call.status === 'pending') continue
+      const root = message.sourceCwd || cwd
+      for (const diff of callFileDiffs(call)) {
+        if (!diff || diff.status === 'unchanged') continue
+        const path = previewPath(diff.path || callPath(call) || call.id, root, cwd)
+        const key = scopedPathKey(path, root) ?? path
+        const previous = created.get(key)
+        if (diff.status === 'deleted') created.delete(key)
+        else if (previous || diff.status === 'created') {
+          created.set(key, { path: previous?.path ?? path, at: callTime(call, message), seq: calls.length })
+        }
+      }
     }
   }
   if (calls.length === 0) return []
   const requests = requestFilesOf(calls)
-  const files = collectTurnChanges(calls)?.files ?? []
-  return files
-    .filter((file) => file.status === 'created')
+  return [...created.values()]
     .filter((file) => !requests.some((request) => samePathTail(file.path, request)))
     .filter((file) => !isScratchOutput(file.path, cwd))
-    .map((file) => ({ file, order: seen.get(file.path) ?? { at: 0, seq: 0 } }))
-    .sort((a, b) => b.order.at - a.order.at || b.order.seq - a.order.seq)
-    .map(({ file, order }) => ({ path: file.path, at: order.at }))
+    .sort((a, b) => b.at - a.at || b.seq - a.seq)
+    .map(({ path, at }) => ({ path, at }))
 }
 
 export interface OutputScreenState {

@@ -96,7 +96,7 @@ export function resolveThinkingLevels(
   previous: { levels: string[]; status: CapabilityStatus; modelKey?: string } | undefined,
   currentModelKey: string | undefined
 ): { values: string[]; status: CapabilityStatus } {
-  if (Object.prototype.hasOwnProperty.call(data, 'availableThinkingLevels')) {
+  if (Array.isArray(data.availableThinkingLevels)) {
     return normalizeThinkingLevels(data.availableThinkingLevels, true)
   }
   if (previous && previous.modelKey === currentModelKey) {

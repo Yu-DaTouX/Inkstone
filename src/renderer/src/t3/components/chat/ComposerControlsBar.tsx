@@ -1,6 +1,6 @@
 import { CircleAlertIcon, ShieldCheckIcon } from '../../../ui/icons'
 import { useI18n, useT } from '../../../i18n'
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useComposerTraits } from '../../adapters/composer-thinking'
 import { usePermissionAdapter } from '../../adapters/composer-permissions'
 import { useStore } from '../../../state/store'
@@ -43,6 +43,13 @@ export function ComposerControlsBar(props: {
   const permissions = usePermissionAdapter()
   const iconOnlyBlockCount = props.iconOnlyBlockCount
   const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => {
+    if (!menuOpen) return
+    const { session } = useStore.getState()
+    if (session?.model && session.model.provider !== 'antigravity' && session.thinkingLevelsStatus === 'unknown') {
+      void window.yan.listThinkingLevels().catch(() => undefined)
+    }
+  }, [menuOpen])
   const closedAtRef = useRef(0)
   const changeMenuOpen = useCallback((open: boolean) => {
     if (!open) closedAtRef.current = performance.now()

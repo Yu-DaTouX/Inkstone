@@ -38,6 +38,7 @@ import { SubagentLine } from './SubagentLine'
 import { WorkflowCards } from './WorkflowCard'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { WebSearchTurnProvider } from './web-search/citations'
+import { ReplySources } from './web-search/ReplySources'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import { useTurnScope } from './turn-scope'
@@ -94,6 +95,11 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const displayText = fileContent.text
   const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
   const showImageRefs = (msg.images?.length ?? 0) > 1 || referencedImageNumbers(displayText).length > 0
+  const imageItems = msg.images?.map((image, i) => {
+    const src = image.data ? `data:${image.mimeType};base64,${image.data}` : image.url
+    return src ? { src, alt: imageRefLabel(refPrefix, i + 1) } : null
+  }) ?? []
+  const imageGallery = imageItems.filter((image) => image !== null)
   return (
     <article className="v3-msg user" data-msg-id={msg.id} data-turn-id={turn.id} data-fresh={fresh ? '' : undefined}>
       <div className="v3-user-body">
@@ -106,10 +112,9 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
 
         {msg.images?.length ? (
           <div className="v3-user-images">
-            {msg.images.map((im, i) => (
+            {imageItems.map((image, i) => (
               <div key={i} className="v3-user-image">
-                {im.data ? <MessageImage src={`data:${im.mimeType};base64,${im.data}`} className="v3-img-thumb" /> :
-                  im.url ? <MessageImage src={im.url} className="v3-img-thumb" /> :
+                {image ? <MessageImage {...image} gallery={imageGallery} className="v3-img-thumb" /> :
                   <div className="v3-img-missing" title={t('chat.imageMissing')}><Icon name="image" size={12} /><span>{t('chat.imageMissing')}</span></div>}
                 {showImageRefs ? <Badge tone="accent" className="v3-user-image-ref">{imageRefLabel(refPrefix, i + 1)}</Badge> : null}
               </div>
@@ -309,11 +314,11 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const approvalIds = approvals ? approvalCallIds(approvals, turn.tools, sessionId) : undefined
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
-  const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
+  const hasImageProgress = turn.imageProgress.some((item) => item.stage !== 'done')
   const replyReady = useAppearDelay(sourceTurn.segments.filter((segment) => segment.response).map((segment) => segment.id), !!streaming && (turn.tools.length > 0 || !!turn.thinking), REPLY_APPEAR_MS)
-  const beforeReply = !!streaming && !turn.response?.text && !commentary.length && !turn.tools.length && !turn.artifacts.length && !liveImageProgress.length
+  const beforeReply = !!streaming && !turn.response?.text && !commentary.length && !turn.tools.length && !turn.artifacts.length && !hasImageProgress
   const preReply = beforeReply ? sourceTurn.thinkingLive ? 'thinking' : !turn.thinking ? 'waiting' : undefined : undefined
-  const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error || !!turn.terminalReason
+  const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || hasImageProgress || !!turn.error || !!turn.terminalReason
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
@@ -347,7 +352,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
             <>
               {split.leadReplies.filter((segment) => replyReady(segment.id)).map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
-                  <div className="v3-para">
+                  <div className="v3-para" data-citation-reply>
                     <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
                   </div>
                 </div>
@@ -369,7 +374,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
               ) : null}
               {split.earlierReplies.filter((segment) => replyReady(segment.id)).map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
-                  <div className="v3-para">
+                  <div className="v3-para" data-citation-reply>
                     <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
                   </div>
                 </div>
@@ -377,7 +382,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
               {split.reply && replyReady(split.reply.id) ? (
                 <div className="v3-seg" data-testid="v3-seg">
                   {decision?.body !== '' ? (
-                    <div className="v3-para">
+                    <div className="v3-para" data-citation-reply>
                       <Markdown text={decision ? decision.body : split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={liveText(split.reply.response?.id)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
                     </div>
                   ) : null}
@@ -399,7 +404,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                     ) : null}
                     <ToolSteps tools={seg.tools} approvalIds={approvalIds} glowId={glowId} />
                     {seg.response && replyReady(seg.id) ? (
-                      <div className="v3-para">
+                      <div className="v3-para" data-citation-reply>
                         <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={liveText(seg.response.id)} sessionId={sessionId} messageId={seg.response.id} />
                       </div>
                     ) : null}
@@ -420,19 +425,19 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
               ) : null}
               {turn.segments.length
                 ? turn.segments.map((segment) => segment.response ? (
-                    <div key={segment.id} className="v3-para">
+                    <div key={segment.id} className="v3-para" data-citation-reply>
                       <Markdown text={segment.response.text} sourceCwd={segment.response.sourceCwd} live={liveText(segment.response.id)} sessionId={sessionId} messageId={segment.response.id} />
                     </div>
                   ) : null)
                 : turn.response && !turn.response.hasTools
-                  ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
+                  ? <div className="v3-para" data-citation-reply><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
                   : null}
               <ToolSteps tools={turn.tools} approvalIds={approvalIds} glowId={glowId} />
             </>
           )}
   
-          {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} sessionId={sessionId} messageId={turn.id} /> : null}
-          {liveImageProgress.length ? <ImageProgressFallbackNote /> : null}
+          {runEnded ? <ReplySources /> : null}
+          {turn.artifacts.length || hasImageProgress ? <TurnArtifacts artifacts={turn.artifacts} imageProgress={turn.imageProgress} sessionId={sessionId} messageId={turn.id} /> : null}
   
           <WorkflowCards turn={turn} scope={subagentScope} />
           <SubagentLine turn={turn} scope={subagentScope} />
@@ -491,13 +496,6 @@ function flowSegments(turn: AssistantTurn, commentary: readonly { id: string }[]
   if (commentary.some((part) => !covered.has(part.id))) return null
   if (turn.response && !turn.response.hasTools && !covered.has(turn.response.id)) return null
   return turn.segments
-}
-
-function ImageProgressFallbackNote(): JSX.Element {
-  const tt = useSessionText()
-  return (
-    <Notice compact className="v3-fallback-note" role="note" icon={<Icon name="layers" size={13} />} data-testid="v3-image-progress-fallback">{tt('imageProgress')}</Notice>
-  )
 }
 
 type CopyState = 'idle' | 'copied' | 'failed'

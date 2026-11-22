@@ -123,6 +123,7 @@ export type ImageGenerationStage =
 
 export interface ImageGenerationProgress {
   id: string
+  artifactId?: string
   stage: ImageGenerationStage
   startedAt: number
   updatedAt: number

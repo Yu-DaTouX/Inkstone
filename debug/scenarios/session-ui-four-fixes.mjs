@@ -131,7 +131,11 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
   await waitFor(`${rowCount}===6`)
   check('文件列表能原处收起', await ev(`document.querySelector('${more}').getAttribute('aria-expanded')==='false'`))
   await writeFile(join(box.project, 'four-preview.ts'), 'export const cardOpen = "four-preview-content";\n')
+  await waitFor(`!!document.querySelector('[data-testid="v3-turn-changes-ignored"]')`)
+  await ev(`(()=>{window.__fourStaleIgnored=false;window.__fourWatch=new MutationObserver(()=>{const card=document.querySelector('[data-testid="v3-turn-changes"]');if(card?.querySelector('button[title="four-preview.ts"]')&&card.querySelector('[data-testid="v3-turn-changes-ignored"]'))window.__fourStaleIgnored=true});window.__fourWatch.observe(document.body,{subtree:true,childList:true,attributes:true})})()`)
   await showChanges(['four-preview.ts'])
+  await waitFor(`!!document.querySelector('[data-testid="v3-turn-changes-view"]')`)
+  check('切到可跟踪文件时不沿用上一组的 Git 忽略提示', await ev(`window.__fourWatch.disconnect();!window.__fourStaleIgnored`))
   const realFile = await ev(`!!document.querySelector('[data-testid="v3-turn-change-file"]')`)
   if (realFile) {
     await ev(`document.querySelector('[data-testid="v3-turn-change-file"]').click()`)

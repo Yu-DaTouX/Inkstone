@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { Gauge, RefreshCw, RotateCcw, Settings, Ticket, TrendingDown, TrendingUp, type LucideIcon } from '../../ui/icons'
+import { RefreshCw, Settings, Ticket } from '../../ui/icons'
 import { currentLang, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, publishAccountQuotaReport } from '../../state/live-quota'
-import { Badge, Button, Card, ConfirmDialog, EmptyState, IconButton, Meter, Notice, Spinner, type ProgressTone } from '../../ui'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, IconButton, Notice, Spinner } from '../../ui'
 import { money } from '../../../../shared/quota-mini'
-import { quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
-import type { QuotaWindow } from '../../../../shared/ipc'
+import { quotaReadingStale } from '../../../../shared/quota-forecast'
 import {
   accountCardTitle,
   orderAccountCardsForProvider,
@@ -16,18 +15,15 @@ import {
   type ResetCreditGroup
 } from '../../../../shared/account-quota'
 import { providerFavicon } from '../../patterns/provider-favicon'
-import { quotaCountdown, quotaPace, quotaReadAgo, quotaWindowName, quotaWindowTone, type QuotaWindowTone } from '../../patterns/QuotaWindowRow'
+import { quotaCountdown, quotaReadAgo, quotaWindowName } from '../../patterns/QuotaWindowRow'
 import { refreshAntigravityQuota, useAntigravityQuotaStore } from '../../state/antigravity-quota'
 import { AntigravityQuotaPaneSection } from './AntigravityQuota'
+import { QuotaMeter } from './QuotaMeter'
 import type { QuotaPaneProps } from './types'
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
 const planLabel = (value?: string): string => (value ? value.toUpperCase() : '')
 const GROUP_KEYS = new Set(['openai-codex', 'anthropic', 'google'])
-const METER_TONE: Record<QuotaWindowTone, ProgressTone> = { ok: 'muted', ask: 'ask', fail: 'fail', stale: 'muted' }
-const PACE_ICON: Record<'ahead' | 'on' | 'under', LucideIcon> = { ahead: TrendingUp, on: Gauge, under: TrendingDown }
-
-const pad = (value: number): string => String(value).padStart(2, '0')
 
 function claudeCreditLimitName(t: TFunc, id: string): string {
   if (id === 'five_hour') return t('quota.win.fiveHour')
@@ -36,12 +32,6 @@ function claudeCreditLimitName(t: TFunc, id: string): string {
   if (id === 'seven_day_sonnet') return 'Sonnet'
   if (id === 'seven_day_overage_included') return 'Fable'
   return t('quota.credit.limits')
-}
-
-function clockAt(at: number, now: number): string {
-  const date = new Date(at)
-  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
-  return date.toDateString() === new Date(now).toDateString() ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`
 }
 
 function groupByProvider(cards: AccountQuotaCard[]): { provider: string; cards: AccountQuotaCard[] }[] {
@@ -162,7 +152,6 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
       active={isAntigravity}
       model={model}
       now={now}
-      lang={lang}
       icon={providerFavicon('antigravity')}
     />
   ) : null
@@ -251,49 +240,6 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
           }
         />
       ) : null}
-    </div>
-  )
-}
-
-function QuotaMeter({ window, name, stale, now, t }: { window: QuotaWindow; name: string; stale: boolean; now: number; t: TFunc }): ReactElement {
-  const awaiting = windowAwaitingReset(window, now)
-  const base = quotaWindowTone(window, stale, now)
-  const pace = stale || awaiting || base === 'fail' ? null : quotaPace(window, now)
-  const tone: QuotaWindowTone = base === 'ok' && pace?.pace === 'ahead' ? 'ask' : base
-  const used = Math.round(Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
-  const resetAt = window.resetAt !== undefined && !awaiting ? window.resetAt : undefined
-  const tip = [
-    window.label,
-    resetAt !== undefined ? t('quota.resetAtTip', { time: clockAt(resetAt, now) }) : '',
-    pace ? t(`quota.pace.${pace.pace}` as MessageKey) : '',
-    window.estimated ? t('quota.estimatedTip') : ''
-  ].filter(Boolean).join('\n')
-  const PaceIcon = pace ? PACE_ICON[pace.pace] : null
-  const countdown = awaiting ? t('quota.resetDue') : resetAt !== undefined ? quotaCountdown(t, resetAt - now) : ''
-  return (
-    <div className="wb-quota-win" data-tone={tone} title={tip} data-testid={`v3-wb-quota-win-${window.id}`}>
-      <span className="wb-quota-win-id">
-        <span className="wb-quota-win-label">{name}</span>
-        <span className="wb-quota-win-pct ui-num">
-          {awaiting ? '—' : `${used}%`}
-          <small>{t('quota.usedMain')}</small>
-        </span>
-        {PaceIcon && pace ? (
-          <span className="wb-quota-win-pace" role="img" aria-label={t(`quota.pace.${pace.pace}` as MessageKey)}>
-            <PaceIcon size={13} aria-hidden="true" />
-          </span>
-        ) : null}
-      </span>
-      <Meter
-        aria-label={window.label}
-        value={awaiting ? 0 : used}
-        minValue={0}
-        maxValue={100}
-        tone={METER_TONE[tone]}
-        variant="gauge"
-        markPercent={pace ? 100 - pace.timeLeftPct : null}
-        trailing={countdown ? <><RotateCcw size={11} aria-hidden="true" />{countdown}</> : undefined}
-      />
     </div>
   )
 }

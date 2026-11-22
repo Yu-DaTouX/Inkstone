@@ -7,7 +7,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const stubs = {
     '../../i18n': 'export const useT = () => key => key',
     '../../state/store': 'export const useStore = selector => selector({ messages: [], previewFile() {} })',
-    '../../ui': "import React from 'react'; const Item = p => React.createElement('button', { onClick: p.onPress, 'data-testid': p['data-testid'] }, p.children); export const Button = Item, IconButton = Item, Badge = Item, Notice = Item",
+    '../../ui': "import React from 'react'; const Item = p => React.createElement('button', { onClick: p.onPress, 'data-testid': p['data-testid'] }, p.children); export const Button = Item, IconButton = Item, Badge = Item, Notice = Item; export const TermSpinner = () => null",
     '../../lib/file-preview-url': 'export const filePreviewUrl = path => path',
     '../artifacts/HtmlArtifactThumb': 'export const HtmlArtifactThumb = () => null',
     '../artifacts/widget-lifecycle': 'export const deriveArtifactIdentityKey = (...args) => args.join("|"); export const useNearViewport = () => [true, () => {}]; export const usePreviewSnapshot = () => ({ status: "idle" })',

@@ -764,6 +764,7 @@ export function ComposerV3(): JSX.Element {
         src={preview ? preview.previewUrl : null}
         alt={preview?.name}
         caption={preview ? preview.name : undefined}
+        gallery={preview ? images.flatMap((item) => item.previewUrl ? [{ src: item.previewUrl, alt: item.name }] : []) : undefined}
         onOpenChange={(open) => {
           if (!open) setPreviewId(null)
         }}

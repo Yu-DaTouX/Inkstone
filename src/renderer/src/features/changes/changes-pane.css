@@ -342,6 +342,13 @@
     margin: var(--s-6) var(--s-10);
   }
 
+  .changes-pane__image-compare {
+    display: grid;
+    gap: var(--s-8);
+  }
+
+  .changes-pane__image-compare > .ui-btn { justify-self: start; }
+
   .changes-pane__images {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -3,15 +3,15 @@ import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../state/store'
-import { Badge, Button, IconButton, Notice } from '../../ui'
+import { Badge, Button, IconButton, Notice, TermSpinner } from '../../ui'
 import { isHtmlArtifact, type HtmlArtifactPreviewError } from '../../../../shared/html-artifact-preview'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { HtmlArtifactThumb } from '../artifacts/HtmlArtifactThumb'
 import { deriveArtifactIdentityKey, useNearViewport, usePreviewSnapshot } from '../artifacts/widget-lifecycle'
 import { artifactVersions } from '../artifacts/model'
-import type { AssistantArtifact, UIMessage } from '../../../../shared/ipc'
+import type { AssistantArtifact, ImageGenerationProgress, UIMessage } from '../../../../shared/ipc'
 import { Icon } from './Icon'
-import { ImageViewer } from '../composer/image-viewer'
+import { ImageViewer, type ViewerImage } from '../composer/image-viewer'
 import { previewFormatOf } from '../preview/preview-format'
 
 const CODE_PREVIEW_LINES = 12
@@ -56,22 +56,39 @@ function htmlErrorKey(error: string | null): MessageKey {
 
 export function TurnArtifacts({
   artifacts,
+  imageProgress = [],
   sessionId = null,
   messageId = null
 }: {
   artifacts: AssistantArtifact[]
+  imageProgress?: readonly ImageGenerationProgress[]
   sessionId?: string | null
   messageId?: string | null
 }): JSX.Element | null {
-  if (!artifacts.length) return null
-  const images = artifacts.filter(isImageArtifact)
+  const imageArtifacts = artifacts.filter(isImageArtifact)
+  const jobs = imageProgress.flatMap((job) => {
+    const result = job.artifactId ? imageArtifacts.find((artifact) => artifact.id === job.artifactId) : undefined
+    return result || job.stage !== 'done' ? [{ job, result }] : []
+  })
+  if (!artifacts.length && !jobs.length) return null
+  const placed = new Set(jobs.map(({ result }) => result?.id))
+  const images = imageArtifacts.filter(({ id }) => !placed.has(id))
   const others = artifacts.filter((artifact) => !isImageArtifact(artifact))
+  const gallery = imageArtifacts.length > 1 ? imageArtifacts.filter(({ unavailable }) => !unavailable).map((artifact) => ({
+    src: filePreviewUrl(artifact.path), alt: artifact.filename, caption: artifact.description
+  })) : undefined
+  const imageCount = images.length + jobs.length
   return (
     <div className="v3-artifact-list" data-testid="v3-artifact-list">
-      {images.length ? (
-        <div className={`v3-artifact-grid${images.length > 1 ? ' multi' : ''}`}>
+      {imageCount ? (
+        <div className={`v3-artifact-grid${imageCount > 1 ? ' multi' : ''}`}>
+          {jobs.map(({ job, result }) => (
+            <div key={job.id} className="v3-generated-slot" data-testid="generated-image-slot" data-image-state={result ? 'done' : job.stage}>
+              {result ? <ArtifactCard artifact={result} sessionId={sessionId} messageId={messageId} gallery={gallery} /> : <ImageProgressCard job={job} />}
+            </div>
+          ))}
           {images.map((artifact) => (
-            <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId} messageId={messageId} />
+            <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId} messageId={messageId} gallery={gallery} />
           ))}
         </div>
       ) : null}
@@ -79,6 +96,25 @@ export function TurnArtifacts({
         <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId} messageId={messageId} />
       ))}
     </div>
+  )
+}
+
+function ImageProgressCard({ job }: { job: ImageGenerationProgress }): JSX.Element {
+  const t = useT()
+  const phase = t(`artifact.imageStage.${job.stage}`)
+  return (
+    <section className="v3-artifact-card v3-image-progress" role="status" aria-label={phase} data-testid="image-generation-progress">
+      <header className="v3-artifact-card-head">
+        <Icon name="image" size={12} />
+        <strong className="v3-artifact-card-name">{t('artifact.imageJob')}</strong>
+        {job.model ? <span className="v3-artifact-card-meta">{job.model}</span> : null}
+      </header>
+      <div className="v3-artifact-image">
+        {job.stage === 'error' ? <Notice tone="fail" compact>{job.detail || phase}</Notice> : (
+          <span className="v3-image-progress-status"><TermSpinner variant="orbit" />{phase}</span>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -94,11 +130,13 @@ function artifactsFromSource(messages: readonly UIMessage[], sourceId: string): 
 function ArtifactCard({
   artifact,
   sessionId,
-  messageId
+  messageId,
+  gallery
 }: {
   artifact: AssistantArtifact
   sessionId: string | null
   messageId: string | null
+  gallery?: readonly ViewerImage[]
 }): JSX.Element {
   const t = useT()
   const siblings = useStore(useShallow((s): AssistantArtifact[] => artifactsFromSource(s.messages, artifact.sourceId)))
@@ -121,19 +159,29 @@ function ArtifactCard({
   ) : (shown.version ?? 1) > 1 ? (
     <span className="v3-artifact-card-meta">v{shown.version}</span>
   ) : null
-  return <ArtifactCardView key={shown.id} artifact={shown} sessionId={sessionId} messageId={messageId} versionBar={versionBar} />
+  const previous = versions[index - 1]
+  const before = previous && !previous.unavailable && isImageArtifact(previous) ? filePreviewUrl(previous.path) : undefined
+  const shownUrl = filePreviewUrl(shown.path)
+  const shownGallery = gallery?.some((item) => item.src === shownUrl)
+    ? gallery.map((item) => item.src === shownUrl ? { ...item, before } : item)
+    : undefined
+  return <ArtifactCardView key={shown.id} artifact={shown} sessionId={sessionId} messageId={messageId} versionBar={versionBar} before={before} gallery={shownGallery} />
 }
 
 function ArtifactCardView({
   artifact,
   sessionId,
   messageId,
-  versionBar
+  versionBar,
+  before,
+  gallery
 }: {
   artifact: AssistantArtifact
   sessionId: string | null
   messageId: string | null
   versionBar: JSX.Element | null
+  before?: string
+  gallery?: readonly ViewerImage[]
 }): JSX.Element {
   const t = useT()
   const previewFile = useStore((s) => s.previewFile)
@@ -273,12 +321,9 @@ function ArtifactCardView({
       {isImage ? (
         <div className={`v3-artifact-image${unavailable ? ' failed' : ''}`}>
           {!unavailable ? (
-            <img
-              src={filePreviewUrl(artifact.path)}
-              alt={artifact.filename}
-              title={t('artifact.zoomHint')}
-              onClick={() => setViewerOpen(true)}
-            />
+            <button type="button" className="v3-artifact-image-open" aria-label={`${t('artifact.zoomHint')} · ${artifact.filename}`} onClick={() => setViewerOpen(true)}>
+              <img src={filePreviewUrl(artifact.path)} alt={artifact.filename} loading="lazy" />
+            </button>
           ) : (
             <Notice tone="fail" compact>{artifact.error || t('artifact.noPreview')}</Notice>
           )}
@@ -287,6 +332,8 @@ function ArtifactCardView({
             src={filePreviewUrl(artifact.path)}
             alt={artifact.filename}
             caption={artifact.description}
+            before={before}
+            gallery={gallery}
             onOpenChange={setViewerOpen}
           />
         </div>

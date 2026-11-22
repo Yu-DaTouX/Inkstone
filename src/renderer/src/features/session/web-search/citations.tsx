@@ -66,6 +66,7 @@ export function CitationLink({ citation }: { citation: CitationRef }): JSX.Eleme
       <a
         className={`ws-cite ws-tone-${tone}`}
         href={citation.url}
+        data-citation-number={citation.n}
         aria-label={tt('citationAria', { site, n: citation.n })}
         onClick={(event) => {
           event.preventDefault()

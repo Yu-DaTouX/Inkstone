@@ -835,9 +835,21 @@
     overflow-wrap: anywhere;
   }
 
-  .wb-quota-ag-clock {
-    color: var(--fg3);
-    font-variant-numeric: tabular-nums;
+  .wb-quota-ag-group {
+    display: grid;
+    gap: var(--s-6);
+    min-width: 0;
+    padding: var(--s-8) var(--s-16) var(--s-12);
+  }
+
+  .wb-quota-ag-group .wb-quota-ag-note {
+    padding-inline: 0;
+  }
+
+  .wb-quota-ag-wins {
+    display: grid;
+    gap: var(--s-8) var(--s-12);
+    min-width: 0;
   }
 
   .wb-quota-error {
@@ -909,6 +921,37 @@
       margin-left: 0;
       font-size: 26px;
       line-height: 32px;
+    }
+  }
+
+  .wb-quota-ag-wins .wb-quota-win {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    border-top: 0;
+    padding: 0;
+  }
+
+  .wb-quota-ag-wins .wb-quota-win-id {
+    flex-wrap: nowrap;
+  }
+
+  .wb-quota-ag-wins .wb-quota-win-label {
+    flex-basis: auto;
+  }
+
+  .wb-quota-ag-wins .wb-quota-win-pct {
+    margin-left: auto;
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  @container (min-width: 290px) {
+    .wb-quota-ag-wins {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .wb-quota-ag-wins .wb-quota-win:only-child {
+      grid-column: 1 / -1;
     }
   }
 

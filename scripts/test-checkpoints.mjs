@@ -31,6 +31,10 @@ const shared = await import(pathToFileURL(resolve('out/test/checkpoints-shared.m
   ok(matchCheckpoint(records, '没发过的话', 1_000_500) === null, '匹配：指纹不一致不猜')
   ok(matchCheckpoint(records, '修一下登录', 1_000_000 + 11 * 60_000 + 5_000_000) === null, '匹配：时间差太大不猜')
   ok(matchCheckpoint(records, '修一下登录', 1_000_100)?.kind === 'turn', '匹配：回退前自动存的快照（restore）不当作回合检查点')
+  ok(matchCheckpoint(records, '修一下登录', undefined) === null, '匹配：无时间戳且有重名回合，不选第一条')
+  ok(matchCheckpoint(records, '另一句', undefined)?.id === 'r3', '匹配：无时间戳但只有一个候选仍可撤销')
+  ok(matchCheckpoint(records, '修一下登录', 1_500_000) === null, '匹配：两个候选与消息等距时不猜')
+  ok(matchCheckpoint([...records, rec('r4', 1_500_010, '修一下登录')], '修一下登录', 1_500_000)?.id === 'r4', '匹配：并列之后还有更近的唯一候选时正常选中')
   ok(textFingerprint('a  b') === textFingerprint(' a b '), '指纹：压缩空白后相同')
 }
 

@@ -157,6 +157,22 @@ try {
   ok(br.summary.model === confirmedModel && b.events.some(e => e.ch === 'artifact'), 'another instance must finish normally')
   ok(!a.events.some(e => e.ch === 'artifact'), 'stopped instance must stay canceled')
 
+  const parallelAgent = makeAgent('parallel-progress')
+  globalThis.fetch = async () => response()
+  const results = await Promise.all(['first', 'second'].map(prompt =>
+    parallelAgent.agent.runCapabilityCommand('image.generate', { provider: 'compatible', prompt })))
+  const timeline = parallelAgent.events
+  const progressOf = event => event.ch === 'msg-update' ? event.payload.patch.imageProgress : undefined
+  const snapshots = timeline.flatMap(event => progressOf(event) ? [progressOf(event)] : [])
+  const final = snapshots.at(-1)
+  ok(final.length === 2 && final.every(job => job.stage === 'done'), 'latest push keeps both jobs, even when earlier pushes are coalesced')
+  ok(snapshots.filter(snapshot => snapshot.length === 2).every(snapshot => snapshot.every((job, i) => job.id === final[i].id)), 'updating a stage never reorders the slots')
+  for (const { summary: { artifactId } } of results) {
+    const attached = timeline.findIndex(event => event.ch === 'artifact' && event.payload.artifact.id === artifactId)
+    const linked = timeline.findIndex(event => progressOf(event)?.some(job => job.artifactId === artifactId && job.stage === 'saving'))
+    ok(linked >= 0 && linked < attached && final.some(job => job.artifactId === artifactId), 'slot knows the matching artifact before the artifact event')
+  }
+
   for (const provider of ['openai', 'compatible', 'codex', 'google', 'doubao', 'local']) {
     const entered = deferred(), late = deferred(), cancel = new AbortController()
     let requestSignal

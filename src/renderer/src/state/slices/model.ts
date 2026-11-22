@@ -1,3 +1,4 @@
+import { modelKeyOf } from '../../../../shared/model-capabilities'
 import { uiText } from '../../i18n/ui-text'
 import { isCapabilityResponseStale } from '../capability-request'
 import { keepRef } from '../stable-ref'
@@ -72,7 +73,10 @@ export function createModelSlice({ set, get }: SliceContext): ModelSlice {
       }
       const currentRuntime = runtimeForState(current) ?? runtime
       const nextModels = keepRef(current.models, models)
-      const nextLevels = keepRef(current.thinkingLevels, thinkingLevels)
+      const session = current.session
+      const authoritative = session?.thinkingLevelsStatus === 'known' || session?.thinkingLevelsStatus === 'unsupported'
+      const nextLevels = authoritative && session.availableThinkingLevels ? keepRef(current.thinkingLevels, session.availableThinkingLevels)
+        : modelKeyOf(initial.session?.model) === modelKeyOf(session?.model) ? keepRef(current.thinkingLevels, thinkingLevels) : current.thinkingLevels
       const runtimeEntry = currentRuntime ? current.sessionRuntimes[sessionRuntimeKey(currentRuntime)] : undefined
       const stableModels = runtimeEntry ? keepRef(runtimeEntry.models, nextModels) : nextModels
       const stableLevels = runtimeEntry ? keepRef(runtimeEntry.thinkingLevels, nextLevels) : nextLevels

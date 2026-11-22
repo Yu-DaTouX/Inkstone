@@ -2,7 +2,6 @@ import { useI18n } from '../../i18n'
 
 export type SessionTextKey =
   | 'visual'
-  | 'imageProgress'
   | 'subagent'
   | 'toolDetail'
   | 'outputMore'
@@ -306,7 +305,6 @@ export type SessionTextKey =
 
 const ZH: Record<SessionTextKey, string> = {
   visual: '结构化图块（{lang}）暂不支持在这里渲染。',
-  imageProgress: '生图进度暂不支持在这里显示。',
   subagent: '子 Agent 卡片暂不支持在这里显示。',
   toolDetail: '差异与终端详情将在右侧面板打开；这里先显示已记录的命令与输出。',
   outputMore: '展开全部输出（{n} 行）',
@@ -611,7 +609,6 @@ const ZH: Record<SessionTextKey, string> = {
 
 const EN: Record<SessionTextKey, string> = {
   visual: "Structured block ({lang}) can't be rendered here yet.",
-  imageProgress: "Image generation progress isn't shown here yet.",
   subagent: "Subagent cards aren't shown here yet.",
   toolDetail: 'Diffs and terminal details open in the side panel; recorded command and output are shown here.',
   outputMore: 'Show all output ({n} lines)',

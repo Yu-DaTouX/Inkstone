@@ -1,0 +1,25 @@
+@layer features {
+  .ws-reply-sources {
+    margin-block: var(--s-4);
+  }
+
+  .ws-reply-sources-list {
+    display: grid;
+    gap: var(--s-4);
+    margin: var(--s-4) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ws-reply-sources-list > li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--s-8);
+    align-items: center;
+    padding-block: var(--s-4);
+  }
+
+  .ws-reply-sources-list a { display: grid; min-width: 0; }
+  .ws-reply-sources-list a > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-reply-sources-list small { color: var(--fg3); }
+}

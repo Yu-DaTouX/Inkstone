@@ -215,6 +215,31 @@ console.log('--- refreshStateWithThinkingLevels：多段等待后核对归属 --
   check(ctl.state.sessionName === '正常' && channels(pushed, 'state').length === 1, '归属不变：正常写状态')
 }
 
+console.log('--- 思考档位：瞬时失败、明确空列表和迟到回执 ---')
+{
+  const model = { provider: 'fixture', id: 'astra', reasoning: true }
+  const gate = deferred()
+  let response = { success: false }
+  const { ctl, pushed } = controller({ commands: {
+    get_state: async () => ({ success: true, data: stateData({ model }) }),
+    get_available_thinking_levels: async () => { await gate.promise; return response }
+  } })
+  ctl.setStateFrom(stateData({ model, thinkingLevel: 'high', availableThinkingLevels: ['off', 'high'] }))
+  gate.release()
+  check((await ctl.listThinkingLevels()).join(',') === 'off,high' && ctl.state.thinkingLevelsStatus === 'known' && ctl.state.thinkingLevel === 'high', '查询暂时失败不清除同模型已确认的可选档和选中值')
+  ctl.setStateFrom(stateData({ model, thinkingLevel: 'high', availableThinkingLevels: undefined }))
+  check(ctl.state.availableThinkingLevels.join(',') === 'off,high', '字段暂缺时沿用同模型的已知档位')
+  response = { success: true, data: { levels: [] } }
+  await ctl.listThinkingLevels()
+  check(ctl.state.thinkingLevelsStatus === 'unsupported' && !ctl.state.availableThinkingLevels.length, '明确空列表仍替换旧档位')
+  response = { success: true, data: { levels: ['old'] } }
+  const pending = ctl.listThinkingLevels()
+  ctl.capabilityOpts.runnerGeneration++
+  const before = pushed.length
+  await pending
+  check(pushed.length === before && !ctl.state.availableThinkingLevels.length, '旧运行实例的回执不能覆盖当前档位')
+}
+
 console.log('--- stop：经运行观察器补发 host 终态 ---')
 {
   const signals = []

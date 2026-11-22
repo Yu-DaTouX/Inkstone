@@ -276,23 +276,43 @@ class Fixture {
   await ev(`document.querySelector('${rail('usage')}')?.scrollIntoView({ block: 'end' })`)
   await kit.shot('antigravity-reported-metrics', { native: false })
   await kit.clip('antigravity-quota-resets', '[data-testid="rail-antigravity-quota"]')
+  await ev('window.__yanRightPanel.getState().setWidth(360)')
   await click(`${rail('usage')} .wb-tile-open`)
-  await waitFor(`${has('[data-testid="v3-wb-quota-group-antigravity"]', 'Gemini Pro · Fixture')} && ${has('[data-testid="v3-wb-quota-group-antigravity"]', 'For paid Pro plans, Argon quota is separate.')}`)
+  const quotaCard = '[data-testid="v3-wb-quota-card-antigravity"]'
+  const subgroup = '[data-testid="v3-wb-quota-antigravity-subgroup"]'
+  await waitFor(has(quotaCard, 'Gemini 4 Argon'))
   const panelQuota = await ev(`(() => {
-    const cards = Array.from(document.querySelectorAll('[data-testid="v3-wb-quota-card-antigravity"]'))
-    return cards.map((card) => ({
-      name: card.querySelector('.wb-quota-name')?.textContent?.trim(),
-      note: card.querySelector('.wb-quota-ag-note')?.textContent?.trim() ?? null,
-      text: card.textContent
-    }))
+    const cards = document.querySelectorAll('${quotaCard}')
+    return { count: cards.length, groups: Array.from(cards[0]?.querySelectorAll('${subgroup}') ?? [], (group) => {
+      const rows = Array.from(group.querySelectorAll('.wb-quota-win'))
+      const note = group.querySelector('.wb-quota-ag-note')
+      return {
+        name: group.getAttribute('aria-label'),
+        noteVisible: !!note?.getClientRects().length,
+        used: rows.map((row) => row.querySelector('[role="meter"]')?.getAttribute('aria-valuenow')),
+        countdowns: rows.map((row) => row.querySelector('.ui-meter__trailing')?.textContent ?? null),
+        sameRow: rows.length === 2 && rows[0].getBoundingClientRect().top === rows[1].getBoundingClientRect().top,
+        labelsFit: rows.every((row) => { const label = row.querySelector('.wb-quota-win-label'); return label.scrollWidth <= label.clientWidth })
+      }
+    }) }
   })()`)
-  check('点击用量卡打开右栏额度详情，展示三组模型/说明且 Argon 无假重置',
-    panelQuota.length === 3 &&
-    panelQuota[0]?.name === 'Gemini Models' && panelQuota[0]?.note?.includes('Gemini Pro · Fixture') &&
-    panelQuota[2]?.name === 'Gemini 4 Argon' && panelQuota[2]?.note?.includes('Argon quota is separate') &&
-    !panelQuota[2]?.text.includes('天') && !panelQuota[2]?.text.includes('时'),
+  const [geminiPanel, claudePanel, argonPanel] = panelQuota.groups
+  check('窄侧栏单卡保留三组额度，5 小时和本周并排用已用仪表，Argon 不造窗口或倒计时',
+    panelQuota.count === 1 && panelQuota.groups.length === 3 && panelQuota.groups.every((group) => !group.noteVisible && group.labelsFit) &&
+    geminiPanel?.name === 'Gemini Models' && geminiPanel.sameRow && geminiPanel.used.join() === '8,22' && geminiPanel.countdowns.every(Boolean) &&
+    claudePanel?.sameRow && claudePanel.used.join() === '0,0' &&
+    argonPanel?.name === 'Gemini 4 Argon' && argonPanel.used.join() === '0' && argonPanel.countdowns[0] === null,
     panelQuota)
-  await kit.shot('antigravity-quota-panel', { native: false })
+  await kit.clip('antigravity-quota-panel', '[data-testid="v3-wb-quota-group-antigravity"]')
+  const argonTrigger = `${quotaCard} ${subgroup}:last-child button[aria-expanded]`
+  await ev(`document.querySelector('${argonTrigger}').focus()`)
+  await kit.key('Enter')
+  await waitFor(`!!document.querySelector('${subgroup}:last-child .wb-quota-ag-note')?.getClientRects().length`)
+  check('用键盘展开 Argon 说明', await ev(has(`${subgroup}:last-child .wb-quota-ag-note`, 'Argon quota is separate')))
+  await kit.key('Enter')
+  await kit.theme('light')
+  await kit.clip('antigravity-quota-panel-light', '[data-testid="v3-wb-quota-group-antigravity"]')
+  await kit.theme('dark')
   await ev('window.__yanRightPanel.getState().setOpen(false)')
   const quotaRefresh = '[data-testid="antigravity-quota-refresh"]'
   writeFileSync(quotaState, 'offline')

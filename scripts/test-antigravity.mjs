@@ -111,7 +111,11 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(true, '认证失效、API Key 无订阅和明确空额度立即清空，后续抖动不会恢复旧账号数据')
   }
 
-  const { AntigravityQuotaDetails, AntigravityQuotaPaneSection, antigravityQuotaSummary, antigravityQuotaTone } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
+  const { AntigravityQuotaDetails, AntigravityQuotaPaneSection, antigravityQuotaSummary, antigravityQuotaTone, I18nProvider } = await compile(null, {
+    stdin: {
+      contents: "export * from './src/renderer/src/features/workbench/AntigravityQuota'; export { I18nProvider } from './src/renderer/src/i18n';",
+      resolveDir: resolve('.')
+    },
     jsx: 'automatic', loader: { '.css': 'empty' }, packages: 'external'
   })
   const now = new Date(2026, 10, 22, 13, 30, 0)
@@ -136,7 +140,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     staleMarkup.includes('Current') && antigravityQuotaSummary(staleQuota, { id: 'Gemini 4 Neon' }, 'en-US').includes('Stale') &&
     antigravityQuotaTone(staleQuota, { id: 'Gemini 4 Neon' }) === undefined &&
     antigravityQuotaTone({ checkedAt: now.getTime(), groups: [group] }, { id: 'Gemini 4 Neon' }) === 'fail', '折叠摘要、当前分组标记与旧数据提示正常，非旧数据耗尽返回 fail 语气')
-  const paneMarkup = renderToStaticMarkup(createElement(AntigravityQuotaPaneSection, {
+  const paneMarkup = renderToStaticMarkup(createElement(I18nProvider, null, createElement(AntigravityQuotaPaneSection, {
     snapshot: { checkedAt: now.getTime(), groups: [
       { name: 'Gemini Models', models: ['Gemini 4 Neon', 'Gemini 3.8 Flash'], windows: [
         { ...fiveHour, remainingFraction: 0.74, resetAt: today.getTime() },
@@ -144,14 +148,19 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ] },
       { ...argon, windows: [{ ...argon.windows[0], resetAt: nextWeek.getTime() }] }
     ] },
-    loading: false, active: true, model: { id: 'gemini-4-neon', name: 'Gemini 4 Neon' }, now: now.getTime(), lang: 'zh-CN'
-  }))
-  ok(paneMarkup.includes('v3-wb-quota-group-antigravity') && paneMarkup.includes('Gemini 4 Neon · Gemini 3.8 Flash') &&
-    paneMarkup.includes('For paid Pro plans, Argon quota is separate.') && paneMarkup.includes('74%') && paneMarkup.includes('83%') &&
+    loading: false, active: true, model: { id: 'gemini-4-neon', name: 'Gemini 4 Neon' }, now: now.getTime()
+  })))
+  ok(paneMarkup.match(/data-testid="v3-wb-quota-card-antigravity"/g)?.length === 1 &&
+    paneMarkup.match(/data-testid="v3-wb-quota-antigravity-subgroup"/g)?.length === 2 &&
+    paneMarkup.match(/aria-expanded="false"/g)?.length === 2 &&
+    paneMarkup.includes('Gemini 4 Neon · Gemini 3.8 Flash') && paneMarkup.includes('For paid Pro plans, Argon quota is separate.'),
+    '右栏额度详情只渲染一张卡，模型清单和说明默认折叠')
+  ok(paneMarkup.includes('aria-valuenow="26"') && paneMarkup.includes('aria-valuenow="17"') &&
     paneMarkup.includes('17:28') && paneMarkup.includes('3时58分') && paneMarkup.includes('6天9时') &&
-    paneMarkup.includes('剩余') && paneMarkup.includes('使用中'), '右栏额度详情页展示 Antigravity 分组、模型清单、Argon 说明、双窗口倒计时与时间，且忽略满额假重置')
+    paneMarkup.includes('已用') && paneMarkup.includes('使用中'), '额度卡用已用比例画仪表，保留各窗口时间和当前组标签')
   const argonCardMarkup = paneMarkup.slice(paneMarkup.indexOf('Gemini 4 Argon'))
-  ok(!argonCardMarkup.includes('6天9时') && !argonCardMarkup.includes('11/28'), '右栏详情页中的满额 Gemini 4 Argon 不显示滚动占位重置日期')
+  ok(argonCardMarkup.includes('aria-valuenow="0"') && !argonCardMarkup.includes('ui-meter__trailing') &&
+    !argonCardMarkup.includes('5 小时'), 'Argon 满额显示 0% 已用，仅有本周窗口且不显示占位倒计时')
 
   const deferred = () => {
     let resolve, reject
