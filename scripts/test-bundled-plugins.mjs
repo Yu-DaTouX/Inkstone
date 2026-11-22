@@ -244,6 +244,39 @@ process.send({ type: 'ready' })
   }
 
   {
+    const data = join(root, 'closing-data')
+    await mkdir(data)
+    let enteredRollback
+    let finishRollback
+    const rollbackStarted = new Promise((resolve) => { enteredRollback = resolve })
+    const rollbackGate = new Promise((resolve) => { finishRollback = resolve })
+    const target = join(data, 'plugins', 'upgrade', 'plugin')
+    const host = new BundledPlugins({
+      sources: [sources], dataDir: data, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan,
+      remove: async (path, options) => {
+        if (path === target) { enteredRollback(); await rollbackGate }
+        return rm(path, options)
+      }
+    })
+    try {
+      await writeUpgrade('close-base', '')
+      ok((await host.action('upgrade', 'install')).ok, '关闭期间回滚：建立旧版基线')
+      await writeUpgrade('close-fail', "process.send({ type: 'response', id: message.id, value: { ok: false, error: 'setup refused' } }); return")
+      const updating = host.action('upgrade', 'install')
+      await rollbackStarted
+      const closing = host.close()
+      const prematurely = await Promise.race([closing.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 60))])
+      finishRollback()
+      await closing
+      ok(!(await updating).ok && await readFile(join(target, 'version.txt'), 'utf8') === 'close-base', '关闭后旧版本已恢复')
+      ok(!prematurely, '插件宿主关闭不能早于在途回滚完成')
+    } finally {
+      finishRollback()
+      await host.close()
+    }
+  }
+
+  {
     const lazy = join(sources, 'lazy')
     await mkdir(lazy)
     const pidFile = join(root, 'lazy.pid')

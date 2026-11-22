@@ -206,6 +206,7 @@ export class BundledPlugins {
   async startInstalled(): Promise<void> {
     await this.sweepLeftovers()
     for (const parent of this.options.sources) {
+      if (this.closed) return
       const entries = await import('node:fs/promises').then(fs => fs.readdir(parent, { withFileTypes: true })).catch(() => [])
       for (const entry of entries) {
         if (!entry.isDirectory() || !existsSync(join(this.root(entry.name), MARKER))) continue
@@ -230,7 +231,9 @@ export class BundledPlugins {
     const pluginsDir = join(this.options.dataDir, 'plugins')
     const ids = await readdir(pluginsDir, { withFileTypes: true }).then(items => items.filter(item => item.isDirectory()).map(item => item.name), () => [] as string[])
     for (const id of ids) {
+      if (this.closed) return
       await this.enqueue(id, async () => {
+        if (this.closed) return
         const dir = join(pluginsDir, id)
         const names = await this.leftovers(id)
         const target = this.root(id)
@@ -517,9 +520,9 @@ export class BundledPlugins {
 
   async close(): Promise<void> {
     this.closed = true
-    const starting = [...this.connecting.values()]
+    const pending = [...this.connecting.values(), ...this.queues.values()]
     await Promise.all([...this.connections.keys()].map(id => this.disconnect(id).catch(() => undefined)))
-    await Promise.allSettled(starting)
+    await Promise.allSettled(pending)
     await Promise.all([...this.connections.keys()].map(id => this.disconnect(id).catch(() => undefined)))
   }
 }
