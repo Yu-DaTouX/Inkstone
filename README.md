@@ -13,13 +13,11 @@
   <a href="https://github.com/Yu-DaTouX/Inkstone/issues">问题反馈</a>
 </p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-0.15.0-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-0.15.0-light.png">
-  <img src="assets/inkstone/workspace-0.15.0-light.png" alt="左侧是项目与会话，中间是回复与改动摘要，右侧是文件更改。" width="1280">
-</picture>
+<p align="center">
+  <img src="assets/inkstone/workspace-0.17-dark-floral.png" alt="深色花朵背景的砚工作台：左侧选择会话，中间查看对账复核结果，右侧对照文件差异。" width="1280">
+</p>
 
-<p align="center"><sub>桌面 0.15.0 界面示意，使用演示数据。</sub></p>
+<p align="center"><sub>桌面工作台实拍 · 深色主题，115% 缩放。项目、会话及文件改动均为演示数据。</sub></p>
 
 ## 下载与上手
 
