@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 import { fillMissingExports } from './lib/stub-exports.mjs'
 
@@ -80,13 +81,18 @@ function installGlobals() {
   globalThis.__V3_LANG = 'zh-CN'
 }
 
+const reactVersion = createRequire(import.meta.url)('react').version
 const REACT_SHIM = `/* v3 步骤回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
+export const version = ${JSON.stringify(reactVersion)}
 export const Fragment = Symbol.for('v3.fragment')
 export function useState(init) { return rt().useState(init) }
+export function useReducer(reducer, initial, init) { const [state, setState] = useState(() => init ? init(initial) : initial); return [state, action => setState(current => reducer(current, action))] }
 export function useEffect(fn, deps) { return rt().useEffect(fn, deps) }
+export function useEffectEvent(fn) { const ref = useRef(fn); ref.current = fn; return (...args) => ref.current(...args) }
 export function useLayoutEffect(fn, deps) { return rt().useEffect(fn, deps) }
 export function useInsertionEffect() {}
+export function useImperativeHandle() {}
 export function useRef(init) { return rt().useRef(init) }
 export function useMemo(fn) { return fn() }
 export function useCallback(fn) { return fn }
@@ -96,12 +102,13 @@ export function useId() { return rt().useId() }
 export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value : null }
 export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null), Consumer: (p) => (p && typeof p.children === 'function' ? p.children(value) : null) } }
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
+export function cloneElement(el, props, ...children) { return createElement(el.type, { ...el.props, key: el.key, ...props }, ...children) }
 export function forwardRef(fn) { return fn }
 export function memo(fn) { return fn }
 export function lazy() { return () => null }
 export function Suspense(p) { return p ? p.children : null }
 export function isValidElement(el) { return !!el && typeof el === 'object' && 'type' in el && 'props' in el }
-export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo, lazy, Suspense, isValidElement }
+export default { version, Fragment, useState, useReducer, useEffect, useEffectEvent, useLayoutEffect, useImperativeHandle, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, cloneElement, forwardRef, memo, lazy, Suspense, isValidElement }
 `
 
 const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
