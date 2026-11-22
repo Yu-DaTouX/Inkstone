@@ -154,24 +154,21 @@ export function loadMcpServers(env: NodeJS.ProcessEnv = process.env): McpConfigL
   return parseMcpServersDocument(text, file)
 }
 
-let cachedLoad: { file: string; mtimeMs: number; size: number; result: McpConfigLoadResult } | null = null
+let cachedLoad: { file: string; stamp: string; result: McpConfigLoadResult } | null = null
 
 export function loadMcpServersCached(env: NodeJS.ProcessEnv = process.env): McpConfigLoadResult {
   const file = mcpServersFile(env)
-  let mtimeMs: number
-  let size: number
+  let stamp: string
   try {
     const info = statSync(file)
-    mtimeMs = info.mtimeMs
-    size = info.size
+    stamp = [info.dev, info.ino, info.ctimeMs, info.mtimeMs, info.size].join(':')
   } catch {
+    if (cachedLoad?.file === file) cachedLoad = null
     return { servers: [], file }
   }
-  if (cachedLoad && cachedLoad.file === file && cachedLoad.mtimeMs === mtimeMs && cachedLoad.size === size) {
-    return cachedLoad.result
-  }
+  if (cachedLoad && cachedLoad.file === file && cachedLoad.stamp === stamp) return cachedLoad.result
   const result = loadMcpServers(env)
-  cachedLoad = { file, mtimeMs, size, result }
+  cachedLoad = { file, stamp, result }
   return result
 }
 

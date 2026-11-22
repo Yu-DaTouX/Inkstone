@@ -16,7 +16,7 @@ export async function runMcpTests(ok, modules) {
   const managerMod = modules.manager
   const toolService = modules.toolService
 
-  const { mkdtemp, readFile, writeFile, rm, stat } = await import('node:fs/promises')
+  const { mkdtemp, readFile, rename, writeFile, rm, stat, utimes } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join, resolve } = await import('node:path')
 
@@ -130,6 +130,18 @@ export async function runMcpTests(ok, modules) {
       'utf8'
     )
     ok(config.loadMcpServersCached(cacheEnv).servers[0].id === 'c2', '配置缓存：文件变化后读到新值')
+    const fixedTime = new Date('2026-01-02T03:04:05Z')
+    await utimes(cacheFile, fixedTime, fixedTime)
+    const beforeStat = await stat(cacheFile)
+    const beforeReplace = config.loadMcpServersCached(cacheEnv)
+    const replacement = join(root, 'cache-replacement.json')
+    await writeFile(replacement, JSON.stringify({ servers: [{ id: 'c3', title: 'size-changed', transport: 'stdio', command: process.execPath }] }))
+    await utimes(replacement, fixedTime, fixedTime)
+    await rename(replacement, cacheFile)
+    const afterStat = await stat(cacheFile)
+    ok(afterStat.mtimeMs === beforeStat.mtimeMs && afterStat.size === beforeStat.size, '替换文件与旧文件大小、修改时间相同')
+    const afterReplace = config.loadMcpServersCached(cacheEnv)
+    ok(afterReplace !== beforeReplace && afterReplace.servers[0].id === 'c3', '配置缓存：同大小同修改时间的原子替换也会读到新值')
   }
 
   {
