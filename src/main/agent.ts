@@ -1,6 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { ANTIGRAVITY_DEFAULT_MODE, ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
-import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout, type AntigravitySession } from './antigravity'
+import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, antigravityStopError, launchAntigravity, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout, type AntigravitySession, type AntigravitySteer } from './antigravity'
 import {
   buildChunkCompactPrompt,
   buildCompactAppendices,
@@ -676,7 +676,7 @@ export class AgentController extends EventEmitter {
   }
   private acpPreferenceSessionId?: string
   private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean; acpSessionId?: string; acpCwd?: string; acpHeadEntryId?: string }
-  private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null; cancel?: () => void }
+  private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; steer?: { item: QueueItem; prompt: AntigravitySteer }; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null; cancel?: () => void }
   private acpCompacting: { abort: AbortController; done: Promise<void>; sessionId: string } | null = null
   private acpCompactHold?: { sessionId: string; untilTokens: number }
   private acpQueue: QueueState = { steering: [], followUp: [] }
@@ -3433,11 +3433,7 @@ export class AgentController extends EventEmitter {
         followUp: next.followUp.map((item) => ({ ...item, ...(item.images?.length ? { images: item.images.map((img) => ({ ...img })) } : {}) }))
       }
       this.publishAcpQueue()
-      if (this.acpQueue.steering.length && this.acpTurn && !this.acpTurn.stopped) {
-        this.acpTurn.interjected = true
-        this.acpTurn.session.cancel()
-        this.acpTurn.cancel?.()
-      }
+      if (this.acpQueue.steering.length) this.interjectAntigravity()
       return { ok: true }
     }
     return this.queue.rewrite(next)
@@ -3456,15 +3452,17 @@ export class AgentController extends EventEmitter {
   async abort(expectGeneration?: number): Promise<QueueSnapshot & { error?: string }> {
     if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { steering: [], followUp: [], error: GENERATION_MISMATCH_ERROR }
     if (this.acpTurn) {
+      const turn = this.acpTurn
       const reclaimed = snapshotQueue(this.acpQueue)
       this.acpQueue = { steering: [], followUp: [] }
       this.publishAcpQueue()
-      this.acpTurn.interjected = false
-      this.acpTurn.stopped = true
-      this.acpTurn.delegation.abort()
-      this.acpTurn.session.cancel()
-      this.acpTurn.cancel?.()
-      await this.acpTurn.done
+      turn.interjected = false
+      turn.stopped = true
+      turn.delegation.abort()
+      turn.session.cancel()
+      turn.cancel?.()
+      await turn.done
+      if (turn.steer && this.acpTurn?.stopped && this.acpTurn.session === turn.session) await this.acpTurn.done
       return reclaimed
     }
     if (this.acpCompacting) {
@@ -4218,12 +4216,35 @@ export class AgentController extends EventEmitter {
       followUp: lane === 'followUp' ? [...this.acpQueue.followUp, item] : this.acpQueue.followUp
     }
     this.publishAcpQueue()
-    if (lane === 'steering' && this.acpTurn && !this.acpTurn.stopped) {
-      this.acpTurn.interjected = true
-      this.acpTurn.session.cancel()
-      this.acpTurn.cancel?.()
-    }
+    if (lane === 'steering') this.interjectAntigravity()
     return { ok: true }
+  }
+
+  private interjectAntigravity(): void {
+    const turn = this.acpTurn
+    const connection = this.acpConnection
+    const item = this.acpQueue.steering[0]
+    if (!turn || !connection || !item || turn.stopped || turn.interjected || turn.steer) return
+    if (turn.session.canStartSteer && connection.session === turn.session) {
+      const notices = this.acpHeldNotices
+      const text = notices.length ? `${notices.join('\n\n')}\n\n${item.text}` : item.text
+      let prompt: AntigravitySteer | undefined
+      try {
+        prompt = turn.session.steerPrompt(antigravityPrompt(text, []), connection.model.id, connection.thinking?.current, connection.mode, item.images)
+      } catch {
+        return
+      }
+      if (prompt) {
+        turn.steer = { item, prompt }
+        this.acpHeldNotices = []
+        this.acpQueue.steering.shift()
+        this.publishAcpQueue()
+      }
+      return
+    }
+    turn.interjected = true
+    turn.session.cancel()
+    turn.cancel?.()
   }
 
   private editAntigravityQueueItem(
@@ -4246,11 +4267,7 @@ export class AgentController extends EventEmitter {
     if (steer) next.steering.push(target)
     this.acpQueue = next
     this.publishAcpQueue()
-    if (steer && this.acpTurn && !this.acpTurn.stopped) {
-      this.acpTurn.interjected = true
-      this.acpTurn.session.cancel()
-      this.acpTurn.cancel?.()
-    }
+    if (steer) this.interjectAntigravity()
     return { ok: true, text: target.text, ...(target.images?.length ? { images: target.images } : {}) }
   }
 
@@ -4259,6 +4276,7 @@ export class AgentController extends EventEmitter {
     this.acpConnection = undefined
     this.acpCompactHold = undefined
     this.acpHeldNotices = []
+    this.acpTurn?.delegation.abort()
     this.acpTurn?.cancel?.()
     this.acpCompacting?.abort.abort()
     if (this.acpQueue.steering.length || this.acpQueue.followUp.length) {
@@ -4328,6 +4346,7 @@ export class AgentController extends EventEmitter {
       abort.signal.addEventListener('abort', onAbort, { once: true })
       proc.onEvent = (event) => {
         if (event.type === 'text') out += event.text
+        else if (event.type === 'question') proc.reply(event.id, null)
         else if (event.type === 'permission') {
           const deny = event.options.find((option) => !option.allow)
           proc.reply(event.id, deny?.id ?? null)
@@ -4335,7 +4354,7 @@ export class AgentController extends EventEmitter {
       }
       return proc.prompt(promptText, initial.model.id, initial.thinking?.current, expectedMode).then((stopReason) => {
         if (abortedHere || abort.signal.aborted || stopReason === 'cancelled') throw new Error('Compaction cancelled')
-        if (stopReason !== 'end_turn') throw new Error(`Antigravity: ${stopReason || 'missing stop reason'}`)
+        if (stopReason !== 'end_turn') throw new Error(antigravityStopError(stopReason))
         return out.trim()
       }).finally(() => {
         abort.signal.removeEventListener('abort', onAbort)
@@ -4548,7 +4567,7 @@ export class AgentController extends EventEmitter {
         connection.model = this.antigravityModel(connection.model, connection.thinking, connection.supportsImages)
         void this.refreshState()
       } else if (
-        (event.type === 'tool' || event.type === 'plan' || event.type === 'permission' || ((event.type === 'text' || event.type === 'thought') && !!event.text)) &&
+        (event.type === 'tool' || event.type === 'plan' || event.type === 'permission' || event.type === 'question' || ((event.type === 'text' || event.type === 'thought') && !!event.text)) &&
         connection.hasContext &&
         !session.busy &&
         !this.acpTurn &&
@@ -4558,7 +4577,7 @@ export class AgentController extends EventEmitter {
         this.state?.sessionId === connection.sessionId
       ) {
         this.startAntigravityTurn({ connection, session, native: this.nativeRuntime, owner: this.asyncOwner(), firstEvent: event })
-      }
+      } else if (event.type === 'question') session.reply(event.id, null)
     }
   }
 
@@ -4644,7 +4663,7 @@ export class AgentController extends EventEmitter {
       const explicitMode = restoreMode ?? (previous?.sessionId === sessionId ? previous.modes?.current : undefined)
       let models = reuse
         ? await proc.selectModel(modelId)
-        : await proc.start(this.cwd, bridge?.configs, {
+        : await proc.start(this.cwd, bridge ? { stdio: bridge.configs, http: bridge.httpConfigs } : undefined, {
             mode: explicitMode,
             defaultMode: ANTIGRAVITY_DEFAULT_MODE,
             ...(resumeTarget ? { resumeSessionId: resumeTarget.sessionId } : {})
@@ -4805,11 +4824,14 @@ export class AgentController extends EventEmitter {
     userText?: string
     media?: { data: string; mimeType: string }[]
     prompt?: string
+    steer?: AntigravitySteer
+    stopped?: boolean
+    delegation?: AbortController
     firstEvent?: AntigravityEvent
   }): void {
     const { connection, session, native, owner } = options
     const media = options.media ?? []
-    const prompted = options.prompt !== undefined
+    const prompted = options.prompt !== undefined || !!options.steer
     const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection.sessionId && this.acpConnection === connection
     const startedAt = Date.now()
     const startedMono = performance.now()
@@ -4833,10 +4855,10 @@ export class AgentController extends EventEmitter {
     const turn: NonNullable<AgentController['acpTurn']> = this.acpTurn = {
       session,
       done: Promise.resolve(),
-      stopped: false,
+      stopped: options.stopped === true,
       interjected: false,
       messages: user ? [user, currentStep] : [currentStep],
-      delegation: new AbortController(),
+      delegation: options.delegation ?? new AbortController(),
       startedAt,
       runContext
     }
@@ -4902,7 +4924,9 @@ export class AgentController extends EventEmitter {
       settleTimer = null
     }
     const hasActiveWork = (): boolean =>
-      approvals.size > 0 || steps.some((step) => step.toolCalls?.some((call) => call.status === 'pending' || call.status === 'running'))
+      approvals.size > 0 || steps.some((step) => step.toolCalls?.some((call) =>
+        (call.status === 'pending' || call.status === 'running') &&
+        !((call.details as { kind?: string } | undefined)?.kind === 'execute' && (call.args as { IsDaemon?: boolean } | undefined)?.IsDaemon === true)))
     const rawIdle = Number(process.env.YAN_ACP_UNSOLICITED_IDLE_MS)
     const customIdle = Number.isFinite(rawIdle) && rawIdle >= 50 && rawIdle <= 10_000 ? rawIdle : undefined
     const textIdleMs = customIdle ?? 2_000
@@ -4933,6 +4957,10 @@ export class AgentController extends EventEmitter {
       this.push({ ch: 'todos', payload: [] })
     }
     this.runFromUser = prompted && !isSubagentNotice(options.userText ?? '') && !isHostTextNotice(options.userText ?? '')
+    if (options.steer && this.agentRunning && this.state) {
+      this.state = { ...this.state, runStartedAt: startedAt }
+      this.push({ ch: 'state', payload: this.state })
+    }
     this.setAgentRunning(true)
     this.markStreaming(true)
     observe({ type: 'agent-start' })
@@ -5002,7 +5030,7 @@ export class AgentController extends EventEmitter {
         const name = event.title || previous?.name || 'Antigravity'
         const diffs = status === 'ok' ? antigravityFileDiffs(this.cwd, event.diffs) : []
         calls.set(id, { id, name, args: event.args ?? previous?.args ?? {}, status, output: event.output,
-          details: { antigravity: true, kind: event.kind, antigravityDiffs: diffs },
+          details: { antigravity: true, kind: event.kind ?? (previous?.details as { kind?: string } | undefined)?.kind, antigravityDiffs: diffs },
           startedAt: previous?.startedAt ?? (status === 'running' || completed ? now : undefined),
           endedAt: completed ? previous?.endedAt ?? now : undefined })
         if (!previous) observe({ type: 'tool-start', tool: { name, callId: id } })
@@ -5012,6 +5040,7 @@ export class AgentController extends EventEmitter {
         this.push({ ch: 'msg-update', payload: { id: ownerStep.id, patch: { toolCalls: ownerStep.toolCalls, thinkingLive: false, ...(settled ? { thinkingMs: ownerStep.thinkingMs } : {}) } } })
         scheduleSettle()
       } else if (event.type === 'permission') {
+        if (turn.stopped || turn.interjected) { session.reply(event.id, null); return }
         continuousOutput = false
         const allow = event.options.find((option) => option.allow)
         const deny = event.options.find((option) => !option.allow)
@@ -5029,6 +5058,27 @@ export class AgentController extends EventEmitter {
           (answer) => session.reply(event.id, answer.confirmed && !turn.stopped && !turn.interjected && ownsTurn() ? allow.id : deny?.id ?? null),
           () => session.reply(event.id, deny?.id ?? null)
         )
+      } else if (event.type === 'question') {
+        if (turn.stopped || turn.interjected) { session.reply(event.id, null); return }
+        continuousOutput = false
+        const controller = new AbortController()
+        approvals.set(event.id, controller)
+        clearSettleTimer()
+        const reserved = new Set(event.options.map(({ name }) => name))
+        const ids = new Map<string, string>()
+        const suffixes = new Map<string, number>()
+        for (const { id, name } of event.options) {
+          let label = name
+          let suffix = suffixes.get(name) ?? 2
+          while (ids.has(label) || (label !== name && reserved.has(label))) label = `${name} (${suffix++})`
+          suffixes.set(name, suffix)
+          ids.set(label, id)
+        }
+        void this.ui.requestHostUi({ method: 'select', title: pick('Antigravity 提问', 'Antigravity question'),
+          message: event.title, options: [...ids.keys()], signal: controller.signal, timeout: 180_000 }).then(
+          (answer) => session.reply(event.id, !answer.cancelled && !turn.stopped && !turn.interjected && ownsTurn() ? ids.get(answer.value ?? '') ?? null : null),
+          () => session.reply(event.id, null)
+        )
       } else if (event.type === 'permission-cleared') {
         approvals.get(event.id)?.abort()
         approvals.delete(event.id)
@@ -5042,8 +5092,8 @@ export class AgentController extends EventEmitter {
       }
     }
     session.onEvent = handleEvent
-    const running = prompted
-      ? session.prompt(options.prompt!, connection.model.id, connection.thinking?.current, connection.mode, media)
+    const running = options.steer ? options.steer.attach(handleEvent) : options.prompt !== undefined
+      ? session.prompt(options.prompt, connection.model.id, connection.thinking?.current, connection.mode, media)
       : new Promise<string>((resolve, reject) => {
           finishUnsolicited = (reason: string) => {
             if (unsolicitedSettled) return
@@ -5061,6 +5111,7 @@ export class AgentController extends EventEmitter {
         })
     if (options.firstEvent) handleEvent(options.firstEvent)
     let nextQueued: QueueItem | undefined
+    let handingOff = false
     let autoCompactNeeded: { used: number; size: number } | undefined
     let settledOutcome: 'completed' | 'stopped' | 'failed' | null = null
     const retireAcp = async () => {
@@ -5083,25 +5134,28 @@ export class AgentController extends EventEmitter {
       let cleanCancel = false
       try {
         const reason = await running
+        handingOff = reason === 'end_turn' && !!turn.steer && connection.session === session
         if (reason === 'cancelled' || turn.stopped || turn.interjected) {
           status = 'aborted'
           cleanCancel = reason === 'cancelled'
         } else if (reason !== 'end_turn') {
           status = 'error'
-          turnError = `Antigravity: ${reason || 'missing stop reason'}`
+          turnError = antigravityStopError(reason)
         }
-        connection.hasContext = connection.session === session && (status === 'stop' || (status === 'aborted' && cleanCancel))
+        connection.hasContext = connection.session === session && (handingOff || status === 'stop' || (status === 'aborted' && cleanCancel && !turn.steer))
       } catch (error) {
         status = turn.stopped || turn.interjected ? 'aborted' : 'error'
-        if (!turn.stopped && !turn.interjected) turnError = error instanceof Error ? error.message : String(error)
+        if ((!turn.stopped && !turn.interjected) || (error instanceof Error && error.name === 'INVALID_THINKING_SIGNATURE')) {
+          turnError = error instanceof Error ? error.message : String(error)
+        }
         connection.hasContext = false
       } finally {
         clearSettleTimer()
-        session.clearTools()
+        if (!handingOff) session.clearTools()
         for (const approval of approvals.values()) approval.abort()
         approvals.clear()
       }
-      turn.delegation.abort()
+      if (!handingOff) turn.delegation.abort()
       if (!connection.hasContext) await retireAcp()
       if (!ownsTurn()) {
         observe({ type: 'stopped', by: 'host', reason: 'interrupted' })
@@ -5124,7 +5178,7 @@ export class AgentController extends EventEmitter {
       }
       const usage = lastStep.antigravity.usage
       if (status === 'stop' && continuousOutput && !lastStep.toolCalls?.length && usage && firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt) {
-        const visible = usage.visibleOutput ?? (lastStep.thinking ? undefined : usage.output)
+        const visible = usage.visibleOutput ?? (!lastStep.thinking && usage.thought === undefined ? usage.output : undefined)
         if (visible !== undefined && (usage.output === undefined || visible <= usage.output)) {
           lastStep.antigravity = { ...lastStep.antigravity, usage: { ...usage, visibleOutput: visible }, outputSpanMs: lastTextAt - firstTextAt }
         }
@@ -5200,7 +5254,7 @@ export class AgentController extends EventEmitter {
         if (user) void this.maybeGenerateTitle()
       }
       settledOutcome = outcome
-      if (status === 'stop' && !turn.stopped && !turn.interjected && this.state?.autoCompactionEnabled !== false && turnContext?.used && turnContext.size > 0) {
+      if (!handingOff && status === 'stop' && !turn.stopped && !turn.interjected && this.state?.autoCompactionEnabled !== false && turnContext?.used && turnContext.size > 0) {
         const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
         const line = autoCompactAt(cap, turnContext.size)
         if (turnContext.used <= line) {
@@ -5209,7 +5263,7 @@ export class AgentController extends EventEmitter {
           autoCompactNeeded = turnContext
         }
       }
-      if (!turn.stopped && (this.acpQueue.steering.length || this.acpQueue.followUp.length)) {
+      if (!handingOff && !turn.stopped && (this.acpQueue.steering.length || this.acpQueue.followUp.length)) {
         nextQueued = this.acpQueue.steering.shift() ?? this.acpQueue.followUp.shift()
         this.publishAcpQueue()
       }
@@ -5218,6 +5272,14 @@ export class AgentController extends EventEmitter {
       for (const approval of approvals.values()) approval.abort()
       if (this.acpTurn === turn) {
         this.acpTurn = undefined
+        if (handingOff && turn.steer && ownsTurn() && connection.session === session && connection.hasContext) {
+          if (settledOutcome) this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome: settledOutcome } })
+          const { item, prompt } = turn.steer
+          this.startAntigravityTurn({ connection, session, native, owner, userText: item.text, media: item.images, steer: prompt,
+            stopped: turn.stopped, delegation: turn.delegation })
+          return
+        }
+        turn.delegation.abort()
         if (ownsTurn()) {
           if (connection.session === session) this.bindAntigravity(connection, session)
           this.setAgentRunning(false)

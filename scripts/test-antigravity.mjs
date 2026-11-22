@@ -2,18 +2,20 @@ import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { runSuite } from './lib/test-suite.mjs'
+import { agentTestBuildOptions } from './lib/agent-test-bundle.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const { ANTIGRAVITY_DEFAULT_MODE } = await compile('src/shared/antigravity.ts')
-  const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout } = await compile('src/main/antigravity.ts')
+  const { AntigravityHandoffLimitError, AntigravitySession, antigravityExecutable, antigravityPrompt, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout } = await compile('src/main/antigravity.ts')
   const longHistory = [{ role: 'user', text: 'A' + 'x'.repeat(110_000) + 'Z' }, { role: 'assistant', text: '答复', thinking: 'internal thought should be omitted', toolCalls: [{ id: 'tc-1', name: 'read', status: 'ok', args: { Path: 'a.ts' }, output: 'ok', details: { antigravity: true, kind: 'read', antigravityDiffs: [{ path: 'a.ts', patch: 'huge-diff' }] }, startedAt: 1, endedAt: 2 }] }]
   const handoff = antigravityPrompt('继续', longHistory)
   ok(handoff.startsWith('Current user message:\n继续\n') && handoff.includes(longHistory[0].text) && !handoff.includes('internal thought should be omitted') && !handoff.includes('huge-diff'), '超过旧字符上限但在安全字节内时置顶当前消息、交接完整历史并剔除 UI 冗余字段')
@@ -40,7 +42,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     parseAntigravityQuota(JSON.stringify({ ...quota, command: { ...quota.command, name: 'model' } })).length === 0, '仅接受零模型回合的 usage 命令结果')
   const parseResetGroups = (...groups) => parseAntigravityQuota(JSON.stringify({ ...quota, command: { ...quota.command, data: { groups } } }))
   const buckets = quota.command.data.groups[0].buckets
-  const [inactive, mixed] = parseResetGroups(
+  const [inactive, mixed, argon] = parseResetGroups(
     { name: 'Claude and GPT models', buckets: [
       { ...buckets[0], remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
       { ...buckets[1], remaining_fraction: 1, reset_time: 'not-a-date' },
@@ -49,10 +51,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
     { name: 'Gemini Models', buckets: [
       { ...buckets[0], reset_time: '0001-01-01T00:00:00Z' },
       { ...buckets[1], reset_time: '2020-01-01T00:00:00Z' }
+    ] },
+    { name: 'Gemini 4 Argon', description: 'For paid Pro plans, Argon quota is separate.', buckets: [
+      { id: 'gemini-argon-wtu-weekly', name: 'Gemini 4 Argon Weekly Limit', window: 'weekly', remaining_fraction: 1, reset_time: '2026-11-29T02:33:32Z' }
     ] }
   )
   ok(inactive.windows.length === 3 && inactive.windows.every((window) => !Object.hasOwn(window, 'resetAt')), '零时间、无效日期及早于有效纪元的时间不输出 resetAt，额度窗口保留')
   ok(!Object.hasOwn(mixed.windows[0], 'resetAt') && mixed.windows[1].resetAt === Date.UTC(2020, 0, 1), '部分有效时独立保留有效窗口，包含纪元下界')
+  ok(argon.windows.length === 1 && !Object.hasOwn(argon.windows[0], 'resetAt') && argon.models.length === 0 && argon.description === 'For paid Pro plans, Argon quota is separate.', '满额未消耗的滚动窗口（如 Gemini 4 Argon）不输出滚动占位 resetAt，并保留分组说明')
 
   {
     let time = 1000
@@ -105,29 +111,47 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(true, '认证失效、API Key 无订阅和明确空额度立即清空，后续抖动不会恢复旧账号数据')
   }
 
-  const { AntigravityQuotaDetails, antigravityQuotaSummary } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
+  const { AntigravityQuotaDetails, AntigravityQuotaPaneSection, antigravityQuotaSummary, antigravityQuotaTone } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
     jsx: 'automatic', loader: { '.css': 'empty' }, packages: 'external'
   })
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 7)
-  const nextWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7, 18, 42)
+  const now = new Date(2026, 10, 22, 13, 30, 0)
+  const today = new Date(2026, 10, 22, 17, 28, 0)
+  const nextWeek = new Date(2026, 10, 28, 22, 38, 0)
   const weeklyTime = new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(nextWeek)
-  const renderQuota = (windows) => renderToStaticMarkup(createElement(AntigravityQuotaDetails, {
-    lang: 'en-US', quota: { snapshot: { groups: [{ name: inactive.name, models: [], windows }] }, loading: false, refresh() {} }
+  const renderQuota = (windows, extra = {}) => renderToStaticMarkup(createElement(AntigravityQuotaDetails, {
+    lang: 'en-US', now: now.getTime(), quota: { snapshot: { groups: [{ name: inactive.name, models: [], windows }] }, loading: false, refresh() {} }, ...extra
   }))
   const [fiveHour, weekly] = mixed.windows
   const noResets = renderQuota([0, -1, Infinity, NaN, Date.UTC(2019, 0, 1), Number.MAX_VALUE, undefined].map((resetAt, index) => ({ ...fiveHour, id: `bad-${index}`, resetAt })))
   ok(!/\bResets?\b/.test(noResets) && noResets.includes('Claude and GPT models'), '渲染端独立拦截占位和无效时间，全组无有效时间不显示重置')
-  const fallback = renderQuota([{ ...fiveHour, resetAt: 0 }, { ...weekly, resetAt: nextWeek.getTime() }])
-  ok(fallback.includes(`Wk Reset ${weeklyTime}`) && fallback.includes(`Resets ${weeklyTime}`) && !fallback.includes('5h Reset'), '主窗口无有效时间时组头标明每周重置，只有每周 tooltip 有时间')
-  const both = renderQuota([{ ...weekly, resetAt: nextWeek.getTime() }, { ...fiveHour, resetAt: today.getTime() }])
-  ok(both.includes('5h Reset 00:07') && !both.includes('Wk Reset') && both.includes('Resets 00:07') && both.includes(`Resets ${weeklyTime}`), '5h 优先且同日只显示时间、跨日带日期，各窗口 tooltip 保留自己的重置时间')
-  const staleQuota = { checkedAt: 10_000, staleSince: 5000, groups: [group], error: 'Fixture timeout.' }
+  const fullRolling = renderQuota([{ ...weekly, id: 'argon-full', remainingFraction: 1, resetAt: nextWeek.getTime() }])
+  ok(!/\bResets?\b/.test(fullRolling) && fullRolling.includes('100%') && fullRolling.includes('width:100%') && fullRolling.includes('data-full="1"'), '渲染端同样拦截 100% 满额滚动窗口的假重置时间，进度条按剩余比例展示')
+  const both = renderQuota([{ ...weekly, remainingFraction: 0.83, resetAt: nextWeek.getTime() }, { ...fiveHour, remainingFraction: 0.74, resetAt: today.getTime() }])
+  ok(both.includes('Resets 17:28 · in 3h 58m') && both.includes(`Resets ${weeklyTime} · in 6d 9h`) && both.includes('width:74%') && both.includes('width:83%'), '5h 与每周分别直接显示各自重置时间与倒计时，进度条与剩余百分比一致')
+  const staleQuota = { checkedAt: now.getTime(), staleSince: now.getTime() - 5000, groups: [group], error: 'Fixture timeout.' }
   const staleMarkup = renderToStaticMarkup(createElement(AntigravityQuotaDetails, {
-    lang: 'en-US', quota: { snapshot: staleQuota, loading: false, refresh() {} }
+    lang: 'en-US', now: now.getTime(), model: { id: 'Gemini 4 Neon', name: 'Gemini 4 Neon' }, quota: { snapshot: staleQuota, loading: false, refresh() {} }
   }))
   ok(staleMarkup.includes('Fixture timeout.') && staleMarkup.includes('Showing the last successful allowance') && staleMarkup.includes('92.5%') &&
-    antigravityQuotaSummary(staleQuota, { id: 'Gemini 4 Neon' }, 'en-US').includes('Stale'), '折叠摘要和额度详情都明确标记旧数据，同时保留进度条')
+    staleMarkup.includes('Current') && antigravityQuotaSummary(staleQuota, { id: 'Gemini 4 Neon' }, 'en-US').includes('Stale') &&
+    antigravityQuotaTone(staleQuota, { id: 'Gemini 4 Neon' }) === undefined &&
+    antigravityQuotaTone({ checkedAt: now.getTime(), groups: [group] }, { id: 'Gemini 4 Neon' }) === 'fail', '折叠摘要、当前分组标记与旧数据提示正常，非旧数据耗尽返回 fail 语气')
+  const paneMarkup = renderToStaticMarkup(createElement(AntigravityQuotaPaneSection, {
+    snapshot: { checkedAt: now.getTime(), groups: [
+      { name: 'Gemini Models', models: ['Gemini 4 Neon', 'Gemini 3.8 Flash'], windows: [
+        { ...fiveHour, remainingFraction: 0.74, resetAt: today.getTime() },
+        { ...weekly, remainingFraction: 0.83, resetAt: nextWeek.getTime() }
+      ] },
+      { ...argon, windows: [{ ...argon.windows[0], resetAt: nextWeek.getTime() }] }
+    ] },
+    loading: false, active: true, model: { id: 'gemini-4-neon', name: 'Gemini 4 Neon' }, now: now.getTime(), lang: 'zh-CN'
+  }))
+  ok(paneMarkup.includes('v3-wb-quota-group-antigravity') && paneMarkup.includes('Gemini 4 Neon · Gemini 3.8 Flash') &&
+    paneMarkup.includes('For paid Pro plans, Argon quota is separate.') && paneMarkup.includes('74%') && paneMarkup.includes('83%') &&
+    paneMarkup.includes('17:28') && paneMarkup.includes('3时58分') && paneMarkup.includes('6天9时') &&
+    paneMarkup.includes('剩余') && paneMarkup.includes('使用中'), '右栏额度详情页展示 Antigravity 分组、模型清单、Argon 说明、双窗口倒计时与时间，且忽略满额假重置')
+  const argonCardMarkup = paneMarkup.slice(paneMarkup.indexOf('Gemini 4 Argon'))
+  ok(!argonCardMarkup.includes('6天9时') && !argonCardMarkup.includes('11/28'), '右栏详情页中的满额 Gemini 4 Argon 不显示滚动占位重置日期')
 
   const deferred = () => {
     let resolve, reject
@@ -252,12 +276,33 @@ await runSuite(import.meta.url, async (ok, compile) => {
     return { session, events }
   }
   const wait = async (fn) => {
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 200; i++) {
       const value = fn()
       if (value) return value
       await delay(15)
     }
     assert.fail('等待 ACP 事件超时')
+  }
+
+  {
+    const location = mkdtempSync(join(tmpdir(), 'yan-acp-executable-'))
+    const keys = ['LOCALAPPDATA', 'PATH', 'AGY_CLI_DISABLE_AUTO_UPDATE', 'PYTHONUNBUFFERED', 'YAN_FIXTURE_PRIVATE_ENV']
+    const saved = new Map(keys.map((key) => [key, process.env[key]]))
+    try {
+      const executable = join(location, 'agy.exe')
+      writeFileSync(executable, '')
+      Object.assign(process.env, { LOCALAPPDATA: location, PATH: [location, process.env.PATH].join(delimiter),
+        AGY_CLI_DISABLE_AUTO_UPDATE: '0', PYTHONUNBUFFERED: '0', YAN_FIXTURE_PRIVATE_ENV: 'fixture' })
+      const resolved = antigravityExecutable(cwd)
+      ok(resolved.executable === executable && resolved.env.AGY_CLI_DISABLE_AUTO_UPDATE === '1' &&
+        resolved.env.PYTHONUNBUFFERED === '1' && !Object.hasOwn(resolved.env, 'YAN_FIXTURE_PRIVATE_ENV'), '启动环境仍按白名单筛选，固定禁用 CLI 自更新、启用 Python 非缓冲输出')
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      rmSync(location, { recursive: true, force: true })
+    }
   }
 
   for (const args of [['embedded-context'], ['legacy']]) {
@@ -282,6 +327,176 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
   }
   ok(true, '现代和旧 ACP 模型列表按原始 ID 去重并区分同名项；不论是否声明 embeddedContext，输入框文件路径引用原样走文本块')
+
+  {
+    const http = { type: 'http', name: 'inkstone-pi', url: 'http://127.0.0.1:1/mcp', headers: [{ name: 'Authorization', value: 'fixture' }] }
+    const stdio = { name: 'inkstone-pi', command: process.execPath, args: [], env: [] }
+    const configs = { stdio: [stdio], http: [http] }
+    let resumeSessionId
+    for (const [args, resume, servers, transport, steer] of [
+      [['--protocol=2', '--version=v1.5.0', 'http-mcp'], false, configs, 'http', true],
+      [['--version=1.10.0', 'http-mcp'], true, configs, 'http', true],
+      [['load-only', 'http-mcp', '--version=2.0.0'], true, configs, 'http', true],
+      [['--version=1.4.99'], false, configs, 'stdio', false],
+      [['http-mcp'], false, { ...configs, http: [] }, 'stdio', false],
+      [[], false, stdio, 'stdio', false]
+    ]) {
+      const { session, events } = start(...args)
+      try {
+        const models = await session.start(cwd, servers, resume ? { resumeSessionId } : undefined)
+        resumeSessionId ??= session.acpSessionId
+        assert.equal(session.resumed, resume)
+        assert.equal(session.canSteerWithPrompt, steer)
+        assert.equal(models.current, 'flash')
+        if (args.includes('--protocol=2')) {
+          assert.equal((await session.selectModel('pro')).current, 'pro')
+          assert.equal((await session.selectModel('flash')).current, 'flash')
+        }
+        await session.prompt('检查 MCP 传输')
+        assert.equal(events.find((event) => event.type === 'text').text, transport)
+      } finally { await session.close() }
+    }
+    const incompatible = start('--protocol=3').session
+    try { await assert.rejects(incompatible.start(cwd), /协议版本不兼容/) } finally { await incompatible.close() }
+    ok(true, 'ACP v1/v2 配置切换、拒绝其他协议版本；HTTP 按能力优先用于 new/resume/load，其余保留 stdio，按数值版本启用原生插话')
+  }
+
+  {
+    const { session, events } = start('--version=v1.5.0', 'native-steer')
+    try {
+      await session.start(cwd, undefined, { mode: 'auto' })
+      const ordinary = session.prompt('空交互提问', 'flash', 'low', 'auto')
+      assert.equal(await ordinary, 'end_turn')
+      assert.ok(events.some((e) => e.text === '提问结果 · cancelled · cancel=0'))
+      assert.ok(events.every((e) => e.type !== 'permission' && e.type !== 'question'))
+      events.length = 0
+      const old = session.prompt('原生插话阻塞', 'flash', 'low', 'auto')
+      await wait(() => events.some((e) => e.text === '旧轮首块'))
+      assert.throws(() => session.steerPrompt('权限档不可绕过', 'flash', 'low', 'plan'), /权限档/)
+      const steered = session.steerPrompt('原生插话提问', 'flash', 'low', 'auto')
+      assert.ok(steered)
+      assert.equal(await old, 'end_turn')
+      assert.equal(session.steerPrompt('在途不可重入', 'flash', 'low', 'auto'), undefined)
+      await wait(() => session.context?.used === 567)
+      assert.deepEqual(events.filter((e) => e.type === 'text').map((e) => e.text), ['旧轮首块', '旧轮收尾'])
+      assert.equal(events.findLast((e) => e.type === 'usage').usage.input, 10)
+      assert.ok(!events.some((e) => e.type === 'question' || e.type === 'tool'))
+      const next = []
+      const running = steered.attach((e) => next.push(e))
+      assert.deepEqual(next.map(({ type }) => type), ['text', 'tool', 'context', 'question'])
+      const question = next.at(-1)
+      assert.equal(question.title, '选择夹具\\u{202e}选项')
+      assert.deepEqual(question.options.map(({ id }) => id), ['one', 'two', 'three', 'four', 'five'])
+      assert.equal(question.options[4].name, 'five')
+      assert.ok(question.options[3].name.startsWith('文字\\u{202e}') && !question.options[3].name.includes('\u202e') && question.options[3].name.length < 550)
+      session.reply(question.id, 'duplicate')
+      session.reply(question.id, 'two')
+      assert.equal(await running, 'end_turn')
+      assert.ok(next.some((e) => e.type === 'permission-cleared' && e.id === question.id))
+      assert.equal(next.findLast((e) => e.type === 'text').text, '提问结果 · two · cancel=0')
+      ok(true, 'Auto 不干预交互题，保留合法非审批选项；插话不取消，旧轮及新轮更新和提问按序独立分发')
+
+      await session.selectMode('default')
+      next.length = 0
+      const waiting = session.prompt('原生插话阻塞')
+      await wait(() => next.some((e) => e.text === '旧轮首块'))
+      const approvalPrompt = session.steerPrompt('原生插话审批')
+      assert.equal(await waiting, 'end_turn')
+      await delay(25)
+      const after = []
+      const approvalRunning = approvalPrompt.attach((e) => after.push(e))
+      const approval = await wait(() => after.find((e) => e.type === 'permission'))
+      assert.deepEqual(approval.options.map(({ id }) => id), ['once', 'deny'])
+      session.reply(approval.id, 'deny')
+      assert.equal(await approvalRunning, 'end_turn')
+      ok(after.some((e) => e.text === '审批结果 · deny') && !next.some((e) => e.type === 'permission'), '插话缓冲普通审批且不会把它投递给旧轮或放宽权限')
+
+      after.length = 0
+      const initial = session.prompt('原生插话阻塞')
+      await wait(() => after.some((e) => e.text === '旧轮首块'))
+      const middle = session.steerPrompt('原生插话阻塞')
+      assert.equal(await initial, 'end_turn')
+      const middleEvents = []
+      const middleResult = middle.attach((e) => middleEvents.push(e))
+      await wait(() => middleEvents.some((e) => e.text === '旧轮首块'))
+      const final = session.steerPrompt('原生插话结束')
+      assert.equal(await middleResult, 'end_turn')
+      await delay(20)
+      assert.equal(session.busy, true)
+      const finalEvents = []
+      assert.equal(await final.attach((e) => finalEvents.push(e)), 'end_turn')
+      assert.deepEqual(middleEvents.filter((e) => e.type === 'text').map((e) => e.text), ['旧轮首块', '旧轮收尾'])
+      assert.deepEqual(finalEvents, [{ type: 'text', text: '插话快速结束' }, { type: 'usage', usage: { input: 20 } }])
+      ok(!session.busy, '已接管的插话可继续接下一次；新轮回执早于接管也不会丢更新或提前释放 busy')
+    } finally { await session.close() }
+  }
+
+  {
+    const { session, events } = start('--version=1.5.0', 'native-steer')
+    try {
+      await session.start(cwd)
+      const old = session.prompt('原生插话阻塞')
+      await wait(() => events.some((e) => e.text === '旧轮首块'))
+      const steer = session.steerPrompt('原生插话提问')
+      assert.equal(await old, 'end_turn')
+      await wait(() => session.context?.used === 567)
+      session.cancel()
+      const replay = []
+      assert.equal(await steer.attach((e) => replay.push(e)), 'cancelled')
+      assert.ok(replay.some((e) => e.type === 'question') && replay.some((e) => e.type === 'permission-cleared'))
+      assert.equal(session.busy, false)
+      const nextOld = session.prompt('原生插话阻塞')
+      await wait(() => replay.some((e) => e.text === '旧轮首块'))
+      const nextSteer = session.steerPrompt('原生插话提问')
+      assert.equal(await nextOld, 'end_turn')
+      await session.close()
+      const dropped = []
+      await assert.rejects(nextSteer.attach((e) => dropped.push(e)), /会话已关闭/)
+      ok(dropped.length === 0 && !session.busy, '用户停止可取消未接管插话并清理提问，关闭清理缓冲及待处理 RPC')
+    } finally { await session.close() }
+  }
+
+  {
+    const { session, events } = start()
+    try {
+      await session.start(cwd)
+      const usages = []
+      for (const query of ['缓存与思考', '思考超出输出', '显式可见输出']) {
+        await session.prompt(query)
+        usages.push(events.findLast((e) => e.type === 'usage').usage)
+      }
+      assert.deepEqual(usages, [
+        { input: 80, output: 20, cacheRead: 20, thought: 9, totalTokens: 120, visibleOutput: 11 },
+        { input: 80, output: 20, thought: 21 },
+        { output: 20, thought: 9, visibleOutput: 4 }
+      ])
+      ok(true, '回合输入不重复计缓存，兼容 thought 别名，安全推导可见输出并优先用显式值')
+      for (const query of ['失效思考签名', '错误思考签名']) {
+        await assert.rejects(session.prompt(query), (error) => error.name === 'INVALID_THINKING_SIGNATURE' && /思考签名已失效/.test(error.message))
+      }
+      const loaded = session.prompt('大工具载荷')
+      const approval = await wait(() => events.find((e) => e.type === 'permission'))
+      try {
+        const tools = events.filter((e) => e.type === 'tool' && e.id === 'big')
+        const [initial, completed] = tools
+        assert.equal(initial.output, 'combined output')
+        assert.deepEqual(completed.args.imageObject, { type: 'image', mimeType: 'image/png' })
+        assert.equal(completed.args.imageUrl, '')
+        assert.equal(completed.args.log, 'before  after')
+        assert.equal(completed.args.text, 'z'.repeat(31_995) + ' END')
+        assert.equal(completed.output, completed.args.text)
+        assert.deepEqual(completed.args.nested, { combined_output: 'nested' })
+        assert.equal(Object.hasOwn(completed.args, 'formattedOutput'), false)
+        assert.deepEqual(completed.diffs, [{ path: 'big.txt', oldText: 'OLD' + 'a'.repeat(40_000), newText: 'NEW' + 'z'.repeat(40_000) }])
+        assert.deepEqual(approval.options.map(({ id }) => id), ['deny'])
+        assert.ok(approval.blocked)
+      } finally { session.reply(approval.id, 'deny') }
+      assert.equal(await loaded, 'end_turn')
+      ok(true, '超过旧行上限的大载荷仍能解析；移除图像和重复输出，只存无损尾部及完整 diff，审批继续基于原始载荷拒超限')
+      await assert.rejects(session.prompt('超大 ACP 行'), /返回的数据过大/)
+      ok(true, 'ACP 输入行保留 16 MiB 字节上限，多字节字符不能绕过')
+    } finally { await session.close() }
+  }
 
   const { session, events } = start()
   try {
@@ -423,6 +638,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await readOnly.rpc.command('prompt', { message: '检查命令权限' })
       await wait(() => readOnly.events.some((e) => e.type === 'agent_settled'))
       ok(readOnly.events.findLast((e) => e.type === 'message_end').message.content.some((block) => block.text === '审批结果 · deny'), '只读子代理主动拒绝 CLI 工具批准请求')
+      readOnly.events.length = 0
+      await readOnly.rpc.command('prompt', { message: '交互提问' })
+      await wait(() => readOnly.events.some((e) => e.type === 'agent_settled'))
+      assert.ok(readOnly.events.findLast((e) => e.type === 'message_end').message.content.some((block) => block.text.startsWith('提问结果 · cancelled')))
+      readOnly.events.length = 0
+      await readOnly.rpc.command('prompt', { message: '额度拒绝' })
+      await wait(() => readOnly.events.some((e) => e.type === 'agent_settled'))
+      const refused = readOnly.events.findLast((e) => e.type === 'message_end').message
+      ok(refused.stopReason === 'error' && /Antigravity 模型额度可能已耗尽/.test(refused.errorMessage), '子代理直接取消交互题，refusal 提示额度耗尽')
     } finally { await readOnly.rpc.close() }
     const noPlan = await child('pro', { readOnly: true }, undefined, 'no-plan')
     const invalid = await child('flash', { thinkingLevel: 'high-ish' })
@@ -449,6 +673,176 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await wait(() => cancellable.events.some((e) => e.type === 'agent_settled'))
       ok(!cancellable.rpc.running && cancellable.events.findLast((e) => e.type === 'message_end').message.stopReason === 'error', 'ACP 断线时收束在途回合并退出')
     } finally { await cancellable.rpc.close() }
+  }
+
+  {
+    const { AgentController } = await compile('src/main/agent.ts', agentTestBuildOptions)
+    const { readAntigravityPreference } = await compile('src/main/antigravity-preferences.ts', agentTestBuildOptions)
+    const makeAgent = async (mode, ...args) => {
+      const { session, events } = start(...args)
+      const models = await session.start(cwd, undefined, { mode })
+      const pushed = []
+      const saved = []
+      const ctl = new AgentController({ cwd, push: (event) => pushed.push(event) })
+      ctl.refreshState = async () => {}
+      ctl.refreshStats = async () => {}
+      ctl.maybeGenerateTitle = async () => {}
+      ctl.confirmExecutionAdmission = () => true
+      ctl.state = { sessionId: randomUUID(), cwd, isStreaming: false, autoCompactionEnabled: false }
+      const connection = ctl.acpConnection = { sessionId: ctl.state.sessionId, model: { id: 'flash', name: 'Flash', provider: 'antigravity' },
+        thinking: models.thinking, mode: models.mode, modes: models.modes, session, hasContext: false }
+      let appendGate
+      const native = ctl.nativeRuntime = {
+        bridgeCapabilities: ['append_antigravity_turn', 'append_antigravity_compaction'],
+        appendAntigravityTurn: async (turn) => {
+          const first = saved.length === 0
+          saved.push(turn)
+          if (first) await appendGate
+          return { userId: 'u-' + saved.length, assistantId: 'a-' + saved.length }
+        },
+        appendAntigravityCompaction: async ({ summary }) => { saved.push(summary); return { entryId: 'compact-fixture' } }
+      }
+      ctl.bindAntigravity(connection, session)
+      const prompt = (userText, text = userText) => {
+        ctl.startAntigravityTurn({ connection, session, native, owner: ctl.asyncOwner(), userText, prompt: text })
+        return ctl.acpTurn
+      }
+      const requests = () => pushed.filter((event) => event.ch === 'ui-request').map(({ payload }) => payload)
+      return { ctl, session, events, saved, pushed, prompt, requests, connection, holdAppend: (gate) => { appendGate = gate } }
+    }
+
+    const ag = await makeAgent('auto', '--version=1.5.0', 'native-steer')
+    const gate = deferred()
+    try {
+      ag.holdAppend(gate.promise)
+      const old = ag.prompt('原生插话阻塞')
+      await wait(() => ag.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
+      assert.equal((await ag.ctl.steer('原生插话提问')).ok, true)
+      assert.equal((await ag.ctl.steer('插话之后继续排队')).ok, true)
+      assert.equal(ag.ctl.acpQueue.steering.length, 1)
+      await wait(() => ag.saved.length && ag.session.context?.used === 567)
+      assert.equal(ag.requests().length, 0)
+      assert.equal(old.delegation.signal.aborted, false)
+      assert.equal(ag.saved[0].steps[0].text, '旧轮首块旧轮收尾')
+      assert.equal(ag.saved[0].status, 'stop')
+      assert.equal(ag.connection.hasContext, true)
+      assert.equal(ag.ctl.acpQueue.steering[0].text, '插话之后继续排队')
+      gate.resolve()
+      await old.done
+      const next = ag.ctl.acpTurn
+      assert.equal(next.delegation, old.delegation)
+      const ask = await wait(() => ag.requests().at(-1))
+      assert.equal(ask.purpose, undefined)
+      assert.equal(ask.sensitive, undefined)
+      assert.equal(ask.message, '选择夹具\\u{202e}选项')
+      assert.deepEqual(ask.options.slice(0, 3), ['同名', '同名 (3)', '同名 (2)'])
+      assert.deepEqual(await ag.ctl.answerUiRemotely(ask.id, { value: ask.options[1] }), { ok: true })
+      await next.done
+      await wait(() => ag.saved.length === 3 && !ag.ctl.acpTurn)
+      assert.deepEqual(ag.saved.map(({ user }) => user), ['原生插话阻塞', '原生插话提问', '插话之后继续排队'])
+      assert.deepEqual(ag.saved[1].steps.map(({ text }) => text), ['插话首块', '提问结果 · two · cancel=0'])
+      assert.equal(ag.saved[1].antigravity.context.used, 567)
+      assert.equal(readAntigravityPreference(ag.connection.sessionId).acpSessionId, ag.session.acpSessionId)
+      ok(true, 'AgentController 在旧轮落盘等待期间缓冲新轮，原地接管不终止委派；远程选择重复展示名准确回填，后续插话继续排队')
+    } finally { gate.resolve(); await ag.ctl.closeAntigravity() }
+
+    const edit = await makeAgent('auto', '--version=1.5.0', 'native-steer')
+    const stopGate = deferred()
+    try {
+      edit.holdAppend(stopGate.promise)
+      const old = edit.prompt('原生插话阻塞')
+      await wait(() => edit.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
+      await edit.ctl.followUp('原生插话提问')
+      const target = edit.ctl.acpQueue.followUp[0]
+      assert.equal((await edit.ctl.steerQueued(target.id)).ok, true)
+      await wait(() => edit.session.context?.used === 567 && edit.saved.length === 1)
+      const stop = edit.ctl.abort()
+      stopGate.resolve()
+      await stop
+      assert.equal(edit.ctl.acpTurn, undefined)
+      assert.equal(edit.requests().length, 0)
+      assert.equal(edit.saved.length, 2)
+      assert.equal(edit.saved[1].user, target.text)
+      assert.equal(edit.saved[1].status, 'aborted')
+      assert.equal(old.delegation.signal.aborted, true)
+      ok(true, '从队列提升消息使用原生插话；旧轮持久化期间停止会取消已发新轮并清理其提问')
+    } finally { stopGate.resolve(); await edit.ctl.closeAntigravity() }
+
+    const legacy = await makeAgent('default', '--version=1.4.9')
+    try {
+      const old = legacy.prompt('等待')
+      await wait(() => legacy.pushed.some((e) => e.payload?.patch?.textDelta === '正在等待'))
+      assert.equal((await legacy.ctl.steer('旧版回退消息')).ok, true)
+      await old.done
+      await wait(() => legacy.saved.length === 2 && !legacy.ctl.acpTurn)
+      assert.equal(legacy.saved[0].status, 'aborted')
+      assert.equal(legacy.saved[1].user, '旧版回退消息')
+      ok(true, '旧版 CLI 继续取消旧回合后再发送排队消息')
+    } finally { await legacy.ctl.closeAntigravity() }
+
+    const healing = await makeAgent('default', '--version=1.5.0', 'native-steer', 'late-steer-error')
+    let rebuilt
+    try {
+      await healing.prompt('你好').done
+      assert.equal(readAntigravityPreference(healing.connection.sessionId).acpSessionId, healing.session.acpSessionId)
+      const old = healing.prompt('原生插话阻塞')
+      await wait(() => healing.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
+      await healing.ctl.steer('原生插话结束')
+      await old.done
+      await wait(() => healing.saved.length === 3 && !healing.ctl.acpTurn)
+      assert.match(healing.saved[2].error, /思考签名已失效/)
+      assert.equal(healing.connection.session, undefined)
+      assert.equal(readAntigravityPreference(healing.connection.sessionId).acpSessionId, undefined)
+      assert.equal(await healing.ctl.resolveAntigravityResume(healing.connection), undefined)
+      healing.ctl.selectAntigravity = async () => {
+        rebuilt = start().session
+        await rebuilt.start(cwd)
+        healing.connection.session = rebuilt
+        healing.ctl.bindAntigravity(healing.connection, rebuilt)
+        return { ok: true }
+      }
+      assert.equal((await healing.ctl.sendAntigravity('额度拒绝')).ok, true)
+      await healing.ctl.acpTurn?.done
+      assert.notEqual(rebuilt.acpSessionId, healing.session.acpSessionId)
+      assert.match(healing.saved[3].error, /Antigravity 模型额度可能已耗尽/)
+      ok(true, '已在接管前失败的插话仍正确落盘；失效签名清除持久化 ACP ID，下一次发送进入重连且 refusal 明示额度')
+    } finally { await healing.ctl.closeAntigravity(); await rebuilt?.close() }
+
+    const idle = await makeAgent('auto')
+    const previousIdle = process.env.YAN_ACP_UNSOLICITED_IDLE_MS
+    process.env.YAN_ACP_UNSOLICITED_IDLE_MS = '60'
+    try {
+      await idle.prompt('后台交互提问').done
+      const ask = await wait(() => idle.requests().at(-1))
+      idle.ctl.ui.expireHostUi(ask.id)
+      await wait(() => idle.saved.length === 2 && !idle.ctl.acpTurn)
+      assert.match(idle.saved[1].steps[0].text, /提问结果 · cancelled/)
+      await idle.prompt('后台常驻工具').done
+      await wait(() => idle.saved.length === 4 && !idle.ctl.acpTurn)
+      assert.equal(idle.saved[3].status, 'stop')
+      assert.equal(idle.saved[3].steps.map(({ text }) => text).join(''), '常驻工具已启动')
+      ok(true, '后台交互题唤醒会话，超时回取消；IsDaemon 常驻执行工具不阻塞后台回合正常收尾')
+      await idle.prompt('思考超出输出').done
+      ok(idle.saved[4].antigravity.usage.thought === 21 && idle.saved[4].antigravity.usage.visibleOutput === undefined,
+        '主会话未观察到思考文本时也不会把已知含思考的无效输出用量当作可见输出')
+    } finally {
+      if (previousIdle === undefined) delete process.env.YAN_ACP_UNSOLICITED_IDLE_MS
+      else process.env.YAN_ACP_UNSOLICITED_IDLE_MS = previousIdle
+      await idle.ctl.closeAntigravity()
+    }
+
+    const compact = await makeAgent('default', 'summary-question')
+    try {
+      compact.ctl.rpc = { running: true }
+      compact.ctl.hydrate = async () => ({ ok: true })
+      compact.connection.hasContext = true
+      compact.ctl.messages = [
+        { id: 'u1', entryId: 'u1', role: 'user', text: '历史任务' },
+        { id: 'a1', entryId: 'a1', role: 'assistant', text: '历史答案' }
+      ]
+      const result = await compact.ctl.runAntigravityCompaction('manual', undefined, { holdAdmission: true })
+      ok(result.ok && compact.requests().length === 0 && compact.saved[0]?.includes('提问结果 · cancelled'), '压缩回调直接取消交互题，不显示用户提问卡片', JSON.stringify(result))
+    } finally { await compact.ctl.closeAntigravity() }
   }
 
   {
@@ -697,7 +1091,22 @@ await runSuite(import.meta.url, async (ok, compile) => {
         })
         return (await res.json()).result
       }
-      const listed = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/list', {})
+      const [http, codegraphHttp] = bridge.httpConfigs
+      assert.deepEqual(http, { type: 'http', name: 'inkstone-pi', url: env.INKSTONE_PI_MCP_URL, headers: [{ name: 'Authorization', value: env.INKSTONE_PI_MCP_AUTH }] })
+      assert.deepEqual(codegraphHttp, { type: 'http', name: 'codegraph', url: cgEnv.INKSTONE_PI_MCP_URL, headers: [{ name: 'Authorization', value: cgEnv.INKSTONE_PI_MCP_AUTH }] })
+      assert.equal((await fetch(http.url, { method: 'POST' })).status, 403)
+      assert.equal((await fetch(http.url, { method: 'POST', headers: { Authorization: env.INKSTONE_PI_MCP_AUTH, Origin: 'http://localhost' } })).status, 403)
+      const listed = await callMcp(http.url, http.headers[0].value, 'tools/list', {})
+      ok(listed.tools.length === 2, 'HTTP 配置直接调用挂载的 loopback MCP，未改动 stdio 配置和鉴权防线')
+      const direct = start('http-mcp')
+      try {
+        const fakeBridgeDoesNotExist = { ...bridge.configs[0], command: join(cwd, 'nonexistent-fixture-bridge') }
+        await direct.session.start(cwd, { stdio: [fakeBridgeDoesNotExist], http: bridge.httpConfigs })
+        await direct.session.prompt('后台派 Pi 子代理')
+        assert.ok(direct.events.some((event) => event.text?.startsWith('已派发后台子代理 · sub-11112222')))
+        ok(calls.length === 1, '声明 HTTP 能力的夹具可绕过 stdio 可执行项直接委派')
+        calls.length = 0
+      } finally { await direct.session.close() }
       const startSchema = listed.tools.find((tool) => tool.name === 'start_pi_subagent')?.inputSchema
       ok(Array.isArray(startSchema?.properties?.thinkingLevel?.enum) && startSchema.properties.thinkingLevel.enum.includes('high') && startSchema.properties.thinkingLevel.enum.includes('max'), 'start_pi_subagent 工具模式公开合法 thinkingLevel 枚举')
       const cgListed = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/list', {})
@@ -800,6 +1209,12 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(turn.kind === 'assistant' && turn.commentary.length === 1 && turn.commentary[0].text === '正在检查配置。' && turn.response?.text === '检查完成。', 'Antigravity 多步回合把工具前文本归为进度报告，最后一步为最终答复')
     const metrics = projectSessionMetrics(multiStep, null, { antigravity: true })
     ok(metrics.partial === false && metrics.total === 120 && Math.round(metrics.hitRate) === 20, 'Antigravity 多步回合的用量与缓存命中率不被中间步误判为部分数据', JSON.stringify(metrics))
+
+    const withoutWrite = structuredClone(multiStep)
+    delete withoutWrite[2].antigravity.usage.cacheWrite
+    const noWriteMetrics = projectSessionMetrics(withoutWrite, null, { antigravity: true })
+    ok(noWriteMetrics.cacheWrite === null && noWriteMetrics.hitRate === 20 && noWriteMetrics.latestHitRate === 20,
+      'Antigravity 未上报缓存写入时仍计算整会话及最近回合命中率')
 
     const headings = extractGeminiProgressHeadings('**检查登录逻辑**\n\n细节如下：\n```\n**代码块里的星号不是标题**\n```\n**准备修改文件**：\n继续分析')
     ok(headings.join('|') === '检查登录逻辑|准备修改文件', '从 Gemini 思考摘要提取阶段标题并忽略代码块', JSON.stringify(headings))

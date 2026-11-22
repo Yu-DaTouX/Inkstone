@@ -21,6 +21,10 @@ const noPlan = process.argv.includes('no-plan')
 const gatewayModels = process.argv.includes('gateway-models')
 const embeddedContext = process.argv.includes('embedded-context')
 const startDefault = process.argv.includes('start-default')
+const protocolVersion = Number(process.argv.find((arg) => arg.startsWith('--protocol='))?.split('=')[1] ?? 1)
+const agentVersion = process.argv.find((arg) => arg.startsWith('--version='))?.split('=')[1]
+const httpMcp = process.argv.includes('http-mcp')
+const steerFixture = process.argv.includes('native-steer')
 const effortFailureFile = process.argv.find((arg) => arg.startsWith('--effort-failure='))?.slice('--effort-failure='.length)
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
@@ -29,6 +33,9 @@ let mode = startDefault ? 'default' : 'auto'
 let cwd
 let promptId = null
 let waiting = false
+let questionWaiting = false
+let steerWaiting = false
+let cancelledPrompts = 0
 let mcp
 let syncedMcp
 let knowsFixtureCode = false
@@ -61,7 +68,7 @@ const available = [
     { value: 'gateway-c', name: 'Gateway (gateway-c)' },
   ] : []),
 ]
-const selected = (id, category, currentValue, options) => ({ id, category, type: 'select', name: id, currentValue, options })
+const selected = (id, category, currentValue, options) => ({ [protocolVersion === 2 ? 'configId' : 'id']: id, category, type: 'select', name: id, currentValue, options })
 const option = (value, name = value) => ({ value, name })
 const config = () => ({ configOptions: [
   selected('model', 'model', model, [{ group: 'gemini', name: 'Gemini', options: available }]),
@@ -77,8 +84,26 @@ const options = [
   { optionId: 'always', kind: 'allow_always', name: 'Always allow' },
   { optionId: 'deny', kind: 'reject_once', name: 'Deny' }
 ]
+const askQuestion = (empty = false) => {
+  questionWaiting = true
+  const options = [
+    { optionId: '', name: '空 ID' },
+    { optionId: 'duplicate', name: '重复之一' },
+    { optionId: 'duplicate', name: '重复之二' },
+    ...(!empty ? [
+      { optionId: 'one', kind: 'allow_once', name: '同名' },
+      { optionId: 'two', kind: 'allow_always', name: '同名' },
+      { optionId: 'three', kind: 'unexpected', name: '同名 (2)' },
+      { optionId: 'four', name: '文字\u202e' + 'x'.repeat(550) },
+      { optionId: 'five' }
+    ] : [])
+  ]
+  call('question', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'interaction_fixture', title: '选择夹具\u202e选项' }, options })
+}
+
 const permissionCalls = new Map([
   ['权限', { title: '查看夹具项目', rawInput: { path: 'README.md' } }],
+  ['原生插话审批', { title: '插话后请求审批', rawInput: { path: 'fixture.txt' } }],
   ['详情缺失', { title: '查看夹具项目' }],
   ['空参数审批', { title: '查看夹具项目', rawInput: {} }],
   ['重复审批选项', { title: '查看夹具项目', rawInput: { path: 'README.md' } }],
@@ -95,10 +120,12 @@ for await (const line of input) {
   const { id, method, params, result, error } = JSON.parse(line)
   if (method === 'initialize') {
     reply(id, {
-      protocolVersion: 1,
+      protocolVersion,
+      ...(agentVersion ? { agentInfo: { name: 'fixture', version: agentVersion } } : {}),
       authMethods: [],
       agentCapabilities: {
         loadSession: true,
+        ...(httpMcp ? { mcpCapabilities: { http: true } } : {}),
         promptCapabilities: { image: true, ...(embeddedContext ? { embeddedContext: true } : {}) },
         ...(loadOnly ? {} : { sessionCapabilities: { resume: {}, load: {}, close: {} } })
       }
@@ -171,6 +198,11 @@ for await (const line of input) {
     reply(id, config())
     update({ sessionUpdate: 'usage_update', used: 360, size: 20000 })
   } else if (method === 'session/prompt') {
+    if (steerWaiting && steerFixture) {
+      steerWaiting = false
+      chunk('旧轮收尾')
+      reply(promptId, { stopReason: 'end_turn', usage: { inputTokens: 10 } })
+    }
     promptId = id
     const blocks = Array.isArray(params.prompt) ? params.prompt : []
     const raw = blocks.filter((block) => block?.type === 'text').map((block) => String(block.text ?? '')).join('\n')
@@ -194,6 +226,74 @@ for await (const line of input) {
       } } })
       continue
     }
+    if (text === '交互提问' || text === '空交互提问' || text === '原生插话提问') {
+      if (text === '原生插话提问') {
+        chunk('插话首块')
+        update({ sessionUpdate: 'tool_call', toolCallId: 'steer_tool', kind: 'read', status: 'pending', rawInput: { path: 'fixture.txt' } })
+        update({ sessionUpdate: 'usage_update', used: 567, size: 20000 })
+      }
+      askQuestion(text === '空交互提问')
+      continue
+    }
+    if (text === '原生插话阻塞') {
+      steerWaiting = true
+      chunk('旧轮首块')
+      continue
+    }
+    if (text === '原生插话结束') {
+      if (process.argv.includes('late-steer-error')) {
+        send({ id, error: { code: -32603, message: 'INVALID_THINKING_SIGNATURE' } })
+      } else {
+        chunk('插话快速结束')
+        reply(id, { stopReason: 'end_turn', usage: { inputTokens: 20 } })
+      }
+      continue
+    }
+    if (text === '检查 MCP 传输') {
+      chunk(mcp ? mcp.type ?? 'stdio' : 'none')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === '缓存与思考' || text === '思考超出输出' || text === '显式可见输出') {
+      if (text === '思考超出输出') { chunk('可见'); chunk('正文') }
+      const usage = text === '缓存与思考' ? { inputTokens: 80, outputTokens: 20, cachedReadTokens: 20, thoughtTokens: 9, totalTokens: 120 }
+        : text === '思考超出输出' ? { input: 80, output: 20, thought: 21 } : { outputTokens: 20, thoughtTokens: 9, visibleOutputTokens: 4 }
+      reply(id, { stopReason: 'end_turn', usage })
+      continue
+    }
+    if (text === '额度拒绝') { reply(id, { stopReason: 'refusal' }); continue }
+    if (text === '失效思考签名') {
+      send({ id, error: { code: -32603, message: 'Provider error', data: { message: 'messages.12.content.3.thinking.signature: Field required' } } })
+      continue
+    }
+    if (text === '错误思考签名') {
+      send({ id, error: { code: -32602, message: 'messages.0.content.100: Invalid `signature` in `thinking` block' } })
+      continue
+    }
+    if (text === '超大 ACP 行') {
+      chunk('砚'.repeat(6 * 1024 * 1024))
+      continue
+    }
+    if (text === '大工具载荷') {
+      const tail = 'z'.repeat(31_995) + ' END'
+      const large = 'a'.repeat(4 * 1024 * 1024) + '🙂' + tail
+      const combinedOutput = 'combined output'
+      update({ sessionUpdate: 'tool_call', toolCallId: 'big', title: '大载荷', status: 'in_progress', kind: 'edit',
+        rawInput: { IsDaemon: true, imageUrl: 'data:image/png;base64,not-for-history',
+          imageObject: { type: 'image', data: 'not-for-history', blob: 'not-for-history', mimeType: 'image/png' },
+          log: 'before data:image/gif;base64,not-for-history after',
+          combinedOutput, formattedOutput: combinedOutput, nested: { combined_output: 'nested', formatted_output: 'nested' }, text: large },
+        rawOutput: { combined_output: combinedOutput, formattedOutput: combinedOutput } })
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'big', status: 'completed', content: [
+        { type: 'content', content: { type: 'text', text: large } },
+        { type: 'content', content: { type: 'text', text: 'data:image/jpeg;base64,not-for-history' } },
+        { type: 'content', content: { type: 'image', data: 'not-for-history' } },
+        { type: 'diff', path: 'big.txt', oldText: 'OLD' + 'a'.repeat(40_000), newText: 'NEW' + 'z'.repeat(40_000) }
+      ] })
+      call('permission', 'session/request_permission', { sessionId: sid, toolCall: { toolCallId: 'big', title: '大载荷审批' }, options })
+      waiting = true
+      continue
+    }
     if (images.length > 0) {
       chunk(`收到 ${images.length} 张图 · ${images[0].mimeType}${text ? ` · ${text}` : ''}`)
       saveSession()
@@ -210,6 +310,7 @@ for await (const line of input) {
         knowsLongHistory || raw.includes('历史起点') ? '- 保留长历史锚点：历史起点' : '',
         raw.includes('超限起点') ? '- 保留超限历史锚点：超限起点' : ''
       ].filter(Boolean).join('\n')
+      if (process.argv.includes('summary-question')) { askQuestion(); continue }
       chunk(`## Goal\n继续当前夹具任务\n\n## Progress\n### Done\n- [x] 完成前期步骤\n\n## Facts & Details\n${facts || '- 已生成测试摘要'}`)
       saveSession()
       reply(id, { stopReason: 'end_turn' })
@@ -284,9 +385,10 @@ for await (const line of input) {
     if (text === '检查同步 MCP') {
       try {
         if (!syncedMcp) throw new Error('未收到会话 MCP')
-        const env = Object.fromEntries(syncedMcp.env.map(({ name, value }) => [name, value]))
+        const connection = syncedMcp.type === 'http' ? { url: syncedMcp.url, headers: Object.fromEntries(syncedMcp.headers.map(({ name, value }) => [name, value])) }
+          : { url: syncedMcp.env.find(({ name }) => name === 'INKSTONE_PI_MCP_URL').value, headers: { Authorization: syncedMcp.env.find(({ name }) => name === 'INKSTONE_PI_MCP_AUTH').value } }
         const rpc = async (method, params) => {
-          const response = await fetch(env.INKSTONE_PI_MCP_URL, { method: 'POST', headers: { Authorization: env.INKSTONE_PI_MCP_AUTH, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          const response = await fetch(connection.url, { method: 'POST', headers: { ...connection.headers, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
             body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
           const result = await response.json()
           if (result.error) throw new Error(result.error.message)
@@ -354,6 +456,17 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
+    if (text === '后台常驻工具' || text === '后台交互提问') {
+      reply(id, { stopReason: 'end_turn' })
+      setTimeout(() => {
+        if (text === '后台交互提问') askQuestion()
+        else {
+          update({ sessionUpdate: 'tool_call', toolCallId: 'daemon', kind: 'execute', title: '夹具常驻工具', status: 'in_progress', rawInput: { IsDaemon: true } })
+          chunk('常驻工具已启动')
+        }
+      }, 100)
+      continue
+    }
     if (text === '后台工具无回执') {
       chunk('已启动等待中的后台任务')
       reply(id, { stopReason: 'end_turn' })
@@ -383,23 +496,39 @@ for await (const line of input) {
       let transport
       try {
         if (!mcp) throw new Error('未收到委派工具')
-        if (!mcp.command || mcp.type || !mcp.env) throw new Error('必须使用 ACP stdio 工具')
-        const env = Object.fromEntries(mcp.env.map(pair => [pair.name, pair.value]))
-        transport = spawn(mcp.command, mcp.args, { env: { ...process.env, ...env }, windowsHide: true })
-        transport.on('error', () => {})
-        transport.stderr.resume()
-        const lines = createInterface({ input: transport.stdout })[Symbol.asyncIterator]()
-        let n = 0
-        const rpc = async (method, params) => {
-          transport.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: ++n, method, params }) + '\n')
-          const { value } = await lines.next()
-          if (!value) throw new Error('MCP stdio exited')
-          const json = JSON.parse(value)
-          if (json.error) throw new Error(json.error.message)
-          return json.result
+        let url
+        let rpc
+        if (mcp.type === 'http') {
+          url = mcp.url
+          const headers = Object.fromEntries(mcp.headers.map(({ name, value }) => [name, value]))
+          let n = 0
+          rpc = async (method, params) => {
+            const response = await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+              body: JSON.stringify({ jsonrpc: '2.0', id: ++n, method, params }) })
+            const json = await response.json()
+            if (json.error) throw new Error(json.error.message)
+            return json.result
+          }
+        } else {
+          if (!mcp.command || !mcp.env) throw new Error('缺少 ACP stdio 配置')
+          const env = Object.fromEntries(mcp.env.map(pair => [pair.name, pair.value]))
+          url = env.INKSTONE_PI_MCP_URL
+          transport = spawn(mcp.command, mcp.args, { env: { ...process.env, ...env }, windowsHide: true })
+          transport.on('error', () => {})
+          transport.stderr.resume()
+          const lines = createInterface({ input: transport.stdout })[Symbol.asyncIterator]()
+          let n = 0
+          rpc = async (method, params) => {
+            transport.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: ++n, method, params }) + '\n')
+            const { value } = await lines.next()
+            if (!value) throw new Error('MCP stdio exited')
+            const json = JSON.parse(value)
+            if (json.error) throw new Error(json.error.message)
+            return json.result
+          }
         }
         if (text === '派 Pi 子代理') {
-          const rejected = await fetch(env.INKSTONE_PI_MCP_URL, { method: 'POST', signal: AbortSignal.timeout(5000) })
+          const rejected = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5000) })
           if (rejected.status !== 403) throw new Error('缺少委派鉴权')
         }
         await rpc('initialize', { protocolVersion: '2025-06-18', clientInfo: { name: 'fixture', version: '1' }, capabilities: {} })
@@ -458,9 +587,15 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
     }
   } else if (method === 'session/cancel') {
-    waiting = false
+    cancelledPrompts++
+    waiting = questionWaiting = steerWaiting = false
     saveSession()
     reply(promptId, { stopReason: 'cancelled' })
+  } else if (id === 'question' && questionWaiting) {
+    questionWaiting = false
+    chunk(`提问结果 · ${result?.outcome?.optionId ?? 'cancelled'} · cancel=${cancelledPrompts}`)
+    if (process.argv.includes('summary-question')) chunk('## Goal\n继续当前夹具任务')
+    reply(promptId, { stopReason: 'end_turn' })
   } else if (id === 'foreign' && result?.outcome?.outcome !== 'cancelled') process.exit(4)
   else if (id === 'unsupported' && error?.code !== -32601) process.exit(5)
   else if (id === 'permission' && waiting) {

@@ -23,6 +23,9 @@ export default async function run({ box, cdp, fake, runDir, check, waitFor, slee
     { name: 'Claude and GPT models', description: 'Models within this group: Claude Sonnet · Fixture', buckets: [
       { id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
       { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 1, reset_time: '0001-01-01T00:00:00Z' }
+    ] },
+    { name: 'Gemini 4 Argon', description: 'For paid Pro plans, Argon quota is separate.', buckets: [
+      { id: 'gemini-argon-wtu-weekly', name: 'Gemini 4 Argon Weekly Limit', window: 'weekly', remaining_fraction: 1, reset_time: new Date(Date.now() + 7 * 86_400_000).toISOString() }
     ] }
   ] } } }
   writeFileSync(fixture, `using System;
@@ -255,16 +258,42 @@ class Fixture {
   await waitFor(`${has(rail('usage'), '92.5%')} && ${has(rail('usage'), '78%')}`)
   check('右栏展示实报上下文、上下文明细、简洁带进度条订阅用量和同步 MCP', await ev(`${has(rail('stats'), 'tok/s')} && ${has(rail('context'), '25%')} && !!document.querySelector('${rail('context')} [data-testid="wb-ov-ctx-breakdown"]') && !(${has(rail('usage'), '最近已上报回合')}) && !(${has(rail('usage'), '订阅剩余额度')}) && ${has(rail('usage'), 'Claude and GPT models')} && !!document.querySelector('${rail('usage')} .wb-ov-qmini .wb-ctx-bar .wb-ov-qfill') && !!document.querySelector('[data-testid="antigravity-quota-refresh"]') && ${has(rail('changes'), '未上报')} && ${has(rail('connectors'), 'sync-fixture')} && !(${has(rail('connectors'), 'disabled-fixture')}) && !!document.querySelector('[data-testid="wb-rail-env-summary"] .wb-env-dirty')`))
   const quotaResets = await ev(`Array.from(document.querySelectorAll('[data-testid="rail-antigravity-quota"] .wb-ov-qmain'), group => ({
-    header: group.querySelector('.wb-ov-qmain-side').textContent.trim(),
-    tips: Array.from(group.querySelectorAll('.wb-ov-qmini'), row => row.title.split('\\n').find(line => line.startsWith('重置 ')))
+    name: group.querySelector('.wb-ov-qmain-label')?.textContent?.trim(),
+    current: group.getAttribute('data-current'),
+    resets: Array.from(group.querySelectorAll('.wb-ov-qmini'), row => row.querySelector('.wb-ov-ag-reset')?.textContent?.trim() ?? null),
+    widths: Array.from(group.querySelectorAll('.wb-ov-qmini .wb-ov-qfill'), fill => fill.style.width),
+    tips: Array.from(group.querySelectorAll('.wb-ov-qmini'), row => row.title.split('\\n').find(line => line.startsWith('重置 ')) ?? null)
   }))`)
-  const [geminiQuota, claudeQuota] = quotaResets
-  check('有效的 5h / 每周分别显示重置时间，Claude 满额占位时间不显示', !!geminiQuota?.header.startsWith('5h 重置 ') &&
-    geminiQuota.header === `5h ${geminiQuota.tips[0]}` && !!geminiQuota.tips[1] && geminiQuota.tips[0] !== geminiQuota.tips[1] &&
-    claudeQuota?.header === '' && claudeQuota.tips.length === 2 && claudeQuota.tips.every((tip) => tip === null), quotaResets)
+  const [geminiQuota, claudeQuota, argonQuota] = quotaResets
+  check('有效的 5h / 每周分别直接显示重置时间与剩余条，Claude 与 4 Argon 满额占位时间不显示',
+    geminiQuota?.current === '1' &&
+    geminiQuota.resets.every((line) => typeof line === 'string' && line.startsWith('重置 ')) &&
+    geminiQuota.resets[0] !== geminiQuota.resets[1] &&
+    geminiQuota.widths[0] === '93%' && geminiQuota.widths[1] === '78%' &&
+    claudeQuota?.resets.length === 2 && claudeQuota.resets.every((line) => line === null) && claudeQuota.tips.every((tip) => tip === null) &&
+    argonQuota?.name === 'Gemini 4 Argon' && argonQuota.resets.length === 1 && argonQuota.resets[0] === null && argonQuota.tips[0] === null,
+    quotaResets)
   await ev(`document.querySelector('${rail('usage')}')?.scrollIntoView({ block: 'end' })`)
   await kit.shot('antigravity-reported-metrics', { native: false })
   await kit.clip('antigravity-quota-resets', '[data-testid="rail-antigravity-quota"]')
+  await click(`${rail('usage')} .wb-tile-open`)
+  await waitFor(`${has('[data-testid="v3-wb-quota-group-antigravity"]', 'Gemini Pro · Fixture')} && ${has('[data-testid="v3-wb-quota-group-antigravity"]', 'For paid Pro plans, Argon quota is separate.')}`)
+  const panelQuota = await ev(`(() => {
+    const cards = Array.from(document.querySelectorAll('[data-testid="v3-wb-quota-card-antigravity"]'))
+    return cards.map((card) => ({
+      name: card.querySelector('.wb-quota-name')?.textContent?.trim(),
+      note: card.querySelector('.wb-quota-ag-note')?.textContent?.trim() ?? null,
+      text: card.textContent
+    }))
+  })()`)
+  check('点击用量卡打开右栏额度详情，展示三组模型/说明且 Argon 无假重置',
+    panelQuota.length === 3 &&
+    panelQuota[0]?.name === 'Gemini Models' && panelQuota[0]?.note?.includes('Gemini Pro · Fixture') &&
+    panelQuota[2]?.name === 'Gemini 4 Argon' && panelQuota[2]?.note?.includes('Argon quota is separate') &&
+    !panelQuota[2]?.text.includes('天') && !panelQuota[2]?.text.includes('时'),
+    panelQuota)
+  await kit.shot('antigravity-quota-panel', { native: false })
+  await ev('window.__yanRightPanel.getState().setOpen(false)')
   const quotaRefresh = '[data-testid="antigravity-quota-refresh"]'
   writeFileSync(quotaState, 'offline')
   await sleep(5100)

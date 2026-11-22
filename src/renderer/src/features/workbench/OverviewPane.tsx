@@ -56,7 +56,7 @@ import { showPreview } from './preview-bindings'
 import { BackgroundTasks, useViewTerminalJobs } from './BackgroundTasks'
 import { isLiveTerminalJob } from '../../../../shared/terminal-jobs'
 import { useMcpConnections } from './McpConnections'
-import { AntigravityQuotaDetails, antigravityQuotaSummary, useAntigravityQuota } from './AntigravityQuota'
+import { AntigravityQuotaDetails, antigravityQuotaSummary, antigravityQuotaTone, useAntigravityQuota } from './AntigravityQuota'
 import './workbench.css'
 
 export interface OverviewPaneProps {
@@ -1035,7 +1035,9 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     ...(antigravity
       ? { usage: {
           summary: <RailValue value={antigravityQuotaSummary(antigravityQuota.snapshot, model, lang) ?? (antigravityQuota.loading ? (lang === 'en-US' ? 'Reading…' : '查询中…') : unreported)} />,
-          body: <AntigravityQuotaDetails quota={antigravityQuota} lang={lang} />
+          tone: antigravityQuotaTone(antigravityQuota.snapshot, model),
+          onOpenView: () => onOpenView('quota'),
+          body: <AntigravityQuotaDetails quota={antigravityQuota} model={model} now={quota.now} lang={lang} />
         } }
       : quotaModel || peakPrice
       ? {

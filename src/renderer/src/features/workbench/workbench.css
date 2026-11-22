@@ -826,6 +826,20 @@
     padding: var(--s-8) var(--s-16);
   }
 
+  .wb-quota-ag-note {
+    margin: 0;
+    padding: var(--s-8) var(--s-16);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .wb-quota-ag-clock {
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+  }
+
   .wb-quota-error {
     margin: 0;
     padding: var(--s-8) var(--s-16);
@@ -1587,6 +1601,22 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .wb-ov-ag-row {
+    row-gap: var(--s-2);
+  }
+
+  .wb-ov-ag-reset {
+    grid-column: 2 / -1;
+    margin-top: calc(-1 * var(--s-2));
+    padding-bottom: var(--s-2);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .wb-bg {
     display: flex;
     flex-direction: column;
@@ -1715,6 +1745,14 @@
 
   .wb-ov-qfill {
     background: var(--ink);
+  }
+
+  .wb-ov-qmini[data-full='1'] .wb-ov-qfill {
+    opacity: 0.45;
+  }
+
+  .wb-ov-ag-reset {
+    color: var(--fg3);
   }
 
   :is(.wb-ov-qmain, .wb-ov-qmini)[data-tone='ask'] .wb-ov-qfill {

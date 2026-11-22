@@ -3,7 +3,7 @@ import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROMPT_LIMIT, ANTIGRAVITY_PROVID
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { pick } from '../shared/ui-lang'
 import type { UIToolCall } from '../shared/ui-message'
-import { launchAntigravity, type AntigravitySession } from './antigravity'
+import { antigravityStopError, launchAntigravity, type AntigravitySession } from './antigravity'
 import type { SubagentRpc } from './subagents'
 
 type Approval = (request: { detail: string; title: string }, signal: AbortSignal) => Promise<boolean>
@@ -51,6 +51,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       const session = this.session = (this.options.launch ?? launchAntigravity)(this.cwd)
       session.onEvent = (event) => {
         if (event.type === 'closed') this.handleClosed(event.error)
+        else if (event.type === 'question') session.reply(event.id, null)
       }
       let models = await session.start(this.cwd, undefined, this.options.readOnly ? { mode } : undefined)
       if (models.current !== this.model.id) models = await session.selectModel(this.model.id)
@@ -115,6 +116,8 @@ export class AntigravitySubagentRpc implements SubagentRpc {
         approvals.delete(event.id)
       } else if (event.type === 'closed') {
         this.handleClosed(event.error)
+      } else if (event.type === 'question') {
+        session.reply(event.id, null)
       } else if (this.closed || turn.cancelled) {
         if (event.type === 'permission') session.reply(event.id, null)
       } else if (event.type === 'text') {
@@ -160,7 +163,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       if (!turn.cancelled && !this.closed) {
         const reason = await session.prompt(message, this.model.id, this.thinkingLevel, this.options.readOnly ? 'plan' : ANTIGRAVITY_APPROVAL_MODE)
         if (reason === 'cancelled') turn.cancelled = true
-        else if (reason !== 'end_turn') { stopReason = 'error'; errorMessage = `Antigravity: ${reason || 'missing stop reason'}` }
+        else if (reason !== 'end_turn') { stopReason = 'error'; errorMessage = antigravityStopError(reason) }
       }
     } catch (error) {
       stopReason = 'error'
@@ -170,7 +173,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       session.clearTools()
       session.onEvent = (event) => {
         if (event.type === 'closed') this.handleClosed(event.error)
-        else if (event.type === 'permission') session.reply(event.id, null)
+        else if (event.type === 'permission' || event.type === 'question') session.reply(event.id, null)
       }
     }
     if (turn.cancelled || this.closed) { stopReason = 'aborted'; errorMessage = undefined }

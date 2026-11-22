@@ -141,7 +141,11 @@ export async function openAntigravityDelegation(script: string, active: () => De
       { name: 'INKSTONE_PI_MCP_AUTH', value: secret.toString() },
     ],
   })
+  const httpConfig = (serverName: string, path: string): AntigravityMcpServer => ({
+    type: 'http', name: serverName, url: `http://${host}${path}`, headers: [{ name: 'Authorization', value: secret.toString() }]
+  })
   return {
+    httpConfigs: [...(options.delegate ? [httpConfig(name, '/mcp')] : []), ...options.services.map((service) => httpConfig(service.name, `/mcp/${service.name}`))],
     configs: [...(options.delegate ? [config(name, '/mcp')] : []), ...options.services.map((service) => config(service.name, `/mcp/${service.name}`))],
     knownTools: () => knownTools as ReadonlySet<string>,
     close: async () => {

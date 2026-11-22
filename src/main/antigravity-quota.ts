@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ANTIGRAVITY_QUOTA_REFRESH_MS, ANTIGRAVITY_QUOTA_STALE_MS, antigravityQuotaFailure, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot } from '../shared/antigravity'
+import { ANTIGRAVITY_QUOTA_REFRESH_MS, ANTIGRAVITY_QUOTA_STALE_MS, antigravityQuotaFailure, antigravityWindowResetAt, type AntigravityQuotaGroup, type AntigravityQuotaSnapshot } from '../shared/antigravity'
 import { pick } from '../shared/ui-lang'
 import { antigravityExecutable } from './antigravity'
 import { YAN_DIR } from './paths'
@@ -58,7 +58,7 @@ function execute(executable: string, args: string[], opts: { cwd: string; env: N
 }
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const items = (value: unknown): unknown[] => Array.isArray(value) ? value : []
-const label = (value: unknown): string => typeof value === 'string' ? value.trim().slice(0, 160) : ''
+const label = (value: unknown, max = 160): string => typeof value === 'string' ? value.trim().slice(0, max) : ''
 
 function usageGroups(stdout: string): unknown[] | undefined {
   const envelope = record(JSON.parse(stdout.replace(/^\uFEFF/, '')))
@@ -77,19 +77,21 @@ function parseGroups(groups: unknown[]): AntigravityQuotaGroup[] {
     const group = record(rawGroup)
     const name = label(group.name)
     if (!name) return []
-    const models = typeof group.description === 'string'
-      ? (group.description.match(/^Models within this group:\s*([^\r\n]+)/i)?.[1] ?? '').split(',').map(label).filter(Boolean)
-      : []
+    const rawDescription = typeof group.description === 'string' ? group.description.trim() : ''
+    const modelLine = rawDescription.match(/^Models within this group:\s*([^\r\n]+)/i)?.[1]
+    const models = modelLine ? modelLine.split(',').map((item) => label(item)).filter(Boolean) : []
+    const description = !modelLine && rawDescription ? label(rawDescription, 240) : undefined
     const windows = items(group.buckets).slice(0, 20).flatMap((rawBucket) => {
       const bucket = record(rawBucket)
       const id = label(bucket.id)
       const name = label(bucket.name)
       const remainingFraction = bucket.remaining_fraction
       if (!id || !name || bucket.disabled === true || bucket.status === 'disabled' || typeof remainingFraction !== 'number' || !Number.isFinite(remainingFraction) || remainingFraction < 0 || remainingFraction > 1) return []
-      const resetAt = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN
-      return [{ id, name, period: label(bucket.window), remainingFraction, ...(Number.isFinite(resetAt) && resetAt >= Date.UTC(2020, 0, 1) ? { resetAt } : {}) }]
+      const parsedReset = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN
+      const resetAt = antigravityWindowResetAt({ remainingFraction, resetAt: parsedReset })
+      return [{ id, name, period: label(bucket.window), remainingFraction, ...(resetAt !== undefined ? { resetAt } : {}) }]
     })
-    return windows.length ? [{ name, models, windows }] : []
+    return windows.length ? [{ name, models, ...(description ? { description } : {}), windows }] : []
   })
 }
 

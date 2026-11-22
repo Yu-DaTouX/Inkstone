@@ -13,7 +13,16 @@ export interface AntigravityQuotaWindow {
 export interface AntigravityQuotaGroup {
   name: string
   models: string[]
+  description?: string
   windows: AntigravityQuotaWindow[]
+}
+
+export const ANTIGRAVITY_QUOTA_MIN_RESET_AT = Date.UTC(2020, 0, 1)
+
+export function antigravityWindowResetAt(window: Pick<AntigravityQuotaWindow, 'remainingFraction' | 'resetAt'>): number | undefined {
+  if (window.remainingFraction >= 1) return undefined
+  if (window.resetAt === undefined || !Number.isFinite(window.resetAt) || window.resetAt < ANTIGRAVITY_QUOTA_MIN_RESET_AT) return undefined
+  return window.resetAt
 }
 
 export interface AntigravityQuotaSnapshot {
@@ -60,6 +69,7 @@ export interface AntigravityUsage {
   totalTokens?: number
   cost?: number
   visibleOutput?: number
+  thought?: number
 }
 
 export interface AntigravityTurnData {
@@ -96,6 +106,7 @@ export type AntigravityEvent =
   | { type: 'tool'; id: string; title?: string; status?: string; kind?: string; args?: unknown; output?: string; diffs: Array<{ path: string; oldText: string | null; newText: string }> }
   | { type: 'models'; models: AntigravityModels }
   | { type: 'permission'; id: number; title: string; detail: string; blocked?: string; options: Array<{ id: string; name: string; allow: boolean }> }
+  | { type: 'question'; id: number; title: string; options: AntigravityModel[] }
   | { type: 'permission-cleared'; id: number }
   | { type: 'closed'; error: string }
 

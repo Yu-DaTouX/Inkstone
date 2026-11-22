@@ -17,6 +17,8 @@ import {
 } from '../../../../shared/account-quota'
 import { providerFavicon } from '../../patterns/provider-favicon'
 import { quotaCountdown, quotaPace, quotaReadAgo, quotaWindowName, quotaWindowTone, type QuotaWindowTone } from '../../patterns/QuotaWindowRow'
+import { refreshAntigravityQuota, useAntigravityQuotaStore } from '../../state/antigravity-quota'
+import { AntigravityQuotaPaneSection } from './AntigravityQuota'
 import type { QuotaPaneProps } from './types'
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
@@ -54,7 +56,8 @@ function groupByProvider(cards: AccountQuotaCard[]): { provider: string; cards: 
 
 export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   const t = useT()
-  const provider = useStore((s) => s.session?.model?.provider ?? '')
+  const model = useStore((s) => s.session?.model)
+  const provider = model?.provider ?? ''
   const authProviders = useStore((s) => s.authProviders)
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
   const [loading, setLoading] = useState(false)
@@ -65,10 +68,13 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   const alive = useRef(true)
   const loadId = useRef(0)
   const [, setTick] = useState(0)
+  const antigravity = useAntigravityQuotaStore()
+  const isAntigravity = provider === 'antigravity'
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     const requestId = ++loadId.current
     setLoading(true)
+    void refreshAntigravityQuota(force)
     try {
       const next = await window.yan.accountQuota()
       if (!alive.current || requestId !== loadId.current) return
@@ -141,23 +147,39 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
 
   const cards = orderAccountCardsForProvider(report?.cards ?? [], provider)
   const groups = groupByProvider(cards)
-  const time = report
-    ? new Date(report.checkedAt).toLocaleTimeString(currentLang(), { hour: '2-digit', minute: '2-digit', hour12: false })
+  const showAntigravity = isAntigravity || (antigravity.snapshot?.groups.length ?? 0) > 0
+  const latestCheckedAt = Math.max(report?.checkedAt ?? 0, showAntigravity ? (antigravity.snapshot?.checkedAt ?? 0) : 0)
+  const lang = currentLang()
+  const time = latestCheckedAt
+    ? new Date(latestCheckedAt).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', hour12: false })
     : ''
+  const now = Date.now()
+  const busyLoading = loading || (showAntigravity && antigravity.loading)
+  const antigravitySection = showAntigravity ? (
+    <AntigravityQuotaPaneSection
+      snapshot={antigravity.snapshot}
+      loading={antigravity.loading}
+      active={isAntigravity}
+      model={model}
+      now={now}
+      lang={lang}
+      icon={providerFavicon('antigravity')}
+    />
+  ) : null
 
   return (
     <div className="wb-quota" data-testid="v3-wb-quota">
       <div className="wb-quota-head">
-        <span className="wb-quota-checked">{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
+        <span className="wb-quota-checked">{time ? t('quota.checkedAt', { time }) : busyLoading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
         <span className="wb-quota-actions">
           <IconButton
             size="sm"
             variant="ghost"
             aria-label={t('quota.refresh')}
             tooltip={t('quota.refresh')}
-            onPress={() => void load()}
-            isDisabled={loading && !report}
-            isPending={loading && !!report}
+            onPress={() => void load(true)}
+            isDisabled={busyLoading && !report && !antigravity.snapshot}
+            isPending={busyLoading && (!!report || !!antigravity.snapshot)}
             data-testid="v3-wb-quota-refresh"
           >
             <RefreshCw size={14} />
@@ -186,6 +208,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
         </Notice>
       ) : null}
 
+      {isAntigravity ? antigravitySection : null}
       {groups.map((group) => {
         const icon = providerFavicon(group.provider)
         const groupName = GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.cards[0]?.name ?? group.provider
@@ -212,10 +235,11 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
           </section>
         )
       })}
-      {!report && loading && !error ? (
+      {!isAntigravity ? antigravitySection : null}
+      {!report && !showAntigravity && loading && !error ? (
         <EmptyState size="sm" role="status" icon={<Spinner size="sm" />} title={t('quota.loading')} className="wb-note-block" data-testid="v3-wb-quota-loading" />
       ) : null}
-      {report && cards.length === 0 ? (
+      {report && cards.length === 0 && !showAntigravity ? (
         <EmptyState
           className="wb-note-block"
           data-testid="v3-wb-quota-empty"

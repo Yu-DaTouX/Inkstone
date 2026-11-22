@@ -8,8 +8,8 @@ import type { UIMessage } from '../shared/ui-message'
 import { killProcessTree } from './process-tree'
 import { reportedFileDiff, type FileDiff } from './snapshots'
 
-const MAX_LINE = 4 * 1024 * 1024
-const MAX_PROMPT_BYTES = MAX_LINE - 1024
+const MAX_LINE = 16 * 1024 * 1024
+const MAX_PROMPT_BYTES = 4 * 1024 * 1024 - 1024
 const MAX_IMAGE_PROMPT_BYTES = 32 * 1024 * 1024
 export const ANTIGRAVITY_HANDOFF_SAFE_BYTES = 160 * 1024
 
@@ -120,6 +120,8 @@ export function normalizeAntigravityImages(images: readonly AntigravityImage[] =
 
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
 const MAX_APPROVAL_DETAIL = 32_000
+const MAX_TOOL_TEXT = 32_000
+const OVERSIZED_APPROVAL_FIELD = Symbol()
 const DISCOVERY_RPC_TIMEOUT_MS = 15_000
 const visibleApprovalText = (value: string) => value.replace(/[\p{Cf}\p{Zl}\p{Zp}\u007f-\u009f]/gu, (char) =>
   `\\u{${char.codePointAt(0)!.toString(16)}}`)
@@ -138,7 +140,18 @@ const ENV_KEYS = /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|SYSTEMDRIVE|COMSPEC|USERPROFI
 type RecordValue = Record<string, unknown>
 type RpcId = string | number
 
-export type AntigravityMcpServer = { name: string; command: string; args: string[]; env: { name: string; value: string }[] }
+export type AntigravityMcpServer =
+  | { type?: 'stdio'; name: string; command: string; args: string[]; env: { name: string; value: string }[] }
+  | { type: 'http'; name: string; url: string; headers: { name: string; value: string }[] }
+
+type AntigravityMcpConfigs = { stdio?: AntigravityMcpServer[]; http?: AntigravityMcpServer[] }
+type RpcResponseObserver = (error: Error | null, result?: RecordValue) => void
+
+export function antigravityStopError(reason: string): string {
+  return reason === 'refusal'
+    ? pick('Antigravity 模型额度可能已耗尽。请查看剩余额度，等待重置或切换模型后重试。', 'Antigravity model quota may be exhausted. Check your remaining quota, then wait for a reset or switch models.')
+    : `Antigravity: ${reason || 'missing stop reason'}`
+}
 const object = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {}
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
@@ -170,7 +183,7 @@ export function antigravityExecutable(cwd: string) {
     try { return statSync(file).isFile() } catch { return false }
   })
   if (!executable) throw new Error(pick('找不到官方 Antigravity CLI。请安装 agy，登录后重试。', 'Official Antigravity CLI not found. Install agy and sign in, then retry.'))
-  return { executable, env }
+  return { executable, env: { ...env, AGY_CLI_DISABLE_AUTO_UPDATE: '1', PYTHONUNBUFFERED: '1' } }
 }
 
 export function launchAntigravity(cwd: string): AntigravitySession {
@@ -200,7 +213,7 @@ function choicesFrom(result: RecordValue): Map<string, AcpChoice> {
   const choices = new Map<string, AcpChoice>()
   for (const item of array(result.configOptions).map(object)) {
     const category = text(item.category)
-    const id = text(item.id)
+    const id = text(item.id) || text(item.configId)
     if (!category || !id || item.type !== 'select' || choices.has(category)) continue
     const entries = array(item.options).map(object).flatMap((option) => Array.isArray(option.options) ? option.options.map(object) : [option])
     const options = entries.flatMap((option) => text(option.value) ? [{ id: text(option.value), name: text(option.name) || text(option.value) }] : [])
@@ -233,25 +246,90 @@ function turnUsage(value: unknown): AntigravityUsage {
     input: raw.inputTokens ?? raw.input, output: raw.outputTokens ?? raw.output,
     cacheRead: raw.cachedReadTokens ?? raw.cacheReadTokens ?? raw.cacheRead,
     cacheWrite: raw.cachedWriteTokens ?? raw.cacheWriteTokens ?? raw.cacheWrite,
-    totalTokens: raw.totalTokens, visibleOutput: raw.visibleOutputTokens
+    totalTokens: raw.totalTokens, visibleOutput: raw.visibleOutputTokens, thought: raw.thoughtTokens ?? raw.thought
   }
   for (const key of Object.keys(counts) as Array<keyof typeof counts>) {
     const count = tokenCount(counts[key])
     if (count !== undefined) usage[key] = count
+  }
+  if (raw.visibleOutputTokens == null && usage.output !== undefined && usage.thought !== undefined && usage.thought <= usage.output) {
+    usage.visibleOutput = usage.output - usage.thought
   }
   const cost = object(raw.cost)
   if (cost.currency === 'USD' && typeof cost.amount === 'number' && Number.isFinite(cost.amount) && cost.amount >= 0) usage.cost = cost.amount
   return usage
 }
 
+function toolText(value: string, limit = MAX_TOOL_TEXT): string {
+  if (!limit) return ''
+  const clean = value.replace(/data:image\/[^\s"'<>)]*/gi, '')
+  if (value.length <= limit) return clean
+  const tail = clean.slice(-limit).replace(/^[\uDC00-\uDFFF]/u, '')
+  return Buffer.from(tail, 'utf16le').toString('utf16le')
+}
+
+function cleanToolValue(value: unknown): unknown {
+  let chars = MAX_TOOL_TEXT * 2
+  let nodes = 512
+  const clean = (entry: unknown, depth: number): unknown => {
+    if (nodes-- <= 0 || depth > 8 || chars <= 0) return undefined
+    if (typeof entry === 'string') {
+      const result = toolText(entry, Math.min(MAX_TOOL_TEXT, chars))
+      chars -= result.length
+      return result
+    }
+    if (Array.isArray(entry)) {
+      const items: unknown[] = []
+      for (const item of entry) {
+        if (nodes <= 0 || chars <= 0) break
+        items.push(clean(item, depth + 1))
+      }
+      return items
+    }
+    if (!entry || typeof entry !== 'object') return entry
+    const record = object(entry)
+    const combined = record.combinedOutput ?? record.combined_output
+    const entries: Array<[string, unknown]> = []
+    for (const key in record) {
+      if (nodes <= 0 || chars <= 0) break
+      if ((record.type === 'image' && (key === 'data' || key === 'blob')) ||
+        ((key === 'formatted_output' || key === 'formattedOutput') && Object.hasOwn(record, key) &&
+          (record[key] === combined || record[key] === record.combined_output))) continue
+      if (key.length > 512 || key.length > chars) { nodes--; continue }
+      chars -= key.length
+      entries.push([key, clean(record[key], depth + 1)])
+    }
+    return Object.fromEntries(entries)
+  }
+  return clean(value, 0)
+}
+
+const approvalFields = ['rawInput', 'locations', 'content', 'kind'] as const
+
+function approvalFieldsOf(update: RecordValue): RecordValue {
+  return Object.fromEntries(approvalFields.filter((key) => Object.hasOwn(update, key)).map((key) => {
+    const value = update[key]
+    const oversized = (typeof value === 'string' && value.length > MAX_APPROVAL_DETAIL) || (JSON.stringify(value)?.length ?? 0) > MAX_APPROVAL_DETAIL
+    return [key, oversized ? OVERSIZED_APPROVAL_FIELD : value]
+  }))
+}
+
+type ToolView = {
+  title?: string; status?: string; kind?: string; args?: unknown; locations?: unknown; rawOutput?: string; contentOutput?: string
+  diffs?: Extract<AntigravityEvent, { type: 'tool' }>['diffs']
+}
+type SteerBuffer = { events: AntigravityEvent[]; buffering: boolean; done: boolean }
+export type AntigravitySteer = { attach(handler: (event: AntigravityEvent) => void): Promise<string> }
+
 export class AntigravitySession {
   onEvent: (event: AntigravityEvent) => void = () => undefined
   private nextId = 0
   private sessionId = ''
-  private line = ''
-  private requests = new Map<number, { method: string; finish(error: Error | null, result?: RecordValue): void }>()
+  private lineParts: string[] = []
+  private lineBytes = 0
+  private requests = new Map<number, { method: string; finish: RpcResponseObserver }>()
   private permissions = new Map<number, { rpcId: RpcId; choices: Set<string> }>()
-  private tools = new Map<string, RecordValue>()
+  private tools = new Map<string, ToolView & { approval: RecordValue }>()
   private legacyModels: AntigravityModels = { current: null, available: [] }
   private choices = new Map<string, AcpChoice>()
   private mode?: string
@@ -264,6 +342,9 @@ export class AntigravitySession {
   private closing?: Promise<void>
   private cleanup?: () => Promise<void>
   private prompting = false
+  private promptReplyReceived = false
+  private nativeSteering = false
+  private pendingSteer?: SteerBuffer
   private discoverOnly = false
   private hadPrompt = false
   private resumedSession = false
@@ -280,6 +361,16 @@ export class AntigravitySession {
 
   get resumed(): boolean { return this.resumedSession }
 
+  get canSteerWithPrompt(): boolean { return this.nativeSteering }
+
+  get canStartSteer(): boolean { return this.prompting && !this.promptReplyReceived && this.nativeSteering && !this.pendingSteer && !this.cancelTimer && !this.closed }
+
+  private emit(event: AntigravityEvent): void {
+    const steer = this.pendingSteer
+    if (steer?.buffering) steer.events.push(event)
+    else this.onEvent(event)
+  }
+
   private get acceptsActivity(): boolean { return this.prompting || (!this.discoverOnly && this.hadPrompt) }
 
   clearTools(): void { this.tools.clear() }
@@ -287,11 +378,19 @@ export class AntigravitySession {
   constructor(private child: ChildProcessWithoutNullStreams, private killTree: (pid: number) => Promise<void>) {
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
       if (this.closed) return
-      const lines = (this.line + chunk).split('\n')
-      this.line = lines.pop() ?? ''
-      if (this.line.length > MAX_LINE || lines.some((line) => line.length > MAX_LINE)) return this.close(new Error(pick('Antigravity 返回的数据过大。', 'Antigravity returned an oversized message.')))
-      for (const line of lines) if (line.trim() && !this.closed) {
-        try { this.receive(object(JSON.parse(line))) } catch { this.close(new Error(pick('Antigravity 返回了无效的 ACP 消息。', 'Antigravity returned an invalid ACP message.'))) }
+      const parts = chunk.split('\n')
+      for (let index = 0; index < parts.length && !this.closed; index++) {
+        const part = parts[index]
+        this.lineBytes += Buffer.byteLength(part)
+        if (this.lineBytes > MAX_LINE) return this.close(new Error(pick('Antigravity 返回的数据过大。', 'Antigravity returned an oversized message.')))
+        if (part) this.lineParts.push(part)
+        if (index === parts.length - 1) break
+        const line = this.lineParts.join('')
+        this.lineParts = []
+        this.lineBytes = 0
+        if (line.trim()) {
+          try { this.receive(object(JSON.parse(line))) } catch { this.close(new Error(pick('Antigravity 返回了无效的 ACP 消息。', 'Antigravity returned an invalid ACP message.'))) }
+        }
       }
     })
     child.stderr.resume()
@@ -302,17 +401,22 @@ export class AntigravitySession {
     child.once('exit', disconnected)
   }
 
-  async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[], options?: { discoverOnly?: boolean; mode?: string; defaultMode?: string; resumeSessionId?: string }): Promise<AntigravityModels> {
+  async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[] | AntigravityMcpConfigs, options?: { discoverOnly?: boolean; mode?: string; defaultMode?: string; resumeSessionId?: string }): Promise<AntigravityModels> {
     this.discoverOnly = options?.discoverOnly === true
     this.resumedSession = false
     const init = await this.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'inkstone', title: 'Inkstone', version: '1.0.0' } })
-    if (init.protocolVersion !== 1) throw new Error(pick('Antigravity 的 ACP 协议版本不兼容。', 'Incompatible Antigravity ACP version.'))
+    if (init.protocolVersion !== 1 && init.protocolVersion !== 2) throw new Error(pick('Antigravity 的 ACP 协议版本不兼容。', 'Incompatible Antigravity ACP version.'))
+    const version = /^v?(\d+)\.(\d+)\.(\d+)\b/i.exec(text(object(init.agentInfo).version).trim())
+    const major = Number(version?.[1])
+    const minor = Number(version?.[2])
+    this.nativeSteering = major > 1 || (major === 1 && minor >= 5)
     const caps = object(init.agentCapabilities)
     const promptCaps = object(caps.promptCapabilities)
     this.imageCapable = promptCaps.image === true
     this.embeddedContextCapable = promptCaps.embeddedContext === true
     const sessionCaps = object(caps.sessionCapabilities ?? caps.session_capabilities)
-    const mcpServers = Array.isArray(server) ? server : server ? [server] : []
+    const mcpServers = Array.isArray(server) ? server : server && 'name' in server ? [server]
+      : object(caps.mcpCapabilities).http === true && server?.http?.length ? server.http : server?.stdio ?? []
     const resumeId = !this.discoverOnly && typeof options?.resumeSessionId === 'string' ? options.resumeSessionId.trim() : ''
     const canResume = !!resumeId && Boolean(sessionCaps.resume && typeof sessionCaps.resume === 'object')
     const canLoad = !!resumeId && (caps.loadSession === true || caps.load_session === true || Boolean(sessionCaps.load && typeof sessionCaps.load === 'object'))
@@ -408,7 +512,53 @@ export class AntigravitySession {
   }
 
   async prompt(prompt: string, expectedModel?: string, expectedThinking?: string, expectedMode = ANTIGRAVITY_APPROVAL_MODE, images?: readonly AntigravityImage[]): Promise<string> {
-    if (this.busy || this.closed || !this.sessionId || typeof prompt !== 'string' || (!prompt.trim() && !images?.length)) throw new Error(pick('无法发送：会话忙、未连接或消息为空。', 'Cannot send: session busy, disconnected, or message is empty.'))
+    if (this.busy) throw this.invalidPromptError()
+    const blocks = this.promptBlocks(prompt, expectedModel, expectedThinking, expectedMode, images)
+    this.busy = true
+    this.prompting = true
+    this.promptReplyReceived = false
+    this.promptMode = this.mode
+    this.tools.clear()
+    this.contextReading = undefined
+    return this.sendPrompt(blocks, () => this.completePrompt())
+  }
+
+  steerPrompt(prompt: string, expectedModel?: string, expectedThinking?: string, expectedMode = ANTIGRAVITY_APPROVAL_MODE, images?: readonly AntigravityImage[]): AntigravitySteer | undefined {
+    if (!this.canStartSteer) return undefined
+    const blocks = this.promptBlocks(prompt, expectedModel, expectedThinking, expectedMode, images)
+    const steer: SteerBuffer = { events: [], buffering: false, done: false }
+    this.pendingSteer = steer
+    const result = this.sendPrompt(blocks, () => {
+      if (!steer.buffering && this.pendingSteer === steer && !this.closed) {
+        void this.close(new Error(pick('Antigravity 返回了顺序异常的插话响应。', 'Antigravity returned a steering response out of order.')))
+        return
+      }
+      steer.done = true
+      if (this.pendingSteer !== steer) this.completePrompt()
+      else {
+        this.clearPermissions()
+        this.clearCancelTimer()
+      }
+    }, () => steer.buffering)
+    void result.catch(() => undefined)
+    return { attach: (handler) => {
+      if (this.pendingSteer === steer) {
+        this.onEvent = handler
+        for (const event of steer.events) handler(event)
+        steer.events.length = 0
+        if (this.pendingSteer === steer) this.pendingSteer = undefined
+        if (steer.done) this.finishPrompt()
+      }
+      return result
+    } }
+  }
+
+  private invalidPromptError(): Error {
+    return new Error(pick('无法发送：会话忙、未连接或消息为空。', 'Cannot send: session busy, disconnected, or message is empty.'))
+  }
+
+  private promptBlocks(prompt: string, expectedModel: string | undefined, expectedThinking: string | undefined, expectedMode: string, images?: readonly AntigravityImage[]): RecordValue[] {
+    if (this.closed || !this.sessionId || typeof prompt !== 'string' || (!prompt.trim() && !images?.length)) throw this.invalidPromptError()
     if (images?.length && !this.imageCapable) throw new Error(pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.'))
     const media = normalizeAntigravityImages(images)
     const blocks: RecordValue[] = [
@@ -418,30 +568,45 @@ export class AntigravitySession {
     if (media.length > 0 && Buffer.byteLength(JSON.stringify(blocks)) > MAX_IMAGE_PROMPT_BYTES) {
       throw new Error(pick('附带图片体积超出 Antigravity 传输上限，请减少图片后重试。', 'Attached images exceed the Antigravity transfer limit. Remove some images and try again.'))
     }
-    this.busy = true
-    this.prompting = true
-    this.tools.clear()
-    try {
-      const { mode, current, thinking } = this.modelView()
-      if (mode ? !isAntigravityMode(mode) || mode !== expectedMode : this.modeAdvertised || expectedMode !== ANTIGRAVITY_APPROVAL_MODE) throw new Error(this.approvalModeError())
-      this.promptMode = mode
-      if ((expectedModel && current !== expectedModel) || (expectedThinking && thinking?.current !== expectedThinking)) {
-        throw new Error(pick('Antigravity 设置已变化，消息未发送。请重试。', 'Antigravity settings changed. The message was not sent. Try again.'))
-      }
-      this.contextReading = undefined
-      const result = await this.request('session/prompt', { sessionId: this.sessionId, prompt: blocks }, 0)
-      const usage = turnUsage(result.usage)
-      if (Object.keys(usage).length) this.onEvent({ type: 'usage', usage })
-      const stopReason = text(result.stopReason)
-      if (stopReason === 'end_turn' && !this.discoverOnly) this.hadPrompt = true
-      return stopReason
-    } finally {
-      this.busy = false
-      this.prompting = false
-      this.promptMode = undefined
-      this.clearCancelTimer()
-      this.clearPermissions()
+    const { mode, current, thinking } = this.modelView()
+    if (mode ? !isAntigravityMode(mode) || mode !== expectedMode : this.modeAdvertised || expectedMode !== ANTIGRAVITY_APPROVAL_MODE) throw new Error(this.approvalModeError())
+    if ((expectedModel && current !== expectedModel) || (expectedThinking && thinking?.current !== expectedThinking)) {
+      throw new Error(pick('Antigravity 设置已变化，消息未发送。请重试。', 'Antigravity settings changed. The message was not sent. Try again.'))
     }
+    return blocks
+  }
+
+  private sendPrompt(blocks: RecordValue[], finish: () => void, ownsEvents = () => true): Promise<string> {
+    return this.request('session/prompt', { sessionId: this.sessionId, prompt: blocks }, 0, (_error, result) => {
+      if (result && ownsEvents()) {
+        const usage = turnUsage(result.usage)
+        if (Object.keys(usage).length) this.emit({ type: 'usage', usage })
+        if (result.stopReason === 'end_turn' && !this.discoverOnly) this.hadPrompt = true
+      }
+      finish()
+    }).then((result) => text(result.stopReason))
+  }
+
+  private completePrompt(): void {
+    if (this.pendingSteer) {
+      this.clearPermissions()
+      this.tools.clear()
+      this.contextReading = undefined
+      this.pendingSteer.buffering = true
+    } else {
+      this.promptReplyReceived = true
+      queueMicrotask(() => {
+        this.finishPrompt()
+        this.clearPermissions()
+      })
+    }
+  }
+
+  private finishPrompt(): void {
+    this.busy = false
+    this.prompting = false
+    this.promptMode = undefined
+    this.clearCancelTimer()
   }
 
   reply(id: number, option: string | null): void {
@@ -449,14 +614,14 @@ export class AntigravitySession {
     if (!pending || (option !== null && !pending.choices.has(option))) return
     this.permissions.delete(id)
     this.send({ id: pending.rpcId, result: option === null ? CANCELLED : { outcome: { outcome: 'selected', optionId: option } } })
-    this.onEvent({ type: 'permission-cleared', id })
+    this.emit({ type: 'permission-cleared', id })
   }
 
   cancel(): void {
     if (!this.sessionId || !this.acceptsActivity || this.closed || this.cancelTimer) return
     this.send({ method: 'session/cancel', params: { sessionId: this.sessionId } })
     this.clearPermissions()
-    if (!this.prompting) return
+    if (!this.prompting || this.pendingSteer?.done) return
     this.cancelTimer = setTimeout(() => this.close(new Error(pick('Antigravity 未响应停止请求，已断开会话。', 'Antigravity did not acknowledge cancellation; the session was disconnected.'))), 5000)
     this.cancelTimer.unref()
   }
@@ -469,6 +634,11 @@ export class AntigravitySession {
   close(error?: Error): Promise<void> {
     if (this.closed) return this.closing ?? Promise.resolve()
     this.closed = true
+    this.lineParts = []
+    this.lineBytes = 0
+    this.tools.clear()
+    if (this.pendingSteer) this.pendingSteer.events.length = 0
+    this.pendingSteer = undefined
     this.clearCancelTimer()
     const permissionIds = [...this.permissions.keys()]
     this.permissions.clear()
@@ -526,7 +696,7 @@ export class AntigravitySession {
     if (!this.closed) this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
   }
 
-  private request(method: string, params: RecordValue, timeout = this.discoverOnly ? DISCOVERY_RPC_TIMEOUT_MS : 30_000): Promise<RecordValue> {
+  private request(method: string, params: RecordValue, timeout = this.discoverOnly ? DISCOVERY_RPC_TIMEOUT_MS : 30_000, observe?: RpcResponseObserver): Promise<RecordValue> {
     if (this.closed) return Promise.reject(new Error(pick('Antigravity 已断开。', 'Antigravity disconnected.')))
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
@@ -535,6 +705,7 @@ export class AntigravitySession {
       this.requests.set(id, { method, finish: (error, result) => {
         if (timer) clearTimeout(timer)
         this.requests.delete(id)
+        try { observe?.(error, result) } catch (failure) { reject(failure); throw failure }
         if (error) reject(error)
         else resolve(result ?? {})
       } })
@@ -565,14 +736,23 @@ export class AntigravitySession {
       if (!message.error) return pending.finish(null, object(message.result))
       const error = object(message.error)
       const raw = text(error.message)
-      const authError = error.code === -32000 || /auth.*required|not (authenticated|logged in)|sign.?in required/i.test(raw)
-      const detail = authError
+      const data = object(error.data)
+      const invalidThinkingSignature = [
+        raw, error.data, data.message, data.details, data.reason, data.code,
+        ...array(data.errors ?? data.issues).slice(0, 16).map((issue) => text(issue) || object(issue).message)
+      ].some((value) =>
+        /INVALID_THINKING_SIGNATURE|messages\.\d+\.content\.\d+(?:\.thinking\.signature: Field required|: Invalid `signature` in `thinking` block)/i.test(text(value)))
+      const authError = !invalidThinkingSignature && (error.code === -32000 || /auth.*required|not (authenticated|logged in)|sign.?in required/i.test(raw))
+      const detail = invalidThinkingSignature
+        ? pick('Antigravity 会话中的思考签名已失效，下次发送将重建会话。', 'The thinking signature in this Antigravity session is invalid. The session will be rebuilt on the next send.')
+        : authError
         ? pick('请先在终端运行 agy acp --login 完成 Google 登录，再重试。', 'Run agy acp --login to sign in to Google, then retry.')
         : /quota|rate.?limit|\b429\b|resource.exhausted/i.test(raw)
           ? pick('Antigravity 报告额度不足或请求受限。', 'Antigravity reported a quota or rate limit.')
           : pick(`Antigravity 未能完成此操作（${pending.method}，${Number(error.code) || 'ACP'}）。`, `Antigravity could not complete this operation (${pending.method}, ${Number(error.code) || 'ACP'}).`)
-      const diagnostic = !authError && error.code === -32602 ? parameterDiagnostic(error) : ''
+      const diagnostic = !invalidThinkingSignature && !authError && error.code === -32602 ? parameterDiagnostic(error) : ''
       const err = new Error(diagnostic ? `${detail} ${diagnostic}` : detail) as Error & { authError?: boolean; rpcCode?: number }
+      if (invalidThinkingSignature) err.name = 'INVALID_THINKING_SIGNATURE'
       if (authError) err.authError = true
       if (typeof error.code === 'number') err.rpcCode = error.code
       pending.finish(err)
@@ -583,12 +763,12 @@ export class AntigravitySession {
     const kind = update.sessionUpdate
     if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && this.acceptsActivity) {
       const content = object(update.content)
-      if (content.type === 'text' && typeof content.text === 'string') this.onEvent({ type: kind === 'agent_thought_chunk' ? 'thought' : 'text', text: content.text })
+      if (content.type === 'text' && typeof content.text === 'string') this.emit({ type: kind === 'agent_thought_chunk' ? 'thought' : 'text', text: content.text })
     } else if (kind === 'usage_update') {
       const context = contextOf(update)
       if (context) {
         this.contextReading = context
-        this.onEvent({ type: 'context', ...context })
+        this.emit({ type: 'context', ...context })
       }
     } else if (kind === 'config_option_update' || kind === 'model_update' || kind === 'available_models_update' || kind === 'current_mode_update') {
       if (kind === 'current_mode_update') {
@@ -601,7 +781,7 @@ export class AntigravitySession {
         void this.close(new Error(this.approvalModeError()))
         return
       }
-      this.onEvent({ type: 'models', models })
+      this.emit({ type: 'models', models })
     } else if (kind === 'plan' && this.acceptsActivity) {
       const entries: AntigravityPlanEntry[] = array(update.entries).map(object).flatMap((entry) => {
         const content = text(entry.content).trim()
@@ -611,21 +791,43 @@ export class AntigravitySession {
         const priority = text(entry.priority) || undefined
         return [{ content, status, ...(priority ? { priority } : {}) }]
       })
-      this.onEvent({ type: 'plan', entries })
+      this.emit({ type: 'plan', entries })
     } else if (this.acceptsActivity && (kind === 'tool_call' || kind === 'tool_call_update')) {
       const id = text(update.toolCallId)
       if (!id) return
-      const tool = { ...this.tools.get(id), ...update }
+      const previous = this.tools.get(id)
+      const tool = { ...previous, approval: { ...previous?.approval, ...approvalFieldsOf(update) } }
+      if (Object.hasOwn(update, 'title')) tool.title = text(update.title).slice(0, 1000) || undefined
+      if (Object.hasOwn(update, 'status')) tool.status = text(update.status) || undefined
+      if (Object.hasOwn(update, 'kind')) tool.kind = text(update.kind) || undefined
+      if (Object.hasOwn(update, 'rawInput')) tool.args = cleanToolValue(update.rawInput)
+      if (Object.hasOwn(update, 'locations')) tool.locations = cleanToolValue(update.locations)
+      if (Object.hasOwn(update, 'rawOutput')) {
+        const rawOutput = cleanToolValue(update.rawOutput)
+        const output = object(rawOutput)
+        tool.rawOutput = text(rawOutput) || text(output.combinedOutput ?? output.combined_output ?? output.formattedOutput ?? output.formatted_output)
+      }
+      if (Object.hasOwn(update, 'content')) {
+        const content = array(update.content)
+        tool.diffs = content.flatMap((entry) => {
+          const item = object(entry)
+          return item.type === 'diff' && typeof item.path === 'string' && typeof item.newText === 'string' && (typeof item.oldText === 'string' || item.oldText == null)
+            ? [{ path: item.path, oldText: typeof item.oldText === 'string' ? item.oldText : null, newText: item.newText }] : []
+        })
+        let output = ''
+        for (let index = content.length - 1; index >= 0 && output.length < MAX_TOOL_TEXT - 1; index--) {
+          const item = object(content[index])
+          const block = object(item.content)
+          if (item.type !== 'content' || block.type !== 'text') continue
+          const tail = toolText(text(block.text), MAX_TOOL_TEXT - output.length - (output ? 1 : 0))
+          if (tail) output = output ? `${tail}\n${output}` : tail
+        }
+        tool.contentOutput = output
+      }
       this.tools.set(id, tool)
-      const content = array(tool.content).map(object)
-      const output = content.flatMap((item) => {
-        const block = object(item.content)
-        return item.type === 'content' && block.type === 'text' ? [text(block.text)] : []
-      }).join('\n') || text(tool.rawOutput)
-      const diffs = content.flatMap((item) => item.type === 'diff' && typeof item.path === 'string' && typeof item.newText === 'string' && (typeof item.oldText === 'string' || item.oldText == null)
-        ? [{ path: item.path, oldText: typeof item.oldText === 'string' ? item.oldText : null, newText: item.newText }] : [])
-      this.onEvent({ type: 'tool', id, title: text(tool.title) || undefined, status: text(tool.status) || undefined,
-        kind: text(tool.kind) || undefined, args: tool.rawInput ?? (Array.isArray(tool.locations) ? { locations: tool.locations } : undefined), output: output || undefined, diffs })
+      this.emit({ type: 'tool', id, title: tool.title, status: tool.status, kind: tool.kind,
+        args: tool.args ?? (Array.isArray(tool.locations) ? { locations: tool.locations } : undefined),
+        output: tool.contentOutput || tool.rawOutput || undefined, diffs: tool.diffs ?? [] })
     }
   }
 
@@ -636,23 +838,41 @@ export class AntigravitySession {
       return
     }
     const update = object(params.toolCall)
-    const tool = { ...this.tools.get(text(update.toolCallId)), ...update }
-    const rawInput = tool.rawInput
-    const locations = array(tool.locations)
-    const content = array(tool.content)
-    const hasInput = typeof rawInput === 'string' ? !!rawInput.trim()
-      : Array.isArray(rawInput) ? rawInput.length > 0 : Object.keys(object(rawInput)).length > 0
-    const detail = visibleApprovalText(JSON.stringify({ input: rawInput, locations: tool.locations, content: tool.content, kind: tool.kind }, null, 2))
-    const tooLong = detail.length > MAX_APPROVAL_DETAIL
-    const blocked = tooLong ? pick('工具审批详情过长，无法完整显示，已拒绝。', 'Tool details were too long to display in full. The request was denied.')
-      : !hasInput && !locations.length && !content.length
-        ? pick('工具未提供可核对的审批详情，已拒绝。', 'The tool did not provide details to review. The request was denied.') : undefined
+    const toolId = text(update.toolCallId)
+    const cached = this.tools.get(toolId)
+    const title = visibleApprovalText((Object.hasOwn(update, 'title') ? text(update.title) : cached?.title ?? '').slice(0, 1000))
     const offered = array(params.options).map(object)
     const counts = new Map<string, number>()
     for (const option of offered) {
       const id = text(option.optionId)
       counts.set(id, (counts.get(id) ?? 0) + 1)
     }
+    if (toolId.startsWith('interaction_')) {
+      const options = offered.flatMap((option) => {
+        const id = text(option.optionId)
+        return id && counts.get(id) === 1 ? [{ id, name: visibleApprovalText((text(option.name) || id).slice(0, 512)) }] : []
+      })
+      if (!options.length) {
+        this.send({ id: rpcId, result: CANCELLED })
+        return
+      }
+      const id = ++this.nextId
+      this.permissions.set(id, { rpcId, choices: new Set(options.map((option) => option.id)) })
+      this.emit({ type: 'question', id, title, options })
+      return
+    }
+    const tool = { ...cached?.approval, ...approvalFieldsOf(update) }
+    const rawInput = tool.rawInput
+    const locations = array(tool.locations)
+    const content = array(tool.content)
+    const hasInput = typeof rawInput === 'string' ? !!rawInput.trim()
+      : Array.isArray(rawInput) ? rawInput.length > 0 : Object.keys(object(rawInput)).length > 0
+    const oversized = approvalFields.some((key) => tool[key] === OVERSIZED_APPROVAL_FIELD)
+    const detail = oversized ? '' : visibleApprovalText(JSON.stringify({ input: rawInput, locations: tool.locations, content: tool.content, kind: tool.kind }, null, 2))
+    const tooLong = oversized || detail.length > MAX_APPROVAL_DETAIL
+    const blocked = tooLong ? pick('工具审批详情过长，无法完整显示，已拒绝。', 'Tool details were too long to display in full. The request was denied.')
+      : !hasInput && !locations.length && !content.length
+        ? pick('工具未提供可核对的审批详情，已拒绝。', 'The tool did not provide details to review. The request was denied.') : undefined
     const options = offered.flatMap((option) => {
       const id = text(option.optionId)
       const allow = option.kind === 'allow_once'
@@ -667,7 +887,7 @@ export class AntigravitySession {
     }
     const id = ++this.nextId
     this.permissions.set(id, { rpcId, choices: new Set(options.map((option) => option.id)) })
-    this.onEvent({ type: 'permission', id, title: visibleApprovalText(text(tool.title).slice(0, 1000)), detail: tooLong ? blocked! : detail === '{}' ? '' : detail, options,
+    this.emit({ type: 'permission', id, title, detail: tooLong ? blocked! : detail === '{}' ? '' : detail, options,
       ...(blocked && activeMode !== 'auto' ? { blocked } : {}) })
   }
 }
