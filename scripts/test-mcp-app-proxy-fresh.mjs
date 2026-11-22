@@ -80,6 +80,44 @@ await runSuite(import.meta.url, async (ok, compile) => {
 
     {
       managed = [server('alpha')]
+      const versions = new Map()
+      const service = make('changed-during-failure', {
+        host: {
+          ...host,
+          toolsChangedVersions: () => versions,
+          acknowledgeToolsChanged: (id, version) => { if (versions.get(id) === version) versions.delete(id) }
+        }
+      })
+      let enter
+      const entered = new Promise((resolve) => { enter = resolve })
+      let failOld
+      listBehavior = () => new Promise((_, reject) => { failOld = reject; enter() })
+      versions.set('alpha', 1)
+      const first = service.refreshChanged('alpha', 'p1')
+      await entered
+      versions.set('alpha', 2)
+      const second = service.refreshChanged('alpha', 'p1')
+      ok(first === second, '刷新中收到新通知时共用同一个任务')
+      listBehavior = async () => [tool('new-version')]
+      failOld(new Error('old connection closed'))
+      const error = await first.then(() => null, (reason) => reason.message)
+      ok(error === null && service.readSnapshot()?.tools[0]?.toolName === 'new-version' && versions.size === 0, '旧刷新失败后仍应用刷新途中抵达的新版本', error)
+
+      versions.set('alpha', 3)
+      let failures = 0
+      listBehavior = async () => {
+        failures++
+        versions.set('alpha', versions.get('alpha') + 1)
+        void service.refreshChanged('alpha', 'p1')
+        throw new Error('still failing')
+      }
+      const failed = await service.refreshChanged('alpha', 'p1').then(() => null, (reason) => reason.message)
+      ok(failed === 'still failing' && failures === 2 && versions.has('alpha'), '持续失败只为更新的通知补试一次，仍保留待刷新标记', failures)
+      ok(service.readSnapshot()?.tools[0]?.toolName === 'new-version', '补试也失败时保留上一份有效快照')
+    }
+
+    {
+      managed = [server('alpha')]
       let release
       listBehavior = () => new Promise((resolve) => { release = () => resolve([tool('late')]) })
       const service = make('slow')

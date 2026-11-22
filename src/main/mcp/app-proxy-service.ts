@@ -222,7 +222,7 @@ export class McpAppProxyService {
   private readonly records = new Map<string, McpAppProxyCallRecord>()
   private readonly ensuring = new Map<string, Promise<{ refreshed: boolean; error?: string }>>()
   private readonly ensureFailedAt = new Map<string, number>()
-  private readonly refreshingChanges = new Map<string, { projectId?: string; task: Promise<void> }>()
+  private readonly refreshingChanges = new Map<string, { projectId?: string; notifiedVersion?: number; task: Promise<void> }>()
   private readonly publishedRefresh = new Map<string, number>()
   private refreshSequence = 0
 
@@ -454,20 +454,28 @@ export class McpAppProxyService {
 
   refreshChanged(serverId: string, callerProjectId?: string): Promise<void> {
     const existing = this.refreshingChanges.get(serverId)
+    const notifiedVersion = this.host.toolsChangedVersions?.().get(serverId)
     if (existing) {
       existing.projectId = callerProjectId
+      existing.notifiedVersion = notifiedVersion
       return existing.task
     }
-    const entry = { projectId: callerProjectId, task: Promise.resolve() }
+    const entry = { projectId: callerProjectId, notifiedVersion, task: Promise.resolve() }
     entry.task = Promise.resolve().then(async () => {
       try {
         let seen: number | undefined
+        let retriedFailure = false
         for (;;) {
           const version = this.host.toolsChangedVersions?.().get(serverId)
           if (version === undefined || version === seen) return
           seen = version
           const result = await this.refresh({ serverIds: [serverId], callerProjectId: entry.projectId })
-          if (result.errors.length) throw new Error(result.errors[0].error)
+          const failure = result.errors[0]
+          if (failure) {
+            const latest = this.host.toolsChangedVersions?.().get(serverId)
+            if (retriedFailure || latest === undefined || latest === version || latest !== entry.notifiedVersion) throw new Error(failure.error)
+          }
+          retriedFailure = !!failure
         }
       } finally {
         this.refreshingChanges.delete(serverId)
