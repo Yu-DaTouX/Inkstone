@@ -28,7 +28,14 @@ export function moreFlows({ boot, openSession, check, env }) {
   async function flowSubagents(lang) {
     const tag = `[子代理 ${lang}]`
     const t = (zh, en) => (lang === 'zh-CN' ? zh : en)
-    const ctx = await boot({ lang, desktop: { tweak: (_, state) => {
+    const ctx = await boot({ lang, desktop: { tweak: (handlers, state) => {
+      if (lang === 'zh-CN') {
+        const snapshot = handlers.snapshot
+        handlers.snapshot = async () => {
+          await new Promise((resolve) => setTimeout(resolve, 300))
+          return snapshot()
+        }
+      }
       state.subagents = [
         { id: 'sub-ab12', title: '审查代码', task: '审查', status: 'running', startedAt: Date.now() - 5000, toolCalls: 2, latestActivity: '读取文件' },
         { id: 'sub-cd34', title: '已结束的任务', task: '跑完', status: 'done', startedAt: Date.now() - 9000, endedAt: Date.now() - 1000, summary: '完成' },

@@ -53,7 +53,12 @@ async function boot({ lang = 'zh-CN', left = false, width = 390, height = 844, f
 const L = (zh, en, lang) => (lang === 'zh-CN' ? zh : en)
 
 async function openSession(h, title) {
-  await h.pressLabel(new RegExp(`^${title}`))
+  const label = new RegExp(`^${title}`)
+  const [row] = await h.waitFor(() => {
+    const rows = h.matchLabel(label)
+    return rows.length ? rows : null
+  }, `首页会话「${title}」出现`)
+  await h.press(row)
   await h.waitFor(() => h.inputs().length, '会话输入框出现')
   await h.settle(60)
 }
