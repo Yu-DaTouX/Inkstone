@@ -417,6 +417,7 @@ export class McpConnectionManager {
         const message = rawMessage.includes(tail) && tail ? rawMessage : withStderr(rawMessage, tail)
         if (client) await client.close().catch(() => undefined)
         else if (transport) await transport.close().catch(() => undefined)
+        if (generation !== conn.generation) throw error
         conn.client = null
         conn.transport = undefined
         conn.status = looksLikeAuthFailure(message) ? 'needs-auth' : 'error'

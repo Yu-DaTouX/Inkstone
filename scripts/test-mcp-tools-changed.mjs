@@ -49,6 +49,38 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
 
   {
+    const manager = new mod.McpConnectionManager([stdioConfig('replace')])
+    const makeTransport = manager.makeTransport.bind(manager)
+    let beginCleanup
+    let finishCleanup
+    const cleaning = new Promise((resolve) => { beginCleanup = resolve })
+    const cleanupGate = new Promise((resolve) => { finishCleanup = resolve })
+    let closes = 0
+    manager.makeTransport = () => ({
+      start: async () => { throw new Error('fixture connect failed') },
+      close: async () => {
+        if (++closes !== 1) return
+        beginCleanup()
+        await cleanupGate
+      }
+    })
+    const old = manager.listToolsRaw('replace').then(() => null, (error) => error)
+    try {
+      await cleaning
+      await manager.disconnect('replace')
+      manager.makeTransport = makeTransport
+      const fresh = await manager.listToolsCached('replace')
+      ok(fresh.length === 2 && manager.statusOf('replace').status === 'ready', '旧连接清理期间可以建立新连接')
+      finishCleanup()
+      ok(await old && manager.statusOf('replace').status === 'ready' && await manager.listToolsCached('replace') === fresh, '失败连接的迟到清理不能覆盖新连接状态和工具缓存')
+    } finally {
+      finishCleanup()
+      await old
+      await manager.close()
+    }
+  }
+
+  {
     const manager = new mod.McpConnectionManager([stdioConfig('fx')])
     try {
       const seen = []
