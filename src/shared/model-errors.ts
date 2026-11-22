@@ -1,3 +1,5 @@
+import { pick } from './ui-lang'
+
 export type ModelErrorKind =
   | 'retryable'
   | 'quota'
@@ -164,7 +166,7 @@ export function classifyModelError(text: unknown): ModelErrorInfo {
     if (!transientRefresh && item.re.test(raw)) {
       return item.kind === 'quota'
         ? { kind: item.kind, text: raw, label: item.label, quotaScope: quotaScopeOf(raw) }
-        : { kind: item.kind, text: raw, label: item.label }
+        : { kind: item.kind, text: raw, label: item.kind === 'hostSave' ? pick(item.label, 'Session save failed') : item.label }
     }
   }
   return { kind: 'retryable', text: raw, label: raw ? '模型侧错误' : '模型侧错误（没有错误文本）' }
@@ -265,7 +267,7 @@ export function modelErrorNotice(errorText: unknown): string {
     }
     case 'context': explanation = '请求超过模型的上下文或输入长度限制。请压缩会话、减少附件，或选择支持更长上下文的模型。'; break
     case 'aborted': explanation = '本轮请求已取消。已执行的工具操作可能保留，继续前请先核对进度。'; break
-    case 'hostSave': explanation = '模型已完成回复，但未能写入本地会话记录，重启后本轮内容可能丢失。请查看详情，无需直接重跑模型。'; break
+    case 'hostSave': return pick(`模型已完成回复，但未能写入本地会话记录，重启后本轮内容可能丢失。请查看详情，无需直接重跑模型。 原因：${info.text}`, `The model finished replying, but the turn could not be saved locally and may be missing after restart. Check the details instead of immediately rerunning the model. Reason: ${info.text}`)
     case 'request': explanation = NOT_IN_PLAN_RE.test(info.text)
       ? '该模型不在当前套餐内，无法使用（这不是登录问题，重新登录没有用）。请升级套餐，或选择套餐内的其他模型。'
       : '服务商拒绝了模型或请求配置。请核对模型 ID、接口地址、工具格式及不受支持的参数。'; break

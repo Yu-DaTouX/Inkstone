@@ -356,7 +356,7 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths, deps: 
         servers[MINECRAFT_DEV_ID] = { ...existingDev, ...dev, env: { ...(migrate ? entry?.env : existingDev?.env), ELECTRON_RUN_AS_NODE: '1' }, enabled: enableDev }
       }
       const next = { ...entry, ...minecraftMcpServer(paths), env: { ...entry?.env, ELECTRON_RUN_AS_NODE: '1' } }
-      if (split && (migrate || !entry?.description)) Object.assign(next, { description: 'Minecraft Java 1.21.1 离线建图：世界、方块状态、批量编辑、局部预览、存档 ZIP 和 3D 构件。不需要 Fabric 工程。' })
+      if (split && (migrate || !entry?.description)) Object.assign(next, { description: pick('Minecraft Java 1.21.1 离线建图：世界、方块状态、批量编辑、局部预览、存档 ZIP 和 3D 构件。不需要 Fabric 工程。', 'Minecraft Java 1.21.1 offline mapmaking: worlds, block states, batch edits, previews, save ZIPs, and 3D structures. No Fabric project required.') })
       servers[MINECRAFT_PLUGIN_ID] = next
       for (const swap of staged) {
         if (existsSync(swap.target)) {

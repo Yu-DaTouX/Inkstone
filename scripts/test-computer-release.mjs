@@ -432,6 +432,8 @@ try {
     agent.markStreaming = () => {}
     agent.setAgentRunning = () => {}
     agent.queue = { reset: () => {} }
+    agent.acpQueue = { steering: [], followUp: [] }
+    agent.acpTodos = []
     agent.stream = {}
     agent.resetSessionScope()
     assert.equal(released.length, 2, '会话切换/新建/分叉时释放')

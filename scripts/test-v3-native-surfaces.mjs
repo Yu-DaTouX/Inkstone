@@ -34,6 +34,7 @@ export function useState(init) { return rt().useState(init) }
 export function useEffect(fn, deps) { return rt().useEffect(fn, deps) }
 export function useLayoutEffect(fn, deps) { return rt().useEffect(fn, deps) }
 export function useRef(init) { return rt().useRef(init) }
+export function useSyncExternalStore(subscribe, getSnapshot) { rt().useEffect(() => subscribe(() => {}), [subscribe]); return getSnapshot() }
 export function useMemo(fn) { return fn() }
 export function useCallback(fn) { return fn }
 export function useId() { return rt().useId() }
@@ -66,8 +67,9 @@ const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang()
 export function useT() { return (k) => String(k) }
 export function useOptionalT() { return (k) => String(k) }`
 
-const STORE_STUB = `export function useStore(selector) { return selector(globalThis.__STORE_STATE) }
-useStore.getState = () => globalThis.__STORE_STATE`
+const STORE_STUB = `const state = () => ({ sessions: [], uiRequests: [], manualTitles: {}, ...globalThis.__STORE_STATE })
+export function useStore(selector) { return selector(state()) }
+useStore.getState = state`
 
 const LUCIDE_STUB = ['AlertCircle', 'ArrowLeft', 'RotateCw'].map((name) => `export function ${name}() { return null }`).join('\n')
 

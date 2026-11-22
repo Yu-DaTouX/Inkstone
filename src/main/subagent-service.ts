@@ -298,8 +298,8 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      if (signal?.aborted) throw new CapabilityCommandError('cancelled', '父会话已停止，未派发子代理')
-      if (context.fromAntigravity && model?.startsWith('antigravity/')) throw new CapabilityCommandError('subagent_model_invalid', 'Antigravity 只可从此入口派发 Pi 子代理')
+      if (signal?.aborted) throw new CapabilityCommandError('cancelled', pick('父会话已停止，未派发子代理', 'The parent session stopped; no subagent was started'))
+      if (context.fromAntigravity && model?.startsWith('antigravity/')) throw new CapabilityCommandError('subagent_model_invalid', pick('Antigravity 只可从此入口派发 Pi 子代理', 'Antigravity can only delegate to Pi subagents through this entry point'))
       const extensionSkip = this.deps.extensionSkip?.(context) ?? null
       const startContext = { ...context, ...(context.fromAntigravity && signal ? { launchSignal: signal } : {}), ...(model ? { modelPinned: true } : {}), ...(thinkingLevel ? { thinkingLevel } : {}), ...(extensionSkip ? { extensionSkip } : {}) }
       const autoIsolate = !readOnly && !isolation && (params.isolation === undefined || params.isolation === null || params.isolation === '')

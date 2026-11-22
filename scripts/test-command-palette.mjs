@@ -43,6 +43,7 @@ function recordingPort(over = {}) {
     t: (key, vars) => (vars ? `${key}:${JSON.stringify(vars)}` : key),
     actions: {
       runBash: (cmd) => calls.push(['runBash', cmd]),
+      openSessionInfo: () => calls.push(['openSessionInfo']),
       openSettings: (tab) => calls.push(['openSettings', tab]),
       newSession: () => calls.push(['newSession']),
       compact: () => calls.push(['compact']),
@@ -138,7 +139,7 @@ async function main() {
     eq(r.calls.at(-1), ['setManualTitle', '', '我的会话'], '/name 设置手动标题')
     r = recordingPort({ text: '/session', attachments: [], commands, session: { sessionId: 's1', messageCount: 3, sessionFile: '/tmp/s.jsonl' } })
     await S.submitComposerInput(r.port)
-    ok(r.calls.some((c) => c[0] === 'notify'), '/session 报告会话信息')
+    eq(r.calls.at(-1), ['openSessionInfo'], '/session 打开会话信息面板')
 
     r = recordingPort({ text: '/help', attachments: [], commands })
     eq(await S.submitComposerInput(r.port), 'sent', 'pi 命令落回发送')

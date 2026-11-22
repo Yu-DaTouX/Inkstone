@@ -441,7 +441,7 @@ const subagentService: SubagentService = new SubagentService({
     const settings = await getSettings()
     const preferred = settings.subagentDefaultModel
     const external = [requested, preferred && preferred !== 'follow' ? `${preferred.provider}/${preferred.id}` : ''].flatMap(label => label.startsWith(`${ANTIGRAVITY_PROVIDER}/`) ? [{ provider: ANTIGRAVITY_PROVIDER, id: label.slice(ANTIGRAVITY_PROVIDER.length + 1) }] : [])
-    if (context.fromAntigravity && !models.length) return { ok: false, error: 'Pi 没有可用模型，未派发子代理。' }
+    if (context.fromAntigravity && !models.length) return { ok: false, error: pick('Pi 没有可用模型，未派发子代理。', 'Pi has no available model; no subagent was started.') }
     return resolveSubagentModelPick(requested, context.fromAntigravity ? models.filter(model => model.provider !== ANTIGRAVITY_PROVIDER) : [...models, ...external], context.model, {
       ...(preferred && preferred !== 'follow' ? { model: preferred } : {}),
       force: settings.subagentModelForce === true

@@ -151,7 +151,7 @@ export class WorkflowRunner {
     try {
       this.startWorker()
     } catch (error) {
-      void this.end({ status: 'failed', error: `脚本运行环境出错：${error instanceof Error ? error.message : String(error)}` })
+      void this.end({ status: 'failed', error: pick(`脚本运行环境出错：${error instanceof Error ? error.message : String(error)}`, `Script runtime error: ${error instanceof Error ? error.message : String(error)}`) })
     }
   }
 
@@ -169,7 +169,7 @@ export class WorkflowRunner {
     })
     this.worker = worker
     worker.on('message', (message: WorkerToHost) => this.onMessage(message))
-    worker.on('error', (error) => void this.end({ status: 'failed', error: `脚本运行环境出错：${error instanceof Error ? error.message : String(error)}` }))
+    worker.on('error', (error) => void this.end({ status: 'failed', error: pick(`脚本运行环境出错：${error instanceof Error ? error.message : String(error)}`, `Script runtime error: ${error instanceof Error ? error.message : String(error)}`) }))
     worker.on('exit', (code) => {
       if (!this.finished) void this.end({ status: 'failed', error: `脚本运行环境意外退出（code=${code}）` })
     })
@@ -322,7 +322,7 @@ export class WorkflowRunner {
     if (!await this.journal.append(this.entry(job, { status, ...(status === 'done' ? { result: detail.result ?? null } : {}), ...(detail.error ? { error: detail.error } : {}) }))) return
     if (status === 'done') this.reply(job.seq, { ok: true, json: JSON.stringify(detail.result ?? null) })
     else if (status === 'stopped') this.reply(job.seq, { ok: false, stopped: true, error: detail.error ?? '已停止' })
-    else this.reply(job.seq, { ok: false, error: detail.error ?? '子代理失败' })
+    else this.reply(job.seq, { ok: false, error: detail.error ?? pick('子代理失败', 'Subagent failed') })
     this.opts.onChange()
   }
 
@@ -364,10 +364,10 @@ export class WorkflowRunner {
       if (!run || this.finished) return
       after = run.endedAt ?? this.now()
       if (run.status === 'cancelled') {
-        return this.settleAgent(job, 'stopped', { error: '子代理被停止' })
+        return this.settleAgent(job, 'stopped', { error: pick('子代理被停止', 'Subagent stopped') })
       }
       if (run.status !== 'done') {
-        return this.settleAgent(job, 'failed', { error: run.error?.trim() || '子代理失败' })
+        return this.settleAgent(job, 'failed', { error: run.error?.trim() || pick('子代理失败', 'Subagent failed') })
       }
       const text = finalMessage(run)
       if (!schema) {
@@ -379,7 +379,7 @@ export class WorkflowRunner {
         return this.settleAgent(job, 'done', { result: extracted.value })
       }
       if (retries >= maxRetries) {
-        return this.settleAgent(job, 'failed', { error: `续接 ${retries} 次后仍没通过 schema 校验：${errors.join('；')}` })
+        return this.settleAgent(job, 'failed', { error: pick(`续接 ${retries} 次后仍没通过 schema 校验：${errors.join('；')}`, `Schema validation still failed after ${retries} retries: ${errors.join('; ')}`) })
       }
       retries += 1
       job.view.retries = retries
@@ -390,7 +390,7 @@ export class WorkflowRunner {
         if (this.finished || !await this.journal.append(this.entry(job, { status: 'running' })) || this.finished) return
         await this.opts.host.send(id, schemaCorrection(errors, schema, job.prompt))
       } catch (error) {
-        if (!this.finished) return this.settleAgent(job, 'failed', { error: `续接子代理失败：${error instanceof Error ? error.message : String(error)}` })
+        if (!this.finished) return this.settleAgent(job, 'failed', { error: pick(`续接子代理失败：${error instanceof Error ? error.message : String(error)}`, `Could not resume the subagent: ${error instanceof Error ? error.message : String(error)}`) })
         return
       } finally {
         release()
@@ -411,7 +411,7 @@ export class WorkflowRunner {
           await this.opts.host.stop(id)
         } catch (error) {
           stopped = false
-          if (expired) console.warn('[workflow] 停止迟到的子代理失败', error)
+          if (expired) console.warn(pick('[workflow] 停止迟到的子代理失败', '[workflow] Could not stop a late subagent'), error)
         }
       }
       if (!expired) await this.settleAgent(job, 'stopped', {})
@@ -448,7 +448,7 @@ export class WorkflowRunner {
       this.inflight.clear()
       await this.journal.flush()
       const resumeError = this.journal.failure ?? (modelsSettled && agentsSettled
-        ? undefined : '工作流不可恢复：上次子代理或模型调用未确认停止，禁止续跑以免重复执行')
+        ? undefined : pick('工作流不可恢复：上次子代理或模型调用未确认停止，禁止续跑以免重复执行', 'Workflow cannot resume: the previous subagent or model call was not confirmed stopped. Resuming could repeat it.'))
       this.opts.onChange()
       await this.opts.onFinish(resumeError ? { status: 'failed', error: resumeError, resumeError } : outcome)
     })

@@ -1,5 +1,6 @@
 import { createHash, type Hash } from 'node:crypto'
 import { appendFile, open, readFile, stat } from 'node:fs/promises'
+import { pick } from '../../shared/ui-lang'
 import { atomicWriteFile } from '../atomic-write'
 
 export type JournalStatus = 'running' | 'done' | 'failed' | 'stopped'
@@ -60,10 +61,10 @@ function parseLines(text: string, strict = false): unknown[] {
     if (!raw.trim()) continue
     try {
       const line = JSON.parse(raw)
-      if (strict && !isReplayLine(line)) throw new Error('未知记录')
+      if (strict && !isReplayLine(line)) throw new Error(pick('未知记录', 'Unknown journal entry'))
       out.push(line)
     } catch {
-      if (strict) throw new Error(`运行日志格式损坏（第 ${out.length + 1} 条记录）`)
+      if (strict) throw new Error(pick(`运行日志格式损坏（第 ${out.length + 1} 条记录）`, `Malformed run journal (entry ${out.length + 1})`))
     }
   }
   return out
@@ -113,9 +114,9 @@ export async function initializeJournal(file: string, data: Buffer): Promise<voi
 
 export async function loadReplayJournal(file: string, checked: boolean) {
   const data = await readFile(file)
-  if (data.length && data[data.length - 1] !== 10) throw new Error('运行日志末尾不完整')
+  if (data.length && data[data.length - 1] !== 10) throw new Error(pick('运行日志末尾不完整', 'Incomplete run journal at end of file'))
   if (checked && await readFile(checkpointFile(file), 'utf8') !== createHash('sha256').update(data).digest('hex')) {
-    throw new Error('运行日志与校验记录不符，可能已丢失或损坏')
+    throw new Error(pick('运行日志与校验记录不符，可能已丢失或损坏', 'The run journal does not match its integrity record; it may be missing or damaged'))
   }
   const lines = parseLines(new TextDecoder('utf-8', { fatal: true }).decode(data), true)
   return { data, lines, agents: readJournal(lines), models: readModelJournal(lines) }
@@ -181,7 +182,7 @@ export class JournalWriter {
 
   private fail(error: unknown): void {
     if (this.failure) return
-    this.failure = `工作流不可恢复：保存或校验运行日志失败，已产生的调用结果可能未保存，禁止续跑以免重复执行（${error instanceof Error ? error.message : String(error)}）`
+    this.failure = pick(`工作流不可恢复：保存或校验运行日志失败，已产生的调用结果可能未保存，禁止续跑以免重复执行（${error instanceof Error ? error.message : String(error)}）`, `Workflow cannot resume: the run journal could not be saved or verified. Calls may already have run without saved results, so resuming could repeat them (${error instanceof Error ? error.message : String(error)}).`)
     this.onFailure?.()
   }
 
@@ -189,17 +190,17 @@ export class JournalWriter {
     const handle = await open(this.file, 'r+')
     try {
       const info = await handle.stat()
-      if (!info.isFile() || info.size !== this.bytes) throw new Error('运行日志已丢失或长度不符')
+      if (!info.isFile() || info.size !== this.bytes) throw new Error(pick('运行日志已丢失或长度不符', 'Run journal is missing or has the wrong length'))
       if (this.hash) {
         const { bytesWritten } = await handle.write(data, 0, data.length, this.bytes)
-        if (bytesWritten !== data.length) throw new Error('运行日志未写完整')
+        if (bytesWritten !== data.length) throw new Error(pick('运行日志未写完整', 'Run journal write was incomplete'))
         await handle.sync()
         this.hash.update(data)
         await saveCheckpoint(this.file, this.hash.copy().digest('hex'))
         this.bytes += bytesWritten
       }
       const named = await stat(this.file)
-      if (info.dev !== named.dev || info.ino !== named.ino || named.size !== this.bytes) throw new Error('运行日志已被移动或替换')
+      if (info.dev !== named.dev || info.ino !== named.ino || named.size !== this.bytes) throw new Error(pick('运行日志已被移动或替换', 'Run journal was moved or replaced'))
     } finally {
       await handle.close()
     }
@@ -234,7 +235,7 @@ export class JournalWriter {
       try {
         const [data, digest] = await Promise.all([readFile(this.file), readFile(checkpointFile(this.file), 'utf8')])
         if (digest !== this.hash.copy().digest('hex') || digest !== createHash('sha256').update(data).digest('hex')) {
-          throw new Error('运行日志与校验记录不符，可能已丢失或损坏')
+          throw new Error(pick('运行日志与校验记录不符，可能已丢失或损坏', 'The run journal does not match its integrity record; it may be missing or damaged'))
         }
       } catch (error) {
         this.fail(error)

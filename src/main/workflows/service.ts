@@ -454,7 +454,7 @@ export class WorkflowService {
         await this.writeResult(record, { ...payload, endedAt, attempt: record.view.attempt })
         hasResult = outcome.status === 'done'
       } catch (error) {
-        const detail = `写最终结果失败：${error instanceof Error ? error.message : String(error)}`
+        const detail = pick(`写最终结果失败：${error instanceof Error ? error.message : String(error)}`, `Could not write the final result: ${error instanceof Error ? error.message : String(error)}`)
         outcome = outcome.status === 'failed'
           ? { ...outcome, error: `${outcome.error}；${detail}` }
           : { status: 'failed', error: detail }
@@ -475,7 +475,7 @@ export class WorkflowService {
       this.keepCalls(id, runner.modelCalls())
     }
     await this.persist(record, true).catch((error: unknown) => {
-      const detail = `保存工作流终态失败：${error instanceof Error ? error.message : String(error)}`
+      const detail = pick(`保存工作流终态失败：${error instanceof Error ? error.message : String(error)}`, `Could not save the final workflow state: ${error instanceof Error ? error.message : String(error)}`)
       record.view.status = 'failed'
       record.view.hasResult = false
       record.view.error = record.view.error ? `${record.view.error}；${detail}` : detail
@@ -532,7 +532,7 @@ export class WorkflowService {
       const body = JSON.stringify(record, null, 2)
       await atomicWriteFile(file, body, required ? { durable: true, syncDir: true } : {})
     })
-    const settled = next.catch((error: unknown) => console.warn('[workflow] 保存运行状态失败', error))
+    const settled = next.catch((error: unknown) => console.warn(pick('[workflow] 保存运行状态失败', '[workflow] Could not save the workflow state'), error))
     this.persistQueue.set(id, settled)
     void settled.then(() => {
       if (this.persistQueue.get(id) === settled) this.persistQueue.delete(id)
@@ -628,7 +628,7 @@ export class WorkflowService {
 
   private async commandResume(record: WorkflowRecord, params: Record<string, unknown>, context: WorkflowContext): Promise<CapabilityCommandResult> {
     const id = record.view.id
-    if (this.launches.has(id)) throw new CapabilityCommandError('workflow_running', `工作流 ${id} 正在准备续跑`)
+    if (this.launches.has(id)) throw new CapabilityCommandError('workflow_running', pick(`工作流 ${id} 正在准备续跑`, `Workflow ${id} is already preparing to resume`))
     const runner = this.runners.get(id)
     if (runner && !runner.done) {
       const concurrency = intParam(params.concurrency, 'concurrency', 1, WORKFLOW_LIMITS.maxConcurrency)
@@ -660,7 +660,7 @@ export class WorkflowService {
 
   private async relaunch(record: WorkflowRecord, params: Record<string, unknown>, context: WorkflowContext, ticket: LaunchTicket): Promise<CapabilityCommandResult> {
     const checkCancelled = (): void => {
-      if (ticket.cancelled) throw new CapabilityCommandError('workflow_resume_cancelled', '工作流续跑已被停止')
+      if (ticket.cancelled) throw new CapabilityCommandError('workflow_resume_cancelled', pick('工作流续跑已被停止', 'Workflow resume was stopped'))
     }
     checkCancelled()
     if (record.view.resumeError) throw new CapabilityCommandError('workflow_journal_unrecoverable', record.view.resumeError)
@@ -763,7 +763,7 @@ export class WorkflowService {
         if (record.legacyJournalUncertain || record.view.agents.some((agent) =>
           (agent.subagentId || agent.status === 'done' || agent.status === 'cached' || agent.status === 'failed' || agent.status === 'running') && !agentSeqs.has(agent.seq)
         ) || (models && settledModels < models.done + models.cached + models.failed)) {
-          throw new Error('运行日志缺少上次调用记录')
+          throw new Error(pick('运行日志缺少上次调用记录', 'The run journal is missing the previous call records'))
         }
       }
       return journal
@@ -774,7 +774,7 @@ export class WorkflowService {
 
   private async markJournalUnreadable(record: WorkflowRecord, error: unknown): Promise<never> {
     this.notifier.cancel(record.view.id)
-    const reason = `工作流不可恢复：无法校验运行日志，禁止续跑以免重复执行（${error instanceof Error ? error.message : String(error)}）`
+    const reason = pick(`工作流不可恢复：无法校验运行日志，禁止续跑以免重复执行（${error instanceof Error ? error.message : String(error)}）`, `Workflow cannot resume: the run journal could not be verified, and resuming could repeat calls (${error instanceof Error ? error.message : String(error)}).`)
     record.view.status = 'failed'
     record.view.endedAt ??= this.now()
     record.view.hasResult = false
@@ -782,7 +782,7 @@ export class WorkflowService {
     record.view.resumeError = reason
     record.notified = false
     await this.writeResult(record, { ok: false, error: reason, resumeError: reason, attempt: record.view.attempt, endedAt: record.view.endedAt })
-      .catch((error: unknown) => console.warn('[workflow] 保存恢复失败原因失败', error))
+      .catch((error: unknown) => console.warn(pick('[workflow] 保存恢复失败原因失败', '[workflow] Could not save the resume failure reason'), error))
     await this.persist(record, true).catch(() => undefined)
     this.schedulePush(record, true)
     this.notifier.notify(record)

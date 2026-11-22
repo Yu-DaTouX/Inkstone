@@ -13,7 +13,9 @@ const ok = (condition, label) => {
 const parts = read('features/settings/capabilities/parts.tsx')
 ok(/<article[^>]*aria-labelledby=\{nameId\}/.test(parts) && /className="caps-name"\s+id=\{nameId\}/.test(parts), '设置里的 Entry 行用名称标出整行，行内「检查/详情/移除」按钮能分辨对象')
 
-for (const file of ['features/settings/capabilities/McpServices.tsx', 'features/settings/capabilities/McpSection.tsx']) {
+const section = read('features/settings/capabilities/McpSection.tsx')
+ok(section.includes('<McpServices '), 'MCP 设置区复用服务列表和错误区域')
+for (const file of ['features/settings/capabilities/McpServices.tsx']) {
   const text = read(file)
   const pre = /<pre className="caps-raw"[^>]*(?:mcp-check-error|caps-mcp-error)[^>]*>/.exec(text)?.[0] ?? ''
   ok(/role="region"/.test(pre) && /aria-label=\{t\('cap\.operation\.errorDetail'\)\}/.test(pre), `${file.split('/').pop()}：MCP 报错原文有区域名称`)
