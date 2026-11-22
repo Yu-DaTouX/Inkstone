@@ -37,16 +37,18 @@ export async function runAutoCompactTests(ok, mod, limits) {
       const project = join(piDir, 'proj')
       mkdirSync(join(project, '.pi'), { recursive: true })
       writeFileSync(join(project, '.pi', 'settings.json'), JSON.stringify({ compaction: { enabled: false } }))
-      const run = (cwd) => {
+      const run = (cwd, isProjectTrusted) => {
         const handlers = {}
         extension({ on: (name, fn) => (handlers[name] = fn) })
         let compacts = 0
-        handlers.agent_settled({}, { cwd, getContextUsage: () => ({ tokens: 900_000, contextWindow: 1_050_000 }), compact: () => { compacts += 1 } })
+        handlers.agent_settled({}, { cwd, isProjectTrusted, getContextUsage: () => ({ tokens: 900_000, contextWindow: 1_050_000 }), compact: () => { compacts += 1 } })
         return compacts
       }
       ok(run(project) === 1, '自动压缩：项目没被信任时，项目里的 compaction.enabled=false 不生效')
+      ok(run(project, () => true) === 0, '自动压缩：当前 pi 会话已信任项目时，即使没有持久记录也尊重项目开关')
       writeFileSync(join(piDir, 'trust.json'), JSON.stringify({ [project]: true }))
       ok(run(project) === 0, '自动压缩：被信任的项目里 compaction.enabled=false 时不压缩')
+      ok(run(project, () => false) === 1, '自动压缩：当前 pi 会话不信任项目时，不用磁盘信任绕过会话决定')
       mkdirSync(join(project, 'sub', '.pi'), { recursive: true })
       writeFileSync(join(project, 'sub', '.pi', 'settings.json'), JSON.stringify({ compaction: { enabled: false } }))
       ok(run(join(project, 'sub')) === 0, '自动压缩：信任沿父目录向下生效')
