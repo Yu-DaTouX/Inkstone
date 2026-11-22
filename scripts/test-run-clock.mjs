@@ -2,7 +2,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -30,17 +29,23 @@ const timers = new Map()
 let nextTimer = 1
 const realSetInterval = globalThis.setInterval
 const realClearInterval = globalThis.clearInterval
+const realNow = Date.now
+let now = 10_000
+Date.now = () => now
 globalThis.setInterval = (fn, ms) => {
-  const id = realSetInterval(fn, ms)
+  assert.equal(ms, 1000, '共享时钟每秒调度一次')
+  const id = nextTimer++
   timers.set(id, fn)
   return id
 }
 globalThis.clearInterval = (id) => {
   timers.delete(id)
-  realClearInterval(id)
 }
 
-const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms))
+const advanceOneSecond = () => {
+  now += 1000
+  for (const tick of [...timers.values()]) tick()
+}
 
 try {
   const { subscribeRunNow, runNow, useRunNow, elapsedSince } = await import(pathToFileURL(outfile).href)
@@ -62,18 +67,19 @@ try {
     secondTicks += 1
   })
   assert.equal(timers.size, 1, '第二个订阅者复用同一块秒表，不再开定时器')
-  await delay(1150)
-  assert.ok(firstTicks >= 1 && secondTicks >= 1, '同一个 tick 通知所有订阅者')
-  assert.ok(runNow() >= startedAt + 990, '共享时钟按 1 秒推进')
+  advanceOneSecond()
+  assert.equal(firstTicks, 1, '同一个 tick 通知第一个订阅者一次')
+  assert.equal(secondTicks, 1, '同一个 tick 通知第二个订阅者一次')
+  assert.equal(runNow(), startedAt + 1000, '共享时钟按 1 秒推进')
   offFirst()
   assert.equal(timers.size, 1, '还有订阅者时秒表不停')
   offSecond()
   assert.equal(timers.size, 0, '最后一个订阅者离开后停表')
   const ticked = firstTicks + secondTicks
-  await delay(1150)
+  advanceOneSecond()
   assert.equal(firstTicks + secondTicks, ticked, '停表后不再通知')
   const offAgain = subscribeRunNow(() => {})
-  assert.ok(runNow() >= startedAt + 2000, '停表一段时间后重新订阅立刻对齐当前时间，不沿用冻结值')
+  assert.equal(runNow(), startedAt + 2000, '停表一段时间后重新订阅立刻对齐当前时间，不沿用冻结值')
   offAgain()
 
   const React = (await import('react')).default
@@ -95,11 +101,10 @@ try {
   })
   assert.equal(timers.size, 1, '两个运行中的钩子共用一个定时器')
   const before = runNow()
-  await act(async () => {
-    await delay(1150)
-  })
-  assert.ok(runNow() >= before + 1000, '钩子跟随共享时钟')
-  assert.equal(latest('a'), latest('b'), '同一次 tick 后所有钩子读到同一个 now')
+  await act(async () => { advanceOneSecond() })
+  assert.equal(runNow(), before + 1000, '共享时钟在 tick 后前进')
+  assert.equal(latest('a'), runNow(), '第一个钩子跟随共享时钟')
+  assert.equal(latest('b'), runNow(), '第二个钩子跟随共享时钟')
 
   await act(async () => {
     root.render(React.createElement(React.Fragment, null,
@@ -114,7 +119,7 @@ try {
   })
   assert.equal(timers.size, 0, '全部不活跃后停表')
   const rendered = seen.length
-  await delay(1150)
+  await act(async () => { advanceOneSecond() })
   assert.equal(seen.length, rendered, '停表后钩子不再重渲染')
 
   await act(async () => {
@@ -125,5 +130,6 @@ try {
 } finally {
   globalThis.setInterval = realSetInterval
   globalThis.clearInterval = realClearInterval
+  Date.now = realNow
   await rm(dir, { recursive: true, force: true })
 }
