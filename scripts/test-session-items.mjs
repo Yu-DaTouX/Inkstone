@@ -159,7 +159,7 @@ try {
   live.liveToolEnd('call_live', { result: { content: [{ type: 'text', text: 'a.txt' }] }, isError: false }, 104)
   const orphan = live.liveToolStart({ toolCallId: 'late', toolName: 'read', args: { path: 'x' } }, 105)
   assert.equal(orphan.call.status, 'running')
-  assert.equal(orphan.ownerId, `t${(105).toString(36)}`)
+  assert.match(orphan.ownerId, /^t/)
   assert.deepEqual(orphan.created?.toolCalls, [orphan.call], '无主工具新建一条消息并交给宿主推送')
   live.liveToolEnd('late', { result: { content: [{ type: 'text', text: 'body' }] } }, 106)
   const nestedStart = live.liveToolStart({ toolCallId: 'call_live/1', toolName: 'read', parentToolCallId: 'call_live' }, 107)
@@ -167,8 +167,20 @@ try {
   assert.equal(nestedStart.created, undefined)
   const nested = nestedStart.call
   const liveMessages = live.uiMessages()
-  assert.deepEqual(liveMessages.map((msg) => msg.id), ['m0', 'm1', `t${(105).toString(36)}`], '直播 id 与旧路径相同：用户/助手按位置编号，无主工具单独成条')
+  assert.deepEqual(liveMessages.map((msg) => msg.id), ['m0', 'm1', orphan.ownerId], '用户/助手按位置编号，无主工具单独成条')
   assert.ok(liveMessages[1].toolCalls.includes(nested), '带父调用的工具挂到父调用所在消息')
+
+  {
+    const parallel = new m.SessionItemProjector()
+    const a = parallel.liveToolStart({ toolCallId: 'a', toolName: 'read' }, 110)
+    const b = parallel.liveToolStart({ toolCallId: 'b', toolName: 'read' }, 110)
+    assert.notEqual(a.ownerId, b.ownerId, '同一毫秒到达的并行无主调用也有不同的消息 ID')
+    parallel.liveToolEnd('a', { result: { content: [{ type: 'text', text: 'final A' }], details: { complete: true } } }, 120)
+    assert.equal(parallel.liveToolUpdate('a', { content: [{ type: 'text', text: 'late' }] }), null, '已结束的工具不接收迟到的部分输出')
+    assert.equal(parallel.liveToolStart({ toolCallId: 'a', toolName: 'read' }, 125), null, '迟到的开始事件不能重开结束的工具')
+    assert.deepEqual([a.call.status, a.call.output, a.call.details, a.call.endedAt], ['ok', 'final A', { complete: true }, 120])
+    assert.equal(b.call.status, 'running', '不影响另一条同一时刻开始的调用')
+  }
 
   {
     const stopping = new m.SessionItemProjector()
@@ -195,8 +207,9 @@ try {
     assert.equal(stopping.call('older-call').status, 'running', '不改历史轮次')
     assert.equal(stopping.call('independent-call').status, 'running', '独立命令由其自己的终止通道收尾')
     assert.deepEqual(stopping.cancelUnfinishedTools(600), [], '重复停止不重复改写或推送')
-    stopping.liveToolUpdate('nested-call', { content: [{ type: 'text', text: 'late output' }] })
-    assert.equal(stopping.call('nested-call').cancelled, true, '迟到进度不会恢复运行态')
+    assert.equal(stopping.liveToolUpdate('nested-call', { content: [{ type: 'text', text: 'late output' }] }), null, '兜底取消后忽略迟到的部分输出')
+    assert.equal(stopping.liveToolStart({ toolCallId: 'nested-call', toolName: 'bash' }, 650), null, '兜底取消后忽略迟到的开始事件')
+    assert.deepEqual([nested.cancelled, nested.output], [true, 'partial output'], '迟到进度不恢复运行态，也不覆盖停止前的输出')
     stopping.liveToolEnd('nested-call', { result: { content: [{ type: 'text', text: 'native result' }] } }, 700)
     assert.equal(stopping.call('nested-call').cancelled, undefined, '原生最终结果优先于兜底状态')
     assert.equal(stopping.call('nested-call').output, 'native result')

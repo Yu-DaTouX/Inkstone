@@ -2354,6 +2354,7 @@ export class AgentController extends EventEmitter {
           args: evt.args,
           parentToolCallId: typeof evt.parentToolCallId === 'string' ? evt.parentToolCallId : undefined
         }, Date.now())
+        if (!started) break
         if (started.created) this.push({ ch: 'msg-add', payload: started.created })
         const call = started.call
         if (isWriteTool(call.name)) {

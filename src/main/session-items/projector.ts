@@ -299,9 +299,11 @@ export class SessionItemProjector {
     return this.compose(slot)
   }
 
-  liveToolStart(evt: LiveToolStart, now: number): LiveToolStarted {
-    const existing = evt.toolCallId ? this.callIndex.get(evt.toolCallId) : undefined
+  liveToolStart(evt: LiveToolStart, now: number): LiveToolStarted | null {
+    if (!evt.toolCallId) return null
+    const existing = this.callIndex.get(evt.toolCallId)
     if (existing) {
+      if (existing.call.cancelled || (existing.call.status !== 'pending' && existing.call.status !== 'running')) return null
       startToolExecution(existing.call, now)
       this.syncCall(existing.call)
       return { call: existing.call, ownerId: existing.slot?.header.id ?? existing.msg.id }
@@ -314,7 +316,7 @@ export class SessionItemProjector {
       this.attachCall(owner, call)
     } else {
       this.seq = this.settledCount() + 1
-      created = this.compose(this.addSlot({ id: `t${now.toString(36)}`, role: 'assistant', text: '', toolCalls: [call], timestamp: now }))
+      created = this.compose(this.addSlot({ id: `t${now.toString(36)}-${this.seq.toString(36)}`, role: 'assistant', text: '', toolCalls: [call], timestamp: now }))
     }
     startToolExecution(call, now)
     this.syncCall(call)
@@ -323,7 +325,7 @@ export class SessionItemProjector {
 
   liveToolUpdate(toolCallId: string, partial: ToolResultPayload | undefined): UIToolCall | null {
     const hit = this.callIndex.get(toolCallId)
-    if (!hit) return null
+    if (!hit || hit.call.cancelled || (hit.call.status !== 'pending' && hit.call.status !== 'running')) return null
     updateToolExecution(hit.call, partial)
     return hit.call
   }
