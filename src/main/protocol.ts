@@ -151,25 +151,16 @@ export async function piInfo(override?: string, opts: { fresh?: boolean } = {}):
 }
 
 export function resetPiVersionCache(): void {
-  versionCache = null
-  versionPending = null
+  versionProbe = null
 }
 
-let versionCache: string | undefined | null = null
-let versionPending: Promise<string | undefined> | null = null
+let versionProbe: { key: string; result: Promise<string | undefined> } | null = null
 
 function readPiVersion(probe: PiProbe, fresh = false): Promise<string | undefined> {
-  if (fresh) versionCache = null
-  if (versionCache !== null) return Promise.resolve(versionCache)
-  if (versionPending) return versionPending
+  const key = JSON.stringify([probe.cmd, ...probe.args])
+  if (!fresh && versionProbe?.key === key) return versionProbe.result
 
-  versionPending = new Promise<string | undefined>((resolve) => {
-    const done = (v: string | undefined): void => {
-      versionPending = null
-      if (v !== undefined) versionCache = v
-      resolve(v)
-    }
-
+  const result = new Promise<string | undefined>((resolve) => {
     try {
       const child = execFile(
         probe.cmd,
@@ -183,20 +174,24 @@ function readPiVersion(probe: PiProbe, fresh = false): Promise<string | undefine
         },
         (err, stdout) => {
           if (err) {
-            done(undefined)
+            resolve(undefined)
             return
           }
           const m = String(stdout).match(/\d+\.\d+\.\d+[\w.-]*/)
-          done(m ? m[0] : String(stdout).trim().split('\n')[0] || undefined)
+          resolve(m ? m[0] : String(stdout).trim().split('\n')[0] || undefined)
         }
       )
       child.unref?.()
     } catch {
-      done(undefined)
+      resolve(undefined)
     }
   })
 
-  return versionPending
+  versionProbe = { key, result }
+  void result.then((version) => {
+    if (version === undefined && versionProbe?.result === result) resetPiVersionCache()
+  })
+  return result
 }
 
 export interface PiRpcOptions {
