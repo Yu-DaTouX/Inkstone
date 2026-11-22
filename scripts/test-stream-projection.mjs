@@ -574,6 +574,16 @@ console.log('\n--- 模块直测：不起 pi、不起 Electron ---')
     ok(h.projection.streaming.toolOpen === true, '工具块打开标记写在流式状态上')
     h.advance(100)
     ok(h.pushes.length === 2, '已刷出的内容定时器到点不重复推送')
+    h.update('toolcall_start', { contentIndex: 2, id: 'c2', toolName: 'read' })
+    h.update('toolcall_end', { contentIndex: 1, toolCall: { id: 'c1', name: 'read' } })
+    ok(h.projection.streaming.toolOpen === true, '并行工具的第一块结束时，另一块仍阻止流式防护打断')
+    h.update('toolcall_end', { contentIndex: 9 })
+    ok(h.projection.streaming.toolOpen === true, '没有对应工具的结束帧不能清除剩余参数块')
+    h.update('toolcall_end', { contentIndex: 2, toolCall: { id: 'c2', name: 'read' } })
+    ok(h.projection.streaming.toolOpen === false, '最后一块结束才恢复普通流式防护')
+    h.update('toolcall_start', { id: 'legacy', toolName: 'read' })
+    h.update('toolcall_end', { toolCall: { id: 'legacy', name: 'read' } })
+    ok(h.projection.streaming.toolOpen === false, '无索引的旧格式仍能关闭工具块')
   }
 
   {

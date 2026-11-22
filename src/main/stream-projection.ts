@@ -25,6 +25,7 @@ export interface StreamingState {
   pushedText: number
   pushedThinking: number
   toolOpen?: boolean
+  openToolBlocks?: Set<number | undefined>
   thinkingBefore?: { startedAt?: number; ms?: number }
 }
 
@@ -157,6 +158,9 @@ export class StreamProjection {
       this.deps.checkDelta('text', String(ev.delta ?? ''))
       this.markDirty()
     } else if (kind === 'toolcall_start') {
+      const index = typeof ev.contentIndex === 'number' ? ev.contentIndex : undefined
+      const blocks = this.streaming.openToolBlocks ??= new Set()
+      blocks.add(index)
       this.streaming.toolOpen = true
       this.dirty = true
       this.flushNow()
@@ -170,7 +174,9 @@ export class StreamProjection {
         }
       }
     } else if (kind === 'toolcall_end') {
-      this.streaming.toolOpen = false
+      const index = typeof ev.contentIndex === 'number' ? ev.contentIndex : undefined
+      this.streaming.openToolBlocks?.delete(index)
+      this.streaming.toolOpen = !!this.streaming.openToolBlocks?.size
       this.flushNow()
       if (call) {
         this.htmlArgsPushedAt.delete(call.id)
