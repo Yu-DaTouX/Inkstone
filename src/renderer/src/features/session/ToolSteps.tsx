@@ -472,7 +472,7 @@ function StepOutput({ text, error = false, tail = false, lang = null }: { text: 
     if (saved && expanded && tail && preRef.current) preRef.current.scrollTop = saved.top + preRef.current.scrollHeight - saved.height
   }, [expanded, tail])
   const preview = previewOutput(text, { tail, maxLines: OUTPUT_PREVIEW_LINES, maxChars: OUTPUT_PREVIEW_CHARS })
-  const truncated = preview.hidden > 0
+  const truncated = preview.text !== text
   const shown = truncated && !expanded ? preview.text : text
   const leadShown = error && (!truncated || expanded || !tail)
   const cut = shown.indexOf('\n')
@@ -487,7 +487,7 @@ function StepOutput({ text, error = false, tail = false, lang = null }: { text: 
           {expanded ? tt('outputLess') : tt('outputMore', { n: preview.total })}
         </Button>
       ) : null}
-      {truncated && !expanded && tail ? <div className="v3-step-note" data-testid="v3-step-output-earlier">{tt('outputEarlier', { n: preview.hidden })}</div> : null}
+      {preview.hidden > 0 && !expanded && tail ? <div className="v3-step-note" data-testid="v3-step-output-earlier">{tt('outputEarlier', { n: preview.hidden })}</div> : null}
       <AnimatedHeight><pre ref={preRef} className="v3-step-pre out" data-testid="v3-step-output" data-error={error || undefined} role="group">
         {leadShown ? (
           <>

@@ -69,8 +69,8 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
 
   const reused = '[data-turn-id="scope-answer"] [data-testid="v3-step"]'
   const reusedProcess = '[data-turn-id="scope-answer"] [data-testid="v3-process-toggle"]'
-  const loadRepeatedTool = async (path) => {
-    await ev(`window.__yanStore.setState(s=>({messages:[{id:'scope-user',role:'user',text:'检查展开范围'},{id:'scope-answer',role:'assistant',text:'夹具',toolCalls:[{id:'same-tool-id',name:'bash',args:{command:${JSON.stringify(path)}},status:'ok'}]}],session:{...s.session,isStreaming:false,isAgentRunning:false},switchLoading:false,historyLoading:false}))`)
+  const loadRepeatedTool = async (command, output = '') => {
+    await ev(`window.__yanStore.setState(s=>({messages:[{id:'scope-user',role:'user',text:'检查展开范围'},{id:'scope-answer',role:'assistant',text:'夹具',toolCalls:[{id:'same-tool-id',name:'bash',args:{command:${JSON.stringify(command)}},output:${JSON.stringify(output)},status:'ok'}]}],session:{...s.session,isStreaming:false,isAgentRunning:false},switchLoading:false,historyLoading:false}))`)
     await waitFor(`!!document.querySelector('${reusedProcess}')`, 6000)
     await ev(`document.querySelector('${reusedProcess}[aria-expanded="false"]')?.click()`)
     await waitFor(`!!document.querySelector('${reused}')`, 6000)
@@ -81,6 +81,19 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
   await ev(`document.querySelector('${reused}').click()`)
   await waitFor(`document.querySelector('${reused}')?.getAttribute('aria-expanded')==='true'`, 6000)
   await newSession()
-  const secondSession = await loadRepeatedTool('dir second-scope')
+  const longOutput = `prefix-${'x'.repeat(5000)}-suffix`
+  const secondSession = await loadRepeatedTool('dir second-scope', longOutput)
   check('两个真实会话复用工具 ID 时，展开状态不会带到新会话', !!firstSession && !!secondSession && firstSession !== secondSession && await ev(`document.querySelector('${reused}')?.getAttribute('aria-expanded')==='false'`))
+  await ev(`document.querySelector('${reused}').click()`)
+  const output = '[data-turn-id="scope-answer"] [data-testid="v3-step-output"]'
+  const toggle = '[data-turn-id="scope-answer"] [data-testid="v3-step-output-toggle"]'
+  await waitFor(`!!document.querySelector('${output}')`, 5000)
+  const preview = await ev(`document.querySelector('${output}').textContent`)
+  check('单行命令输出默认只渲染尾部预览且不虚报隐藏行数', preview.length < 1700 && !preview.includes('prefix-') && preview.endsWith('-suffix') && await ev(`!document.querySelector('[data-turn-id="scope-answer"] [data-testid="v3-step-output-earlier"]')`), { previewLength: preview.length })
+  await ev(`document.querySelector('${toggle}').focus()`)
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await waitFor(`document.querySelector('${toggle}')?.getAttribute('aria-expanded')==='true'`, 5000)
+  check('键盘展开后可读完整单行输出', await ev(`document.querySelector('${output}').textContent===${JSON.stringify(longOutput)}`))
+  await shot('single-line-output-expanded')
 }
