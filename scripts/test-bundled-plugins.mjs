@@ -125,7 +125,16 @@ process.send({ type: 'ready' })
   const [first, second] = await Promise.all([fresh.invoke('proxied', 'probe'), fresh.invoke('proxied', 'probe')])
   ok(first.pid === second.pid, 'concurrent first calls share one plugin process')
   ok(first.proxy === 'http://127.0.0.1:9', 'plugins declaring system.proxy receive the system proxy')
-  await fresh.close()
+  const connection = fresh.connections.get('proxied')
+  const send = connection.child.send
+  connection.child.send = () => { throw new Error('fixture IPC write failure') }
+  try {
+    const error = await fresh.invoke('proxied', 'probe').then(() => null, (reason) => reason)
+    ok(error?.message === 'fixture IPC write failure' && connection.pending.size === 0, '同步 IPC 写入失败传播原错误且不留待处理记录或计时器')
+  } finally {
+    connection.child.send = send
+    await fresh.close()
+  }
   const alive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }
   ok(!alive(first.pid), 'close() 返回 Promise，resolve 时插件进程已结束')
 

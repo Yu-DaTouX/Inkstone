@@ -392,10 +392,14 @@ export class BundledPlugins {
       })
       signal?.addEventListener('abort', cancel, { once: true })
       if (signal?.aborted) { cancel(); return }
-      connection.child.send({ type: 'request', id: requestId, action, params }, error => {
-        if (!error) return
+      try {
+        connection.child.send({ type: 'request', id: requestId, action, params }, error => {
+          if (!error) return
+          cleanup(); reject(error)
+        })
+      } catch (error) {
         cleanup(); reject(error)
-      })
+      }
     })
   }
 
