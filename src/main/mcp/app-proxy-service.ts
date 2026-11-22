@@ -303,6 +303,7 @@ export class McpAppProxyService {
     signal?: AbortSignal
     allowEmpty?: boolean
   } = {}): Promise<McpAppProxyRefreshResult> {
+    options.signal?.throwIfAborted()
     const sequence = ++this.refreshSequence
     const configured = new Map(loadMcpServersCached(this.env).servers.map((server) => [server.id, server]))
     const managed = this.host.listManagedServers(options.callerProjectId)
@@ -378,6 +379,7 @@ export class McpAppProxyService {
       } catch (error) {
         errors.push({ serverId: server.id, error: errorMessage(error) })
       }
+      options.signal?.throwIfAborted()
     }
 
     const counts = new Map<string, number>()
@@ -401,6 +403,7 @@ export class McpAppProxyService {
     const managedIds = new Set(managed.map((server) => server.id))
     const publishedAfter = (id: string) => (this.publishedRefresh.get(id) ?? 0) > sequence
     const written = await this.commitSnapshot((current) => {
+      options.signal?.throwIfAborted()
       for (const server of requested ? servers : targets) {
         if (!publishedAfter(server.id)) replaced.add(server.id)
       }

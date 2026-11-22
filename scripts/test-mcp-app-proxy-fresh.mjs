@@ -117,6 +117,20 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
 
     {
+      managed = [server('alpha'), server('beta')]
+      listBehavior = async (id) => [tool(`${id}-original`)]
+      const service = make('cancelled')
+      await service.refresh()
+      const before = await readFile(service.snapshotPath(), 'utf8')
+      const abort = new AbortController()
+      listCalls = 0
+      listBehavior = async () => { abort.abort(); throw abort.signal.reason }
+      const cancelled = await service.refresh({ signal: abort.signal }).then(() => null, (error) => error)
+      ok(cancelled === abort.signal.reason && listCalls === 1, '取消刷新时结束请求，不继续查询下一个服务')
+      ok(await readFile(service.snapshotPath(), 'utf8') === before, '取消刷新不改动已发布的快照')
+    }
+
+    {
       managed = [server('alpha')]
       let release
       listBehavior = () => new Promise((resolve) => { release = () => resolve([tool('late')]) })
