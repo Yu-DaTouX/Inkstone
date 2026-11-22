@@ -100,6 +100,7 @@ export class StreamProjection {
   private readonly pushedOut = new Map<string, number>()
   private readonly pushedOutText = new Map<string, string>()
   private readonly pushedArgs = new Map<string, unknown>()
+  private readonly pushedDetails = new Map<string, unknown>()
   private readonly htmlArgsPushedAt = new Map<string, number>()
   private readonly items: StreamItems
   private readonly clock: StreamClock
@@ -205,6 +206,7 @@ export class StreamProjection {
   pushToolTo(msgId: string, call: UIToolCall): void {
     this.pushedOut.set(call.id, call.output?.length ?? 0)
     this.pushedOutText.set(call.id, call.output ?? '')
+    this.rememberDetails(call)
     this.dirtyTools.delete(call.id)
     this.deps.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
   }
@@ -214,12 +216,14 @@ export class StreamProjection {
       this.pushedOut.set(c.id, c.output?.length ?? 0)
       this.pushedOutText.delete(c.id)
       this.pushedArgs.delete(c.id)
+      this.pushedDetails.delete(c.id)
       this.dirtyTools.delete(c.id)
     }
   }
 
   settledOutput(callId: string, length: number): void {
     this.pushedOut.set(callId, length)
+    this.pushedDetails.delete(callId)
     this.dirtyTools.delete(callId)
   }
 
@@ -227,6 +231,12 @@ export class StreamProjection {
     this.pushedOut.clear()
     this.pushedOutText.clear()
     this.pushedArgs.clear()
+    this.pushedDetails.clear()
+  }
+
+  private rememberDetails(call: UIToolCall): void {
+    if (call.details === undefined) this.pushedDetails.delete(call.id)
+    else this.pushedDetails.set(call.id, call.details)
   }
 
   reset(): void {
@@ -260,29 +270,33 @@ export class StreamProjection {
         this.pushedOut.delete(id)
         this.pushedOutText.delete(id)
         this.pushedArgs.delete(id)
+        this.pushedDetails.delete(id)
         continue
       }
       const pushed = this.pushedOut.get(id) ?? 0
       const out = call.output ?? ''
       const previous = this.pushedOutText.get(id)
       const mode = toolOutputPushMode(previous, pushed, out)
-      if (mode === 'skip') continue
+      const detailsChanged = !Object.is(this.pushedDetails.get(id), call.details)
+      if (mode === 'skip' && !detailsChanged) continue
       const msgId = this.ownerOf(call)
       if (!msgId) continue
       this.pushedOut.set(id, out.length)
       this.pushedOutText.set(id, out)
+      this.rememberDetails(call)
+      const wireCall = detailsChanged && call.details === undefined ? { ...call, details: null } : call
       const sameArgs = this.pushedArgs.has(id) && this.pushedArgs.get(id) === call.args
       this.pushedArgs.set(id, call.args)
-      if (mode === 'replace') {
-        this.deps.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
+      if (mode !== 'delta') {
+        this.deps.push({ ch: 'tool', payload: { msgId, call: { ...wireCall } } })
         continue
       }
-      const { args: _args, output: _output, ...rest } = call
+      const { args: _args, output: _output, ...rest } = wireCall
       this.deps.push({
         ch: 'tool',
         payload: {
           msgId,
-          call: sameArgs ? (rest as UIToolCall) : { ...call, output: undefined },
+          call: sameArgs ? (rest as UIToolCall) : { ...wireCall, output: undefined },
           outputDelta: out.slice(pushed),
           ...(sameArgs ? { sameArgs: true } : {})
         }

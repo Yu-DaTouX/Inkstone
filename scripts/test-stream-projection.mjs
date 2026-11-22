@@ -639,6 +639,26 @@ console.log('\n--- 模块直测：不起 pi、不起 Electron ---')
   }
 
   {
+    const h = harness()
+    h.start()
+    const { call } = h.items.liveToolStart({ toolCallId: 'details', toolName: 'job' }, 1000)
+    h.projection.pushTool(call)
+    const details = { progress: 0.5 }
+    h.items.liveToolUpdate(call.id, { details })
+    h.projection.markToolOutput(call.id)
+    h.advance(FLUSH_MS)
+    ok(h.pushes.length === 2 && h.pushes.at(-1).message.payload.call.details?.progress === details.progress, '只有详情的进度也在工具结束前推送')
+    h.items.liveToolUpdate(call.id, { details })
+    h.projection.markToolOutput(call.id)
+    h.advance(FLUSH_MS)
+    ok(h.pushes.length === 2, '相同的详情和文本不重复推送')
+    h.items.liveToolUpdate(call.id, {})
+    h.projection.markToolOutput(call.id)
+    h.advance(FLUSH_MS)
+    ok(h.pushes.length === 3 && h.pushes.at(-1).message.payload.call.details === null, '清空详情时发送可跨 JSON 传输的空值')
+  }
+
+  {
     const h = harness({ backlog: 0 })
     h.items.appendMessage({ id: 'bash-1', role: 'bash', text: 'x', toolCalls: [{ id: 'bash-1', name: 'bash', status: 'running', output: '' }] })
     h.projection.markToolOutput('bash-1')
