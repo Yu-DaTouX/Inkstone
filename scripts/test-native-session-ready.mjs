@@ -41,8 +41,10 @@ export async function runNativeSessionReadyTests(ok) {
     const result = await waiting
     ok(result.ok === false && result.code === 'rpc_failed', 'dispose 让 whenReady 以 rpc_failed 失败（不是「成功」）', JSON.stringify(result))
     ok(result.message.includes('pi 进程已退出'), 'dispose 的原因进到错误信息里', result.message)
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    ok(bridge.isReady === false, 'dispose 后桥未就绪')
+    bridge.handleNotify(hello(['trust_read']))
+    ok(!bridge.isReady && bridge.bridgeCapabilities.length === 0, 'dispose 后的迟到报到不能让旧桥重新就绪')
+    const next = await settle(bridge.whenReady(20))
+    ok(next.code === 'rpc_failed' && next.message.includes('pi 进程已退出'), 'dispose 后新等待直接拿到原有退出原因', JSON.stringify(next))
   }
 
   {
@@ -56,6 +58,47 @@ export async function runNativeSessionReadyTests(ok) {
     bridge.handleNotify(hello())
     const result = await settle(bridge.whenReady(5_000))
     ok(result.ok === true, '已就绪时 whenReady 立即通过', JSON.stringify(result))
+  }
+
+  {
+    const bridge = new runtime.NativeSessionRuntime(transport, 5_000)
+    bridge.handleNotify(runtime.RECEIPT_PREFIX + JSON.stringify({ v: 1, id: 'hello', op: 'hello', ok: false }))
+    ok(!bridge.isReady, '错误报到不能开放原生命令')
+  }
+
+  for (const earlyReceipt of [false, true]) {
+    let envelope
+    let acknowledge
+    const bridge = new runtime.NativeSessionRuntime({
+      command: async (_type, { message }) => {
+        envelope = JSON.parse(Buffer.from(message.split(' ')[1], 'base64url').toString())
+        return new Promise((resolve) => { acknowledge = resolve })
+      }
+    }, 5_000)
+    bridge.handleNotify(hello())
+    const pending = settle(bridge.getScopedModels())
+    if (earlyReceipt) bridge.handleNotify(runtime.RECEIPT_PREFIX + JSON.stringify({ v: 1, id: envelope.id, op: envelope.op, ok: true }))
+    bridge.dispose('process retired')
+    const disposed = await Promise.race([pending, new Promise((resolve) => setTimeout(() => resolve(null), 50))])
+    acknowledge({ success: true, data: { disposition: 'handled' } })
+    ok(disposed?.code === 'rpc_failed' && disposed.message === 'process retired', `${earlyReceipt ? '先收到回执' : '尚未收到回执'}：若 RPC 未确认，关闭仍会立即拒绝原生命令`)
+  }
+
+  {
+    let envelope
+    const bridge = new runtime.NativeSessionRuntime({
+      command: async (_type, { message }) => {
+        envelope = JSON.parse(Buffer.from(message.split(' ')[1], 'base64url').toString())
+        return { success: true, data: { disposition: 'handled' } }
+      }
+    }, 5_000)
+    bridge.handleNotify(hello())
+    const pending = bridge.getScopedModels()
+    const receipt = (op, enabledModels) => runtime.RECEIPT_PREFIX + JSON.stringify({ v: 1, id: envelope.id, op, ok: true, result: { enabledModels } })
+    bridge.handleNotify(receipt('scoped_models_set', ['wrong']))
+    bridge.handleNotify(receipt('scoped_models_read', ['right']))
+    const result = await pending
+    ok(result.enabledModels.join() === 'right', '相同请求 ID 的其他操作回执不会把请求提前完成', JSON.stringify(result))
   }
 }
 

@@ -63,8 +63,7 @@ export class NativeBridgeError extends Error {
 
 interface PendingRequest {
   op: string
-  timer: ReturnType<typeof setTimeout>
-  resolve: (receipt: NativeReceipt) => void
+  receive: (receipt: NativeReceipt) => void
   reject: (error: Error) => void
 }
 
@@ -151,6 +150,7 @@ function toScopedModelEntry(raw: Record<string, unknown>): ScopedModelEntry {
 export class NativeSessionRuntime {
   private readonly pending = new Map<string, PendingRequest>()
   private ready = false
+  private disposed?: NativeBridgeError
   private capabilities: readonly string[] = []
   private readonly readyWaiters = new Set<{
     resolve: () => void
@@ -174,8 +174,15 @@ export class NativeSessionRuntime {
   handleNotify(message: unknown): boolean {
     const receipt = parseReceipt(message)
     if (!receipt) return false
+    if (this.disposed) return true
+    const pending = this.pending.get(receipt.id)
+    if (pending) {
+      if (receipt.op === pending.op) pending.receive(receipt)
+      return true
+    }
 
     if (receipt.op === 'hello') {
+      if (!receipt.ok) return true
       this.ready = true
       const list = receipt.result?.capabilities
       this.capabilities = Array.isArray(list)
@@ -186,18 +193,7 @@ export class NativeSessionRuntime {
       return true
     }
 
-    const pending = this.pending.get(receipt.id)
-    if (pending) {
-      this.pending.delete(receipt.id)
-      clearTimeout(pending.timer)
-      if (receipt.ok) pending.resolve(receipt)
-      else {
-        const code = receipt.error?.code === 'busy' ? 'busy' : 'extension_error'
-        pending.reject(new NativeBridgeError(receipt.error?.message ?? pick(`原生操作失败：${pending.op}`, `Native operation failed: ${pending.op}`), code))
-      }
-    } else {
-      this.onSignal?.(receipt)
-    }
+    this.onSignal?.(receipt)
     return true
   }
 
@@ -207,6 +203,7 @@ export class NativeSessionRuntime {
   }
 
   whenReady(timeoutMs: number = this.defaultTimeoutMs): Promise<void> {
+    if (this.disposed) return Promise.reject(this.disposed)
     if (this.ready) return Promise.resolve()
     return new Promise((resolve, reject) => {
       const waiter = {
@@ -233,18 +230,17 @@ export class NativeSessionRuntime {
   }
 
   dispose(reason = pick('pi 进程已退出', 'pi process exited')): void {
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer)
-      pending.reject(new NativeBridgeError(reason, 'rpc_failed'))
-    }
+    const error = this.disposed ??= new NativeBridgeError(reason, 'rpc_failed')
+    for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
     this.ready = false
     this.capabilities = []
-    for (const waiter of this.readyWaiters) waiter.reject(new NativeBridgeError(reason, 'rpc_failed'))
+    for (const waiter of this.readyWaiters) waiter.reject(error)
     this.readyWaiters.clear()
   }
 
   private async invoke(op: string, args: Record<string, unknown>, timeoutMs: number): Promise<NativeReceipt> {
+    if (this.disposed) throw this.disposed
     if (!this.ready) {
       throw new NativeBridgeError(
         pick('原生会话桥未就绪：尚未收到扩展报到，命令不会发出（避免被当成提问交给模型）', 'Native session bridge not ready: extension has not checked in. The command was not sent (to avoid it being treated as a prompt)'),
@@ -258,49 +254,60 @@ export class NativeSessionRuntime {
     }
     const message = `/${NATIVE_COMMAND} ${encoded}`
 
-    const receiptPromise = new Promise<NativeReceipt>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new NativeBridgeError(pick(`原生操作 ${op} 超时（${timeoutMs}ms）`, `Native operation ${op} timed out (${timeoutMs}ms)`), 'timeout'))
-      }, timeoutMs)
-      this.pending.set(id, { op, timer, resolve, reject })
-    })
-
-    void receiptPromise.catch(() => undefined)
-
-    const abandon = (error: NativeBridgeError): never => {
-      const pending = this.pending.get(id)
-      if (pending) {
-        this.pending.delete(id)
-        clearTimeout(pending.timer)
-        pending.reject(error)
-      }
-      throw error
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await new Promise<NativeReceipt>((resolve, reject) => {
+        let confirmed = false
+        let receipt: NativeReceipt | undefined
+        const finish = () => {
+          if (!confirmed || !receipt) return
+          if (receipt.ok) resolve(receipt)
+          else {
+            const code = receipt.error?.code === 'busy' ? 'busy' : 'extension_error'
+            reject(new NativeBridgeError(receipt.error?.message ?? pick(`原生操作失败：${op}`, `Native operation failed: ${op}`), code))
+          }
+        }
+        timer = setTimeout(() => {
+          reject(new NativeBridgeError(pick(`原生操作 ${op} 超时（${timeoutMs}ms）`, `Native operation ${op} timed out (${timeoutMs}ms)`), 'timeout'))
+        }, timeoutMs)
+        this.pending.set(id, {
+          op,
+          reject,
+          receive: (incoming) => {
+            if (receipt) return
+            receipt = incoming
+            finish()
+          }
+        })
+        void this.confirmPrompt(op, message, timeoutMs).then(() => {
+          confirmed = true
+          finish()
+        }, reject)
+      })
+    } finally {
+      if (timer) clearTimeout(timer)
+      this.pending.delete(id)
     }
+  }
 
+  private async confirmPrompt(op: string, message: string, timeoutMs: number): Promise<void> {
     let response: NativeRpcResponse
     try {
       response = await this.transport.command('prompt', { message }, { id: `inkstone-native-rpc-${randomUUID()}`, timeoutMs })
     } catch (error) {
-      return abandon(
-        new NativeBridgeError(pick(`${op} 的 RPC 发送失败：${error instanceof Error ? error.message : String(error)}`, `RPC send failed for ${op}: ${error instanceof Error ? error.message : String(error)}`), 'rpc_failed')
-      )
+      throw new NativeBridgeError(pick(`${op} 的 RPC 发送失败：${error instanceof Error ? error.message : String(error)}`, `RPC send failed for ${op}: ${error instanceof Error ? error.message : String(error)}`), 'rpc_failed')
     }
-
     if (response.success !== true) {
-      return abandon(
-        new NativeBridgeError(pick(`${op} 被 pi 拒绝：${JSON.stringify(response.error ?? response)}`, `${op} was rejected by pi: ${JSON.stringify(response.error ?? response)}`), 'rpc_failed')
+      throw new NativeBridgeError(pick(`${op} 被 pi 拒绝：${JSON.stringify(response.error ?? response)}`, `${op} was rejected by pi: ${JSON.stringify(response.error ?? response)}`), 'rpc_failed')
+    }
+    const disposition = responseData(response).disposition
+    if (disposition !== 'handled') {
+      const actual = String(disposition ?? 'unknown')
+      throw new NativeBridgeError(
+        pick(`${op} 未被扩展命令识别（disposition=${actual}），命令可能已进入模型，已中止`, `${op} was not recognized by the extension command (disposition=${actual}). The command may have reached the model. Aborted`),
+        'command_not_handled'
       )
     }
-    if (responseData(response).disposition !== 'handled') {
-      return abandon(
-        new NativeBridgeError(
-          pick(`${op} 未被扩展命令识别（disposition=${String(responseData(response).disposition ?? 'unknown')}），命令可能已进入模型，已中止`, `${op} was not recognized by the extension command (disposition=${String(responseData(response).disposition ?? 'unknown')}). The command may have reached the model. Aborted`),
-          'command_not_handled'
-        )
-      )
-    }
-    return receiptPromise
   }
 
   private async invokeWithPayloadFile(op: string, args: Record<string, unknown>, timeoutMs: number): Promise<NativeReceipt> {
