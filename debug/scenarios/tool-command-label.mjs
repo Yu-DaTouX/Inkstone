@@ -50,4 +50,20 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
   await waitFor(`document.querySelector('${row}')?.getAttribute('aria-expanded')==='true'`, 5000)
   check('键盘可展开运行中的工具，焦点保留在按钮', await ev(`document.activeElement===document.querySelector('${row}')`))
   await shot('timed-tool-expanded-by-keyboard')
+
+  await ev(`window.__yanStore.getState().patchSettings({reduceMotion:false})`)
+  await waitFor(`document.querySelector('${row}')?.getAttribute('aria-expanded')==='true'`, 5000)
+  const closed = await ev(`(async () => {
+    const header = document.querySelector('${row}');
+    const panel = document.getElementById(header.getAttribute('aria-controls'));
+    const copy = panel.querySelector('.v3-step-detail-bar button');
+    if (!copy) return {missingCopy:true};
+    header.focus();
+    header.click();
+    await new Promise(requestAnimationFrame);
+    const keptForAnimation = copy.isConnected && !panel.hasAttribute('hidden');
+    copy.focus();
+    return {keptForAnimation, collapsed:header.getAttribute('aria-expanded')==='false', focusStayed:document.activeElement===header};
+  })()`)
+  check('收起动画保留详情内容，但内部按钮不再能获得焦点', closed.keptForAnimation && closed.collapsed && closed.focusStayed, closed)
 }

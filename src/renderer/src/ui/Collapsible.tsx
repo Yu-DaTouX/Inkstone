@@ -57,6 +57,7 @@ export const CollapsiblePanel = forwardRef<HTMLDivElement, CollapsiblePanelProps
     <RACDisclosurePanel
       {...props}
       ref={ref}
+      inert={closing && !expanded ? true : undefined}
       data-animated={animated ? 'true' : undefined}
       data-opening={opening ? '' : undefined}
       className={composeRenderProps(className, (cn) => cx('ui-collapsible__panel', cn))}
