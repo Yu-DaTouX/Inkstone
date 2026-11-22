@@ -20,11 +20,12 @@ const loadOnly = process.argv.includes('load-only')
 const noPlan = process.argv.includes('no-plan')
 const gatewayModels = process.argv.includes('gateway-models')
 const embeddedContext = process.argv.includes('embedded-context')
+const startDefault = process.argv.includes('start-default')
 const effortFailureFile = process.argv.find((arg) => arg.startsWith('--effort-failure='))?.slice('--effort-failure='.length)
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
 let effort = 'low'
-let mode = 'auto'
+let mode = startDefault ? 'default' : 'auto'
 let cwd
 let promptId = null
 let waiting = false

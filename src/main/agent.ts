@@ -1,5 +1,5 @@
 import { pick } from '../shared/ui-lang'
-import { ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
+import { ANTIGRAVITY_DEFAULT_MODE, ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
 import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, launchAntigravity, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout, type AntigravitySession } from './antigravity'
 import {
   buildChunkCompactPrompt,
@@ -4641,11 +4641,12 @@ export class AgentController extends EventEmitter {
         }, turn.delegation.signal) : undefined }
       }, { delegate: !!host, services: mcp.services, commandHost: this.commandHost, owned }) : undefined
       if (bridge && mcp) proc.setCleanup(async () => { await bridge.close(); await mcp.close() })
-      const desiredMode = restoreMode ?? (previous?.sessionId === sessionId ? previous.modes?.current : undefined)
+      const explicitMode = restoreMode ?? (previous?.sessionId === sessionId ? previous.modes?.current : undefined)
       let models = reuse
         ? await proc.selectModel(modelId)
         : await proc.start(this.cwd, bridge?.configs, {
-            mode: desiredMode,
+            mode: explicitMode,
+            defaultMode: ANTIGRAVITY_DEFAULT_MODE,
             ...(resumeTarget ? { resumeSessionId: resumeTarget.sessionId } : {})
           })
             .then((options) => options.current === modelId ? options : proc.selectModel(modelId))
@@ -4658,6 +4659,7 @@ export class AgentController extends EventEmitter {
         }
         models = await proc.selectThinking(preferredThinking)
       }
+      const desiredMode = explicitMode ?? (models.modes?.options.some(({ id }) => id === ANTIGRAVITY_DEFAULT_MODE) ? ANTIGRAVITY_DEFAULT_MODE : undefined)
       models = await proc.confirmPromptMode(desiredMode)
       if (preferredThinking && models.thinking?.current !== preferredThinking) {
         throw new Error(pick('Antigravity 未确认最终设置，未切换会话。', 'Antigravity did not confirm the final settings; the session was not switched.'))

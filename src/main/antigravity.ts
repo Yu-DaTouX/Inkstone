@@ -302,7 +302,7 @@ export class AntigravitySession {
     child.once('exit', disconnected)
   }
 
-  async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[], options?: { discoverOnly?: boolean; mode?: string; resumeSessionId?: string }): Promise<AntigravityModels> {
+  async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[], options?: { discoverOnly?: boolean; mode?: string; defaultMode?: string; resumeSessionId?: string }): Promise<AntigravityModels> {
     this.discoverOnly = options?.discoverOnly === true
     this.resumedSession = false
     const init = await this.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'inkstone', title: 'Inkstone', version: '1.0.0' } })
@@ -350,7 +350,13 @@ export class AntigravitySession {
     this.legacyModes = array(object(session.modes).availableModes).map(object).flatMap((mode) =>
       isAntigravityMode(mode.id) ? [{ id: mode.id, name: text(mode.name) || mode.id }] : [])
     this.readConfig(session)
-    return this.discoverOnly ? this.modelView() : this.confirmPromptMode(options?.mode)
+    if (this.discoverOnly) return this.modelView()
+    const initialMode = options?.mode ?? (
+      options?.defaultMode && this.modelView().modes?.options.some(({ id }) => id === options.defaultMode)
+        ? options.defaultMode
+        : undefined
+    )
+    return this.confirmPromptMode(initialMode)
   }
 
   async selectModel(model: string): Promise<AntigravityModels> {

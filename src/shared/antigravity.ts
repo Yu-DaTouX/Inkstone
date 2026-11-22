@@ -77,8 +77,9 @@ export interface AntigravitySessionView {
 }
 
 export const ANTIGRAVITY_APPROVAL_MODE = 'default'
+export const ANTIGRAVITY_DEFAULT_MODE = 'auto'
 export function isAntigravityMode(mode: unknown): mode is string {
-  return mode === ANTIGRAVITY_APPROVAL_MODE || mode === 'accept-edits' || mode === 'auto' || mode === 'plan'
+  return mode === ANTIGRAVITY_APPROVAL_MODE || mode === 'accept-edits' || mode === ANTIGRAVITY_DEFAULT_MODE || mode === 'plan'
 }
 
 export interface AntigravityPlanEntry {

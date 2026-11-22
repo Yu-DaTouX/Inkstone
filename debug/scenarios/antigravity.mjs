@@ -197,8 +197,8 @@ class Fixture {
   await waitFor(`!document.querySelector('${menu}')`)
   await kit.wide()
   await click(picker)
-  await waitFor(has('[data-testid="antigravity-permission"]', 'CLI 默认审批'))
-  check('ACP 模型菜单显示 CLI 默认审批，隐藏 Pi 权限开关及 Ultracode', await ev(`!document.querySelector('[data-testid="permission-all"]') && !document.querySelector('${menu}')?.textContent.includes('Ultracode')`))
+  await waitFor(has('[data-testid="antigravity-permission"]', 'auto'))
+  check('ACP 模型菜单默认显示 Auto 权限档，隐藏 Pi 权限开关及 Ultracode', await ev(`!document.querySelector('[data-testid="permission-all"]') && !document.querySelector('${menu}')?.textContent.includes('Ultracode')`))
   const permission = '[data-testid="antigravity-permission"]'
   const chooseMode = async (mode) => {
     await click(`${permission} .ui-select__trigger`)
@@ -447,7 +447,7 @@ class Fixture {
   await ev(`${app}.setThinking('xhigh')`)
   await waitFor('s.session?.thinkingLevel === "xhigh"')
   await click(picker)
-  await waitFor(has(permission, 'CLI 默认审批'))
+  await waitFor(has(permission, 'auto'))
   await chooseMode('plan')
   for (let index = 0; index < 3 && await ev(`!!document.querySelector('${menu}')`); index++) await kit.key('Escape')
   await waitFor(`!document.querySelector('${menu}')`)

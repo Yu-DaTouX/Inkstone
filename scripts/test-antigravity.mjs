@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
+  const { ANTIGRAVITY_DEFAULT_MODE } = await compile('src/shared/antigravity.ts')
   const { AntigravityHandoffLimitError, AntigravitySession, antigravityPrompt, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout } = await compile('src/main/antigravity.ts')
   const longHistory = [{ role: 'user', text: 'A' + 'x'.repeat(110_000) + 'Z' }, { role: 'assistant', text: '答复', thinking: 'internal thought should be omitted', toolCalls: [{ id: 'tc-1', name: 'read', status: 'ok', args: { Path: 'a.ts' }, output: 'ok', details: { antigravity: true, kind: 'read', antigravityDiffs: [{ path: 'a.ts', patch: 'huge-diff' }] }, startedAt: 1, endedAt: 2 }] }]
   const handoff = antigravityPrompt('继续', longHistory)
@@ -485,6 +486,18 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await assert.rejects(probe.prompt('未在当前会话选定自动审批档'), /权限档/)
     ok(true, '拒绝沿用 CLI 全局自动模式')
   } finally { await probe.close() }
+
+  for (const [args, startOpts, checkFn, label] of [
+    [['start-default'], { defaultMode: ANTIGRAVITY_DEFAULT_MODE }, (m) => m.mode === 'auto', '未显式指定权限档时，现代 CLI 默认切到 Auto'],
+    [[], { mode: 'default', defaultMode: ANTIGRAVITY_DEFAULT_MODE }, (m) => m.mode === 'default', '显式传入权限档时优先保留原选择'],
+    [['legacy'], { defaultMode: ANTIGRAVITY_DEFAULT_MODE }, (m) => m.current === 'flash' && m.mode === undefined, '未公布权限档的旧版 CLI 平稳回退']
+  ]) {
+    const target = start(...args).session
+    try {
+      const models = await target.start(cwd, undefined, startOpts)
+      ok(checkFn(models), label, JSON.stringify(models))
+    } finally { await target.close() }
+  }
 
   {
     const first = start()
