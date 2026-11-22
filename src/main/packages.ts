@@ -283,6 +283,14 @@ function runPi(
   })
 }
 
+function managedPackageBusy(): PackageActionResult {
+  return {
+    ok: false,
+    error: pick('这个目录仍有会话在运行，等待安全边界后再安装', 'Sessions are still running in this folder. Install after a safe boundary'),
+    detail: pick('pi 包在启动时加载；不能在该项目任何 runner 忙碌时更改项目包配置。', 'pi packages load at startup. Project package config cannot change while any runner in the project is busy.')
+  }
+}
+
 export async function installManagedPiPackage(request: {
   sourceDir: string
   managedRoot: string
@@ -315,13 +323,7 @@ export async function installManagedPiPackage(request: {
     }
     const cwd = String(request.cwd ?? '')
     if (!cwd) return { ok: false, error: pick('缺少当前项目目录，拒绝改为用户级安装', 'No current project folder. Refusing to fall back to a user-level install') }
-    if (ctx.hasRunningTask?.(cwd)) {
-      return {
-        ok: false,
-        error: pick('这个目录仍有会话在运行，等待安全边界后再安装', 'Sessions are still running in this folder. Install after a safe boundary'),
-        detail: pick('pi 包在启动时加载；不能在该项目任何 runner 忙碌时更改项目包配置。', 'pi packages load at startup. Project package config cannot change while any runner in the project is busy.')
-      }
-    }
+    if (ctx.hasRunningTask?.(cwd)) return managedPackageBusy()
     if (!(await ctx.isProjectTrusted?.(cwd))) {
       return {
         ok: false,
@@ -332,6 +334,7 @@ export async function installManagedPiPackage(request: {
     const env: Record<string, string | undefined> = {
       npm_config_ignore_scripts: request.allowLifecycleScripts ? 'false' : 'true'
     }
+    if (ctx.hasRunningTask?.(cwd)) return managedPackageBusy()
     const installed = await runPi(['install', realSource, '-l'], cwd, env)
     if (!installed.ok) return { ok: false, error: pick('pi 项目级包安装失败', 'pi project-level package install failed'), detail: installed.output }
     const listing = listPackages(cwd)

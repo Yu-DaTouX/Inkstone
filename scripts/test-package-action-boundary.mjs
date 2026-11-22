@@ -39,14 +39,15 @@ try {
   )
   process.env.FAKE_PI_LOG = log
   const mod = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
-  const { configurePackageContext, runPackageAction } = mod
-  configurePackageContext({
+  const { configurePackageContext, installManagedPiPackage, runPackageAction } = mod
+  const context = {
     bin: () => fakePi,
     agentDir: () => join(root, 'pi'),
     hasRunningTask: () => false,
     isProjectTrusted: async () => true,
     isKnownProject: (cwd) => cwd === project
-  })
+  }
+  configurePackageContext(context)
   const calls = async () => {
     try {
       return (await readFile(log, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
@@ -99,6 +100,27 @@ try {
   {
     const result = await runPackageAction({ kind: 'install', source: '--no-approve', cwd: project })
     ok(!result.ok, '以 - 开头的来源仍被拒绝')
+  }
+
+  {
+    const managedRoot = join(root, 'staging')
+    const sourceDir = join(managedRoot, 'payload')
+    await mkdir(sourceDir, { recursive: true })
+    await writeFile(join(sourceDir, 'package.json'), JSON.stringify({ name: 'fixture', version: '1.0.0' }))
+    let busy = false
+    configurePackageContext({
+      ...context,
+      hasRunningTask: () => busy,
+      async isProjectTrusted() { busy = true; return true }
+    })
+    try {
+      const before = (await calls()).length
+      const result = await installManagedPiPackage({ sourceDir, managedRoot, cwd: project, name: 'fixture', version: '1.0.0', allowLifecycleScripts: false })
+      ok((await calls()).length === before, '等待信任确认期间项目变忙，安装命令不会启动')
+      ok(!result.ok && /仍有会话在运行/.test(result.error ?? ''), '项目变忙时给出真实停止原因', result.error)
+    } finally {
+      configurePackageContext(context)
+    }
   }
 
   console.log(`package-action-boundary: ${checks} assertions passed (fake pi runner, temp dirs)`)
