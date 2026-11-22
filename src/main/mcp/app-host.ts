@@ -130,7 +130,9 @@ function configFingerprint(config: McpAppServerConfig): string {
     command: config.command ?? null,
     args: config.args ?? null,
     env: config.env ?? null,
+    cwd: config.cwd ?? null,
     url: config.url ?? null,
+    headers: config.headers ?? null,
     enabled: config.enabled ?? true,
     ownedBy: config.ownedBy ?? null,
     projectScope: config.projectScope ?? null
@@ -334,19 +336,17 @@ export class McpAppHost {
     pooled: PooledServer,
     options: McpAppRequestOptions
   ): Promise<void> {
-    if (this.pool.get(serverId) !== pooled) {
-      throw new McpAppOwnershipError('ownership-changed', pick(`服务 ${serverId} 的连接在调用期间已被替换，丢弃本次结果`, `The connection to ${serverId} was replaced during the call; result discarded`))
-    }
+    const replaced = () => new McpAppOwnershipError('ownership-changed', pick(`服务 ${serverId} 的连接在调用期间已被替换，丢弃本次结果`, `The connection to ${serverId} was replaced during the call; result discarded`))
+    if (this.pool.get(serverId) !== pooled) throw replaced()
     const evaluation = await this.evaluateOwnership(serverId, options)
-    if (!evaluation.ok) {
-      if (!evaluation.preservePool) await this.runPool(serverId, async () => {
-        if (this.pool.get(serverId) === pooled) await this.dropPooled(serverId)
-      })
-      throw new McpAppOwnershipError(
-        'ownership-changed',
-        pick(`服务 ${serverId} 的归属在调用期间发生变化，已丢弃本次结果：${evaluation.error.message}`, `Ownership of ${serverId} changed during the call; result discarded: ${evaluation.error.message}`)
-      )
-    }
+    if (this.pool.get(serverId) !== pooled) throw replaced()
+    if (evaluation.ok && evaluation.fingerprint === pooled.fingerprint) return
+    if (evaluation.ok || !evaluation.preservePool) await this.runPool(serverId, async () => {
+      if (this.pool.get(serverId) === pooled) await this.dropPooled(serverId)
+    })
+    throw evaluation.ok
+      ? new McpAppOwnershipError('ownership-changed', pick(`服务 ${serverId} 的连接配置在调用期间发生变化，已丢弃本次结果`, `The connection configuration of ${serverId} changed during the call; result discarded`))
+      : new McpAppOwnershipError('ownership-changed', pick(`服务 ${serverId} 的归属在调用期间发生变化，已丢弃本次结果：${evaluation.error.message}`, `Ownership of ${serverId} changed during the call; result discarded: ${evaluation.error.message}`))
   }
 
   async listToolsWithMeta(serverId: string, options: McpAppRequestOptions = {}): Promise<McpAppToolDescriptor[]> {

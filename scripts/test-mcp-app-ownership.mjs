@@ -270,6 +270,67 @@ try {
     await appHost.reconcileAll()
   }
 
+  {
+    const withEndpoint = (patch) => baseServers().map((server) => server.id === 'managed' ? { ...server, ...patch } : server)
+    await writeHostConfig(withEndpoint({ cwd: join(root, 'original') }))
+    await appHost.listToolsWithMeta('managed')
+    const old = fake.forServer('managed').at(-1)
+    let entered
+    let release
+    const started = new Promise((resolve) => { entered = resolve })
+    old.gate = new Promise((resolve) => { release = resolve })
+    const callTool = old.manager.callTool
+    old.manager.callTool = (...args) => { entered(); return callTool(...args) }
+    const pending = appHost.callToolWithMeta('managed', 'tool', {}).then(() => null, (error) => error)
+    await started
+    await writeHostConfig(withEndpoint({ cwd: join(root, 'different-working-directory') }))
+    release()
+    ok((await pending)?.code === 'ownership-changed', '只改工作目录也会丢弃旧连接的迟到结果')
+    ok(old.closes === 1 && appHost.statusOf('managed').status === 'disconnected', '配置已变化时只关闭发生变化的旧连接')
+
+    const http = { transport: 'http', url: 'http://127.0.0.1:1/mcp', headers: { 'x-fixture': 'one' } }
+    await writeHostConfig(withEndpoint(http))
+    await appHost.listToolsWithMeta('managed')
+    const first = fake.forServer('managed').at(-1)
+    await writeHostConfig(withEndpoint({ ...http, title: '显示名变化' }))
+    await appHost.listToolsWithMeta('managed')
+    ok(fake.forServer('managed').at(-1) === first && first.closes === 0, '只改显示名时继续使用同一连接')
+    await writeHostConfig(withEndpoint({ ...http, headers: { 'x-fixture': 'another-value' } }))
+    await appHost.listToolsWithMeta('managed')
+    ok(fake.forServer('managed').at(-1) !== first && first.closes === 1, '只改 HTTP 请求头也会替换连接')
+
+    let enteredGuard
+    let releaseGuard
+    let blockOnce = false
+    const guardStarted = new Promise((resolve) => { enteredGuard = resolve })
+    const guardGate = new Promise((resolve) => { releaseGuard = resolve })
+    const concurrent = newAppHost({ ownership: { holdersFor: async () => {
+      if (blockOnce) {
+        blockOnce = false
+        enteredGuard()
+        await guardGate
+      }
+      return []
+    } } })
+    try {
+      await concurrent.listToolsWithMeta('managed')
+      const previous = fake.forServer('managed').at(-1)
+      const call = previous.manager.callTool
+      previous.manager.callTool = (...args) => { blockOnce = true; return call(...args) }
+      const delayed = concurrent.callToolWithMeta('managed', 'tool', {}).then(() => null, (error) => error)
+      await guardStarted
+      await writeHostConfig(withEndpoint({ ...http, url: 'http://127.0.0.1:2/different' }))
+      await concurrent.listToolsWithMeta('managed')
+      const current = fake.forServer('managed').at(-1)
+      releaseGuard()
+      ok((await delayed)?.code === 'ownership-changed', '结果复核期间换了连接，仍然丢弃旧结果')
+      ok(previous.closes === 1 && current.closes === 0, '丢弃旧结果时不会关闭替换后的连接')
+    } finally {
+      releaseGuard()
+      await concurrent.close()
+    }
+  }
+
   await appHost.close()
   ok(true, `全部 ${checks} 项检查通过`)
 } finally {
