@@ -103,12 +103,12 @@ export class PiPackageActivationScheduler {
     if (!grant) return { operationId, state: 'deferred', detail: '精确候选 / 指纹 / 项目授权已撤销或不可读' }
 
     if (tx.state === 'pending-boundary') {
-      const staged = await this.ports.verifyStaged(tx)
-      if (!staged.ok) return this.fail(tx, `staging 复核失败：${staged.problems.join('；')}`)
       tx = await this.service.markAcquiring(operationId, '目标 runner 空闲，开始临时环境加载验证（会执行扩展代码，非操作系统沙箱）与项目级安装')
     }
 
     if (tx.state === 'acquiring') {
+      const staged = await this.ports.verifyStaged(tx)
+      if (!staged.ok) return this.fail(tx, `staging 复核失败：${staged.problems.join('；')}`)
       const smoke = await this.ports.smoke(tx)
       if (!smoke.ok) return this.fail(tx, `临时环境加载验证（smoke）未通过：${smoke.problems.join('；')}`)
       tx = await this.service.markVerifying(operationId, '临时环境加载验证（smoke）通过，复核后执行固定版本项目级安装')
@@ -123,6 +123,8 @@ export class PiPackageActivationScheduler {
       let installed = await this.ports.verifyInstalled(tx)
       if (!installed.ok) return this.fail(tx, `安装清单无法复核：${installed.problems.join('；')}`)
       if (!installed.installed) {
+        const staged = await this.ports.verifyStaged(tx)
+        if (!staged.ok) return this.fail(tx, `staging 复核失败：${staged.problems.join('；')}`)
         const install = await this.ports.install(tx, currentGrant)
         if (!install.ok) return this.fail(tx, install.error ?? 'pi install 失败')
         installed = await this.ports.verifyInstalled(tx)

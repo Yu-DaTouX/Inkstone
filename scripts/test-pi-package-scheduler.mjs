@@ -134,6 +134,18 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok(!fake.calls.some((call) => call === 'smoke' || call.startsWith('install:') || call === 'restart'), `前置门禁：${name} 时没有运行包代码 / 安装 / 重启`)
     }
 
+    for (const stage of ['acquiring', 'verifying']) {
+      const service = new AcquisitionService({ root: join(root, `resume-${stage}`) })
+      const tx = await makeTransaction(service, `resume-${stage}`)
+      await service.markAcquiring(tx.operationId, 'resume fixture', at)
+      if (stage === 'verifying') await service.markVerifying(tx.operationId, 'smoke passed', at)
+      const fake = makePorts({ async verifyStaged() { return { ok: false, problems: ['staged content changed'] } } })
+      const scheduler = new PiPackageActivationScheduler(service, fake.ports)
+      const result = await scheduler.schedule(tx.operationId)
+      ok(result.state === 'failed' && result.detail.includes('staged content changed'), `恢复 ${stage}：暂存内容变化时明确停止`, result.detail)
+      ok(!fake.calls.some((call) => call === 'smoke' || call.startsWith('install:')), `恢复 ${stage}：不试跑、不安装未通过复核的内容`)
+    }
+
     {
       const service = new AcquisitionService({ root: join(root, 'smoke-fail') })
       const tx = await makeTransaction(service, 'smoke-fail')
