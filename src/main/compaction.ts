@@ -175,7 +175,7 @@ export function measuredAfterCompaction(run: CompactionRun | null, messages: rea
 
 export function compactionStatusOf(evt: Record<string, unknown>): CompactionStatus {
   const s = typeof evt.status === 'string' ? evt.status : ''
-  if (s === 'completed' || s === 'declined' || s === 'failed') return s
+  if (s === 'completed' || s === 'declined' || s === 'failed' || s === 'cancelled') return s
   if (evt.aborted === true) return 'cancelled'
   if (evt.result) return 'completed'
   return 'failed'
@@ -244,7 +244,7 @@ export function attributeCompaction(
   const next = { ...origin, extensionRun: starting ? extensionRun : false }
   if (!extensionRun) return { origin: next, evt }
   const error = typeof evt.errorMessage === 'string' ? evt.errorMessage : ''
-  const declined = !starting && !evt.result && evt.aborted !== true && NOTHING_TO_COMPACT.test(error)
+  const declined = !starting && !evt.result && evt.aborted !== true && evt.status !== 'cancelled' && NOTHING_TO_COMPACT.test(error)
   return { origin: next, evt: { ...evt, reason: 'threshold', ...(declined ? { status: 'declined' } : {}) } }
 }
 

@@ -31,6 +31,11 @@ await runSuite(import.meta.url, async (ok, compile) => {
     { type: 'compaction_end', reason: 'manual', aborted: false, errorMessage: 'Compaction failed: Nothing to compact (session too small)' }
   ])
   ok(small.state.last.reason === 'threshold' && small.state.last.status === 'declined', '自动触发时会话太短记为已跳过，不算失败', JSON.stringify(small.state.last))
+  const cancelled = play(EMPTY_COMPACTION_ORIGIN, [
+    { type: 'compaction_start', reason: 'manual' },
+    { type: 'compaction_end', reason: 'manual', status: 'cancelled', errorMessage: 'Already compacted' }
+  ])
+  ok(cancelled.state.last.reason === 'threshold' && cancelled.state.last.status === 'cancelled', '自动归因不会把明确取消的压缩改成已跳过')
 
   const manual = play({ manualRequests: 1, extensionRun: false }, [
     { type: 'compaction_start', reason: 'manual' },

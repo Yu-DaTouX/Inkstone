@@ -85,6 +85,8 @@ export function runCompactionStatusTests(ok, mod, view) {
   ok(compactionStatusOf({ result: { summary: 's' }, aborted: false }) === 'completed', '无 status：有 result → completed')
   ok(compactionStatusOf({ result: undefined, aborted: false, errorMessage: 'x' }) === 'failed', '无 status：有 errorMessage → failed')
   ok(compactionStatusOf({ aborted: true }) === 'cancelled', '无 status：aborted=true → cancelled')
+  const cancelled = manualEnd({ status: 'cancelled', result: { firstKeptEntryId: 'not-written' } })
+  ok(cancelled?.last?.status === 'cancelled' && contextFromRun(cancelled.last) === undefined, '明确取消的压缩不显示为失败或成功，也不移动上下文起点')
   ok(compactionStatusOf({}) === 'failed', '无 status：什么都没说 → failed（不许猜成功）')
 
   {
