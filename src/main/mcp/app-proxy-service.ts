@@ -467,7 +467,7 @@ export class McpAppProxyService {
           if (version === undefined || version === seen) return
           seen = version
           const result = await this.refresh({ serverIds: [serverId], callerProjectId: entry.projectId })
-          if (result.errors.length && this.host.toolsChangedVersions?.().get(serverId) === version) throw new Error(result.errors[0].error)
+          if (result.errors.length) throw new Error(result.errors[0].error)
         }
       } finally {
         this.refreshingChanges.delete(serverId)

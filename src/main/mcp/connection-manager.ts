@@ -19,7 +19,8 @@ interface Connection {
   client: Client | null
   status: McpServerStatus
   error?: string
-  tools?: McpToolDescriptor[]
+  tools?: { entries: McpToolDescriptor[]; cachedAt?: number }
+  toolListRevision?: number
   transport?: { close(): Promise<void> }
   generation: number
   transportError?: unknown
@@ -47,6 +48,7 @@ function isTransportFailure(
 const controlHolders = new Set<McpConnectionManager>()
 const MAX_TOOL_LIST_PAGES = 50
 const MAX_TOOL_LIST_ITEMS = 2000
+const MAX_TOOL_LIST_ATTEMPTS = 3
 
 export class McpConnectionCancelledError extends Error {
   constructor() {
@@ -138,7 +140,6 @@ export class McpConnectionManager {
     }
   }
 
-  private readonly toolCache = new Map<string, { tools: McpToolDescriptor[]; at: number }>()
   private readonly toolsListChangedListeners = new Set<(serverId: string) => void>()
   private activeRequests = 0
   private idleWaiters: Array<() => void> = []
@@ -153,7 +154,7 @@ export class McpConnectionManager {
   private handleToolsListChanged(conn: Connection, generation: number): void {
     if (generation !== conn.generation || this.connections.get(conn.config.id) !== conn) return
     conn.tools = undefined
-    this.toolCache.delete(conn.config.id)
+    conn.toolListRevision = (conn.toolListRevision ?? 0) + 1
     for (const listener of [...this.toolsListChangedListeners]) {
       try {
         listener(conn.config.id)
@@ -227,7 +228,6 @@ export class McpConnectionManager {
         continue
       }
       this.connections.delete(id)
-      this.toolCache.delete(id)
       const stopMessage = options.cancelInFlight ?? (id === WINDOWS_MCP_SERVER_ID ? pick('电脑操作的连接已被移除或更换，进行中的电脑操作已中止', 'The computer-use connection was removed or replaced; the computer action in progress was aborted') : undefined)
       if (stopMessage) this.cancelInFlight(conn, stopMessage)
       releases.push({ serverId: id, release: this.releaseThenDetach(conn) })
@@ -270,7 +270,7 @@ export class McpConnectionManager {
   }
 
   toolCountOf(serverId: string): number | null {
-    return this.connections.get(serverId)?.tools?.length ?? null
+    return this.connections.get(serverId)?.tools?.entries.length ?? null
   }
 
   private async withTimeout<T>(
@@ -354,7 +354,6 @@ export class McpConnectionManager {
     conn.status = 'disconnected'
     conn.error = undefined
     conn.transportError = undefined
-    this.toolCache.delete(conn.config.id)
     if (client) await client.close().catch(() => undefined)
     else if (transport) await transport.close().catch(() => undefined)
   }
@@ -385,7 +384,7 @@ export class McpConnectionManager {
           if (conn.client === client) conn.transportError = error
         }
         client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
-          this.handleToolsListChanged(conn, generation)
+          if (conn.transport === transport) this.handleToolsListChanged(conn, generation)
         })
         client.onclose = () => {
           if (conn.client !== client) return
@@ -394,7 +393,7 @@ export class McpConnectionManager {
           conn.status = 'disconnected'
           conn.error = undefined
           conn.transportError = undefined
-          this.toolCache.delete(conn.config.id)
+          conn.tools = undefined
         }
         await this.withTimeout(
           client.connect(transport),
@@ -448,7 +447,7 @@ export class McpConnectionManager {
     conn.status = looksLikeAuthFailure(message) ? 'needs-auth' : 'disconnected'
     conn.error = message
     conn.transportError = undefined
-    this.toolCache.delete(conn.config.id)
+    conn.tools = undefined
     if (client) await client.close().catch(() => undefined)
     else if (transport) await transport.close().catch(() => undefined)
   }
@@ -512,63 +511,69 @@ export class McpConnectionManager {
 
   async listToolsCached(serverId: string, options: McpRequestOptions & { ttlMs?: number; refresh?: boolean } = {}) {
     this.assertRequestAllowed(options)
-    const ttlMs = options.ttlMs ?? 60_000
-    if (!options.refresh) {
-      const cached = this.toolCache.get(serverId)
-      if (cached && Date.now() - cached.at < ttlMs) {
-        const conn = this.connections.get(serverId)
-        if (conn) conn.tools = cached.tools
-        return cached.tools
-      }
-    }
-    const tools = await this.listTools(serverId, options)
-    this.toolCache.set(serverId, { tools, at: Date.now() })
-    return tools
+    const conn = this.require(serverId)
+    const cached = conn.tools
+    if (!options.refresh && cached?.cachedAt !== undefined && Date.now() - cached.cachedAt < (options.ttlMs ?? 60_000)) return cached.entries
+    const entries = await this.listTools(serverId, options)
+    if (conn.tools?.entries === entries) conn.tools.cachedAt = Date.now()
+    return entries
   }
 
   async listTools(serverId: string, options: McpRequestOptions = {}): Promise<McpToolDescriptor[]> {
-    const raw = await this.listToolsRaw(serverId, options)
-    const tools: McpToolDescriptor[] = raw.map((tool) => ({
-      name: tool.name,
-      ...(tool.description ? { description: tool.description } : {}),
-      ...(tool.inputSchema !== undefined ? { inputSchema: tool.inputSchema } : {}),
-      annotations: (tool.annotations as McpToolDescriptor['annotations']) ?? null
-    }))
-    const conn = this.connections.get(serverId)
-    if (conn) conn.tools = tools
-    return tools
+    return this.readToolList(serverId, options, (raw, conn) => {
+      const entries = raw.map(({ meta: _meta, annotations, ...tool }) => ({
+        ...tool,
+        annotations: (annotations as McpToolDescriptor['annotations']) ?? null
+      }))
+      conn.tools = { entries }
+      return entries
+    })
   }
 
   async listToolsRaw(serverId: string, options: McpRequestOptions = {}): Promise<McpRawToolDescriptor[]> {
+    return this.readToolList(serverId, options, (tools) => tools)
+  }
+
+  private async readToolList<T>(serverId: string, options: McpRequestOptions, accept: (tools: McpRawToolDescriptor[], conn: Connection) => T): Promise<T> {
     this.assertRequestAllowed(options)
     const conn = this.require(serverId)
     await this.connect(conn)
     const client = conn.client
-    if (!client) throw new McpConnectionCancelledError()
-    const tools: McpRawToolDescriptor[] = []
-    let cursor: string | undefined
-    const seenCursors = new Set<string>()
-    let pages = 0
-    do {
-      if (++pages > MAX_TOOL_LIST_PAGES) throw new Error(pick(`${serverId} 的工具列表超过 ${MAX_TOOL_LIST_PAGES} 页，已停止读取`, `The tool list of ${serverId} exceeds ${MAX_TOOL_LIST_PAGES} pages. Stopped reading`))
-      const page = await this.runRequest(conn, client, options, pick(`列出 ${serverId} 的工具`, `Listing tools of ${serverId}`), (signal) =>
-        client.listTools(cursor ? { cursor } : undefined, { signal })
-      )
-      for (const tool of page.tools ?? []) {
-        tools.push({
-          name: tool.name,
-          ...(tool.description ? { description: tool.description } : {}),
-          ...(tool.inputSchema !== undefined ? { inputSchema: tool.inputSchema } : {}),
-          ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {}),
-          ...(tool._meta !== undefined ? { meta: tool._meta as Record<string, unknown> } : {})
+    const sameConnection = () => conn.client === client && this.connections.get(serverId) === conn
+    if (!client || !sameConnection()) throw new McpConnectionCancelledError()
+    const what = pick(`列出 ${serverId} 的工具`, `Listing tools of ${serverId}`)
+    attempts: for (let attempt = 0; attempt < MAX_TOOL_LIST_ATTEMPTS; attempt++) {
+      const revision = conn.toolListRevision
+      const tools: McpRawToolDescriptor[] = []
+      let cursor: string | undefined
+      const seenCursors = new Set<string>()
+      let pages = 0
+      do {
+        if (++pages > MAX_TOOL_LIST_PAGES) throw new Error(pick(`${serverId} 的工具列表超过 ${MAX_TOOL_LIST_PAGES} 页，已停止读取`, `The tool list of ${serverId} exceeds ${MAX_TOOL_LIST_PAGES} pages. Stopped reading`))
+        const page = await this.runRequest(conn, client, options, what, (signal) => client.listTools(cursor ? { cursor } : undefined, { signal })).catch((error: unknown) => {
+          if (error instanceof McpRequestCancelledError || options.signal?.aborted || !sameConnection() || revision === conn.toolListRevision) throw error
+          return null
         })
-      }
-      if (tools.length > MAX_TOOL_LIST_ITEMS) throw new Error(pick(`${serverId} 的工具超过 ${MAX_TOOL_LIST_ITEMS} 个，已停止读取`, `${serverId} has more than ${MAX_TOOL_LIST_ITEMS} tools. Stopped reading`))
-      cursor = page.nextCursor
-      if (cursor && seenCursors.has(cursor)) throw new Error(pick(`${serverId} 的工具列表翻页游标重复，已停止读取`, `The tool list cursor of ${serverId} repeats. Stopped reading`))
-      if (cursor) seenCursors.add(cursor)
-    } while (cursor)
-    return tools
+        this.assertRequestAllowed(options)
+        if (!sameConnection()) throw new McpConnectionCancelledError()
+        if (!page || revision !== conn.toolListRevision) continue attempts
+        for (const tool of page.tools ?? []) {
+          tools.push({
+            name: tool.name,
+            ...(tool.description ? { description: tool.description } : {}),
+            ...(tool.inputSchema !== undefined ? { inputSchema: tool.inputSchema } : {}),
+            ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {}),
+            ...(tool._meta !== undefined ? { meta: tool._meta as Record<string, unknown> } : {})
+          })
+        }
+        if (tools.length > MAX_TOOL_LIST_ITEMS) throw new Error(pick(`${serverId} 的工具超过 ${MAX_TOOL_LIST_ITEMS} 个，已停止读取`, `${serverId} has more than ${MAX_TOOL_LIST_ITEMS} tools. Stopped reading`))
+        cursor = page.nextCursor
+        if (cursor && seenCursors.has(cursor)) throw new Error(pick(`${serverId} 的工具列表翻页游标重复，已停止读取`, `The tool list cursor of ${serverId} repeats. Stopped reading`))
+        if (cursor) seenCursors.add(cursor)
+      } while (cursor)
+      return accept(tools, conn)
+    }
+    throw new Error(pick(`${serverId} 的工具列表仍在变化，请稍后重试`, `The tool list of ${serverId} is still changing. Try again later`))
   }
 
   async readResource(serverId: string, uri: string, options: McpRequestOptions = {}): Promise<unknown> {
@@ -735,7 +740,6 @@ export class McpConnectionManager {
     for (const conn of this.connections.values()) {
       closers.push(this.detachAndRelease(conn))
     }
-    this.toolCache.clear()
     const outcomes = await Promise.all(closers)
     const unknown = outcomes.reduce((sum, outcome) => sum + outcome.unknown, 0)
     return { confirmed: unknown === 0, unknown }

@@ -196,6 +196,9 @@ export default function mcpAppProxy(pi) {
   }
   watchFile(file, { persistent: false, interval: 500 }, syncTools)
   pi.on('session_shutdown', () => unwatchFile(file, syncTools))
+  pi.on('tool_call', (event) => {
+    if (event.toolName === 'tool_search') syncTools()
+  })
   syncTools()
   pi.on('before_agent_start', (event) => {
     syncTools()

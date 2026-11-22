@@ -1,5 +1,10 @@
 import './lib/test-isolate.mjs'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { once } from 'node:events'
+import { createServer } from 'node:http'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
@@ -54,6 +59,27 @@ await runSuite(import.meta.url, async (ok, compile) => {
       manager.onToolsListChanged((serverId) => survivor.push(serverId))
       await manager.callTool('fx', 'grow', {})
       await waitFor(() => survivor.length === 1, '连接管理器：某个订阅者抛错不影响其他订阅者')
+    } finally {
+      await manager.close()
+    }
+  }
+
+  {
+    const manager = new mod.McpConnectionManager([
+      stdioConfig('pagination', { args: [fixture, '--changes-during-pagination'] }),
+      stdioConfig('cursor', { args: [fixture, '--invalidated-cursor'] }),
+      stdioConfig('storm', { args: [fixture, '--changes-on-every-list'] })
+    ])
+    try {
+      const notifications = []
+      manager.onToolsListChanged((id) => notifications.push(id))
+      const tools = await manager.listToolsCached('pagination')
+      ok(tools.map((tool) => tool.name).join() === 'new-head,new-tail', '分页中收到变更时丢弃旧页，从第一页读取新清单')
+      ok((await manager.listToolsCached('pagination')) === tools && manager.toolCountOf('pagination') === 2, '只缓存完整的新版本清单和工具数')
+      const retried = await manager.listToolsRaw('cursor')
+      ok(retried.map((tool) => tool.name).join() === 'new-head,new-tail', '服务拒绝已失效游标时也会从第一页重读')
+      const stable = await manager.listToolsRaw('storm').then(() => true, () => false)
+      ok(!stable && notifications.filter((id) => id === 'storm').length === 3 && manager.toolCountOf('storm') === null, '持续变化最多读取三次，不返回也不缓存旧清单')
     } finally {
       await manager.close()
     }
@@ -155,6 +181,52 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
 
   {
+    const server = new Server({ name: 'list-changed-http', version: '1.0.0' }, { capabilities: { tools: { listChanged: true } } })
+    let initializations = 0
+    let listings = 0
+    let toolName = 'before'
+    let events
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => `fixture-${++initializations}`,
+      enableJsonResponse: true
+    })
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      listings++
+      return { tools: [{ name: toolName, inputSchema: { type: 'object' } }] }
+    })
+    await server.connect(transport)
+    const http = createServer((req, res) => {
+      if (req.method === 'GET') events = res
+      void transport.handleRequest(req, res).catch((error) => res.destroy(error))
+    })
+    http.listen(0, '127.0.0.1')
+    await once(http, 'listening')
+    const configFile = join(root, 'http-servers.json')
+    const config = { id: 'http', transport: 'http', url: `http://127.0.0.1:${http.address().port}/mcp`, ownedBy: 'inkstone', appHost: { at: 'fixture', natives: [] } }
+    const env = { YAN_MCP_SERVERS_FILE: configFile }
+    await writeFile(configFile, JSON.stringify({ servers: [config] }))
+    const host = new mod.McpAppHost({ env, ownership: { agentDir: root, holdersFor: async () => [] } })
+    const proxy = new mod.McpAppProxyService({ env, host, dir: join(root, 'http-proxy') })
+    const off = host.onToolsChanged((serverId, projectId) => { void proxy.refreshChanged(serverId, projectId) })
+    try {
+      const first = await proxy.refresh()
+      ok(first.ok && first.tools[0]?.toolName === 'before', 'HTTP 托管服务可通过原连接读取初始清单')
+      await waitFor(() => events?.headersSent && events.statusCode === 200, 'HTTP 客户端建立了接收服务主动通知的 SSE 流')
+      toolName = 'after'
+      await server.sendToolListChanged()
+      await waitFor(() => proxy.registrableTools().some((tool) => tool.toolName === 'after'), 'HTTP 服务可主动通知空闲客户端刷新工具清单')
+      ok(initializations === 1 && listings === 2 && proxy.registrableTools().length === 1, 'HTTP 刷新只重列一次，复用既有会话，并移除旧工具')
+    } finally {
+      off()
+      await host.close()
+      await proxy.close()
+      await server.close()
+      http.closeAllConnections()
+      await new Promise((resolve) => http.close(resolve))
+    }
+  }
+
+  {
     const versions = new Map()
     let version = 0
     let listings = 0
@@ -187,6 +259,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(proxy.refreshChanged('alpha') === pending, '托管快照：同一服务的重复通知合并')
     await pending
     ok(listings === 3 && !versions.has('alpha'), '托管快照：刷新中收到新通知会再读一次，写出空列表并清除标记')
+    fakeHost.listToolsWithMeta = async () => {
+      listings++
+      if (listings < 6) versions.set('alpha', ++version)
+      throw new Error('unstable listing')
+    }
+    versions.set('alpha', ++version)
+    const failed = await proxy.refreshChanged('alpha').then(() => '', (error) => error.message)
+    ok(failed === 'unstable listing' && listings === 4 && versions.has('alpha'), '托管快照：读取失败保留待刷新标记，但不追着同一轮的变更无限重试')
   }
 
   {

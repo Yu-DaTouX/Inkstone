@@ -805,19 +805,25 @@ try {
     for (const dir of [piDir, extDir, sessionsDir]) await mkdir(dir, { recursive: true })
 
     const providerRequests = []
+    let updateDuringHotRequest
     const providerServer = createServer((req, res) => {
       let body = ''
       req.on('data', (part) => { body += part })
-      req.on('end', () => {
+      req.on('end', async () => {
         let request = null
         try { request = JSON.parse(body) } catch { }
         if (request) providerRequests.push(request)
         const sse = (delta, finish) => `data: ${JSON.stringify({ id: 'proxy-fix', object: 'chat.completion.chunk', created: 0, model: 'proxy-physical', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
-        res.writeHead(200, { 'content-type': 'text/event-stream' })
         const messages = request?.messages ?? []
         const lastUser = messages.findLastIndex((message) => message.role === 'user')
         const hot = JSON.stringify(messages[lastUser] ?? {}).includes('MCP_APP_PROXY_HOT')
         const searched = messages.slice(lastUser + 1).some((message) => message?.role === 'tool')
+        if (hot && !searched && updateDuringHotRequest) {
+          const update = updateDuringHotRequest
+          updateDuringHotRequest = undefined
+          try { await update() } catch (error) { res.writeHead(500).end(String(error)); return }
+        }
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
         if (searched) {
           res.write(sse({ role: 'assistant', content: 'PROXY-BOOT-OK' }))
           res.write(sse({}, 'stop'))
@@ -971,16 +977,19 @@ try {
 
       const snapshot = service.readSnapshot()
       const updated = `${service.snapshotPath()}.test-tmp`
-      await writeFile(updated, JSON.stringify({ ...snapshot, tools: [{ serverId: 'app-stdio', toolName: 'late_colab_cell', description: 'late colab cell' }] }))
-      await rename(updated, service.snapshotPath())
+      updateDuringHotRequest = async () => {
+        await writeFile(updated, JSON.stringify({ ...snapshot, tools: [{ serverId: 'app-stdio', toolName: 'late_colab_cell', description: 'late colab cell' }] }))
+        await rename(updated, service.snapshotPath())
+      }
       const hotStart = frames.length
       const firstHotRequest = providerRequests.length
       await command('prompt', { message: 'MCP_APP_PROXY_HOT' }, 60000)
       const hotDeadline = Date.now() + 60000
       while (Date.now() < hotDeadline && !frames.slice(hotStart).some((frame) => frame.type === 'agent_settled')) await delay(20)
       const [hotFirst, hotSecond] = providerRequests.slice(firstHotRequest)
-      ok(declared(hotFirst).includes('tool_search') && !declared(hotFirst).includes('mcp__app_stdio__read_only_note'), '真实 pi：同一会话撤下已激活的旧工具')
-      ok(declared(hotSecond).includes('mcp__app_stdio__late_colab_cell'), '真实 pi：同一会话的 tool_search 可发现并激活新工具', declared(hotSecond).join(','))
+      ok(declared(hotFirst).includes('tool_search') && !declared(hotFirst).includes('mcp__app_stdio__late_colab_cell'), '真实 pi：开始当前回合时新工具尚未出现')
+      ok(!declared(hotSecond).includes('mcp__app_stdio__read_only_note'), '真实 pi：回合内刷新撤下已激活的旧工具')
+      ok(declared(hotSecond).includes('mcp__app_stdio__late_colab_cell'), '真实 pi：同一回合的 tool_search 可发现并激活新工具', declared(hotSecond).join(','))
     } finally {
       try { child.stdin.end() } catch { }
       const killTimer = setTimeout(() => child.kill(), 3000)
