@@ -263,6 +263,15 @@ for (const text of ['You exceeded your current quota, please check your plan and
   const after = readFileSync(cut, 'utf8')
   assert.ok(after.startsWith(`${header(3)}\n\npartial line without end\n\n=== compaction 4 · `) && appended.bytes === Buffer.byteLength(after), '追加只写新的一段，新段从独立一行开始，旧内容不动')
   assert.equal((await mod.snapshotState(join(dir, 'missing.history.txt'))).next, 1, '没有快照时从 1 开始')
+  for (const original of ['', `${header(1)}\n\nprior\n\n`]) {
+    const concurrent = join(dir, 'concurrent.history.txt')
+    writeFileSync(concurrent, original)
+    const state = await mod.snapshotState(concurrent)
+    const other = `${original}${header(state.next)}\n\nother compaction\n\n`
+    writeFileSync(concurrent, other)
+    await assert.rejects(mod.appendSnapshot(concurrent, state, state.next, ['late content']))
+    assert.equal(readFileSync(concurrent, 'utf8'), other, '检测到快照长度变化时不截断或删除另一轮成功写入的原文')
+  }
 }
 assert.equal(
   mod.stripAppendices('## Goal\n读书\n\n<read-files>\na.md\n</read-files>\n\n<history-snapshot>\nsaved at x (10 characters)\n</history-snapshot>'),

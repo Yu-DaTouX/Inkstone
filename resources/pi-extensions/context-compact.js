@@ -4,7 +4,7 @@
 // 并在压缩完成后把失败原因记成不进上下文的会话条目；连续失败 3 次后直接交给 pi。
 // 被压缩的原文按段加锚点，追加写进会话文件旁的 <会话>.jsonl.history.txt（常见密钥格式替换成占位符），
 // 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
-import { appendFile, open, readFile, rm, stat, truncate } from 'node:fs/promises'
+import { appendFile, open, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { isHostAutomatedMessage } from './host-message.js'
 import { registerProviderRequestStage } from './provider-request.js'
@@ -219,21 +219,15 @@ export async function snapshotState(file) {
   }
 }
 
-// 只追加本次的一段：写后核对长度，失败就截回原长度，不重写已有内容
 export async function appendSnapshot(file, state, compactionNo, parts) {
   const lead = state.endsClean ? '' : '\n\n'
   const block = `${lead}${SNAPSHOT_HEADER}${compactionNo} · ${new Date().toISOString()} · ${parts.length} parts ===\n\n${redactSecrets(parts.join('\n\n'))}\n\n`
   const bytes = Buffer.byteLength(block, 'utf8')
-  try {
-    await appendFile(file, block, 'utf8')
-    const after = await fileSize(file)
-    if (after !== state.size + bytes) throw new Error('snapshot verify failed')
-  } catch (error) {
-    if (state.size) await truncate(file, state.size).catch(() => undefined)
-    else await rm(file, { force: true }).catch(() => undefined)
-    throw error
-  }
-  return { path: file, bytes: state.size + bytes }
+  if ((await fileSize(file)) !== state.size) throw new Error('snapshot changed before append')
+  await appendFile(file, block, 'utf8')
+  const after = await fileSize(file)
+  if (after !== state.size + bytes) throw new Error('snapshot changed during append')
+  return { path: file, bytes: after }
 }
 
 const REINJECT_MAX_FILES = 5
