@@ -196,6 +196,19 @@ try {
   }
 
   {
+    const replaced = new m.SessionItemProjector()
+    const old = replaced.liveMessageStart({ role: 'assistant' }, 100)
+    replaced.liveAssistantDelta({ type: 'toolcall_start', contentIndex: 0, id: 'old-call', toolName: 'read' }, 101)
+    const current = replaced.liveMessageStart({ role: 'assistant' }, 102)
+    assert.equal(old.id, current.id, '丢弃后下一条消息复用流式槽位')
+    assert.equal(replaced.ownerOf('old-call'), undefined, '丢弃消息时移除工具的消息归属')
+    assert.equal(replaced.liveToolUpdate('old-call', { content: [{ type: 'text', text: 'late' }] }), null, '旧工具迟到进度不能命中复用的槽位')
+    assert.equal(replaced.liveToolEnd('old-call', {}, 103), null, '旧工具结束帧也不再推给新消息')
+    replaced.liveAssistantDelta({ type: 'toolcall_start', contentIndex: 0, id: 'new-call', toolName: 'read' }, 104)
+    assert.equal(replaced.ownerOf('new-call'), current.id, '新消息照常登记自己的工具')
+  }
+
+  {
     const stopping = new m.SessionItemProjector()
     stopping.appendMessage({ id: 'older-user', role: 'user', text: 'old' })
     stopping.appendMessage({ id: 'older-assistant', role: 'assistant', text: '', toolCalls: [{ id: 'older-call', name: 'bash', status: 'running' }] })

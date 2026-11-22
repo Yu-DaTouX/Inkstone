@@ -175,6 +175,9 @@ export class SessionItemProjector {
     this.streaming = null
     const at = this.slots.indexOf(slot)
     if (at >= 0) this.slots.splice(at, 1)
+    for (const item of slot.items) {
+      if (item.kind === 'tool' && this.callIndex.get(item.call.id)?.slot === slot) this.callIndex.delete(item.call.id)
+    }
   }
 
   appendMessage(message: UIMessage): UIMessage {
