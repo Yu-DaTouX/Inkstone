@@ -46,6 +46,15 @@ const MARKER = '.installed-by-inkstone'
 const SAFE_ENV = ['PATH', 'PATHEXT', 'SystemRoot', 'windir', 'ComSpec', 'TEMP', 'TMP', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'LANG', 'LC_ALL']
 const SAFE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
+function parseManifest(id: string, raw: string): PluginManifest {
+  const manifest = JSON.parse(raw) as PluginManifest
+  if (!manifest || manifest.id !== id || (manifest.skills !== undefined && !Array.isArray(manifest.skills)) ||
+    [manifest.process, manifest.extension, ...(manifest.skills ?? [])].some(file => file !== undefined && (typeof file !== 'string' || !SAFE_FILE.test(file)))) {
+    throw new Error(pick('无效插件清单', 'Invalid plugin manifest'))
+  }
+  return manifest
+}
+
 function withStderrTail(message: string, tail: string): string {
   const text = tail.trim()
   return text ? `${message}\n${pick('插件输出（stderr）：', 'Plugin output (stderr):')}\n${text}` : message
@@ -159,9 +168,7 @@ export class BundledPlugins {
       let raw: string
       try { raw = await readFile(join(source, 'inkstone-plugin.json'), 'utf8') }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error }
-      const manifest = JSON.parse(raw) as PluginManifest
-      if (manifest.id !== id || [manifest.process, manifest.extension, ...(manifest.skills ?? [])].some(file => file !== undefined && !SAFE_FILE.test(file))) throw new Error(pick('无效插件清单', 'Invalid plugin manifest'))
-      return { manifest, source }
+      return { manifest: parseManifest(id, raw), source }
     }
     throw new Error(pick('随包插件不存在', 'Bundled plugin not found'))
   }
@@ -172,10 +179,14 @@ export class BundledPlugins {
       if (!existsSync(parent)) continue
       for (const id of readdirSync(parent, { withFileTypes: true }).filter(item => item.isDirectory()).map(item => item.name)) {
         try {
-          const manifest = JSON.parse(readFileSync(join(parent, id, 'inkstone-plugin.json'), 'utf8')) as PluginManifest
-          if (manifest.id !== id || !manifest.extension || !SAFE_FILE.test(manifest.extension)) continue
-          const path = join(this.root(id), manifest.extension)
-          if (existsSync(join(this.root(id), MARKER)) && existsSync(path) && !paths.includes(path)) paths.push(path)
+          if (!this.installed(id)) continue
+          const bundled = parseManifest(id, readFileSync(join(parent, id, 'inkstone-plugin.json'), 'utf8'))
+          if (!bundled.extension) continue
+          const root = this.root(id)
+          const installed = parseManifest(id, readFileSync(join(root, 'inkstone-plugin.json'), 'utf8'))
+          if (!installed.extension) continue
+          const path = join(root, installed.extension)
+          if (existsSync(path) && !paths.includes(path)) paths.push(path)
         } catch {}
       }
     }
@@ -269,9 +280,7 @@ export class BundledPlugins {
         let swapped = false
         const revive = async (): Promise<void> => {
           if (!wasConnected) return
-          let revived = manifest
-          try { revived = { ...manifest, ...JSON.parse(await readFile(join(target, 'inkstone-plugin.json'), 'utf8')) as PluginManifest } } catch {}
-          if (revived.process) await this.connect(revived).catch(() => undefined)
+          if (manifest.process) await this.connect(manifest).catch(() => undefined)
         }
         const rollback = async (): Promise<void> => {
           if (!swapped) { await revive(); return }
@@ -397,10 +406,12 @@ export class BundledPlugins {
   }
 
   private async spawn(manifest: PluginManifest): Promise<Connection> {
-    if (!manifest.process) throw new Error(pick('此插件不提供进程接口', 'This plugin has no process interface'))
+    const root = this.root(manifest.id)
+    const installed = parseManifest(manifest.id, await readFile(join(root, 'inkstone-plugin.json'), 'utf8'))
+    if (!manifest.process || !installed.process) throw new Error(pick('此插件不提供进程接口', 'This plugin has no process interface'))
     const proxy = manifest.capabilities?.includes('system.proxy') ? await this.options.proxyEnvironment?.().catch(() => ({})) : undefined
     if (this.closed) throw new Error(pick('插件宿主已关闭', 'Plugin host is closed'))
-    const child = fork(join(this.root(manifest.id), manifest.process), [], {
+    const child = fork(join(root, installed.process), [], {
       execPath: this.options.runtime, execArgv: [], cwd: this.options.dataDir,
       env: { ...pluginEnvironment(process.env), ...pluginConfiguredEnvironment(manifest.environment, process.env), ...proxy, ELECTRON_RUN_AS_NODE: '1', INKSTONE_DATA_ROOT: this.options.dataDir, INKSTONE_PLUGIN_DATA: join(this.options.dataDir, 'plugins', manifest.id) },
       stdio: ['ignore', 'ignore', 'pipe', 'ipc']

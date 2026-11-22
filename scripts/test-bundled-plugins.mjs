@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-bundled-plugins-'))
 const env = { ...process.env }
-let plugins, server
+let plugins, server, upgradeHost
 let checks = 0
 const noScan = async () => []
 const ok = (value, message) => { assert.ok(value, message); checks++ }
@@ -132,25 +132,28 @@ process.send({ type: 'ready' })
   const upgradeSource = join(sources, 'upgrade')
   await mkdir(upgradeSource)
   const writeUpgrade = async (version, setup) => {
-    await writeFile(join(upgradeSource, 'inkstone-plugin.json'), JSON.stringify({ id: 'upgrade', version, process: 'plugin.mjs', setup: 'setup', publicActions: [] }))
+    await writeFile(join(upgradeSource, 'inkstone-plugin.json'), JSON.stringify({ id: 'upgrade', version, process: `plugin-${version}.mjs`, extension: `extension-${version}.mjs`, setup: 'setup', publicActions: [], capabilities: version === 'v1' ? ['runs'] : [] }))
     await writeFile(join(upgradeSource, 'version.txt'), version)
-    await writeFile(join(upgradeSource, 'plugin.mjs'), `
+    await writeFile(join(upgradeSource, `extension-${version}.mjs`), 'export default () => {}')
+    await writeFile(join(upgradeSource, `plugin-${version}.mjs`), `
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const version = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'version.txt'), 'utf8')
+let gotRun = false
 process.on('message', message => {
+  if (message.type === 'event' && message.channel === 'runs') gotRun = true
   if (message.type !== 'request') return
   if (message.action === 'setup') {
     ${setup}
   }
-  process.send({ type: 'response', id: message.id, value: message.action === 'status' ? { version, pid: process.pid } : { ok: true } })
+  process.send({ type: 'response', id: message.id, value: message.action === 'status' ? { version, pid: process.pid, gotRun } : { ok: true } })
 })
 process.on('disconnect', () => process.exit(0))
 process.send({ type: 'ready' })
 `)
   }
-  const upgradeHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
+  upgradeHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
   const installedVersion = async () => (await readFile(join(dataDir, 'plugins', 'upgrade', 'plugin', 'version.txt'), 'utf8'))
   const leftovers = async () => (await import('node:fs/promises')).readdir(join(dataDir, 'plugins', 'upgrade')).then(names => names.filter(name => /\.(old|new)$/.test(name)))
   await writeUpgrade('v1', '')
@@ -162,8 +165,15 @@ process.send({ type: 'ready' })
   const refused = await upgradeHost.action('upgrade', 'install')
   ok(!refused.ok && refused.installed === true && /setup refused/.test(refused.error), '升级 setup 返回失败：报告失败并带原因', refused.error)
   ok(await installedVersion() === 'v1' && (await leftovers()).length === 0, '升级 setup 失败：旧版本目录恢复，没有残留 .old/.new')
+  upgradeHost.publishRuns({ upsert: [], remove: [] })
   const afterRefused = await upgradeHost.invoke('upgrade', 'status')
+  ok(afterRefused.gotRun === false, '回滚恢复旧入口但不恢复随包清单已撤销的能力')
   ok(afterRefused.version === 'v1' && afterRefused.pid !== pidV1, '升级 setup 失败：旧版本进程已重启并可调用')
+  ok(upgradeHost.extensionPaths().some(path => path.endsWith('extension-v1.mjs')), '回滚后使用已安装旧版的扩展入口，而不是新版清单里的路径')
+  await upgradeHost.close()
+  upgradeHost = new BundledPlugins({ sources: [sources], dataDir, runtime: process.execPath, complete: async () => '', showWindow: () => undefined, listProcesses: noScan })
+  await upgradeHost.startInstalled()
+  ok((await upgradeHost.action('upgrade', 'status')).status?.version === 'v1', '重启插件宿主后仍能启动旧版不同文件名的插件进程')
 
   await writeUpgrade('v3', "console.error('setup exploded: missing dependency'); process.exit(3)")
   const crashed = await upgradeHost.action('upgrade', 'install')
@@ -249,6 +259,7 @@ setTimeout(() => process.send({ type: 'ready' }), 20000)
     const lazyRoot = join(dataDir, 'plugins', 'lazy', 'plugin')
     await mkdir(lazyRoot, { recursive: true })
     await writeFile(join(lazyRoot, 'plugin.mjs'), await readFile(join(lazy, 'plugin.mjs'), 'utf8'))
+    await writeFile(join(lazyRoot, 'inkstone-plugin.json'), await readFile(join(lazy, 'inkstone-plugin.json'), 'utf8'))
     await writeFile(join(lazyRoot, '.installed-by-inkstone'), 'lazy')
     const calling = lazyHost.invoke('lazy', 'ping').then(() => 'resolved', (error) => String(error.message))
     for (let i = 0; i < 100 && !existsSync(pidFile); i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -337,7 +348,8 @@ process.send({ type: 'ready' })
   console.log(`bundled-plugins: ${checks} checks passed (isolated subprocess, no network/model)`)
 } finally {
   server?.stop()
-  plugins?.close()
+  await upgradeHost?.close()
+  await plugins?.close()
   for (const name of Object.keys(process.env)) if (!(name in env)) delete process.env[name]
   Object.assign(process.env, env)
   await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
