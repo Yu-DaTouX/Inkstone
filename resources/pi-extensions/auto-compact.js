@@ -66,6 +66,7 @@ export function compactAt(setting, contextWindow) {
 export default function autoCompactExtension(pi) {
   let activeWatchdog
   let holdUntil
+  let lastAttemptLine
   let justCompacted = false
   let sessionId
   const clearAttempt = () => {
@@ -79,6 +80,7 @@ export default function autoCompactExtension(pi) {
       sessionId = current
       clearAttempt()
       holdUntil = undefined
+      lastAttemptLine = undefined
       justCompacted = false
     }
     const settings = readContextSettings(ctx?.cwd, ctx?.isProjectTrusted?.())
@@ -91,12 +93,17 @@ export default function autoCompactExtension(pi) {
       justCompacted = false
       return
     }
+    if (lastAttemptLine !== undefined && line < lastAttemptLine) {
+      holdUntil = undefined
+      justCompacted = false
+    }
     if (justCompacted) {
       justCompacted = false
       holdUntil = usage.tokens * RETRY_GROWTH
       return
     }
     if (holdUntil !== undefined && usage.tokens < holdUntil) return
+    lastAttemptLine = line
     const watchdog = setTimeout(() => {
       if (activeWatchdog === watchdog) clearAttempt()
     }, compactWatchdogMs())

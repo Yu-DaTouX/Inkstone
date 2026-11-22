@@ -84,6 +84,12 @@ export async function runAutoCompactTests(ok, mod, limits) {
       ok(fails === 1, '自动压缩：失败后上下文没明显增长前不重试（不每轮报失败）')
       handlers.agent_settled({}, failing(500_000))
       ok(fails === 2, '自动压缩：失败后增长超过 20% 再试')
+      writeFileSync(join(piDir, 'desktop.json'), JSON.stringify({ autoCompactTokens: 300_000 }))
+      handlers.agent_settled({}, failing(500_000))
+      ok(fails === 3, '自动压缩：调低生效阈值后不再沿用旧退避')
+      handlers.agent_settled({}, failing(500_000))
+      ok(fails === 3, '自动压缩：新阈值下失败仍有退避')
+      writeFileSync(join(piDir, 'desktop.json'), '{}')
 
       const inSession = (id, tokens, compact) => ({ sessionManager: { getSessionId: () => id }, getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact })
       let switched = 0
