@@ -60,7 +60,7 @@ export async function runAutoCompactTests(ok, mod, limits) {
     {
       const handlers = {}
       extension({ on: (name, fn) => (handlers[name] = fn) })
-      ok(typeof handlers.agent_settled === 'function' && handlers.context === undefined, '扩展：只注册 agent_settled，不改发给模型的消息')
+      ok(typeof handlers.agent_settled === 'function' && handlers.context === undefined, '扩展：从 agent_settled 触发，不改发给模型的消息')
       let compacts = 0
       const ctx = (tokens) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact: (o) => { compacts += 1; o.onComplete?.() } })
       handlers.agent_settled({}, ctx(150_000))
@@ -95,15 +95,29 @@ export async function runAutoCompactTests(ok, mod, limits) {
       handlers.agent_settled({}, inSession('D', 1_000_000, () => { switched += 1 }))
       ok(switched === 3, '自动压缩：旧会话迟到的失败回调不改当前会话的退避状态')
 
-      process.env.YAN_COMPACT_WATCHDOG_MS = '20'
-      let stuck = 0
-      const never = (tokens) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact: () => { stuck += 1 } })
-      handlers.agent_settled({}, never(1_000_000))
-      ok(stuck === 1, '自动压缩：发起一次不会回调的压缩')
-      await new Promise((resolveWait) => setTimeout(resolveWait, 60))
-      handlers.agent_settled({}, never(1_000_000))
-      ok(stuck === 2, '自动压缩：回调丢失后由看门狗复位，不会永久停摆')
-      delete process.env.YAN_COMPACT_WATCHDOG_MS
+      const previousWatchdog = process.env.YAN_COMPACT_WATCHDOG_MS
+      try {
+        process.env.YAN_COMPACT_WATCHDOG_MS = '20'
+        const attempts = []
+        const pending = (tokens) => inSession('watchdog', tokens, (callbacks) => { attempts.push(callbacks) })
+        handlers.agent_settled({}, pending(900_000))
+        ok(attempts.length === 1, '自动压缩：发起一次不会回调的压缩')
+        await new Promise((resolveWait) => setTimeout(resolveWait, 60))
+        process.env.YAN_COMPACT_WATCHDOG_MS = '60000'
+        handlers.agent_settled({}, pending(900_000))
+        ok(attempts.length === 2, '自动压缩：回调丢失后由看门狗复位，不会永久停摆')
+        attempts[0].onError(new Error('late'))
+        handlers.agent_settled({}, pending(1_200_000))
+        ok(attempts.length === 2, '自动压缩：同会话旧尝试的迟到回调不会解锁进行中的新压缩')
+        attempts[1].onComplete()
+        attempts[0].onError(new Error('late again'))
+        handlers.agent_settled({}, pending(1_200_000))
+        ok(attempts.length === 2, '自动压缩：旧回调不能覆盖新压缩结束后的退避')
+        handlers.session_shutdown?.()
+      } finally {
+        if (previousWatchdog === undefined) delete process.env.YAN_COMPACT_WATCHDOG_MS
+        else process.env.YAN_COMPACT_WATCHDOG_MS = previousWatchdog
+      }
     }
   } finally {
     if (previousPiDir === undefined) delete process.env.PI_CODING_AGENT_DIR

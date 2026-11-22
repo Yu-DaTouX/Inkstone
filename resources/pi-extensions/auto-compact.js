@@ -63,22 +63,25 @@ export function compactAt(setting, contextWindow) {
 }
 
 export default function autoCompactExtension(pi) {
-  let compacting = false
+  let activeWatchdog
   let holdUntil
   let justCompacted = false
   let sessionId
-  let epoch = 0
+  const clearAttempt = () => {
+    clearTimeout(activeWatchdog)
+    activeWatchdog = undefined
+  }
+  pi.on('session_shutdown', clearAttempt)
   pi.on('agent_settled', (_event, ctx) => {
     const current = ctx?.sessionManager?.getSessionId?.()
     if (current !== sessionId) {
       sessionId = current
-      epoch += 1
-      compacting = false
+      clearAttempt()
       holdUntil = undefined
       justCompacted = false
     }
     const settings = readContextSettings(ctx?.cwd)
-    if (!settings.compact || compacting) return
+    if (!settings.compact || activeWatchdog) return
     const usage = ctx?.getContextUsage?.()
     if (typeof usage?.tokens !== 'number') return
     const line = compactAt(settings.compactTokens, usage.contextWindow ?? 0)
@@ -93,23 +96,21 @@ export default function autoCompactExtension(pi) {
       return
     }
     if (holdUntil !== undefined && usage.tokens < holdUntil) return
-    compacting = true
-    const tokens = usage.tokens
-    const started = epoch
-    const watchdog = setTimeout(() => { if (started === epoch) compacting = false }, compactWatchdogMs())
+    const watchdog = setTimeout(() => {
+      if (activeWatchdog === watchdog) clearAttempt()
+    }, compactWatchdogMs())
+    activeWatchdog = watchdog
     watchdog.unref?.()
     const done = () => {
-      clearTimeout(watchdog)
-      if (started !== epoch) return
-      compacting = false
+      if (activeWatchdog !== watchdog) return
+      clearAttempt()
       holdUntil = undefined
       justCompacted = true
     }
     const failed = () => {
-      clearTimeout(watchdog)
-      if (started !== epoch) return
-      compacting = false
-      holdUntil = tokens * RETRY_GROWTH
+      if (activeWatchdog !== watchdog) return
+      clearAttempt()
+      holdUntil = usage.tokens * RETRY_GROWTH
     }
     try {
       ctx.compact({ onComplete: done, onError: failed })
