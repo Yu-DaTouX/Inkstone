@@ -44,21 +44,37 @@ try {
   assert.equal(child.listenerCount('exit'), 0, 'close 完成后不再残留 exit 监听')
   assert.equal(child.killed, false, '进程自然退出时不需要补 kill')
 
-  const cliPath = join(dir, 'fake-pi.mjs')
+  const cliPath = resolve(dir, 'fake-pi.mjs')
   await writeFile(
     cliPath,
-    "process.stdin.resume()\nprocess.stdin.on('end', () => process.exit(0))\nprocess.stdout.write('{\"type\":\"revision\",\"revision\":1}\\n')\n"
+    "import { createInterface } from 'node:readline'\nconst input = createInterface({ input: process.stdin })\ninput.on('line', (line) => { const { id, type } = JSON.parse(line); console.log(JSON.stringify({ type: 'response', id, command: type, success: true })) })\ninput.on('close', () => process.exit(0))\n"
   )
   const real = new PiRpc({ cwd: dir, piBin: cliPath })
   real.spawn()
   assert.equal(real.running, true, '首次 spawn 后 running 为真')
-  await real.close()
+  assert.equal((await real.command('get_state', {}, { timeoutMs: 2000 })).success, true, '首个进程实际完成 RPC 握手')
+  const previous = real.child
+  const stopping = real.close()
+  const sameClose = real.close() === stopping
+  await stopping
   assert.equal(real.running, false, 'close 后 running 为假')
-  await new Promise((resolve) => setTimeout(resolve, 400))
+  const staleFrames = []
+  real.on('event', (frame) => staleFrames.push(frame))
   real.spawn()
-  assert.equal(real.running, true, 'close 之后再次 spawn 会复位状态，command 不会误报「pi 未运行」')
-  await real.close()
+  const replacement = real.child
+  try {
+    assert.equal(real.running, true, '无需延迟即可启动替代 pi 子进程')
+    previous.stdout.emit('data', '{"type":"stale-fixture"}\n')
+    previous.emit('close', 0, null)
+    assert.equal(staleFrames.length, 0, '旧子进程迟到的 stdout 不进入新 RPC 实例')
+    assert.equal(real.running, true, '旧子进程迟到的 close 不关闭替代进程')
+    assert.equal((await real.command('get_state', {}, { timeoutMs: 2000 })).success, true, '替代进程仍能独立返回 RPC 回执')
+  } finally {
+    if (real.running) await real.close()
+    else replacement.stdin.end()
+  }
   assert.equal(real.running, false, '结束时进程已收尾')
+  assert.equal(sameClose, true, '同时关闭时等待同一次收尾')
 
   const grandchildPidFile = resolve(dir, 'grandchild.pid')
   const stubbornPath = resolve(dir, 'stubborn-pi.mjs')

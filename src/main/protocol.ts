@@ -223,6 +223,8 @@ const MAX_RPC_LINE_CHARS = 64 * 1024 * 1024
 
 export class PiRpc extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null
+  private childEpoch = 0
+  private closing: Promise<void> | null = null
   private parts: string[] = []
   private partsLen = 0
   private droppingLine = false
@@ -258,12 +260,14 @@ export class PiRpc extends EventEmitter {
   }
 
   spawn(): void {
-    if (this.child) return
+    if (this.child || this.closing) return
     this.closed = false
     this.finished = false
     this.parts = []
     this.partsLen = 0
     this.droppingLine = false
+    this.errBuf = ''
+    this.errDropping = false
     this.sawExit = false
     this.spawnError = null
     if (this.exitDrainTimer) {
@@ -291,6 +295,8 @@ export class PiRpc extends EventEmitter {
     })
 
     this.child = child
+    const epoch = ++this.childEpoch
+    const current = (): boolean => this.childEpoch === epoch
     const watch = this.opts.trackTree === true
       ? piTreeRegistry.watch(child.pid, {
           now: () => spawnedAt,
@@ -303,15 +309,16 @@ export class PiRpc extends EventEmitter {
     this.tree = watch
 
     child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => this.feed(chunk))
+    child.stdout.on('data', (chunk: string) => { if (current()) this.feed(chunk) })
     child.stdout.on('error', () => {})
 
     child.stderr.setEncoding('utf8')
-    child.stderr.on('data', (chunk: string) => this.feedStderr(chunk))
-    child.stderr.on('end', () => this.flushStderr())
+    child.stderr.on('data', (chunk: string) => { if (current()) this.feedStderr(chunk) })
+    child.stderr.on('end', () => { if (current()) this.flushStderr() })
     child.stderr.on('error', () => {})
 
     child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      if (!current()) return
       this.sweepTree(watch, Date.now())
       if (this.finished) return
       this.sawExit = true
@@ -322,11 +329,12 @@ export class PiRpc extends EventEmitter {
     })
 
     child.on('error', (err: Error) => {
+      if (!current()) return
       this.spawnError = err
       this.failAll(new Error(pick(`无法启动 pi：${err.message}`, `Could not start pi: ${err.message}`)))
     })
 
-    child.on('close', (code: number | null, signal: NodeJS.Signals | null) => this.finishExit(code, signal))
+    child.on('close', (code: number | null, signal: NodeJS.Signals | null) => { if (current()) this.finishExit(code, signal) })
 
     child.stdin.on('error', () => {})
   }
@@ -524,16 +532,15 @@ export class PiRpc extends EventEmitter {
   }
 
   close(options: { killTree?: boolean } = {}): Promise<void> {
+    if (this.closing) return this.closing
     const child = this.child
     if (!child) return this.settleTree()
 
     this.closed = true
     this.child = null
 
-    if (this.sawExit) return this.settleTree()
-
     const watch = this.tree
-    const closing = new Promise<void>((resolve) => {
+    const exit = this.sawExit ? Promise.resolve() : new Promise<void>((resolve) => {
       let done = false
       let timer: NodeJS.Timeout | null = null
       const finish = (): void => {
@@ -572,7 +579,8 @@ export class PiRpc extends EventEmitter {
         timer.unref?.()
       })
     })
-    return closing.then(() => this.settleTree())
+    this.closing = exit.then(() => this.settleTree()).finally(() => { this.closing = null })
+    return this.closing
   }
 
   private sweepTree(watch: ProcessTreeWatch | null, exitedAt: number): void {
