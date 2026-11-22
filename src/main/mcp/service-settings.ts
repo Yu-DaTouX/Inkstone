@@ -100,7 +100,10 @@ async function load(host: McpSettingsHost) {
 }
 
 export async function listMcpServiceSettings(host: McpSettingsHost): Promise<McpSettingsSnapshot> {
-  const data = await load(host)
+  return serviceSnapshot(host, await load(host))
+}
+
+function serviceSnapshot(host: McpSettingsHost, data: Awaited<ReturnType<typeof load>>): McpSettingsSnapshot {
   const global: McpSettingsService[] = []
   const projectServices: McpSettingsService[] = []
   const errors: string[] = []
@@ -239,11 +242,11 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
         await writeDocuments(host, [target])
         return { ok: true, takesEffect: 'new-session' }
       }
-      const snapshot = await listMcpServiceSettings(host)
-      const service = [...snapshot.global, ...snapshot.projectServices].find((item) => item.key === input.key)
+      const snapshot = serviceSnapshot(host, data)
+      const sourceScope = input.action === 'move' ? (input.scope === 'global' ? 'project' : 'global') : input.scope
+      const service = (sourceScope === 'global' ? snapshot.global : snapshot.projectServices).find((item) => item.key === input.key)
       if (!service || service.conflict || service.special) throw new Error(pick('服务不可修改，请重新读取列表或前往本机工具配置', 'This service cannot be modified. Reload the list or use local tools'))
       if (service.pluginManaged && (input.action === 'remove' || input.action === 'move')) throw new Error(pick('请在插件市场管理此插件', 'Manage this plugin in the Plugin Marketplace'))
-      if (input.scope === 'global' && service.scope === 'project' && input.action !== 'move') throw new Error(pick('项目服务只能从项目入口修改', 'Project services can only be changed from the project'))
       if (service.backend === 'host') {
         if (host.isBusy?.() ?? host.busy) throw new Error(pick('有任务正在运行，任务结束后可调整此服务', 'A task is running. Adjust this service after it finishes'))
         const document = data.loaded.document
