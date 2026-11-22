@@ -88,6 +88,27 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
     await evaluate(`window.__controlsProcess=document.querySelector('.v3-process[data-live] [data-testid="v3-step"]').closest('.v3-process')`)
     const head = `window.__controlsProcess.querySelector('[data-testid="v3-process-toggle"]')`
     const panel = `document.getElementById((${head}).getAttribute('aria-controls'))`
+    const orbit = `${head}.querySelector('.ui-term-spinner[data-variant="orbit"]')`
+    const phases = await evaluate(`Array.from(${orbit}?.children ?? [], pixel => {
+      const style = getComputedStyle(pixel)
+      return [style.animationName, style.animationDelay, style.animationDuration]
+    })`)
+    check('运行中显示 Orbit 3×3 像素环，外围顺时针亮起，中心静止',
+      phases.length === 9 && phases[4][0] === 'none' &&
+      [0, 1, 2, 5, 8, 7, 6, 3].every((index, phase) =>
+        phases[index][0] === 'ui-term-orbit' && Math.round(parseFloat(phases[index][1]) * 1000) === phase * 110 && phases[index][2] === '0.95s'),
+      phases)
+    const appearance = await evaluate(`(() => {
+      const el = ${orbit}
+      const style = getComputedStyle(el)
+      return { width: parseFloat(style.width), height: parseFloat(style.height), color: style.color }
+    })()`)
+    check('Orbit 紧凑、不超过 12px，深色主题使用白色墨色', appearance.width > 0 && appearance.width <= 12 &&
+      appearance.height === appearance.width && appearance.color === 'rgb(255, 255, 255)', appearance)
+    await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    check('系统减少动态效果时 Orbit 保持静止', await evaluate(`${orbit}?.children.length === 9 && Array.from(${orbit}.children).every(pixel => getComputedStyle(pixel).animationName === 'none')`))
+    await cdp.call('Emulation.setEmulatedMedia', { features: [] })
+    await shot('flow-orbit-running')
     await waitFor(`(${head}).getAttribute('aria-expanded')==='true' && (${panel}).getBoundingClientRect().height>0`)
     check('运行预览的头部展开语义与可见面板一致', await evaluate(`(${head}).getAttribute('aria-expanded')==='true' && (${panel}).getBoundingClientRect().height>0`))
     await evaluate(`(${head}).click()`)
@@ -105,6 +126,7 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
     captured = await evaluate(`(() => { const step=window.__controlsProcess.querySelector('[data-testid="v3-step"]'); window.__controlsStep=step; return !!step })()`)
   } })
   check('运行结束沿用同一棵过程树，已打开工具行不重挂', captured && await evaluate(`!!window.__controlsStep?.isConnected && window.__controlsStep.getAttribute('aria-expanded')==='true'`))
+  check('回合结束后移除 Orbit', await evaluate(`!document.querySelector('.v3-process .ui-term-spinner[data-variant="orbit"]')`))
   await shot('flow-ended-preserved')
   report.controls = { thinkingElapsed: { before, after } }
 }

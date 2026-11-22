@@ -115,14 +115,42 @@
     }
   }
 
+  .ui-term-spinner[data-variant='orbit'] {
+    --orbit-cell: calc(var(--s-6) / 2);
+    display: inline-grid;
+    grid-template: repeat(3, var(--orbit-cell)) / repeat(3, var(--orbit-cell));
+    gap: var(--hair, 1px);
+    width: auto;
+    height: auto;
+    color: var(--ink);
+  }
+
+  .ui-term-spinner__pixel {
+    border-radius: var(--hair, 1px);
+    background: currentColor;
+    opacity: 0.15;
+    animation: ui-term-orbit 950ms ease-in-out calc(var(--orbit-phase) * 110ms) infinite;
+  }
+
+  .ui-term-spinner__pixel:nth-child(5) {
+    opacity: 0.07;
+    animation: none;
+  }
+
+  @keyframes ui-term-orbit {
+    0%, 62%, 100% { opacity: 0.15; }
+    18%, 42% { opacity: 1; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .ui-ascii-spark__cell,
-    .ui-term-spinner__strip {
+    .ui-term-spinner__strip,
+    .ui-term-spinner__pixel {
       animation: none;
     }
   }
 
-  :root[data-reduce-motion='true'] :is(.ui-ascii-spark__cell, .ui-term-spinner__strip) {
+  :root[data-reduce-motion='true'] :is(.ui-ascii-spark__cell, .ui-term-spinner__strip, .ui-term-spinner__pixel) {
     animation: none;
   }
 }

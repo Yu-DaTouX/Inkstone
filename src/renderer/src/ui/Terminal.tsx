@@ -7,6 +7,7 @@ export type AsciiTone = 'dim' | 'ink'
 const RULE_LENGTH = 240
 const SPARK_LEVELS = ' ▁▂▃▄▅▆▇█'
 const SPINNER_FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+const ORBIT_PHASES = [0, 1, 2, 7, null, 3, 6, 5, 4] as const
 
 export interface AsciiRuleProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
   glyph?: AsciiGlyph
@@ -69,14 +70,21 @@ export function AsciiSpark({ values, max, tone = 'ink', label, markPeak = true, 
 
 export interface TermSpinnerProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   label?: string
+  variant?: 'orbit'
 }
 
-export function TermSpinner({ label, className, ...rest }: TermSpinnerProps) {
+export function TermSpinner({ label, className, variant, ...rest }: TermSpinnerProps) {
   return (
-    <span {...rest} role={label ? 'status' : undefined} aria-label={label} aria-hidden={label ? undefined : true} className={cx('ui-term-spinner', className)}>
-      <span className="ui-term-spinner__strip">
-        {[...SPINNER_FRAMES].map((frame, index) => <span key={index}>{frame}</span>)}
-      </span>
+    <span {...rest} role={label ? 'status' : undefined} aria-label={label} aria-hidden={label ? undefined : true} className={cx('ui-term-spinner', className)} data-variant={variant}>
+      {variant === 'orbit' ? (
+        ORBIT_PHASES.map((phase, index) => (
+          <span key={index} className="ui-term-spinner__pixel" style={phase === null ? undefined : { '--orbit-phase': phase } as CSSProperties} />
+        ))
+      ) : (
+        <span className="ui-term-spinner__strip">
+          {[...SPINNER_FRAMES].map((frame, index) => <span key={index}>{frame}</span>)}
+        </span>
+      )}
     </span>
   )
 }

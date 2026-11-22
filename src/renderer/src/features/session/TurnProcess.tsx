@@ -381,7 +381,7 @@ function totalLines(list: readonly ProcessFileChange[]): { added: number; remove
 
 function LiveProcessIcon(): JSX.Element {
   const line = useWorkingLine()
-  return line?.kind === 'waiting' ? <CirclePause size={13} className="v3-process-wait" /> : <TermSpinner className="v3-process-spin" />
+  return line?.kind === 'waiting' ? <CirclePause size={13} className="v3-process-wait" /> : <TermSpinner variant="orbit" />
 }
 
 function LiveElapsed(): JSX.Element | null {
