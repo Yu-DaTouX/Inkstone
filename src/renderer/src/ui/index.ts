@@ -159,6 +159,7 @@ export { SegmentBar, Swatch, type DataTone, type SegmentBarProps, type SegmentBa
 export { RailRow, RailValue, type RailGlyph, type RailRowButtonProps, type RailRowProps, type RailTone, type RailValueProps } from './Rail'
 export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
 export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
+export { ScrambleText } from './ScrambleText'
 export { Separator, type SeparatorProps } from './Separator'
 export { AsciiRule, AsciiSpark, TermSpinner, type AsciiGlyph, type AsciiRuleProps, type AsciiSparkProps, type AsciiTone, type TermSpinnerProps } from './Terminal'
 export { Slider, type SliderProps } from './Slider'

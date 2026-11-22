@@ -311,6 +311,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
   const replyReady = useAppearDelay(sourceTurn.segments.filter((segment) => segment.response).map((segment) => segment.id), !!streaming && (turn.tools.length > 0 || !!turn.thinking), REPLY_APPEAR_MS)
+  const beforeReply = !!streaming && !turn.response?.text && !commentary.length && !turn.tools.length && !turn.artifacts.length && !liveImageProgress.length
+  const preReply = beforeReply ? sourceTurn.thinkingLive ? 'thinking' : !turn.thinking ? 'waiting' : undefined : undefined
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error || !!turn.terminalReason
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
@@ -436,7 +438,12 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           <SubagentLine turn={turn} scope={subagentScope} />
   
           {streaming ? errorCard : null}
-          {streaming ? <LiveRunNotice hasProcess={spreadEndsInGroup(processSegs)} /> : null}
+          {streaming ? (
+            <LiveRunNotice
+              hasProcess={spreadEndsInGroup(processSegs)}
+              preReply={preReply}
+            />
+          ) : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           <AnimatedHeight className="v3-result-shell">
             {runEnded ? <TurnResult turn={runTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}

@@ -1,0 +1,17 @@
+@layer primitives {
+  .ui-scramble {
+    position: relative;
+    display: inline-block;
+    white-space: nowrap;
+  }
+
+  .ui-scramble__measure {
+    visibility: hidden;
+  }
+
+  .ui-scramble__visual {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+}

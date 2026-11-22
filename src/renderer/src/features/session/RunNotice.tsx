@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, ShimmerText, StatusDot, TermSpinner } from '../../ui'
+import { Button, ScrambleText, ShimmerText, StatusDot, TermSpinner } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { compactionRunningText } from '../../state/compaction-view'
 import { useSessionText } from './text'
@@ -23,7 +23,7 @@ const ACT_KIND: Record<WorkingKind, string> = {
 
 const SHIMMER: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['compacting', 'tool', 'thinking', 'responding', 'working', 'sending', 'stopping'])
 
-export function LiveRunNotice({ hasProcess = false }: { hasProcess?: boolean }): JSX.Element | null {
+export function LiveRunNotice({ hasProcess = false, preReply }: { hasProcess?: boolean; preReply?: 'waiting' | 'thinking' }): JSX.Element | null {
   const t = useT()
   const tt = useSessionText()
   const line = useWorkingLine()
@@ -32,7 +32,9 @@ export function LiveRunNotice({ hasProcess = false }: { hasProcess?: boolean }):
   if (!line) return null
   if (line.kind === 'compacting' && compaction?.status === 'running') return null
   if (line.kind === 'working' && hasProcess) return null
-  const text = line.textKey ? tt(line.textKey, line.vars) : compactionRunningText(t, compaction)
+  const scramble = line.kind === 'working' && preReply
+  const text = scramble ? tt(scramble === 'thinking' ? 'workThinking' : 'workAwaitReply')
+    : line.textKey ? tt(line.textKey, line.vars) : compactionRunningText(t, compaction)
   return (
     <div
       className="v3-act"
@@ -41,9 +43,9 @@ export function LiveRunNotice({ hasProcess = false }: { hasProcess?: boolean }):
       data-quiet={line.quiet || undefined}
       data-testid="v3-turn-activity"
     >
-      {line.kind === 'waiting' ? <StatusDot kind="awaiting" /> : <TermSpinner data-testid="v3-act-spin" />}
+      {line.kind === 'waiting' ? <StatusDot kind="awaiting" /> : <TermSpinner variant={line.kind === 'working' ? 'orbit' : undefined} data-testid="v3-act-spin" />}
       <span className="v3-act-text" role="status" aria-live="polite" title={line.error}>
-        <ShimmerText active={!line.quiet && SHIMMER.has(line.kind)}>{text}</ShimmerText>
+        {scramble ? <ScrambleText text={text} /> : <ShimmerText active={!line.quiet && SHIMMER.has(line.kind)}>{text}</ShimmerText>}
       </span>
       {line.elapsedMs !== null ? <span className="v3-act-time" data-testid="v3-working-elapsed">{formatDuration(line.elapsedMs)}</span> : null}
       {line.kind === 'retrying' && line.error ? <span className="v3-act-time" data-testid="v3-retry-reason">{line.error}</span> : null}
@@ -59,7 +61,7 @@ export function LiveRunNotice({ hasProcess = false }: { hasProcess?: boolean }):
 export function PendingRunNotice(): JSX.Element | null {
   return (
     <div className="v3-msg assistant" data-testid="v3-pending">
-      <LiveRunNotice />
+      <LiveRunNotice preReply="waiting" />
     </div>
   )
 }

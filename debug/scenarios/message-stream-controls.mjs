@@ -15,6 +15,18 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
   const capOpen = () => evaluate(`document.querySelector('[data-testid="ws-capsule"]')?.getAttribute('aria-expanded')`)
   const moveAway = () => cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 })
 
+  await inject([user, { id: 'controls-reply', role: 'assistant', text: '正在输出', timestamp: Date.now() }])
+  const liveNotice = '[data-testid="v3-turn-activity"][data-working="working"]'
+  await waitFor(`!!document.querySelector('${liveNotice} [data-testid="v3-act-spin"][data-variant="orbit"]')`)
+  check('消息流「进行中」用小号墨色 Orbit，不再显示蓝色盲文圆点', await evaluate(`(() => {
+    const notice = document.querySelector('${liveNotice}')
+    const orbit = notice.querySelector('[data-testid="v3-act-spin"]')
+    const style = getComputedStyle(orbit)
+    return notice.textContent.includes('进行中') && orbit.children.length === 9 && parseFloat(style.width) <= 12 &&
+      style.color === 'rgb(255, 255, 255)' && getComputedStyle(orbit.firstElementChild).animationName === 'ui-term-orbit'
+  })()`))
+  await shot('working-notice-orbit')
+
   await inject([user, message(search('auto-search'))])
   check('运行中的搜索自动展开轻量进度', await capOpen() === 'true' && await evaluate(`!!document.querySelector('[data-testid="ws-sources-pending"]')`))
   await moveAway()
@@ -61,6 +73,7 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
   await inject([user, thinking])
   const elapsed = () => evaluate(`document.querySelector('[data-testid="v3-thinking-elapsed"]')?.textContent ?? ''`)
   const before = await elapsed()
+  check('思考已有过程摘要时，不叠加第二个打散状态行', await evaluate(`!document.querySelector('.v3-process[data-live]') || !document.querySelector('[role="status"] .ui-scramble')`))
   await inject([user])
   await inject([user, thinking])
   const after = await elapsed()
@@ -128,5 +141,53 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
   check('运行结束沿用同一棵过程树，已打开工具行不重挂', captured && await evaluate(`!!window.__controlsStep?.isConnected && window.__controlsStep.getAttribute('aria-expanded')==='true'`))
   check('回合结束后移除 Orbit', await evaluate(`!document.querySelector('.v3-process .ui-term-spinner[data-variant="orbit"]')`))
   await shot('flow-ended-preserved')
+
+  const visual = `document.querySelector('[data-testid="v3-turn-activity"] .ui-scramble__visual')`
+  await evaluate(`(() => {
+    const frames = new Set()
+    const timings = new Map()
+    window.__scrambleFrames = frames
+    window.__scrambleTimings = timings
+    const record = () => {
+      const node = ${visual}
+      const text = node?.textContent
+      if (!text) return
+      frames.add(text)
+      const start = timings.get(node)?.start
+      if (text !== '等待回复…' && !start) timings.set(node, { start: performance.now(), end: 0 })
+      else if (text === '等待回复…' && start) timings.get(node).end ||= performance.now()
+    }
+    const observer = new MutationObserver(record)
+    observer.observe(document.querySelector('.v3-stream'), { subtree: true, childList: true, characterData: true })
+    window.__stopScrambleFrames = () => observer.disconnect()
+  })()`)
+  await turn('HOLD2000 等待回复动效验收', { during: async () => {
+    await waitFor(`window.__scrambleFrames.size > 1`, 4500, 18)
+    const scrambled = (await evaluate('[...window.__scrambleFrames]')).find((text) => text !== '等待回复…') ?? ''
+    check('Scramble 未复原的文字只用 ASCII 符号', /^[!@#$%&*+=?]{4}…$/.test(scrambled), scrambled)
+    check('首字前文字短暂打散，读屏仍是真实状态', await evaluate(`${visual}.getAttribute('aria-hidden') === 'true' && ${visual}.parentElement.querySelector('.sr-only').textContent === '等待回复…'`))
+    await waitFor(`!!window.__scrambleTimings.get(${visual})?.end`)
+    const duration = await evaluate(`(() => { const { start, end } = window.__scrambleTimings.get(${visual}); return end - start })()`)
+    check('Scramble 保持可见约 0.85 秒', duration >= 750 && duration <= 1050, duration)
+    await sleep(450)
+    check('打散只播一次，等待期间不轮播文案', await evaluate(`${visual}?.textContent === '等待回复…'`))
+    await shot('waiting-reply-scramble-settled')
+  } })
+  await evaluate(`window.__stopScrambleFrames()`)
+  check('回复到达后移除等待动效', await evaluate(`!document.querySelector('.ui-scramble')`))
+  await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+  await turn('HOLD1300 减少动态效果验收', { during: async () => {
+    await waitFor(`!!${visual}`)
+    const frames = await evaluate(`(async () => {
+      const values = new Set()
+      for (let i = 0; i < 22; i++) {
+        values.add(${visual}?.textContent)
+        await new Promise(requestAnimationFrame)
+      }
+      return [...values]
+    })()`)
+    check('减少动态效果时直接显示完整文字', frames.join() === '等待回复…', frames)
+  } })
+  await cdp.call('Emulation.setEmulatedMedia', { features: [] })
   report.controls = { thinkingElapsed: { before, after } }
 }

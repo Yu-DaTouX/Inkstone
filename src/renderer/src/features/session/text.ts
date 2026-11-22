@@ -172,6 +172,7 @@ export type SessionTextKey =
   | 'workTool'
   | 'workResponding'
   | 'workThinking'
+  | 'workAwaitReply'
   | 'workActive'
   | 'workThought'
   | 'workTokens'
@@ -475,6 +476,7 @@ const ZH: Record<SessionTextKey, string> = {
   workTool: '正在执行工具…',
   workResponding: '正在作答…',
   workThinking: '思考中…',
+  workAwaitReply: '等待回复…',
   workActive: '进行中',
   workThought: '已思考 {n} 秒',
   workTokens: '{n} token',
@@ -779,6 +781,7 @@ const EN: Record<SessionTextKey, string> = {
   workTool: 'Running tools…',
   workResponding: 'Writing the reply…',
   workThinking: 'Thinking…',
+  workAwaitReply: 'Waiting for a reply…',
   workActive: 'In progress',
   workThought: 'Thought for {n}s',
   workTokens: '{n} tokens',
