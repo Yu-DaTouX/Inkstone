@@ -51,12 +51,12 @@ assert.deepEqual(
   '费用按嵌套结构逐项累加'
 )
 
-function harness(complete, { window = 400_000, previousSummary, msgs = messages, signal = new AbortController().signal } = {}) {
+function harness(complete, { window = 400_000, previousSummary, msgs = messages, signal = new AbortController().signal, sessionFile } = {}) {
   const handlers = {}
   const entries = []
   mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: (type, data) => entries.push({ type, data }) })
   const calls = []
-  const ctx = { model: { contextWindow: window, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async (model, context, options) => { calls.push({ context, options }); return complete(calls.length, context) } } }
+  const ctx = { model: { contextWindow: window, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', sessionManager: { getSessionFile: () => sessionFile }, modelRegistry: { complete: async (model, context, options) => { calls.push({ context, options }); return complete(calls.length, context) } } }
   const event = { preparation: { messagesToSummarize: msgs, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, previousSummary, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']), written: new Set(), edited: new Set() } }, signal }
   return {
     run: () => handlers.session_before_compact(event, ctx),
@@ -166,9 +166,23 @@ for (const text of ['You exceeded your current quota, please check your plan and
     done.abort()
     const h2 = harness(() => ({ stopReason: 'error', errorMessage: '529 Overloaded', content: [] }), { signal: done.signal })
     assert.deepEqual(await h2.run(), { cancel: true })
-    assert.equal(h2.calls.length, 1, '信号已中止时不重试')
+    assert.equal(h2.calls.length, 0, '信号已中止时不发起摘要请求')
   } finally {
     process.env.YAN_COMPACT_RETRY_BASE_MS = previous
+  }
+}
+{
+  const { existsSync, rmSync } = await import('node:fs')
+  const dir = mkdtempAppendix(joinAppendix(tmpdirAppendix(), 'yan-compact-cancel-'))
+  const sessionFile = joinAppendix(dir, 'session.jsonl')
+  try {
+    const controller = new AbortController()
+    const h = harness(() => { controller.abort(); return ok('迟到的摘要') }, { signal: controller.signal, sessionFile, window: 60_000 })
+    assert.deepEqual(await h.run(), { cancel: true }, '模型在取消后返回成功也不提交摘要')
+    assert.equal(h.calls.length, 1, '取消后不会再发下一块')
+    assert.equal(existsSync(`${sessionFile}.history.txt`), false, '取消后不写原文快照')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 }
 {

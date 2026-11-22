@@ -548,9 +548,11 @@ function sleepUnlessAborted(ms, signal) {
 export async function completeWithRetry(ctx, model, context, options, signal) {
   let spent
   for (let attempt = 0; ; attempt++) {
+    if (signal?.aborted) return { stopReason: 'aborted', usage: spent }
     const response = await ctx.modelRegistry.complete(model, context, options)
+    if (signal?.aborted) return { ...response, stopReason: 'aborted', usage: addUsage(spent, response.usage) }
     const failed = response.stopReason === 'error'
-    if (failed && attempt < TRANSIENT_RETRIES && !signal?.aborted && isTransientSummaryError(response.errorMessage)) {
+    if (failed && attempt < TRANSIENT_RETRIES && isTransientSummaryError(response.errorMessage)) {
       spent = addUsage(spent, response.usage)
       if (await sleepUnlessAborted(retryBaseDelayMs() * 2 ** attempt, signal)) continue
       return { ...response, stopReason: 'aborted', usage: spent }
@@ -677,6 +679,7 @@ export default function contextCompactExtension(pi) {
     const model = ctx.model
     const { preparation, customInstructions, signal, reason, branchEntries } = event
     pendingNote = null
+    if (signal?.aborted) return { cancel: true }
     if (!model || !preparation?.firstKeptEntryId) return undefined
     const startedAt = Date.now()
     let usage
@@ -771,7 +774,6 @@ export default function contextCompactExtension(pi) {
       const summaryTokens = Math.ceil(summary.length * ratio)
       const sourceTokens = Math.ceil((chars + (preparation.previousSummary?.length ?? 0)) * ratio)
       if (summaryTokens >= sourceTokens) throw new SummaryError('grew', `summary (${summaryTokens}) not smaller than source (${sourceTokens})`)
-      failures = 0
       const keptTokens = settings.keepRecentTokens > 0 ? settings.keepRecentTokens : DEFAULT_KEEP_RECENT_TOKENS
       const budgets = appendixBudgets({ window, summaryTokens, keptTokens })
       const files = fileLists(preparation.fileOps)
@@ -784,6 +786,7 @@ export default function contextCompactExtension(pi) {
         } catch {
         }
       }
+      if (signal?.aborted) return { cancel: true }
       let snapshot = null
       let snapshotError
       if (historyFile) {
@@ -794,6 +797,8 @@ export default function contextCompactExtension(pi) {
           snapshotError = String(error?.message ?? error).slice(0, 200)
         }
       }
+      if (signal?.aborted) return { cancel: true }
+      failures = 0
       return {
         compaction: {
           summary: summary + formatFileLists(files) + current.block + (snapshot ? snapshotPointer(snapshot) : '')
