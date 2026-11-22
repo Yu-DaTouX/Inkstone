@@ -96,4 +96,25 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
   await waitFor(`document.querySelector('${toggle}')?.getAttribute('aria-expanded')==='true'`, 5000)
   check('键盘展开后可读完整单行输出', await ev(`document.querySelector('${output}').textContent===${JSON.stringify(longOutput)}`))
   await shot('single-line-output-expanded')
+
+  const writtenLine = `write-fixture-${'x'.repeat(12000)}-write-end`
+  await ev(`window.__yanStore.setState({messages:[{id:'write-u',role:'user',text:'查看写入内容'},{id:'write-a',role:'assistant',text:'夹具',toolCalls:[{id:'write-tool',name:'write',args:{path:'notes/a.txt',content:${JSON.stringify(writtenLine)}},status:'ok'}]}]})`)
+  const writeScope = '[data-turn-id="write-a"]'
+  const writeProcess = `${writeScope} [data-testid="v3-process-toggle"]`
+  const writeRow = `${writeScope} [data-testid="v3-step"]`
+  const writeContent = `${writeScope} [data-testid="v3-step-content"]`
+  const writeToggle = `${writeScope} [data-testid="v3-step-content-toggle"]`
+  await waitFor(`!!document.querySelector('${writeProcess}')`, 5000)
+  await ev(`document.querySelector('${writeProcess}[aria-expanded="false"]')?.click()`)
+  await waitFor(`!!document.querySelector('${writeRow}')`, 5000)
+  await ev(`document.querySelector('${writeRow}').click()`)
+  await waitFor(`!!document.querySelector('${writeToggle}')`, 5000)
+  const writtenPreview = await ev(`document.querySelector('${writeContent}').textContent`)
+  check('无差异记录的写入内容只预览长单行开头', writtenPreview.startsWith('write-fixture-') && writtenPreview.length <= 8193 && !writtenPreview.includes('-write-end'), { previewLength: writtenPreview.length })
+  await ev(`document.querySelector('${writeToggle}').focus()`)
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await waitFor(`document.querySelector('${writeToggle}')?.getAttribute('aria-expanded')==='true'`, 5000)
+  check('键盘展开后可读完整写入内容', await ev(`document.querySelector('${writeContent}').textContent===${JSON.stringify(writtenLine)}`))
+  await shot('single-line-write-expanded')
 }

@@ -915,6 +915,19 @@ async function main() {
     ok(byTypeName(all, 'HighlightedCode')[0].props.code.split('\n').length === 55, '展开后显示全部内容')
   }
 
+  {
+    const content = `prefix-${'x'.repeat(8184)}🧪${'x'.repeat(12000)}-suffix`
+    const { detail } = openDetail(tool({ id: 'wr-long', name: 'write', args: { path: 'notes/a.txt', content } }))
+    const preview = renderSub(renderSub(detail.tree, 'ChangeDetail').tree, 'FileContentPreview')
+    const code = byTypeName(preview.tree, 'HighlightedCode')[0].props.code
+    ok(code.startsWith('prefix-') && code.endsWith('…') && code.length <= 8193 && code.isWellFormed(), '写入单行过长时只预览开头且不截断半个字符', code.length)
+    const toggle = byTestId(preview.tree, 'v3-step-content-toggle')
+    ok(textOf(toggle) === '展开全部内容（1 行）' && toggle.props['aria-expanded'] === false, '超长单行也可展开', textOf(toggle))
+    toggle?.props.onPress()
+    const all = renderComponent(preview.rt, preview.el.type, preview.el.props)
+    ok(byTypeName(all, 'HighlightedCode')[0].props.code === content, '展开后显示完整单行写入内容')
+  }
+
   group('#10 历史里的 yan search / yan browser JSON 解析成标题加要点')
   {
     const json = JSON.stringify({ ok: true, operationId: '9be2bd50-6850-495f-a810-3393dfb1707c', summary: { kind: 'search', action: 'query', count: 18, queries: [{ query: 'Swift 1.5', count: 6, summary: '6 条结果 · ddg 6 条' }, { query: 'Qwen3.8', count: 12 }] } })

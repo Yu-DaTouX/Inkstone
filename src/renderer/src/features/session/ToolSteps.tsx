@@ -33,6 +33,7 @@ const McpAppStepAudit = lazy(() => import('../artifacts/McpAppFrame').then((m) =
 const OUTPUT_PREVIEW_LINES = 16
 const OUTPUT_PREVIEW_CHARS = 1600
 const CONTENT_PREVIEW_LINES = 40
+const CONTENT_PREVIEW_CHARS = 8192
 const NEST_VISIBLE = 3
 
 export function visibleNestedNodes<T>(children: readonly T[], showAll: boolean): { shown: readonly T[]; earlier: number } {
@@ -530,15 +531,16 @@ function languageOf(path: string): string | null {
 function FileContentPreview({ path, content }: { path: string; content: string }): JSX.Element {
   const tt = useSessionText()
   const [all, setAll] = useState(false)
-  const lines = content.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
-  const long = lines.length > CONTENT_PREVIEW_LINES
-  const shown = long && !all ? lines.slice(0, CONTENT_PREVIEW_LINES).join('\n') : lines.join('\n')
+  const text = content.replace(/\r\n/g, '\n').replace(/\n$/, '')
+  const preview = previewOutput(text, { tail: false, maxLines: CONTENT_PREVIEW_LINES, maxChars: CONTENT_PREVIEW_CHARS })
+  const long = preview.text !== text
+  const shown = all ? text : preview.text
   const nowrap = useCodeNowrap()
   return (
     <>
       {long ? (
         <Button size="sm" variant="ghost" aria-expanded={all} data-testid="v3-step-content-toggle" onPress={() => setAll((v) => !v)}>
-          {all ? tt('contentLess') : tt('contentMore', { n: lines.length })}
+          {all ? tt('contentLess') : tt('contentMore', { n: preview.total })}
         </Button>
       ) : null}
       <pre className="v3-step-patch v3-step-file" data-nowrap={nowrap} data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
