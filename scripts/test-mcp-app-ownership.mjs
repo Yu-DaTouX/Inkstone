@@ -331,6 +331,51 @@ try {
     }
   }
 
+  {
+    await writeHostConfig(baseServers())
+    let startGuard
+    let resumeGuard
+    const checked = new Promise((resolve) => { startGuard = resolve })
+    const blocked = new Promise((resolve) => { resumeGuard = resolve })
+    const guarded = newAppHost({ ownership: { holdersFor: async () => { startGuard(); await blocked; return [] } } })
+    try {
+      const before = fake.forServer('managed').length
+      const pending = guarded.listToolsWithMeta('managed').then(() => null, (error) => error)
+      await checked
+      await writeHostConfig(baseServers().map((server) => server.id === 'managed' ? { ...server, enabled: false } : server))
+      resumeGuard()
+      ok((await pending)?.code === 'ownership-changed', '归属检查期间服务被禁用，旧请求被明确拒绝')
+      ok(fake.forServer('managed').length === before, '关闭已经在途的请求不会为已禁用服务建立连接')
+    } finally {
+      resumeGuard()
+      await guarded.close()
+    }
+
+    await writeHostConfig(baseServers())
+    const switching = newAppHost()
+    let startClose
+    let resumeClose
+    const closing = new Promise((resolve) => { startClose = resolve })
+    const closeGate = new Promise((resolve) => { resumeClose = resolve })
+    try {
+      await switching.listToolsWithMeta('managed')
+      const records = fake.forServer('managed')
+      const old = records.at(-1)
+      const close = old.manager.close
+      old.manager.close = async () => { startClose(); await closeGate; await close() }
+      await writeHostConfig(baseServers().map((server) => server.id === 'managed' ? { ...server, command: 'replacement' } : server))
+      const pending = switching.listToolsWithMeta('managed').then(() => null, (error) => error)
+      await closing
+      await writeHostConfig(baseServers().filter((server) => server.id !== 'managed'))
+      resumeClose()
+      ok((await pending)?.code === 'ownership-changed' && old.closes === 1, '等待旧连接关闭期间配置再次变化，拒绝使用过时配置')
+      ok(fake.forServer('managed').length === records.length, '未为已删除条目创建替换连接')
+    } finally {
+      resumeClose()
+      await switching.close()
+    }
+  }
+
   await appHost.close()
   ok(true, `全部 ${checks} 项检查通过`)
 } finally {

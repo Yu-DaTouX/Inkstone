@@ -111,7 +111,7 @@ interface PooledServer {
 }
 
 type OwnershipEvaluation =
-  | { ok: true; config: McpAppServerConfig; fingerprint: string }
+  | { ok: true; config: McpAppServerConfig; fingerprint: string; original: McpAppServerConfig }
   | { ok: false; error: McpAppUnmanagedError | McpAppOwnershipError; preservePool?: boolean }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -279,8 +279,16 @@ export class McpAppHost {
       }
     }
     const decision = await this.checkOwnership(serverId, config, options.projectId)
+    const changed = this.configurationChanged(original ?? config)
+    if (changed) return { ok: false, preservePool: true, error: changed }
     if (!decision.ok) return { ok: false, error: new McpAppOwnershipError(decision.code, decision.message) }
-    return { ok: true, config, fingerprint: configFingerprint(config) }
+    return { ok: true, config, fingerprint: configFingerprint(config), original: original ?? config }
+  }
+
+  private configurationChanged(expected: McpAppServerConfig): McpAppOwnershipError | undefined {
+    const current = loadMcpServersCached(this.env).servers.find((server) => server.id === expected.id)
+    if (current === expected || JSON.stringify(current) === JSON.stringify(expected)) return undefined
+    return new McpAppOwnershipError('ownership-changed', pick(`服务 ${expected.id} 的配置已变化，请重试`, `Configuration for ${expected.id} changed. Try again`))
   }
 
   private runPool<T>(serverId: string, work: () => Promise<T>): Promise<T> {
@@ -304,16 +312,21 @@ export class McpAppHost {
     return true
   }
 
-  private acquire(serverId: string, config: McpAppServerConfig, fingerprint: string, projectId?: string): Promise<PooledServer> {
+  private acquire(evaluation: Extract<OwnershipEvaluation, { ok: true }>, projectId?: string): Promise<PooledServer> {
+    const { config, fingerprint, original } = evaluation
+    const serverId = config.id
     return this.runPool(serverId, async () => {
+      const changed = this.configurationChanged(original)
+      if (changed) throw changed
       const existing = this.pool.get(serverId)
       if (existing?.fingerprint === fingerprint) {
         existing.projectId = projectId
         return existing
       }
       if (existing) {
-        this.pool.delete(serverId)
-        await existing.manager.close().catch(() => undefined)
+        await this.dropPooled(serverId)
+        const changedAfterClose = this.configurationChanged(original)
+        if (changedAfterClose) throw changedAfterClose
       }
       const pooled: PooledServer = { fingerprint, manager: this.createManager(config, this.timeoutMs), projectId }
       this.pool.set(serverId, pooled)
@@ -328,7 +341,7 @@ export class McpAppHost {
       if (!evaluation.preservePool) await this.runPool(serverId, () => this.dropPooled(serverId))
       throw evaluation.error
     }
-    return this.acquire(serverId, evaluation.config, evaluation.fingerprint, options.projectId)
+    return this.acquire(evaluation, options.projectId)
   }
 
   private async assertStillOwned(
