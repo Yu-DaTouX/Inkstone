@@ -124,7 +124,7 @@ export function createPiPackageActivationHostPorts(deps: PiPackageActivationHost
     },
     async restartRunner(target, snapshot) {
       const current = await runner(target)
-      if (!current || current.id !== snapshot.id || current.busy || !current.ready) {
+      if (!current || current.id !== snapshot.id || current.generation !== snapshot.generation || current.busy || !current.ready) {
         return { ok: false, error: '重载前目标 runner 身份或空闲状态已变化' }
       }
       return deps.runners.restartOne(current.id)

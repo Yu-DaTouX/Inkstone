@@ -9,6 +9,18 @@ await runSuite(import.meta.url, async (ok, compile) => {
     AcquisitionService: (await compile('src/main/capabilities/acquisition-service.ts')).AcquisitionService,
     PiPackageActivationScheduler: (await compile('src/main/capabilities/pi-package-scheduler.ts')).PiPackageActivationScheduler
   })
+  const { createPiPackageActivationHostPorts } = await compile('src/main/capabilities/pi-package-activation-host.ts')
+  const snapshot = { id: 'runner-a', generation: 1, cwd: 'C:/project-a', sessionFile: 'C:/sessions/original.jsonl', projectId: 'project-a', ready: true, busy: false }
+  const target = { runnerId: snapshot.id, cwd: snapshot.cwd, sessionFile: snapshot.sessionFile, projectId: snapshot.projectId }
+  let current = { ...snapshot, generation: 2 }
+  const restarted = []
+  const ports = createPiPackageActivationHostPorts({ runners: {
+    activationSnapshot: () => current,
+    async restartOne(id) { restarted.push(id); return { ok: true } }
+  } })
+  ok(!(await ports.restartRunner(target, snapshot)).ok && restarted.length === 0, '同 ID 的 runner 已换代时，不按旧快照再次重载')
+  current = { ...snapshot }
+  ok((await ports.restartRunner(target, snapshot)).ok && restarted.join() === snapshot.id, '原 ID 与代次均一致时允许定向重载')
 })
 
 export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPackageActivationScheduler }) {
