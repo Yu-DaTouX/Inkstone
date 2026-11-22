@@ -76,6 +76,21 @@ try {
   assert.equal(real.running, false, '结束时进程已收尾')
   assert.equal(sameClose, true, '同时关闭时等待同一次收尾')
 
+  const finalReplyPath = resolve(dir, 'final-reply.mjs')
+  await writeFile(finalReplyPath, [
+    "import { createInterface } from 'node:readline'",
+    "const input = createInterface({ input: process.stdin })",
+    "input.once('line', line => process.stdout.write(JSON.stringify({ type: 'response', id: JSON.parse(line).id, success: true }) + '\\n', () => process.exit(0)))"
+  ].join('\n'))
+  const finalReply = new PiRpc({ cwd: dir, piBin: finalReplyPath })
+  const finalExit = new Promise((resolve) => finalReply.once('exit', resolve))
+  finalReply.spawn()
+  finalReply.child.stdout.pause()
+  finalReply.child.once('exit', () => finalReply.child?.stdout.resume())
+  const lastCommand = finalReply.command('get_state', {}, { timeoutMs: 2000 }).then((reply) => reply.success, () => false)
+  await finalExit
+  assert.equal(await lastCommand, true, '进程自然退出时先接收管道中的有效回执，再拒绝其余请求')
+
   const grandchildPidFile = resolve(dir, 'grandchild.pid')
   const stubbornPath = resolve(dir, 'stubborn-pi.mjs')
   const holderPath = resolve(dir, 'mcp-holder.mjs')

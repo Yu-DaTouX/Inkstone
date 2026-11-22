@@ -323,7 +323,6 @@ export class PiRpc extends EventEmitter {
       if (this.finished) return
       this.sawExit = true
       this.closed = true
-      this.failAll(new Error(pick(`pi 进程已退出（code=${code ?? 'null'}）`, `pi process exited (code=${code ?? 'null'})`)))
       this.exitDrainTimer = setTimeout(() => this.finishExit(code, signal), EXIT_DRAIN_MS)
       this.exitDrainTimer.unref?.()
     })
