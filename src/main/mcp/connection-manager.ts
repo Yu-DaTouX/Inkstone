@@ -373,7 +373,7 @@ export class McpConnectionManager {
     const generation = conn.generation
     conn.status = 'connecting'
     conn.transportError = undefined
-    conn.connecting = (async () => {
+    const connecting = (async () => {
       let transport: StdioTreeClientTransport | StreamableHTTPClientTransport | undefined
       let client: Client | undefined
       try {
@@ -422,12 +422,15 @@ export class McpConnectionManager {
         conn.status = looksLikeAuthFailure(message) ? 'needs-auth' : 'error'
         conn.error = message
         throw message === rawMessage ? error : new Error(message, { cause: error })
-      } finally {
-        if (generation === conn.generation) conn.connecting = undefined
-        this.settleIdle()
       }
     })()
-    return conn.connecting
+    conn.connecting = connecting
+    try {
+      await connecting
+    } finally {
+      if (conn.connecting === connecting) conn.connecting = undefined
+      this.settleIdle()
+    }
   }
 
   async disconnect(serverId: string): Promise<boolean> {

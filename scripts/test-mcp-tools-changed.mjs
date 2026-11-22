@@ -35,6 +35,20 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const stdioConfig = (id, extra = {}) => ({ id, transport: 'stdio', command: process.execPath, args: [fixture], ...extra })
 
   {
+    const manager = new mod.McpConnectionManager([{ id: 'bad', transport: 'http', url: 'invalid-fixture-url' }])
+    try {
+      const attempt = manager.listToolsRaw('bad')
+      let idle = false
+      manager.onceIdle(() => { idle = true })
+      const failure = await attempt.then(() => null, (error) => error)
+      ok(failure && manager.statusOf('bad').status === 'error', '同步初始化失败仍返回错误状态')
+      ok(!manager.isBusy() && idle, '同步初始化失败后不残留连接任务，并唤醒空闲等待者')
+    } finally {
+      await manager.close()
+    }
+  }
+
+  {
     const manager = new mod.McpConnectionManager([stdioConfig('fx')])
     try {
       const seen = []
