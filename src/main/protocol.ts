@@ -538,6 +538,7 @@ export class PiRpc extends EventEmitter {
 
     this.closed = true
     this.child = null
+    this.failAll(new Error(pick('pi 连接已关闭', 'pi connection closed')))
 
     const watch = this.tree
     const exit = this.sawExit ? Promise.resolve() : new Promise<void>((resolve) => {

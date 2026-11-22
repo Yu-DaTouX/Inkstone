@@ -49,4 +49,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
   child.stdin.write = () => { throw new Error('stdin closed') }
   await assert.rejects(rpc.command('get_state', {}, { id: 'closed' }), /stdin closed/)
   ok(!rpc.pending.has('closed'), 'stdin 同步写入失败也不会留下 pending')
+
+  child.stdin.write = () => {}
+  const inFlight = rpc.command('get_state', {}, { id: 'closing' }).then(() => 'resolved', () => 'rejected')
+  const closing = rpc.close()
+  try {
+    rpc.feed('{"type":"response","id":"closing","success":true}\n')
+    ok((await inFlight) === 'rejected' && !rpc.pending.size, '主动关闭立即拒绝在途请求，迟到回执不能报成功')
+  } finally {
+    child.emit('exit', 0, null)
+    await closing
+  }
 })
