@@ -38,6 +38,12 @@ console.log('▌PiRpc 答复写回调：任务写入成功才回执')
   ok(delivered === true, '写入回调成功后返回 true')
   ok(lines.length === 1 && lines[0].includes('extension_ui_response'), '写入一条 extension_ui_response')
 
+  const circular = {}
+  circular.self = circular
+  ok((await rpc.respondUi({ id: 'q2', value: circular })) === false && lines.length === 1, '不能序列化的答复不写入，并返回未送达')
+  ok(await rpc.respondUi({ id: 'q3', type: 'other', value: 'B' }), '序列化失败不影响下一条回执')
+  assert.deepEqual(JSON.parse(lines[1]), { id: 'q3', type: 'extension_ui_response', value: 'B' }, '回执内容不能覆盖宿主设置的帧类型')
+
   const failing = fakeRpc((line, encoding, callback) => {
     setImmediate(() => callback(new Error('EPIPE')))
     return true

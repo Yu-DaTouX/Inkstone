@@ -505,9 +505,9 @@ export class PiRpc extends EventEmitter {
     const child = this.child
     const stdin = child?.stdin
     if (!child || this.closed || !stdin || stdin.destroyed || !stdin.writable) return Promise.resolve(false)
-    const line = JSON.stringify({ type: 'extension_ui_response', ...res }) + '\n'
     return new Promise<boolean>((resolve) => {
       try {
+        const line = JSON.stringify({ ...res, type: 'extension_ui_response' }) + '\n'
         stdin.write(line, 'utf8', (error) => resolve(!error))
       } catch {
         resolve(false)
