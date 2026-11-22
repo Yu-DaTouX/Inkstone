@@ -1,4 +1,4 @@
-import { useI18n } from '../../../i18n'
+import { translate, useI18n } from '../../../i18n'
 
 export type WebSearchTextKey =
   | 'searching'
@@ -26,64 +26,8 @@ export type WebSearchTextKey =
   | 'groupSearched'
   | 'groupFetched'
 
-const ZH: Record<WebSearchTextKey, string> = {
-  searching: '搜索中',
-  fetching: '读取中',
-  searched: '搜索',
-  results: '{n} 条结果',
-  sourcesUnavailable: '未记录来源',
-  fetched: '已读取网页',
-  fetchBlocked: '网页被拦截',
-  blocked: '被拦截',
-  sources: '来源',
-  expand: '展开来源',
-  collapse: '收起来源',
-  replySources: '引用来源 · {n}',
-  backToCitation: '回到第 {n} 条引用',
-  backToCitationShort: '回到引用',
-  citationAria: '引用来源：{site} 第 {n} 条',
-  citationOpenHint: '单击在砚里打开，双击用系统浏览器打开',
-  openSource: '打开来源：{title}',
-  moreSources: '{n} 个更多来源',
-  showLess: '显示更少',
-  read: '已取原文',
-  partial: '部分原文',
-  cached: '缓存',
-  groupSearched: '搜索 {n} 次',
-  groupFetched: '读取 {n} 个网页'
-}
-
-const EN: Record<WebSearchTextKey, string> = {
-  searching: 'Searching',
-  fetching: 'Reading',
-  searched: 'Searched',
-  results: '{n} results',
-  sourcesUnavailable: 'Sources not recorded',
-  fetched: 'Read page',
-  fetchBlocked: 'Page blocked',
-  blocked: 'Blocked',
-  sources: 'Sources',
-  expand: 'Show sources',
-  collapse: 'Hide sources',
-  replySources: 'Cited sources · {n}',
-  backToCitation: 'Back to citation {n}',
-  backToCitationShort: 'Back to citation',
-  citationAria: 'Citation {n} from {site}',
-  citationOpenHint: 'Click to open in Inkstone, double-click for the system browser',
-  openSource: 'Open source: {title}',
-  moreSources: '{n} more sources',
-  showLess: 'Show less',
-  read: 'Text fetched',
-  partial: 'Partial text',
-  cached: 'Cached',
-  groupSearched: 'Searched {n}\u00d7',
-  groupFetched: 'Read {n} pages'
-}
-
 export function webSearchText(lang: string, key: WebSearchTextKey, vars?: Record<string, string | number>): string {
-  let text = (lang === 'en-US' ? EN : ZH)[key]
-  if (vars) for (const [name, value] of Object.entries(vars)) text = text.split(`{${name}}`).join(String(value))
-  return text
+  return translate(lang === 'en-US' ? 'en-US' : 'zh-CN', `webSearch.${key}`, vars)
 }
 
 export function useWebSearchText(): (key: WebSearchTextKey, vars?: Record<string, string | number>) => string {

@@ -11,7 +11,7 @@ import { WINDOW_DURATION } from '../../../../shared/quota-forecast'
 import { refreshAntigravityQuota, useAntigravityQuotaStore } from '../../state/antigravity-quota'
 import { Badge, Card, Collapsible, CollapsibleHeader, CollapsiblePanel, IconButton, Notice, type RailTone } from '../../ui'
 import { RefreshCw } from '../../ui/icons'
-import { useI18n } from '../../i18n'
+import { translate, useI18n, type Lang } from '../../i18n'
 import { QuotaMeter } from './QuotaMeter'
 
 export function useAntigravityQuota(enabled: boolean, running: boolean) {
@@ -38,8 +38,8 @@ function percent(fraction: number, lang: string): string {
   return new Intl.NumberFormat(lang, { style: 'percent', maximumFractionDigits: 1 }).format(fraction)
 }
 
-function periodLabel(window: AntigravityQuotaWindow, en: boolean): string {
-  return window.period === '5h' ? '5h' : window.period === 'weekly' ? (en ? 'Wk' : '每周') : window.name
+function periodLabel(window: AntigravityQuotaWindow, lang: Lang): string {
+  return window.period === '5h' ? '5h' : window.period === 'weekly' ? translate(lang, 'quota.ag.weekShort') : window.name
 }
 
 function windowDurationMs(window: AntigravityQuotaWindow): number | undefined {
@@ -67,12 +67,12 @@ function matchAntigravityGroup(groups: readonly AntigravityQuotaGroup[], model: 
 export function antigravityQuotaSummary(snapshot: AntigravityQuotaSnapshot | undefined, model: AntigravityModel | undefined, lang: string): string | undefined {
   const groups = snapshot?.groups
   if (!groups?.length) return undefined
-  const en = lang === 'en-US'
+  const locale = lang === 'en-US' ? 'en-US' : 'zh-CN'
   const chosen = matchAntigravityGroup(groups, model)
   const summary = chosen
-    ? orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, en)} ${percent(window.remainingFraction, lang)}`).join(' · ')
-    : en ? `${groups.length} groups` : `${groups.length} 组`
-  return snapshot?.staleSince === undefined ? summary : `${summary} · ${en ? 'Stale' : '旧数据'}`
+    ? orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, locale)} ${percent(window.remainingFraction, lang)}`).join(' · ')
+    : translate(locale, 'quota.ag.groups', { n: groups.length })
+  return snapshot?.staleSince === undefined ? summary : `${summary} · ${translate(locale, 'quota.ag.stale')}`
 }
 
 export function antigravityQuotaTone(snapshot: AntigravityQuotaSnapshot | undefined, model: AntigravityModel | undefined): RailTone | undefined {
@@ -91,15 +91,14 @@ function windowTone(fraction: number): 'ok' | 'ask' | 'fail' {
   return 'ok'
 }
 
-function formatCountdown(ms: number, en: boolean): string {
+function formatCountdown(ms: number, lang: Lang): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const d = Math.floor(total / 86400)
   const h = Math.floor((total % 86400) / 3600)
   const m = Math.floor((total % 3600) / 60)
-  if (d > 0) return en ? `${d}d ${h}h` : `${d}天${h}时`
-  if (h > 0) return en ? `${h}h ${m}m` : `${h}时${m}分`
-  const mins = Math.max(1, m)
-  return en ? `${mins}m` : `${mins}分`
+  if (d > 0) return translate(lang, 'quota.ag.countdownDays', { d, h })
+  if (h > 0) return translate(lang, 'quota.ag.countdownHours', { h, m })
+  return translate(lang, 'quota.ag.countdownMinutes', { m: Math.max(1, m) })
 }
 
 function shortReset(resetAt: number | undefined, lang: string, now: number): string | undefined {
@@ -120,11 +119,11 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
   now?: number
 }): ReactElement {
   const { snapshot, loading, refresh } = quota
-  const en = lang === 'en-US'
+  const locale = lang === 'en-US' ? 'en-US' : 'zh-CN'
   const groups = snapshot?.groups ?? []
   const currentGroup = matchAntigravityGroup(groups, model)
   const stale = snapshot?.staleSince !== undefined
-  const refreshLabel = en ? 'Refresh quota' : '刷新额度'
+  const refreshLabel = translate(locale, 'quota.refresh')
   const refreshButton = (
     <IconButton
       size="sm"
@@ -147,8 +146,8 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
           const resetAt = antigravityWindowResetAt(window)
           const awaiting = resetAt !== undefined && resetAt <= now
           const clock = shortReset(resetAt, lang, now)
-          const countdown = resetAt !== undefined && !awaiting ? formatCountdown(resetAt - now, en) : undefined
-          return { window, name: periodLabel(window, en), resetAt, awaiting, clock, countdown }
+          const countdown = resetAt !== undefined && !awaiting ? formatCountdown(resetAt - now, locale) : undefined
+          return { window, name: periodLabel(window, locale), resetAt, awaiting, clock, countdown }
         })
         const groupTip = [
           group.models.length ? `${group.name}: ${group.models.join(', ')}` : group.name,
@@ -159,7 +158,7 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
             <div className="wb-ov-ctx-head">
               <span className="wb-ov-qmain-name">
                 <span className="wb-ov-qmain-label">{group.name}</span>
-                {isCurrent ? <Badge tone="ok" className="wb-ov-qmain-plan">{en ? 'Current' : '当前'}</Badge> : null}
+                {isCurrent ? <Badge tone="ok" className="wb-ov-qmain-plan">{translate(locale, 'quota.ag.current')}</Badge> : null}
               </span>
               {index === 0 ? <span className="wb-ov-qmain-side">{refreshButton}</span> : null}
             </div>
@@ -171,16 +170,16 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
                 const full = window.remainingFraction >= 1
                 const tone = stale || awaiting ? 'stale' : windowTone(window.remainingFraction)
                 const resetLine = awaiting
-                  ? (en ? 'Reset' : '已重置')
+                  ? translate(locale, 'quota.ag.reset')
                   : clock
                     ? (countdown
-                        ? (en ? `Resets ${clock} · in ${countdown}` : `重置 ${clock} · ${countdown}后`)
-                        : (en ? `Resets ${clock}` : `重置 ${clock}`))
+                        ? translate(locale, 'quota.ag.resetsWithCountdown', { clock, countdown })
+                        : translate(locale, 'quota.ag.resetsAt', { clock }))
                     : undefined
                 const tip = [
                   `${group.name} · ${name}`,
-                  `${en ? 'Remaining' : '剩余'} ${left} (${used}% ${en ? 'used' : '已用'})`,
-                  clock ? `${en ? 'Resets' : '重置'} ${clock}` : ''
+                  translate(locale, 'quota.ag.remaining', { left, used }),
+                  clock ? translate(locale, 'quota.ag.resetsAt', { clock }) : ''
                 ].filter(Boolean).join('\n')
                 return (
                   <li key={window.id} className="wb-ov-qmini wb-ov-ag-row" data-tone={tone} data-full={full ? '1' : undefined} title={tip}>
@@ -200,13 +199,13 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
         )
       })}
       {stale && snapshot?.error ? (
-        <Notice tone="ask" compact>{en ? 'Showing the last successful allowance. ' : '正在显示上次成功查询的额度。'}{snapshot.error}</Notice>
+        <Notice tone="ask" compact>{translate(locale, 'quota.ag.showingLast', { error: snapshot.error })}</Notice>
       ) : null}
       {!groups.length ? (
         <div className="wb-ov-ctx-head">
           <Notice tone="ask" compact>{snapshot?.error ?? (loading
-            ? (en ? 'Checking allowance…' : '正在查询额度…')
-            : (en ? 'Allowance unavailable.' : '暂时无法读取额度。'))}</Notice>
+            ? translate(locale, 'quota.ag.checking')
+            : translate(locale, 'quota.ag.unavailable'))}</Notice>
           {refreshButton}
         </div>
       ) : null}
@@ -222,10 +221,9 @@ export function AntigravityQuotaPaneSection({ snapshot, loading, active, model, 
   now: number
   icon?: string | null
 }): ReactElement | null {
-  const { lang, t } = useI18n()
+  const { t } = useI18n()
   const groups = snapshot?.groups ?? []
   if (!active && !groups.length) return null
-  const en = lang === 'en-US'
   const stale = snapshot?.staleSince !== undefined
   const currentGroup = active ? matchAntigravityGroup(groups, model) : undefined
 
@@ -237,21 +235,21 @@ export function AntigravityQuotaPaneSection({ snapshot, loading, active, model, 
       </header>
       {stale && snapshot?.error ? (
         <Notice tone="ask" compact data-testid="v3-wb-quota-antigravity-stale">
-          {en ? 'Showing the last successful allowance. ' : '正在显示上次成功查询的额度。'}{snapshot.error}
+          {t('quota.ag.showingLast', { error: snapshot.error })}
         </Notice>
       ) : null}
       <Card as="section" padding="none" className="wb-quota-card" data-active={active ? '1' : undefined} data-testid="v3-wb-quota-card-antigravity">
         <div className="wb-quota-id">
           <span className="wb-quota-name">Antigravity CLI</span>
           {active && !currentGroup ? <Badge tone="ok" data-testid="v3-wb-quota-active">{t('acct.active')}</Badge> : null}
-          {stale ? <Badge data-testid="v3-wb-quota-stale">{en ? 'Stale' : '旧数据'}</Badge> : null}
+          {stale ? <Badge data-testid="v3-wb-quota-stale">{t('quota.ag.stale')}</Badge> : null}
         </div>
         {!groups.length ? (
           snapshot?.error ? (
             <p className="wb-quota-error" data-testid="v3-wb-quota-antigravity-error">{snapshot.error}</p>
           ) : (
             <p className="wb-quota-ag-note">
-              {loading ? (en ? 'Checking allowance…' : '正在查询额度…') : (en ? 'Allowance unavailable.' : '暂时无法读取额度。')}
+              {t(loading ? 'quota.ag.checking' : 'quota.ag.unavailable')}
             </p>
           )
         ) : groups.map((group, index) => {
