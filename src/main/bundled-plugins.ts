@@ -376,16 +376,16 @@ export class BundledPlugins {
         signal?.removeEventListener('abort', cancel)
         connection.pending.delete(requestId)
       }
-      const cancel = (): void => {
+      const stop = (error: Error): void => {
         cleanup()
-        if (connection.child.connected) connection.child.send({ type: 'cancel-request', id: requestId }, () => undefined)
-        reject(new Error(pick('已取消', 'Cancelled')))
+        reject(error)
+        try {
+          if (connection.child.connected) connection.child.send({ type: 'cancel-request', id: requestId }, () => undefined)
+        } catch {
+        }
       }
-      const timer = setTimeout(() => {
-        cleanup()
-        if (connection.child.connected) connection.child.send({ type: 'cancel-request', id: requestId }, () => undefined)
-        reject(new Error(pick('插件操作超时', 'Plugin operation timed out')))
-      }, 45 * 60_000)
+      const cancel = (): void => stop(new Error(pick('已取消', 'Cancelled')))
+      const timer = setTimeout(() => stop(new Error(pick('插件操作超时', 'Plugin operation timed out'))), 45 * 60_000)
       connection.pending.set(requestId, {
         resolve: value => { cleanup(); resolve(value) },
         reject: error => { cleanup(); reject(error) }, timer

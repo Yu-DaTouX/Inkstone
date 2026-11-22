@@ -131,6 +131,19 @@ process.send({ type: 'ready' })
   try {
     const error = await fresh.invoke('proxied', 'probe').then(() => null, (reason) => reason)
     ok(error?.message === 'fixture IPC write failure' && connection.pending.size === 0, '同步 IPC 写入失败传播原错误且不留待处理记录或计时器')
+
+    const abort = new AbortController()
+    let sent
+    const sending = new Promise((resolve) => { sent = resolve })
+    connection.child.send = (message) => {
+      if (message.type === 'cancel-request') throw new Error('fixture cancel write failure')
+      sent()
+    }
+    const cancelled = fresh.invoke('proxied', 'probe', undefined, abort.signal).then(() => null, (reason) => reason)
+    await sending
+    abort.abort()
+    const abortError = await cancelled
+    ok(/已取消|Cancelled/.test(abortError?.message ?? '') && connection.pending.size === 0, '取消通知写入失败也返回取消并清理待处理请求')
   } finally {
     connection.child.send = send
     await fresh.close()
