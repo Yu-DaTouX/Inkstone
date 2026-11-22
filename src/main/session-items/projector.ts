@@ -110,6 +110,7 @@ function slotContent(slot: MessageSlot): { text?: string; thinking?: string; cal
 export class SessionItemProjector {
   private readonly slots: MessageSlot[] = []
   private readonly callIndex = new Map<string, CallEntry>()
+  private readonly nativeToolEnds = new WeakSet<UIToolCall>()
   private turnId = PRELUDE_TURN_ID
   private step = -1
   private seq = 0
@@ -337,8 +338,9 @@ export class SessionItemProjector {
 
   liveToolEnd(toolCallId: string, evt: ToolExecutionEnd, now: number): UIToolCall | null {
     const hit = this.callIndex.get(toolCallId)
-    if (!hit) return null
+    if (!hit || this.nativeToolEnds.has(hit.call)) return null
     endToolExecution(hit.call, evt, now, this.localizeImage)
+    this.nativeToolEnds.add(hit.call)
     this.syncCall(hit.call)
     return hit.call
   }

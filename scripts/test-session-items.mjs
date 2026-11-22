@@ -191,6 +191,7 @@ try {
     parallel.liveToolEnd('a', { result: { content: [{ type: 'text', text: 'final A' }], details: { complete: true } } }, 120)
     assert.equal(parallel.liveToolUpdate('a', { content: [{ type: 'text', text: 'late' }] }), null, '已结束的工具不接收迟到的部分输出')
     assert.equal(parallel.liveToolStart({ toolCallId: 'a', toolName: 'read' }, 125), null, '迟到的开始事件不能重开结束的工具')
+    assert.equal(parallel.liveToolEnd('a', { result: { content: [{ type: 'text', text: 'duplicate' }] }, isError: true }, 126), null, '重复原生结束帧不覆盖已经完成的结果')
     assert.deepEqual([a.call.status, a.call.output, a.call.details, a.call.endedAt], ['ok', 'final A', { complete: true }, 120])
     assert.equal(b.call.status, 'running', '不影响另一条同一时刻开始的调用')
   }
@@ -239,6 +240,7 @@ try {
     stopping.liveToolEnd('nested-call', { result: { content: [{ type: 'text', text: 'native result' }] } }, 700)
     assert.equal(stopping.call('nested-call').cancelled, undefined, '原生最终结果优先于兜底状态')
     assert.equal(stopping.call('nested-call').output, 'native result')
+    assert.equal(stopping.liveToolEnd('nested-call', { cancelled: true }, 800), null, '兜底状态被首次原生回执替换后，也不再接收重复回执')
   }
 
   const persisted = [
