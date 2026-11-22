@@ -304,6 +304,7 @@ export class SessionItemProjector {
     const existing = this.callIndex.get(evt.toolCallId)
     if (existing) {
       if (existing.call.cancelled || (existing.call.status !== 'pending' && existing.call.status !== 'running')) return null
+      if (evt.args !== undefined) existing.call.args = evt.args
       startToolExecution(existing.call, now)
       this.syncCall(existing.call)
       return { call: existing.call, ownerId: existing.slot?.header.id ?? existing.msg.id }

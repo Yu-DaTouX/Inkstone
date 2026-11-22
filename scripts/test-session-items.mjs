@@ -171,6 +171,19 @@ try {
   assert.ok(liveMessages[1].toolCalls.includes(nested), '带父调用的工具挂到父调用所在消息')
 
   {
+    const streamed = new m.SessionItemProjector()
+    streamed.liveMessageStart({ role: 'assistant' }, 101)
+    const call = streamed.liveAssistantDelta({ type: 'toolcall_start', contentIndex: 0, id: 'missing-args', toolName: 'write' }, 102)
+    streamed.liveAssistantDelta({ type: 'toolcall_delta', contentIndex: 0, delta: '{"path":"partial' }, 103)
+    const started = streamed.liveToolStart({ toolCallId: 'missing-args', toolName: 'write', args: { path: 'actual.txt' } }, 104)
+    assert.equal(started.call, call, '执行开始时继续更新原来的占位工具')
+    assert.deepEqual(started.call.args, { path: 'actual.txt' }, '执行帧有完整参数时不依赖占位参数已解析')
+    assert.equal(started.call.startedAt, 102, '进入执行仍保持生成参数时的起点')
+    streamed.liveToolStart({ toolCallId: 'missing-args', toolName: 'write' }, 105)
+    assert.deepEqual(call.args, { path: 'actual.txt' }, '不含参数的后续开始帧不清空已知参数')
+  }
+
+  {
     const parallel = new m.SessionItemProjector()
     const a = parallel.liveToolStart({ toolCallId: 'a', toolName: 'read' }, 110)
     const b = parallel.liveToolStart({ toolCallId: 'b', toolName: 'read' }, 110)
