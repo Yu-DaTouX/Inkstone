@@ -5,7 +5,7 @@
 // 被压缩的原文按段加锚点，追加写进会话文件旁的 <会话>.jsonl.history.txt（常见密钥格式替换成占位符），
 // 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
 import { appendFile, open, readFile, stat } from 'node:fs/promises'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isHostAutomatedMessage } from './host-message.js'
 import { registerProviderRequestStage } from './provider-request.js'
 
@@ -288,7 +288,7 @@ export async function currentFilesBlock(paths, cwd, ratio, totalTokens = REINJEC
   for (const p of paths) {
     const full = resolve(cwd, p)
     const rel = relative(cwd, full)
-    if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue
+    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) continue
     let text
     try {
       const info = await stat(full)

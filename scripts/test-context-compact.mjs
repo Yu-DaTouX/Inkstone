@@ -535,11 +535,13 @@ for (const [label, opts, expected] of [
   writeFileSync(join(dir, 'src/a.js'), 'const x = 1\nconst key = "sk-abcdefghijklmnopqrstuvwx"\n')
   writeFileSync(join(dir, 'big.txt'), 'y'.repeat(200_000))
   writeFileSync(join(dir, 'bin.dat'), 'a\0b')
-  const { block, files } = await mod.currentFilesBlock(['src/a.js', 'big.txt', 'bin.dat', '../outside.txt', 'missing.js'], dir, 0.3)
+  writeFileSync(join(dir, '..notes.md'), 'within the project')
+  const { block, files } = await mod.currentFilesBlock(['src/a.js', '..notes.md', 'big.txt', 'bin.dat', '../outside.txt', 'missing.js'], dir, 0.3)
+  assert.ok(block.includes('=== ..notes.md (1 lines) ==='), '文件名以两个点开头不等于跳出工作目录')
   assert.ok(block.includes('=== src/a.js (3 lines) ===\n1\tconst x = 1\n2\tconst key = "sk-[REDACTED]"'), '按磁盘当前内容带行号补回，密钥替换成占位符')
   assert.ok(block.includes('=== big.txt (200000 bytes, too large to include here; read it if you need it) ==='), '超过单个上限的只给路径')
   assert.ok(!block.includes('bin.dat') && !block.includes('outside') && !block.includes('missing'), '不补二进制、工作目录外和不存在的文件')
-  assert.deepEqual(files.map((f) => [f.path, f.included]), [['src/a.js', true], ['big.txt', false]])
+  assert.deepEqual(files.map((f) => [f.path, f.included]), [['src/a.js', true], ['..notes.md', true], ['big.txt', false]])
   assert.equal(mod.stripAppendices(`摘要${block}`), '摘要', '下次压缩前去掉上次补回的文件')
 
   const handlers = {}
