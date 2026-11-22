@@ -38,19 +38,18 @@ function projectTrusted(trustRaw, cwd) {
   }
 }
 
-function piCompactionEnabled(ctx) {
-  const cwd = ctx?.cwd
+function piCompactionEnabled(cwd, effectiveTrust) {
   const dir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
   const user = readJson(join(dir, 'settings.json'))?.compaction?.enabled !== false
   if (!cwd) return user
   const project = readJson(join(cwd, '.pi', 'settings.json'))?.compaction
   if (!project || typeof project !== 'object' || typeof project.enabled !== 'boolean') return user
-  const trusted = ctx.isProjectTrusted?.() ?? projectTrusted(readJson(join(dir, 'trust.json')), cwd)
+  const trusted = effectiveTrust ?? projectTrusted(readJson(join(dir, 'trust.json')), cwd)
   return trusted ? project.enabled : user
 }
 
-function readContextSettings(ctx) {
-  const compact = piCompactionEnabled(ctx)
+export function readContextSettings(cwd, effectiveTrust) {
+  const compact = piCompactionEnabled(cwd, effectiveTrust)
   try {
     const s = JSON.parse(readFileSync(join(yanDataDir(), 'desktop.json'), 'utf8'))
     const tokens = s?.autoCompactTokens
@@ -82,7 +81,7 @@ export default function autoCompactExtension(pi) {
       holdUntil = undefined
       justCompacted = false
     }
-    const settings = readContextSettings(ctx)
+    const settings = readContextSettings(ctx?.cwd, ctx?.isProjectTrusted?.())
     if (!settings.compact || activeWatchdog) return
     const usage = ctx?.getContextUsage?.()
     if (typeof usage?.tokens !== 'number') return

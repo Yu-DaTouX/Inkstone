@@ -1,4 +1,5 @@
 import type { AcquisitionTransaction, PiPackageActivationTarget } from '../../shared/acquisition'
+import { pick } from '../../shared/ui-lang'
 import { AcquisitionService } from './acquisition-service'
 
 export type PiPackageGrant = { allowLifecycleScripts: boolean }
@@ -37,6 +38,10 @@ export type PiPackageScheduleResult = {
 function sameCwd(a: string, b: string): boolean {
   return a.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase() ===
     b.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
+function stagedProblem(problems: string[]): string {
+  return pick(`staging 复核失败：${problems.join('；')}`, `Staged package verification failed: ${problems.join('; ')}`)
 }
 
 export class PiPackageActivationScheduler {
@@ -108,7 +113,7 @@ export class PiPackageActivationScheduler {
 
     if (tx.state === 'acquiring') {
       const staged = await this.ports.verifyStaged(tx)
-      if (!staged.ok) return this.fail(tx, `staging 复核失败：${staged.problems.join('；')}`)
+      if (!staged.ok) return this.fail(tx, stagedProblem(staged.problems))
       const smoke = await this.ports.smoke(tx)
       if (!smoke.ok) return this.fail(tx, `临时环境加载验证（smoke）未通过：${smoke.problems.join('；')}`)
       tx = await this.service.markVerifying(operationId, '临时环境加载验证（smoke）通过，复核后执行固定版本项目级安装')
@@ -124,7 +129,7 @@ export class PiPackageActivationScheduler {
       if (!installed.ok) return this.fail(tx, `安装清单无法复核：${installed.problems.join('；')}`)
       if (!installed.installed) {
         const staged = await this.ports.verifyStaged(tx)
-        if (!staged.ok) return this.fail(tx, `staging 复核失败：${staged.problems.join('；')}`)
+        if (!staged.ok) return this.fail(tx, stagedProblem(staged.problems))
         const install = await this.ports.install(tx, currentGrant)
         if (!install.ok) return this.fail(tx, install.error ?? 'pi install 失败')
         installed = await this.ports.verifyInstalled(tx)
