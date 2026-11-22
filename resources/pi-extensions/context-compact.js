@@ -198,10 +198,10 @@ export async function snapshotState(file) {
       const chunk = Buffer.alloc(end - start)
       await handle.read(chunk, 0, chunk.length, start)
       if (end === size) endsClean = chunk.subarray(-2).toString('utf8') === '\n\n'
-      const joined = Buffer.concat([chunk, carry])
+      const joined = carry === null ? chunk.subarray(0, chunk.lastIndexOf(10) + 1) : Buffer.concat([chunk, carry])
       const cut = start > 0 ? joined.indexOf(10) : -1
       if (start > 0 && cut < 0) {
-        carry = joined
+        carry = null
         end = start
         continue
       }

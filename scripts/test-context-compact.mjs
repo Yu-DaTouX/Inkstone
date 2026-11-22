@@ -269,6 +269,23 @@ for (const text of ['You exceeded your current quota, please check your plan and
   const state = await mod.snapshotState(file)
   assert.equal(state.next, 8, '从末尾倒着找到最后一个快照头，跨块与多字节字符不出错')
   assert.ok(state.endsClean && state.size === Buffer.byteLength(readFileSync(file)), '记录当前长度与结尾是否完整')
+  const withoutBreaks = join(dir, 'one-large-line.history.txt')
+  writeFileSync(withoutBreaks, `${header(9)}\n\n${'x'.repeat(16 * 64 * 1024 - 25)}\n\n`)
+  const concat = Buffer.concat
+  let largest = 0
+  let longState
+  Buffer.concat = (parts, total) => {
+    const result = concat(parts, total)
+    largest = Math.max(largest, result.length)
+    return result
+  }
+  try {
+    longState = await mod.snapshotState(withoutBreaks)
+  } finally {
+    Buffer.concat = concat
+  }
+  assert.equal(longState.next, 10, '跨块的快照头即使紧邻超长单行也能识别')
+  assert.ok(largest <= 128 * 1024, `超长无换行原文不逐块拼成大缓冲：${largest} bytes`)
   const cut = join(dir, 'cut.history.txt')
   writeFileSync(cut, `${header(3)}\n\npartial line without end`)
   const cutState = await mod.snapshotState(cut)
