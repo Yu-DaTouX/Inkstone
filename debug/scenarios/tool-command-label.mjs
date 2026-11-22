@@ -66,4 +66,21 @@ export default async function run({ cdp, newSession, waitFor, check, shot }) {
     return {keptForAnimation, collapsed:header.getAttribute('aria-expanded')==='false', focusStayed:document.activeElement===header};
   })()`)
   check('收起动画保留详情内容，但内部按钮不再能获得焦点', closed.keptForAnimation && closed.collapsed && closed.focusStayed, closed)
+
+  const reused = '[data-turn-id="scope-answer"] [data-testid="v3-step"]'
+  const reusedProcess = '[data-turn-id="scope-answer"] [data-testid="v3-process-toggle"]'
+  const loadRepeatedTool = async (path) => {
+    await ev(`window.__yanStore.setState(s=>({messages:[{id:'scope-user',role:'user',text:'检查展开范围'},{id:'scope-answer',role:'assistant',text:'夹具',toolCalls:[{id:'same-tool-id',name:'bash',args:{command:${JSON.stringify(path)}},status:'ok'}]}],session:{...s.session,isStreaming:false,isAgentRunning:false},switchLoading:false,historyLoading:false}))`)
+    await waitFor(`!!document.querySelector('${reusedProcess}')`, 6000)
+    await ev(`document.querySelector('${reusedProcess}[aria-expanded="false"]')?.click()`)
+    await waitFor(`!!document.querySelector('${reused}')`, 6000)
+    return ev('window.__yanStore.getState().session.sessionId')
+  }
+  await newSession()
+  const firstSession = await loadRepeatedTool('dir first-scope')
+  await ev(`document.querySelector('${reused}').click()`)
+  await waitFor(`document.querySelector('${reused}')?.getAttribute('aria-expanded')==='true'`, 6000)
+  await newSession()
+  const secondSession = await loadRepeatedTool('dir second-scope')
+  check('两个真实会话复用工具 ID 时，展开状态不会带到新会话', !!firstSession && !!secondSession && firstSession !== secondSession && await ev(`document.querySelector('${reused}')?.getAttribute('aria-expanded')==='false'`))
 }
