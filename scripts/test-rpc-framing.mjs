@@ -19,6 +19,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
   rpc.on('event', (frame) => frames.push(frame))
   rpc.feed('null\n42\ntrue\n[1,2]\n{"type":"revision","revision":1}\r\n')
   ok(diagnostics.length === 4 && frames.length === 1 && frames[0].type === 'revision', '只丢弃非对象 JSON；同段后续合法帧仍被处理')
+  const large = 'x'.repeat(64 * 1024 * 1024)
+  rpc.feed(large)
+  rpc.feed('x')
+  rpc.feed('{"type":"discard-overlong-tail"}\n{"type":"after-split"}\n')
+  ok(frames.map((frame) => frame.type).join() === 'revision,after-split', '跨块超长行的尾巴不会被误当成独立 RPC 帧')
+  const beforeOverlong = diagnostics.length
+  rpc.feed(`${large}x\n{"type":"after-single"}\n`)
+  ok(frames.at(-1).type === 'after-single' && diagnostics.length === beforeOverlong + 1 && !diagnostics.at(-1).includes('xxxxx'), '同块超长行跳过，不把内容写进诊断，也不影响后续帧')
 
   const first = rpc.command('get_state', { id: 'not-the-id', type: 'not-the-command', value: 3 }, { id: 'same' })
   assert.deepEqual(writes[0].frame, { id: 'same', type: 'get_state', value: 3 })

@@ -224,11 +224,13 @@ export interface PiRpcEvents {
 }
 
 const REQUEST_TIMEOUT = 30_000
+const MAX_RPC_LINE_CHARS = 64 * 1024 * 1024
 
 export class PiRpc extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null
   private parts: string[] = []
   private partsLen = 0
+  private droppingLine = false
   private pending = new Map<string, Pending>()
   private seq = 0
   private closed = false
@@ -264,6 +266,9 @@ export class PiRpc extends EventEmitter {
     if (this.child) return
     this.closed = false
     this.finished = false
+    this.parts = []
+    this.partsLen = 0
+    this.droppingLine = false
     this.sawExit = false
     this.spawnError = null
     if (this.exitDrainTimer) {
@@ -393,27 +398,31 @@ export class PiRpc extends EventEmitter {
   private feed(chunk: string): void {
     if (this.finished) return
     let start = 0
-    let nl: number
-    while ((nl = chunk.indexOf('\n', start)) >= 0) {
-      const piece = chunk.slice(start, nl)
-      start = nl + 1
-      let line = this.partsLen > 0 ? this.parts.join('') + piece : piece
-      this.parts = []
-      this.partsLen = 0
-      if (line.endsWith('\r')) line = line.slice(0, -1)
-      if (!line.trim()) continue
-      this.handleLine(line)
-    }
-    if (start < chunk.length) {
-      const rest = start === 0 ? chunk : chunk.slice(start)
-      this.parts.push(rest)
-      this.partsLen += rest.length
-    }
-
-    if (this.partsLen > 64 * 1024 * 1024) {
-      this.parts = []
-      this.partsLen = 0
-      this.emit('stderr', '[yan] 单条记录超过 64MB，已丢弃（协议异常？）')
+    while (start < chunk.length) {
+      const newline = chunk.indexOf('\n', start)
+      const end = newline < 0 ? chunk.length : newline
+      const length = end - start
+      if (this.droppingLine) {
+        if (newline < 0) return
+        this.droppingLine = false
+      } else if (this.partsLen + length > MAX_RPC_LINE_CHARS) {
+        this.parts = []
+        this.partsLen = 0
+        this.droppingLine = newline < 0
+        this.emit('stderr', pick('[yan] 单条记录超过 64MB，已丢弃', '[yan] Discarded an RPC record larger than 64 MB'))
+      } else {
+        const piece = chunk.slice(start, end)
+        if (newline < 0) {
+          this.parts.push(piece)
+          this.partsLen += length
+        } else {
+          const line = (this.partsLen ? this.parts.join('') + piece : piece).replace(/\r$/, '')
+          this.parts = []
+          this.partsLen = 0
+          if (line.trim()) this.handleLine(line)
+        }
+      }
+      start = end + 1
     }
   }
 
