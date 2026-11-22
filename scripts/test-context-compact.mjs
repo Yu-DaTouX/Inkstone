@@ -186,6 +186,13 @@ for (const text of ['You exceeded your current quota, please check your plan and
   }
 }
 {
+  const h = harness(() => ({ stopReason: 'aborted', content: [], usage: { input: 7 } }))
+  assert.deepEqual(await h.run(), { cancel: true }, '摘要接口返回取消时，即使宿主信号未触发也不回退压缩')
+  h.compacted(false)
+  assert.equal(h.calls.length, 1, '接口取消后不用重发摘要')
+  assert.equal(h.entries.length, 0, '接口取消不登记回退压缩记录')
+}
+{
   const h = harness(() => ({ stopReason: 'error', errorMessage: 'boom', content: [], usage: { input: 7 } }))
   assert.equal(await h.run(), undefined, '出错退回默认压缩')
   h.compacted(false)
@@ -493,6 +500,13 @@ function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, sent
   assert.equal(result.compaction.details.path, 'chunked')
   assert.ok(result.compaction.details.fastError.startsWith('tool-call'), '记下快速路径失败原因')
   assert.equal(result.compaction.usage.input, 6, '失败那次的用量也计入')
+}
+{
+  const h = fastHarness(() => ({ stopReason: 'aborted', content: [], usage: { input: 7 } }))
+  h.request()
+  assert.deepEqual(await h.run(), { cancel: true }, '快速路径的摘要接口取消时直接取消压缩')
+  assert.equal(h.calls.length, 1, '接口取消不回退到分块路径')
+  assert.equal(typeof h.calls[0].options.onPayload, 'function', '唯一的请求来自快速路径')
 }
 {
   const h = fastHarness(() => ({ stopReason: 'error', errorMessage: 'Rate limit exceeded, please retry later', content: [], usage: { input: 2 } }))

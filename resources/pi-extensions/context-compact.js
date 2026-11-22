@@ -741,7 +741,7 @@ export default function contextCompactExtension(pi) {
           path = 'prefix'
         } catch (error) {
           usage = addUsage(usage, error?.usage)
-          if (signal?.aborted || error?.category === 'rate') throw error
+          if (signal?.aborted || error?.category === 'aborted' || error?.category === 'rate') throw error
           fastError = `${error?.category ?? 'error'}: ${String(error?.message ?? error).slice(0, 200)}`
         }
         fastMs = Date.now() - fastStart
@@ -813,7 +813,7 @@ export default function contextCompactExtension(pi) {
         }
       }
     } catch (error) {
-      if (signal?.aborted) return { cancel: true }
+      if (signal?.aborted || error?.category === 'aborted') return { cancel: true }
       failures++
       lastFailureAt = Date.now()
       return fallback(error?.category ?? 'error', error?.message)
