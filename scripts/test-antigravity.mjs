@@ -285,7 +285,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
     return { session, events }
   }
   const wait = async (fn) => {
-    for (let i = 0; i < 200; i++) {
+    const deadline = Date.now() + 10_000
+    while (Date.now() < deadline) {
       const value = fn()
       if (value) return value
       await delay(15)

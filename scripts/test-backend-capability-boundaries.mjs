@@ -188,8 +188,7 @@ await test('MCP 执行中取消会传到工具调用', async () => {
 })
 await test('MCP 工具清单缓存不吞取消信号，已取消时不返回缓存', async () => {
   const manager = Object.create(mod.McpConnectionManager.prototype)
-  manager.toolCache = new Map()
-  manager.connections = new Map()
+  manager.connections = new Map([['fixture', { config: { enabled: true } }]])
   const cancel = new AbortController()
   manager.listTools = async (_server, options) => { assert.equal(options.signal, cancel.signal); return [] }
   await manager.listToolsCached('fixture', { signal: cancel.signal })

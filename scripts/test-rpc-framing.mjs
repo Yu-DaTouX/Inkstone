@@ -1,6 +1,6 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { EventEmitter } from 'node:events'
 import assert from 'node:assert/strict'
-import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const { PiRpc } = await compile('src/main/protocol.ts', { external: ['electron'] })

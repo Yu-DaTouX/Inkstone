@@ -1,6 +1,6 @@
+import { runSuite } from './lib/test-suite.mjs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const { AntigravityQuotaDetails, antigravityQuotaSummary } = await compile('src/renderer/src/features/workbench/AntigravityQuota.tsx', {
