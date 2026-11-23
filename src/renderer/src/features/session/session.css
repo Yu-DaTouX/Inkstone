@@ -56,10 +56,6 @@
     scrollbar-gutter: stable;
   }
 
-  .v3-chat[data-single][data-bar-anim] .v3-stream {
-    --col-pr: calc(var(--col-pl-to) + var(--col-pr-to) - var(--col-pl));
-  }
-
   .v3-stream-inner {
     padding: var(--s-20) var(--col-pr, var(--s-20)) calc(var(--s-24) + var(--s-32) + var(--s-12) + var(--composer-h, 0px)) var(--col-pl, var(--s-20));
   }

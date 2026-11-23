@@ -27,6 +27,9 @@
   .t3-rp--collapsed {
     pointer-events: none;
   }
+  .t3-rp--docked.t3-rp--collapsed {
+    width: 0;
+  }
   :root[data-rp-dragging] .t3-rp__surface--slides:not(.t3-rp__surface--maximized) {
     transition: none;
   }

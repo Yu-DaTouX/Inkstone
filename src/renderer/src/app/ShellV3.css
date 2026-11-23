@@ -78,47 +78,25 @@
     --col-pad-w: max(var(--size-chat-min), min(var(--size-chat), var(--col-pad-room)));
     --col-pad-l-to: min(var(--col-pad-base), max(var(--col-pl-min), 100% - var(--stream-scrollbar) - var(--size-chat-min) - var(--col-r)));
     --col-pad-r-to: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l-to) - var(--col-pad-w));
-    --col-pl-at: var(--col-pl-to);
-    --col-pr-at: var(--col-pr-to);
-    --col-pad-l-at: var(--col-pad-l-to);
-    --col-pad-r-at: var(--col-pad-r-to);
-    --col-pl: var(--col-pl-at);
-    --col-pr: var(--col-pr-at);
-    --col-pad-l: var(--col-pad-l-at);
-    --col-pad-r: var(--col-pad-r-at);
-    transition-property: --col-pl-at, --col-pr-at, --col-pad-l-at, --col-pad-r-at;
-    transition-duration: 0s;
-    transition-timing-function: var(--ease-inout);
+    --col-pl: var(--col-pl-to);
+    --col-pr: var(--col-pr-to);
+    --col-pad-l: var(--col-pad-l-to);
+    --col-pad-r: var(--col-pad-r-to);
   }
   .v3-chat[data-single] {
     --col-basis-pad: calc(100vw - var(--sidebar-offset, 0px));
     --col-basis: calc(var(--col-basis-pad) - var(--stream-scrollbar));
   }
-  .v3-chat[data-bar-anim] {
-    transition-duration: var(--panel-dur, var(--dur-sheet));
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .v3-chat[data-bar-anim] {
-      transition-duration: 0s;
-    }
-  }
-  :root[data-splitter-dragging] .v3-chat {
-    transition: none;
-  }
-  html[data-rp-dragging] .v3-chat,
-  html[data-rp-dragging] .v3-chat[data-bar-anim] {
-    transition: none;
-  }
   .v3-chat[data-outline] {
     --outline-on: 1;
   }
-  .v3-chat[data-sessionbar='1'] {
+  .v3-chat[data-bar-reserve] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
   }
-  .v3-chat[data-sessionbar='1']:not([data-single]) {
+  .v3-chat[data-bar-reserve]:not([data-single]) {
     --bar-reserve: 0px;
   }
-  .v3-chat[data-sessionbar='1']:not([data-single]) > .v3-split {
+  .v3-chat[data-bar-reserve]:not([data-single]) > .v3-split {
     margin-right: calc(var(--size-tiles) + var(--s-12) * 2);
     border-right: 1px solid var(--line);
   }
@@ -541,26 +519,3 @@
   }
 }
 
-@property --col-pl-at {
-  syntax: '<length-percentage>';
-  inherits: true;
-  initial-value: 0px;
-}
-
-@property --col-pr-at {
-  syntax: '<length-percentage>';
-  inherits: true;
-  initial-value: 0px;
-}
-
-@property --col-pad-l-at {
-  syntax: '<length-percentage>';
-  inherits: true;
-  initial-value: 0px;
-}
-
-@property --col-pad-r-at {
-  syntax: '<length-percentage>';
-  inherits: true;
-  initial-value: 0px;
-}

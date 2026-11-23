@@ -64,10 +64,10 @@ export default async function run({ cdp, newSession, waitFor, sleep, check, shot
     })()`)
     if (ms===600 && !reduced) { await sleep(95); await shot('right-panel-leaving') }
     await waitFor(`window.__exitFrames.at(-1)?.connected===false`,2500)
-    const s=await ev(`(()=>{const f=window.__exitFrames,live=f.filter(x=>x.connected),first=f[0],end=f.at(-1);return {elapsed:end.t,first,last:live.at(-1),end,widths:new Set(f.map(x=>x.width)).size,early:live.some(x=>x.width!==first.width),blank:live.some(x=>x.visible>10&&!x.content),inactive:live.some(x=>x.inert),overviewSteps:f.filter(x=>x.overview>first.overview+12&&x.overview<end.overview-12).length,panelSteps:live.filter(x=>x.visible>12&&x.visible<first.visible-12).length,fixedChrome:f.every(x=>x.chrome===first.chrome),fixedTabs:live.every(x=>x.tab===first.tab)}})()`)
+    const s=await ev(`(()=>{const f=window.__exitFrames,live=f.filter(x=>x.connected),first=f[0],end=f.at(-1);return {elapsed:end.t,first,last:live.at(-1),end,widths:new Set(f.map(x=>x.width)).size,widenAtStart:live.filter(x=>x.t>40).every(x=>x.width===end.width),blank:live.some(x=>x.visible>10&&!x.content),inactive:live.some(x=>x.inert),overviewSteps:f.filter(x=>x.overview>first.overview+12&&x.overview<end.overview-12).length,panelSteps:live.filter(x=>x.visible>12&&x.visible<first.visible-12).length,fixedChrome:f.every(x=>x.chrome===first.chrome),fixedTabs:live.every(x=>x.tab===first.tab)}})()`)
     report.exits.push(s)
     check(`右栏 ${ms}ms${reduced?' 减少动效':''}：向右缘收起，文件标签和右上角控件不移动`,s.fixedChrome&&s.fixedTabs&&s.end.overview-s.first.overview>100&&(animated?s.panelSteps>=3&&s.overviewSteps>=3:s.panelSteps===0&&s.overviewSteps===0),s)
-    check(`右栏 ${ms}ms${reduced?' 减少动效':''}：内容和占位保留至卸载，正文只扩宽一次`,!s.blank&&!s.early&&s.widths===2&&s.end.width>s.first.width, s)
+    check(`右栏 ${ms}ms${reduced?' 减少动效':''}：内容保留至卸载，正文在收起开始时一次扩宽`,!s.blank&&s.widenAtStart&&s.widths===2&&s.end.width>s.first.width, s)
     check(`右栏 ${ms}ms${reduced?' 减少动效':''}：遵守时长、退场时禁用交互`,animated?s.elapsed>=ms-30&&s.elapsed<ms+200&&s.last.visible<24&&s.inactive:s.elapsed<120,s)
   }
   await patch({panelMotionMs:0,reduceMotion:false})

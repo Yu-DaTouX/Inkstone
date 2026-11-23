@@ -40,6 +40,7 @@ import { SettingsPanelV3 } from './SettingsPanelV3'
 import { openSettingsDialog } from '../features/settings/root/deep-link'
 import { RunAttentionToasts } from '../patterns/RunAttentionToasts'
 import { Header } from './Header'
+import { useColumnGlide } from './column-glide'
 import { WindowControls } from './WindowControls'
 import { applyAppearanceV3 } from '../lib/appearance-v3'
 import { ConnBanner } from './ConnBanner'
@@ -337,25 +338,7 @@ export default function ShellV3(): ReactElement {
     return () => window.removeEventListener('yan-v3-focus-search', openSearch)
   }, [])
 
-  const [settledSingle, setSettledSingle] = useState(singlePane)
-  const paneFlipping = settledSingle !== singlePane
-  useEffect(() => {
-    if (!paneFlipping) return
-    const timer = window.setTimeout(() => setSettledSingle(singlePane), 120)
-    return () => window.clearTimeout(timer)
-  }, [paneFlipping, singlePane])
-  const [settledBarOn, setSettledBarOn] = useState(sessionBarOn)
-  const [settledBarShown, setSettledBarShown] = useState(sessionBarShown)
-  useEffect(() => {
-    if (settledBarOn === sessionBarOn) return
-    const timer = window.setTimeout(() => setSettledBarOn(sessionBarOn), panelMotionMs + 100)
-    return () => window.clearTimeout(timer)
-  }, [sessionBarOn, settledBarOn, panelMotionMs])
-  useEffect(() => {
-    if (settledBarShown === sessionBarShown) return
-    const timer = window.setTimeout(() => setSettledBarShown(sessionBarShown), panelMotionMs + 100)
-    return () => window.clearTimeout(timer)
-  }, [sessionBarShown, settledBarShown, panelMotionMs])
+  useColumnGlide(chatRef, route.name === 'chat')
 
   const toggleSessionBar = useCallback((): void => {
     const on = useStore.getState().settings?.workspaceTiles !== false
@@ -653,7 +636,7 @@ export default function ShellV3(): ReactElement {
               </Suspense>
             ) : null}
             {route.name === 'chat' ? (
-              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarPresence.present ? '1' : undefined} data-bar-anim={!paneFlipping && (!singlePane || sessionBarShown) && (settledBarOn !== sessionBarOn || (settledBarShown && !sessionBarShown)) ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
+              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarPresence.present ? '1' : undefined} data-bar-reserve={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
                 <SideBySide split={split} narrow={splitParked} maxColumns={splitFit} />
                 {sessionBarPresence.present ? (
