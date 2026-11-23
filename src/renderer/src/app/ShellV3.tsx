@@ -1,3 +1,4 @@
+import '../design/fonts'
 import '../design/index.css'
 import { PANEL_MOTION_DEFAULT, sanitizePanelMotion } from '../../../shared/appearance'
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'

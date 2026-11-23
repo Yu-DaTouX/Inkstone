@@ -1,0 +1,63 @@
+@font-face {
+  font-family: 'OpenSI Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/opensi-serif/OpenSISerif-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'OpenSI Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/opensi-serif/OpenSISerif-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'OpenSI Serif';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('../assets/fonts/opensi-serif/OpenSISerif-Semibold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono NL';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-nl/JetBrainsMonoNL-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono NL';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-nl/JetBrainsMonoNL-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono NL';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-nl/JetBrainsMonoNL-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono NL';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-nl/JetBrainsMonoNL-SemiBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono NL';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-nl/JetBrainsMonoNL-Bold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono NL';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-nl/JetBrainsMonoNL-BoldItalic.ttf') format('truetype');
+}

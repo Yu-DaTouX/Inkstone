@@ -61,7 +61,7 @@
     height: auto;
     min-height: var(--size-btn-sm);
     gap: var(--s-6);
-    font-family: var(--font-mono);
+    font-weight: var(--w-regular);
     text-align: start;
     white-space: normal;
     overflow-wrap: anywhere;

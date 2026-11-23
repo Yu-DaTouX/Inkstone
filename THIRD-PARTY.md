@@ -2,6 +2,16 @@
 
 砚本身以 [MIT](LICENSE) 发布。本文件登记**随分发保留**的第三方组件及其许可，只做索引，不替代各组件原始许可文本。
 
+## 字体
+
+桌面端界面随包字体均为 [SIL Open Font License 1.1](https://openfontlicense.org)，未修改字形：
+
+- [Inter](https://github.com/rsms/inter)（界面与数字，npm 包 `@fontsource-variable/inter`）
+- [思源黑体 / Noto Sans SC](https://github.com/notofonts/noto-cjk)（界面中文，`@fontsource-variable/noto-sans-sc`）
+- [霞鹜文楷 LXGW WenKai](https://github.com/lxgw/LxgwWenKai)（长文阅读中文，`@fontsource/lxgw-wenkai`）
+- [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) 2.304 无连字版 JetBrains Mono NL（代码），文件与原许可在 [`src/renderer/src/assets/fonts/jetbrains-mono-nl/`](src/renderer/src/assets/fonts/jetbrains-mono-nl/)
+- [OpenSI Serif](https://github.com/auraunii/opensi-fonts)（长文阅读英文，保留字体名 “OpenSI”），文件与原许可在 [`src/renderer/src/assets/fonts/opensi-serif/`](src/renderer/src/assets/fonts/opensi-serif/)
+
 ## 图标
 
 - 桌面端界面图标使用 [Phosphor Icons](https://phosphoricons.com)（MIT，npm 包 `@phosphor-icons/react`），经 `src/renderer/src/ui/icons.tsx` 统一引用。

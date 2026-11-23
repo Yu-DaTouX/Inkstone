@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import './apply-theme'
+import '../src/design/fonts'
 import '../src/design/index.css'
 import { Button, ListBoxItem, Select, TextArea } from '../src/ui'
 import {

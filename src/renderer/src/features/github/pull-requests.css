@@ -99,8 +99,9 @@
   .gh-pr-row__num {
     flex: none;
     color: var(--fg3);
-    font-family: var(--font-mono);
+    font-family: var(--font-num);
     font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
   }
 
   .gh-pr-row__title {
@@ -162,8 +163,9 @@
 
   .gh-pr-detail__count {
     color: var(--fg3);
-    font-family: var(--font-mono);
+    font-family: var(--font-num);
     font-weight: var(--w-regular);
+    font-variant-numeric: tabular-nums;
   }
 
   .gh-pr-detail__note {

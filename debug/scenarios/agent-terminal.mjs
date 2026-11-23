@@ -36,7 +36,13 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
       for (let i = 0; i < 100 && !during; i++) {
         const panel = await ev(PANEL)
         if (panel.badge) {
-          during = panel
+          const seen = Date.now()
+          let mounted = panel
+          while (mounted.xterm === 0 && Date.now() - seen < 3000) {
+            await sleep(50)
+            mounted = await ev(PANEL)
+          }
+          during = { ...mounted, xtermDelayMs: Date.now() - seen }
           await sleep(300)
           await shot('during')
         } else await sleep(100)
@@ -49,7 +55,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   report.normal = { during: during && { ...during, text: undefined }, after: { ...after, text: undefined }, outputs }
   log('normal', report.normal)
   await shot('after')
-  check('agent 操作时终端面板自动打开并显示 Agent 正在操作', !!during && during.xterm > 0, during && { xterm: during.xterm, tabs: during.tabs })
+  check('agent 操作时终端面板自动打开并显示 Agent 正在操作', !!during && during.xterm > 0, during && { xterm: during.xterm, tabs: during.tabs, xtermDelayMs: during.xtermDelayMs })
   check('操作结束后提示消失', !after.badge)
   check('三次调用复用同一个终端（只有一个标签）', after.tabs === 1, after.tabs)
   const [first, second, listed] = outputs
