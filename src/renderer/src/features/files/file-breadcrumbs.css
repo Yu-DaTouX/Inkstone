@@ -59,11 +59,17 @@
   }
 
   .v3-files-crumb-item {
-    min-width: 0;
+    min-width: calc(var(--s-12) + var(--s-2) + 2em);
     flex: 0 1 auto;
     display: flex;
     align-items: center;
     gap: var(--s-2);
+    overflow: hidden;
+  }
+
+  .v3-files-crumb-item:has(> .v3-files-crumb--fold) {
+    flex: none;
+    min-width: auto;
   }
 
   .v3-files-crumb-item:last-child {
