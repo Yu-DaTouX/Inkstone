@@ -13,7 +13,7 @@ import {
   stripCompactAppendices
 } from './antigravity-compact'
 import { openAntigravityDelegation } from './antigravity-delegation'
-import { antigravityMcpFingerprint, antigravityMcpServices, watchAntigravityMcpFiles } from './antigravity-mcp'
+import { antigravityMcpFingerprint, antigravityMcpServices, warmAntigravityMcp, watchAntigravityMcpFiles } from './antigravity-mcp'
 import { loadMcpServers, mcpServersFile, mcpServersForProject } from './mcp/config'
 import { isInkstoneManaged } from './mcp/app-spec'
 import { readAntigravityPreference, saveAntigravityPreference } from './antigravity-preferences'
@@ -4679,6 +4679,11 @@ export class AgentController extends EventEmitter {
         onToolsListChanged: () => this.markAntigravityMcpChanged('tools')
       }) : undefined
       if (mcp) proc.setCleanup(mcp.close)
+      if (mcp) {
+        const cold = await warmAntigravityMcp(mcp.services)
+        if (cold.length) console.warn(`[antigravity-mcp] not ready before session start: ${cold.join(', ')}`)
+        if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
+      }
       let owned = this.acpDelegatedIds.get(sessionId)
       if (!owned) {
         owned = new Set<string>()

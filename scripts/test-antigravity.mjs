@@ -1671,6 +1671,76 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
 
   {
+    const root = mkdtempSync(join(tmpdir(), 'inkstone-acp-mcp-warm-'))
+    const agentDir = join(root, 'pi-agent')
+    const projectDir = join(root, 'project')
+    mkdirSync(agentDir, { recursive: true })
+    mkdirSync(projectDir, { recursive: true })
+    const serverScript = join(root, 'slow-mcp.mjs')
+    writeFileSync(serverScript, `
+      import { createInterface } from 'node:readline'
+      const hang = process.argv.includes('hang')
+      const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n')
+      for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
+        if (!line.trim()) continue
+        const req = JSON.parse(line)
+        if (req.method === 'initialize') {
+          if (hang) continue
+          await new Promise((r) => setTimeout(r, 600))
+          send({ jsonrpc: '2.0', id: req.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'slow', version: '1.0.0' } } })
+        } else if (req.method === 'tools/list') {
+          send({ jsonrpc: '2.0', id: req.id, result: { tools: [{ name: 'slow_tool', description: 'Slow', inputSchema: { type: 'object', properties: {} } }] } })
+        }
+      }
+    `, 'utf8')
+    writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        slow: { command: process.execPath, args: [serverScript] },
+        hang: { command: process.execPath, args: [serverScript, 'hang'] }
+      }
+    }), 'utf8')
+    const { McpConnectionManager } = await compile('src/main/mcp/connection-manager.ts', agentTestBuildOptions)
+    const { antigravityMcpServices, warmAntigravityMcp } = await compile('src/main/antigravity-mcp.ts', agentTestBuildOptions)
+    const { openAntigravityDelegation } = await compile('src/main/antigravity-delegation.ts', agentTestBuildOptions)
+    const hostMgr = new McpConnectionManager([])
+    const nativeMgr = new McpConnectionManager([])
+    const mcp = await antigravityMcpServices({ agentDir, cwd: projectDir, trusted: false, host: hostMgr, native: nativeMgr })
+    try {
+      assert.equal(nativeMgr.statusOf('slow').status, 'disconnected', '建会话前 MCP 服务仍是冷的')
+      const started = Date.now()
+      const cold = await warmAntigravityMcp(mcp.services, 2000)
+      const warmedIn = Date.now() - started
+      ok(cold.join() === 'hang' && warmedIn < 4000, '预热等慢服务连上并列出工具，卡住的服务到上限后放行', JSON.stringify({ cold, warmedIn }))
+      assert.equal(nativeMgr.statusOf('slow').status, 'ready')
+      const bridge = await openAntigravityDelegation(
+        resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
+        () => undefined,
+        { delegate: false, services: mcp.services.filter(({ name }) => name === 'slow'), commandHost: {} }
+      )
+      try {
+        const cfg = bridge.httpConfigs.find((c) => c.name === 'slow')
+        const listStarted = Date.now()
+        const res = await fetch(cfg.url, {
+          method: 'POST',
+          headers: { Authorization: cfg.headers[0].value, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
+        })
+        const listed = (await res.json()).result
+        const listMs = Date.now() - listStarted
+        ok(listed.tools.map((t) => t.name).join() === 'slow_tool' && listMs < 500, '预热后 Antigravity 第一次列工具不再等冷启动', JSON.stringify({ listMs }))
+      } finally {
+        await bridge.close()
+      }
+      assert.deepEqual(await warmAntigravityMcp([], 10), [])
+    } finally {
+      await mcp.close()
+      await hostMgr.close()
+      await nativeMgr.close()
+      try { rmSync(root, { recursive: true, force: true }) } catch {}
+    }
+  }
+
+  {
     const root = mkdtempSync(join(tmpdir(), 'inkstone-acp-mcp-refresh-'))
     const agentDir = join(root, 'pi-agent')
     const projectDir = join(root, 'project')

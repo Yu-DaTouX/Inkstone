@@ -141,6 +141,32 @@ export async function antigravityMcpServices(input: {
   }
 }
 
+export const ANTIGRAVITY_MCP_WARM_MS = 15_000
+
+export async function warmAntigravityMcp(services: readonly AntigravityMcpService[], timeoutMs = ANTIGRAVITY_MCP_WARM_MS): Promise<string[]> {
+  if (!services.length) return []
+  const controller = new AbortController()
+  const pending = new Set(services.map(({ name }) => name))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolveDeadline) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      resolveDeadline()
+    }, timeoutMs)
+    timer.unref?.()
+  })
+  const work = Promise.allSettled(services.map(async ({ name, manager }) => {
+    await manager.listToolsRaw(name, { signal: controller.signal })
+    pending.delete(name)
+  }))
+  try {
+    await Promise.race([work, deadline])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+  return [...pending]
+}
+
 export function watchAntigravityMcpFiles(files: readonly string[], onChange: () => void): { close(): void } {
   const targetsByDir = new Map<string, Set<string>>()
   const dirsByDir = new Map<string, Set<string>>()
