@@ -3,7 +3,7 @@ import { realpathSync, statSync } from 'node:fs'
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { redactDiagnosticText, redactSecretText } from '../shared/redact-diagnostic'
 import { pick } from '../shared/ui-lang'
-import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROMPT_LIMIT, isAntigravityMode, type AntigravityChoice, type AntigravityContext, type AntigravityEvent, type AntigravityImage, type AntigravityModels, type AntigravityPlanEntry, type AntigravityUsage } from '../shared/antigravity'
+import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROMPT_LIMIT, isAntigravityMode, type AntigravityChoice, type AntigravityContext, type AntigravityElicitationField, type AntigravityElicitationOption, type AntigravityElicitationResult, type AntigravityEvent, type AntigravityImage, type AntigravityModels, type AntigravityPlanEntry, type AntigravityUsage } from '../shared/antigravity'
 import type { UIMessage } from '../shared/ui-message'
 import { killProcessTree } from './process-tree'
 import { reportedFileDiff, type FileDiff } from './snapshots'
@@ -329,6 +329,7 @@ export class AntigravitySession {
   private lineBytes = 0
   private requests = new Map<number, { method: string; finish: RpcResponseObserver }>()
   private permissions = new Map<number, { rpcId: RpcId; choices: Set<string> }>()
+  private elicitations = new Map<number, { rpcId: RpcId }>()
   private tools = new Map<string, ToolView & { approval: RecordValue }>()
   private legacyModels: AntigravityModels = { current: null, available: [] }
   private choices = new Map<string, AcpChoice>()
@@ -404,7 +405,7 @@ export class AntigravitySession {
   async start(cwd: string, server?: AntigravityMcpServer | AntigravityMcpServer[] | AntigravityMcpConfigs, options?: { discoverOnly?: boolean; mode?: string; defaultMode?: string; resumeSessionId?: string }): Promise<AntigravityModels> {
     this.discoverOnly = options?.discoverOnly === true
     this.resumedSession = false
-    const init = await this.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'inkstone', title: 'Inkstone', version: '1.0.0' } })
+    const init = await this.request('initialize', { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } }, clientInfo: { name: 'inkstone', title: 'Inkstone', version: '1.0.0' } })
     if (init.protocolVersion !== 1 && init.protocolVersion !== 2) throw new Error(pick('Antigravity 的 ACP 协议版本不兼容。', 'Incompatible Antigravity ACP version.'))
     const version = /^v?(\d+)\.(\d+)\.(\d+)\b/i.exec(text(object(init.agentInfo).version).trim())
     const major = Number(version?.[1])
@@ -537,6 +538,7 @@ export class AntigravitySession {
       if (this.pendingSteer !== steer) this.completePrompt()
       else {
         this.clearPermissions()
+        this.clearElicitations()
         this.clearCancelTimer()
       }
     }, () => steer.buffering)
@@ -590,6 +592,7 @@ export class AntigravitySession {
   private completePrompt(): void {
     if (this.pendingSteer) {
       this.clearPermissions()
+      this.clearElicitations()
       this.tools.clear()
       this.contextReading = undefined
       this.pendingSteer.buffering = true
@@ -598,6 +601,7 @@ export class AntigravitySession {
       queueMicrotask(() => {
         this.finishPrompt()
         this.clearPermissions()
+        this.clearElicitations()
       })
     }
   }
@@ -617,10 +621,19 @@ export class AntigravitySession {
     this.emit({ type: 'permission-cleared', id })
   }
 
+  replyElicitation(id: number, result: AntigravityElicitationResult): void {
+    const pending = this.elicitations.get(id)
+    if (!pending) return
+    this.elicitations.delete(id)
+    this.send({ id: pending.rpcId, result: result.action === 'accept' ? { action: 'accept', content: result.content } : { action: result.action } })
+    this.emit({ type: 'elicitation-cleared', id })
+  }
+
   cancel(): void {
     if (!this.sessionId || !this.acceptsActivity || this.closed || this.cancelTimer) return
     this.send({ method: 'session/cancel', params: { sessionId: this.sessionId } })
     this.clearPermissions()
+    this.clearElicitations()
     if (!this.prompting || this.pendingSteer?.done) return
     this.cancelTimer = setTimeout(() => this.close(new Error(pick('Antigravity 未响应停止请求，已断开会话。', 'Antigravity did not acknowledge cancellation; the session was disconnected.'))), 5000)
     this.cancelTimer.unref()
@@ -642,6 +655,8 @@ export class AntigravitySession {
     this.clearCancelTimer()
     const permissionIds = [...this.permissions.keys()]
     this.permissions.clear()
+    const elicitationIds = [...this.elicitations.keys()]
+    this.elicitations.clear()
     this.closing = Promise.allSettled([
       this.child.pid && this.child.exitCode === null && this.child.signalCode === null ? this.killTree(this.child.pid) : undefined,
       this.cleanup?.(),
@@ -650,6 +665,7 @@ export class AntigravitySession {
     const reason = error ?? new Error(pick('Antigravity 会话已关闭。', 'Antigravity session closed.'))
     for (const pending of this.requests.values()) pending.finish(reason)
     for (const id of permissionIds) this.onEvent({ type: 'permission-cleared', id })
+    for (const id of elicitationIds) this.onEvent({ type: 'elicitation-cleared', id })
     if (error) this.onEvent({ type: 'closed', error: error.message })
     return this.closing
   }
@@ -692,6 +708,10 @@ export class AntigravitySession {
     for (const id of this.permissions.keys()) this.reply(id, null)
   }
 
+  private clearElicitations(): void {
+    for (const id of this.elicitations.keys()) this.replyElicitation(id, { action: 'cancel' })
+  }
+
   private send(message: RecordValue): void {
     if (!this.closed) this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
   }
@@ -728,6 +748,7 @@ export class AntigravitySession {
       }
       else if (typeof id === 'string' || typeof id === 'number') {
         if (message.method === 'session/request_permission') this.ask(id, params)
+        else if (message.method === 'elicitation/create') this.elicit(id, params)
         else this.send({ id, error: { code: -32601, message: 'Client method not supported' } })
       }
     } else if (typeof id === 'number') {
@@ -867,19 +888,24 @@ export class AntigravitySession {
     const content = array(tool.content)
     const hasInput = typeof rawInput === 'string' ? !!rawInput.trim()
       : Array.isArray(rawInput) ? rawInput.length > 0 : Object.keys(object(rawInput)).length > 0
+    const hasOversizedDetail = tool.rawInput === OVERSIZED_APPROVAL_FIELD || tool.locations === OVERSIZED_APPROVAL_FIELD || tool.content === OVERSIZED_APPROVAL_FIELD
     const oversized = approvalFields.some((key) => tool[key] === OVERSIZED_APPROVAL_FIELD)
     const detail = oversized ? '' : visibleApprovalText(JSON.stringify({ input: rawInput, locations: tool.locations, content: tool.content, kind: tool.kind }, null, 2))
     const tooLong = oversized || detail.length > MAX_APPROVAL_DETAIL
-    const blocked = tooLong ? pick('工具审批详情过长，无法完整显示，已拒绝。', 'Tool details were too long to display in full. The request was denied.')
-      : !hasInput && !locations.length && !content.length
-        ? pick('工具未提供可核对的审批详情，已拒绝。', 'The tool did not provide details to review. The request was denied.') : undefined
+    const activeMode = this.promptMode ?? this.mode
+    const missingDetails = !hasOversizedDetail && !hasInput && !locations.length && !content.length
+    const tooLongReason = pick('工具审批详情过长，无法完整显示，已拒绝。', 'Tool details were too long to display in full. The request was denied.')
+    const blocked = missingDetails
+      ? pick('工具未提供可核对的审批详情，已拒绝。', 'The tool did not provide details to review. The request was denied.')
+      : tooLong && activeMode !== 'auto'
+        ? tooLongReason
+        : undefined
     const options = offered.flatMap((option) => {
       const id = text(option.optionId)
       const allow = option.kind === 'allow_once'
       if (!id || counts.get(id) !== 1 || (allow && blocked) || (!allow && option.kind !== 'reject_once')) return []
       return [{ id, name: (text(option.name) || id).slice(0, 120), allow }]
     })
-    const activeMode = this.promptMode ?? this.mode
     const allowOnce = options.find((option) => option.allow)
     if (activeMode === 'auto' && allowOnce) {
       this.send({ id: rpcId, result: { outcome: { outcome: 'selected', optionId: allowOnce.id } } })
@@ -887,7 +913,89 @@ export class AntigravitySession {
     }
     const id = ++this.nextId
     this.permissions.set(id, { rpcId, choices: new Set(options.map((option) => option.id)) })
-    this.emit({ type: 'permission', id, title, detail: tooLong ? blocked! : detail === '{}' ? '' : detail, options,
+    this.emit({ type: 'permission', id, title, detail: tooLong ? tooLongReason : detail === '{}' ? '' : detail, options,
       ...(blocked && activeMode !== 'auto' ? { blocked } : {}) })
+  }
+
+  private elicit(rpcId: RpcId, params: RecordValue): void {
+    if ([...this.elicitations.values()].some((pending) => pending.rpcId === rpcId)) return
+    const targetSession = text(params.sessionId)
+    if (!this.acceptsActivity || !this.sessionId || (targetSession && targetSession !== this.sessionId) || this.cancelTimer || this.permissions.size + this.elicitations.size >= 32) {
+      this.send({ id: rpcId, result: { action: 'cancel' } })
+      return
+    }
+    const mode = text(params.mode)
+    if (mode && mode !== 'form') {
+      this.send({ id: rpcId, result: { action: 'decline' } })
+      return
+    }
+    const message = visibleApprovalText(text(params.message).slice(0, 4000))
+    const schema = object(params.requestedSchema)
+    const properties = object(schema.properties)
+    const required = new Set(array(schema.required).filter((item): item is string => typeof item === 'string'))
+    const optionsFrom = (source: RecordValue): AntigravityElicitationOption[] => {
+      const seen = new Set<string>()
+      const entries = array(source.oneOf).length ? array(source.oneOf) : array(source.anyOf)
+      if (entries.length) {
+        return entries.map(object).flatMap((entry) => {
+          const value = text(entry.const)
+          if (!value || seen.has(value)) return []
+          seen.add(value)
+          return [{ value, label: visibleApprovalText((text(entry.title) || value).slice(0, 512)) }]
+        })
+      }
+      const names = array(source.enumNames)
+      return array(source.enum).flatMap((raw, index) => {
+        const value = typeof raw === 'string' ? raw : typeof raw === 'number' || typeof raw === 'boolean' ? String(raw) : ''
+        if (!value || seen.has(value)) return []
+        seen.add(value)
+        return [{ value, label: visibleApprovalText((text(names[index]) || value).slice(0, 512)) }]
+      })
+    }
+    const companionOther = new Set<string>()
+    const rawEntries = Object.entries(properties)
+    const fields: AntigravityElicitationField[] = []
+    for (const [key, rawProp] of rawEntries) {
+      if (companionOther.has(key)) continue
+      const prop = object(rawProp)
+      const kindType = text(prop.type)
+      const title = visibleApprovalText((text(prop.title) || key).slice(0, 512))
+      const desc = visibleApprovalText(text(prop.description).slice(0, 2000))
+      const description = desc && desc !== title ? desc : undefined
+      const isRequired = required.has(key)
+      if (kindType === 'array') {
+        const options = optionsFrom(object(prop.items))
+        if (!options.length) continue
+        const otherKey = `${key}_other`
+        const otherProp = Object.hasOwn(properties, otherKey) ? object(properties[otherKey]) : null
+        const hasOther = !!otherProp && (!text(otherProp.type) || text(otherProp.type) === 'string') && !optionsFrom(otherProp).length
+        if (hasOther) companionOther.add(otherKey)
+        fields.push({ key, kind: 'multi', title, ...(description ? { description } : {}), required: isRequired, options, ...(hasOther ? { otherKey } : {}) })
+      } else if (!kindType || kindType === 'string') {
+        const options = optionsFrom(prop)
+        if (options.length) {
+          const otherKey = `${key}_other`
+          const otherProp = Object.hasOwn(properties, otherKey) ? object(properties[otherKey]) : null
+          const hasOther = !!otherProp && (!text(otherProp.type) || text(otherProp.type) === 'string') && !optionsFrom(otherProp).length
+          if (hasOther) companionOther.add(otherKey)
+          fields.push({ key, kind: 'select', title, ...(description ? { description } : {}), required: isRequired, options, ...(hasOther ? { otherKey } : {}) })
+        } else {
+          fields.push({ key, kind: 'text', title, ...(description ? { description } : {}), required: isRequired })
+        }
+      } else if (kindType === 'boolean') {
+        fields.push({ key, kind: 'boolean', title, ...(description ? { description } : {}), required: isRequired })
+      } else if (kindType === 'number' || kindType === 'integer') {
+        const min = typeof prop.minimum === 'number' && Number.isFinite(prop.minimum) ? prop.minimum : undefined
+        const max = typeof prop.maximum === 'number' && Number.isFinite(prop.maximum) ? prop.maximum : undefined
+        fields.push({ key, kind: 'number', title, ...(description ? { description } : {}), required: isRequired, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), ...(kindType === 'integer' ? { integer: true } : {}) })
+      }
+    }
+    if (!fields.length) {
+      this.send({ id: rpcId, result: { action: 'cancel' } })
+      return
+    }
+    const id = ++this.nextId
+    this.elicitations.set(id, { rpcId })
+    this.emit({ type: 'elicitation', id, message, fields })
   }
 }

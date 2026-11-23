@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n, useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
+import { ANTIGRAVITY_PROVIDER } from '../../../../../shared/antigravity'
 import { MCP_SETTINGS_CHANGED, notifyMcpSettingsChanged, reloadCurrentMcp, mcpViewKey as viewKey } from '../../../state/mcp-settings'
 import { Badge, Button, SegmentedControl, Switch } from '../../../ui'
 import type { CapabilitySettingsSnapshot } from '../../../../../shared/ipc'
@@ -167,13 +168,14 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
   }
   const services = snapshot ? scope === 'global' ? snapshot.global.filter((service) => !service.pluginManaged || service.conflict) : snapshot.projectServices : []
   const session = useStore.getState().session
+  const antigravitySession = useStore((s) => s.session?.model?.provider === ANTIGRAVITY_PROVIDER)
   const previewing = !!useStore.getState().peekedPath || !!useStore.getState().peekedSessionId
-  const sessionToolsDisabled = busy || loading || runtimeBusy || !runtime?.nativeMcpAvailable || !session?.sessionId || previewing
+  const sessionToolsDisabled = busy || loading || runtimeBusy || (!runtime?.nativeMcpAvailable && !antigravitySession) || !session?.sessionId || previewing
   return <Panel label={text.title}>
     <Group title={text.title} settingId="caps-mcp-servers" actions={<>
       <Button variant="primary" isDisabled={!snapshot || busy || loading} onPress={() => setAdding((value) => !value)} data-testid="mcp-add">{text.add}</Button>
       <Button isPending={loading} isDisabled={busy} onPress={() => void refresh()} data-testid="caps-mcp-reload">{text.refresh}</Button>
-      <Button isDisabled={sessionToolsDisabled || !!nativeStatus?.pending} onPress={() => void check()} data-setting-id="caps-mcp-native-status" data-testid="caps-native-mcp">{text.checkSession}</Button>
+      <Button isDisabled={sessionToolsDisabled || !runtime?.nativeMcpAvailable || !!nativeStatus?.pending} onPress={() => void check()} data-setting-id="caps-mcp-native-status" data-testid="caps-native-mcp">{text.checkSession}</Button>
       <Button isDisabled={sessionToolsDisabled} onPress={() => void apply()} data-testid="mcp-apply">{text.apply}</Button>
     </>}>
       {snapshot?.project ? <SegmentedControl className="mcp-scope-seg" label={text.scopeLabel} value={scope} onChange={(value) => { setScope(value); setAdding(false); setNotice(''); setWarning('') }} isDisabled={busy || loading} options={[

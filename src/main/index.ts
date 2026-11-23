@@ -2029,6 +2029,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
               })
               return 'deny'
             }
+            void runners?.reloadMcpServers().catch(() => undefined)
           }
           return choice
         },

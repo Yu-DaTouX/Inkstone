@@ -34,7 +34,9 @@ let cwd
 let promptId = null
 let waiting = false
 let questionWaiting = false
+let elicitWaiting = false
 let steerWaiting = false
+let clientSupportsElicitation = false
 let cancelledPrompts = 0
 let mcp
 let syncedMcp
@@ -119,6 +121,7 @@ const permissionCalls = new Map([
 for await (const line of input) {
   const { id, method, params, result, error } = JSON.parse(line)
   if (method === 'initialize') {
+    clientSupportsElicitation = params?.clientCapabilities?.elicitation?.form !== undefined
     reply(id, {
       protocolVersion,
       ...(agentVersion ? { agentInfo: { name: 'fixture', version: agentVersion } } : {}),
@@ -467,6 +470,21 @@ for await (const line of input) {
       }, 100)
       continue
     }
+    if (text === '后台定时巡检') {
+      chunk('已启动后台任务')
+      reply(id, { stopReason: 'end_turn' })
+      const timer = { toolCallId: 'scheduled-check', title: 'Run schedule', kind: 'other',
+        rawInput: { DurationSeconds: 900, Prompt: '检查进度', TimerCondition: 'any' } }
+      setTimeout(() => {
+        update({ ...timer, sessionUpdate: 'tool_call', status: 'in_progress' })
+        chunk('15 分钟后自动巡检')
+        setTimeout(() => {
+          update({ ...timer, sessionUpdate: 'tool_call_update', status: 'completed' })
+          chunk('已巡检进度')
+        }, 1000)
+      }, 100)
+      continue
+    }
     if (text === '后台工具无回执') {
       chunk('已启动等待中的后台任务')
       reply(id, { stopReason: 'end_turn' })
@@ -562,6 +580,76 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
+    if (text === '检查能力声明') {
+      chunk(`elicitation=${clientSupportsElicitation}`)
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text === 'ACP单选表单') {
+      elicitWaiting = true
+      call('elicit', 'elicitation/create', {
+        sessionId: sid,
+        mode: 'form',
+        message: '请选择方案',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            q0: {
+              type: 'string',
+              title: '方案',
+              oneOf: [
+                { const: 'opt_a', title: '选项 A' },
+                { const: 'opt_b', title: '选项 B' },
+                { const: 'opt_c', title: '选项 C' },
+                { const: 'opt_d', title: '选项 D' }
+              ]
+            },
+            q0_other: { type: 'string', title: '其他' }
+          }
+        }
+      })
+      continue
+    }
+    if (text === 'ACP多选表单') {
+      elicitWaiting = true
+      call('elicit', 'elicitation/create', {
+        sessionId: sid,
+        mode: 'form',
+        message: '请回答多个问题',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            q0: {
+              type: 'array',
+              title: '多选项',
+              items: {
+                anyOf: [
+                  { const: 'm1', title: '标签 1' },
+                  { const: 'm2', title: '标签 2' }
+                ]
+              }
+            },
+            q0_other: { type: 'string', title: '其他' },
+            q1: {
+              type: 'string',
+              title: '单选项',
+              oneOf: [
+                { const: 's1', title: '同名' },
+                { const: 's2', title: '同名' }
+              ]
+            },
+            q2: { type: 'boolean', title: '确认' }
+          },
+          required: ['q0', 'q1']
+        }
+      })
+      continue
+    }
+    if (text === 'ACP链接表单') {
+      elicitWaiting = true
+      call('elicit', 'elicitation/create', { sessionId: sid, mode: 'url', message: '打开外链', url: 'https://example.invalid' })
+      continue
+    }
     if (text === '崩溃') process.exit(3)
     if (text === '等待') { chunk('正在等待'); continue }
     const operation = permissionCalls.get(text)
@@ -588,9 +676,13 @@ for await (const line of input) {
     }
   } else if (method === 'session/cancel') {
     cancelledPrompts++
-    waiting = questionWaiting = steerWaiting = false
+    waiting = questionWaiting = elicitWaiting = steerWaiting = false
     saveSession()
     reply(promptId, { stopReason: 'cancelled' })
+  } else if (id === 'elicit' && elicitWaiting) {
+    elicitWaiting = false
+    chunk(`提问表单结果 · ${JSON.stringify(result)}`)
+    reply(promptId, { stopReason: 'end_turn' })
   } else if (id === 'question' && questionWaiting) {
     questionWaiting = false
     chunk(`提问结果 · ${result?.outcome?.optionId ?? 'cancelled'} · cancel=${cancelledPrompts}`)

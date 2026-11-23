@@ -163,7 +163,10 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:capabilities:changeMcpService', async (input: McpSettingsMutation) => {
     const host = await mcpSettingsHost()
     const result = await changeMcpServiceSettings(host, input)
-    if (result.ok) mcpChecks.clear()
+    if (result.ok) {
+      mcpChecks.clear()
+      void registry()?.reloadMcpServers().catch(() => undefined)
+    }
     return result
   })
   const mcpApplications = new WeakSet<AgentController>()
@@ -183,15 +186,20 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
       const result = await mcpAppProxyService().refresh({ callerProjectId: agent.capabilityProjectId ?? undefined, allowEmpty: true })
       fresh()
       if (!result.ok) throw new Error(result.errors.map((entry) => `${entry.serverId}: ${entry.error}`).join('\n') || result.error || pick('托管工具刷新失败', 'Failed to refresh managed tools'))
+      await agent.reloadMcpServers({ immediate: true })
       await agent.nativeReload()
+      const reloaded = await agent.reloadAntigravityMcp?.()
+      if (reloaded && !reloaded.ok) throw new Error(reloaded.error || pick('Antigravity 重新加载 MCP 失败', 'Failed to reload Antigravity MCP servers'))
       await agent.listCommands()
       return { ok: true }
     } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
     finally { mcpApplications.delete(agent) }
   })
-  handle('yan:capabilities:manageNativeMcpServer', async (value: unknown) =>
-    manageNativeMcpServer(await currentNativeMcpList(), value)
-  )
+  handle('yan:capabilities:manageNativeMcpServer', async (value: unknown) => {
+    const result = await manageNativeMcpServer(await currentNativeMcpList(), value)
+    if (result.ok) void registry()?.reloadMcpServers().catch(() => undefined)
+    return result
+  })
 
   const mcpChecks = new McpCheckHistory()
   const checkScopeOf = (serverId: string, projectId: string | null = currentAgent()?.capabilityProjectId ?? null): McpCheckScope => ({

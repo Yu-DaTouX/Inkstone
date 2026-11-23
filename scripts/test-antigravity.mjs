@@ -392,6 +392,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       assert.ok(!events.some((e) => e.type === 'question' || e.type === 'tool'))
       const next = []
       const running = steered.attach((e) => next.push(e))
+      await wait(() => next.some((e) => e.type === 'question'))
       assert.deepEqual(next.map(({ type }) => type), ['text', 'tool', 'context', 'question'])
       const question = next.at(-1)
       assert.equal(question.title, '选择夹具\\u{202e}选项')
@@ -449,6 +450,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       const steer = session.steerPrompt('原生插话提问')
       assert.equal(await old, 'end_turn')
       await wait(() => session.context?.used === 567)
+      await delay(30)
       session.cancel()
       const replay = []
       assert.equal(await steer.attach((e) => replay.push(e)), 'cancelled')
@@ -723,6 +725,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const ag = await makeAgent('auto', '--version=1.5.0', 'native-steer')
     const gate = deferred()
     try {
+      await ag.prompt('检查能力声明').done
+      assert.equal(ag.saved[0].steps[0].text, 'elicitation=true')
+      ag.saved.length = 0
       ag.holdAppend(gate.promise)
       const old = ag.prompt('原生插话阻塞')
       await wait(() => ag.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
@@ -834,6 +839,27 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await idle.prompt('思考超出输出').done
       ok(idle.saved[4].antigravity.usage.thought === 21 && idle.saved[4].antigravity.usage.visibleOutput === undefined,
         '主会话未观察到思考文本时也不会把已知含思考的无效输出用量当作可见输出')
+
+      await idle.prompt('后台定时巡检').done
+      await wait(() => idle.saved.length === 7 && !idle.ctl.acpTurn)
+      const scheduled = idle.saved[6]
+      assert.equal(scheduled.status, 'stop')
+      assert.equal(scheduled.continuation, true)
+      const timer = scheduled.steps.flatMap((step) => step.tools ?? []).find(({ name }) => name === 'Run schedule')
+      assert.equal(timer?.status, 'ok')
+      assert.match(timer?.output, /等待触发/)
+      assert.equal(idle.connection.session, idle.session)
+      await wait(() => idle.saved.length === 8 && !idle.ctl.acpTurn)
+      assert.equal(idle.saved[7].status, 'stop')
+      assert.equal(idle.saved[7].continuation, true)
+      assert.equal(idle.saved[7].steps.map(({ text }) => text).join(''), '已巡检进度')
+      ok(true, 'Antigravity 原生定时任务不阻塞后台回合；等待超过旧超时后仍能唤醒原会话')
+
+      await idle.prompt('后台工具无回执').done
+      await wait(() => idle.saved.length === 10 && !idle.ctl.acpTurn)
+      assert.equal(idle.saved[9].status, 'error')
+      assert.match(idle.saved[9].error, /后台工具长时间没有更新/)
+      ok(true, '没有终态的普通后台工具仍会超时')
     } finally {
       if (previousIdle === undefined) delete process.env.YAN_ACP_UNSOLICITED_IDLE_MS
       else process.env.YAN_ACP_UNSOLICITED_IDLE_MS = previousIdle
@@ -982,7 +1008,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
         ok(await pending === 'end_turn' && !asked && receipt() === '审批结果 · once', `Auto 档自动允许一次且不发审批事件：${prompt}`)
       }
 
-      for (const prompt of ['详情缺失', '详情超限']) {
+      for (const prompt of ['详情缺失']) {
         const pending = request(prompt, 'auto')
         const asked = await wait(() => permission() || receipt())
         if (permission()) {
@@ -991,6 +1017,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
         }
         ok(await pending === 'end_turn' && asked.options?.map((option) => option.id).join() === 'deny' &&
           receipt() === '审批结果 · deny', `Auto 档仅可拒绝，不自动放行：${prompt}`)
+      }
+
+      for (const prompt of ['详情超限', '大工具载荷']) {
+        const pending = request(prompt, 'auto')
+        await wait(() => permission() || receipt())
+        const asked = permission()
+        if (asked) session.reply(asked.id, 'deny')
+        ok(await pending === 'end_turn' && !asked && receipt() === '审批结果 · once', `Auto 档放行超长详情且不弹审批：${prompt}`)
       }
 
       for (const mode of ['default', 'accept-edits', 'plan']) {
@@ -1545,6 +1579,378 @@ await runSuite(import.meta.url, async (ok, compile) => {
     } finally {
       if (prevBridgeEnv === undefined) delete process.env.YAN_NATIVE_BRIDGE
       else process.env.YAN_NATIVE_BRIDGE = prevBridgeEnv
+    }
+  }
+
+  {
+    const { AgentController } = await compile('src/main/agent.ts', agentTestBuildOptions)
+    const { AntigravitySubagentRpc } = await compile('src/main/antigravity-subagent-rpc.ts')
+    const { session } = start()
+    const models = await session.start(cwd, undefined, { mode: 'auto' })
+    const pushed = []
+    const saved = []
+    const ctl = new AgentController({ cwd, push: (event) => pushed.push(event) })
+    ctl.refreshState = async () => {}
+    ctl.refreshStats = async () => {}
+    ctl.maybeGenerateTitle = async () => {}
+    ctl.confirmExecutionAdmission = () => true
+    ctl.state = { sessionId: randomUUID(), cwd, isStreaming: false, autoCompactionEnabled: false }
+    const connection = ctl.acpConnection = { sessionId: ctl.state.sessionId, model: { id: 'flash', name: 'Flash', provider: 'antigravity' }, thinking: models.thinking, mode: models.mode, modes: models.modes, session, hasContext: true }
+    const native = ctl.nativeRuntime = {
+      bridgeCapabilities: ['append_antigravity_turn', 'append_antigravity_compaction'],
+      appendAntigravityTurn: async (turn) => { saved.push(turn); return { userId: 'eu-' + saved.length, assistantId: 'ea-' + saved.length } }
+    }
+    ctl.bindAntigravity(connection, session)
+    const askReq = () => pushed.filter((event) => event.ch === 'ui-request').at(-1)?.payload
+    const send = (text) => {
+      ctl.startAntigravityTurn({ connection, session, native, owner: ctl.asyncOwner(), userText: text, prompt: text })
+      return ctl.acpTurn
+    }
+    try {
+      const t1 = send('ACP单选表单')
+      const r1 = await wait(() => askReq())
+      assert.equal(r1.method, 'select')
+      assert.deepEqual(r1.options, ['选项 A', '选项 B', '选项 C', '选项 D'])
+      await ctl.answerUiRemotely(r1.id, { value: '选项 C' })
+      await t1.done
+      await wait(() => saved.length === 1 && !ctl.acpTurn)
+      assert.equal(saved[0].steps[0].text, '提问表单结果 · {"action":"accept","content":{"q0":"opt_c"}}')
+
+      const t2 = send('ACP单选表单')
+      const r2 = await wait(() => askReq()?.id !== r1.id ? askReq() : null)
+      await ctl.answerUiRemotely(r2.id, { value: '自定义内容' })
+      await t2.done
+      await wait(() => saved.length === 2 && !ctl.acpTurn)
+      assert.equal(saved[1].steps[0].text, '提问表单结果 · {"action":"accept","content":{"q0_other":"自定义内容"}}')
+
+      const t3 = send('ACP多选表单')
+      const r3 = await wait(() => askReq()?.id !== r2.id ? askReq() : null)
+      assert.equal(r3.method, 'input')
+      assert.equal(r3.form?.length, 3)
+      assert.deepEqual(r3.form.map((f) => f.kind), ['multi', 'choice', 'choice'])
+      await ctl.answerUiRemotely(r3.id, { value: JSON.stringify({ q_0: ['标签 1', '手写补充'], q_1: '同名 (2)', q_2: '是' }) })
+      await t3.done
+      await wait(() => saved.length === 3 && !ctl.acpTurn)
+      assert.deepEqual(
+        JSON.parse(saved[2].steps[0].text.replace(/^提问表单结果 · /, '')),
+        { action: 'accept', content: { q0: ['m1'], q0_other: '手写补充', q1: 's2', q2: true } }
+      )
+
+      const t4 = send('ACP链接表单')
+      await t4.done
+      await wait(() => saved.length === 4 && !ctl.acpTurn)
+      assert.equal(saved[3].steps[0].text, '提问表单结果 · {"action":"decline"}')
+
+      const t5 = send('ACP单选表单')
+      const r5 = await wait(() => askReq()?.id !== r3.id ? askReq() : null)
+      await ctl.abort()
+      await t5.done
+      await wait(() => saved.length === 5 && !ctl.acpTurn)
+      assert.equal(saved[4].status, 'aborted')
+      assert.ok(pushed.some((event) => event.ch === 'ui-resolved' && event.payload?.id === r5.id))
+      ok(true, 'ACP ask_question (elicitation/create) 适配单选、自定义写入、多选多题表单、不支持的 URL 拒绝及取消清理')
+    } finally {
+      await ctl.closeAntigravity()
+    }
+
+    const child = new AntigravitySubagentRpc(cwd, 'flash', async () => true, { launch: () => start().session })
+    const childEvents = []
+    child.on('event', (event) => childEvents.push(event))
+    child.spawn()
+    try {
+      assert.equal((await child.command('get_state', undefined, { timeoutMs: 2500 })).success, true)
+      await child.command('prompt', { message: 'ACP单选表单' })
+      await wait(() => childEvents.some((e) => e.type === 'agent_settled'))
+      const msg = childEvents.findLast((e) => e.type === 'message_end').message
+      assert.ok(msg.content.some((b) => b.text === '提问表单结果 · {"action":"cancel"}'))
+      ok(true, 'Antigravity 子代理自动取消 elicitation/create 不阻塞')
+    } finally {
+      await child.close()
+    }
+  }
+
+  {
+    const root = mkdtempSync(join(tmpdir(), 'inkstone-acp-mcp-refresh-'))
+    const agentDir = join(root, 'pi-agent')
+    const projectDir = join(root, 'project')
+    const mcpServersPath = join(root, 'mcp-servers.json')
+    mkdirSync(agentDir, { recursive: true })
+    mkdirSync(projectDir, { recursive: true })
+    const dynamicServerScript = join(root, 'dynamic-mcp.mjs')
+    writeFileSync(dynamicServerScript, `
+      import { createInterface } from 'node:readline'
+      let connected = false
+      const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n')
+      for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
+        if (!line.trim()) continue
+        const req = JSON.parse(line)
+        if (req.method === 'initialize') {
+          send({ jsonrpc: '2.0', id: req.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'dynamic-colab', version: '1.0.0' } } })
+        } else if (req.method === 'tools/list') {
+          const tools = [
+            { name: 'connect_browser', description: 'Connect', inputSchema: { type: 'object', properties: {} } },
+            ...(connected ? [{ name: 'run_cell', description: 'Run cell', inputSchema: { type: 'object', properties: {} } }] : [])
+          ]
+          send({ jsonrpc: '2.0', id: req.id, result: { tools } })
+        } else if (req.method === 'tools/call') {
+          if (req.params?.name === 'connect_browser' && !connected) {
+            connected = true
+            send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed', params: {} })
+          }
+          send({ jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: String(process.pid) }] } })
+        }
+      }
+    `, 'utf8')
+    writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'dynamic-colab': { command: process.execPath, args: [dynamicServerScript] },
+        'oauth-ignored': { url: 'https://example.com/mcp', oauth: { clientId: 'x' } }
+      }
+    }), 'utf8')
+
+    const { McpConnectionManager } = await compile('src/main/mcp/connection-manager.ts', agentTestBuildOptions)
+    const { antigravityMcpFingerprint, antigravityMcpServices, watchAntigravityMcpFiles } = await compile('src/main/antigravity-mcp.ts', agentTestBuildOptions)
+    const { openAntigravityDelegation } = await compile('src/main/antigravity-delegation.ts', agentTestBuildOptions)
+
+    const fpInitial = await antigravityMcpFingerprint({ agentDir, cwd: projectDir, trusted: false, hostConfigs: [] })
+    writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'dynamic-colab': { command: process.execPath, args: [dynamicServerScript], toolExposure: { run_cell: 'hidden' } },
+        'oauth-ignored': { url: 'https://example.com/mcp', oauth: { clientId: 'y' } }
+      }
+    }), 'utf8')
+    const fpHidden = await antigravityMcpFingerprint({ agentDir, cwd: projectDir, trusted: false, hostConfigs: [] })
+    assert.notEqual(fpHidden, fpInitial, 'toolExposure 变更会改变 Antigravity MCP 指纹')
+    writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'dynamic-colab': { command: process.execPath, args: [dynamicServerScript] },
+        'oauth-ignored': { url: 'https://example.com/mcp', oauth: { clientId: 'z' } }
+      }
+    }), 'utf8')
+    assert.equal(await antigravityMcpFingerprint({ agentDir, cwd: projectDir, trusted: false, hostConfigs: [] }), fpInitial, '未挂载的 oauth 条目变化不会误触发刷新')
+
+    const hostMgr = new McpConnectionManager([])
+    const nativeMgr = new McpConnectionManager([])
+    const listChangedEvents = []
+    let watchHits = 0
+    const watcher = watchAntigravityMcpFiles([join(agentDir, 'mcp.json'), join(projectDir, '.pi', 'mcp.json'), mcpServersPath], () => { watchHits++ })
+    try {
+      mkdirSync(join(projectDir, '.pi'), { recursive: true })
+      writeFileSync(join(projectDir, '.pi', 'mcp.json'), JSON.stringify({ mcpServers: { 'proj-only': { url: 'https://proj.example/mcp' } } }), 'utf8')
+      await wait(() => watchHits >= 1, 2500)
+      const fpUntrusted = await antigravityMcpFingerprint({ agentDir, cwd: projectDir, trusted: false, hostConfigs: [] })
+      const fpTrusted = await antigravityMcpFingerprint({ agentDir, cwd: projectDir, trusted: true, hostConfigs: [] })
+      assert.equal(fpUntrusted, fpInitial)
+      assert.notEqual(fpTrusted, fpInitial)
+      rmSync(join(projectDir, '.pi'), { recursive: true, force: true })
+
+      const firstMcp = await antigravityMcpServices({
+        agentDir,
+        cwd: projectDir,
+        trusted: false,
+        host: hostMgr,
+        native: nativeMgr,
+        onToolsListChanged: (id) => listChangedEvents.push(id)
+      })
+      const commandHost = {
+        cwd: () => projectDir,
+        mcpConnectionManager: () => hostMgr,
+        mcpConfigError: () => undefined,
+        permissionMode: async () => 'all',
+        confirmDanger: async () => ({ decision: 'allow', choice: 'once' }),
+        approvalOwner: () => ({})
+      }
+      const controller = new AbortController()
+      const bridge1 = await openAntigravityDelegation(
+        resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
+        () => ({ signal: controller.signal, mode: 'auto' }),
+        { delegate: false, services: firstMcp.services, commandHost }
+      )
+      const callBridge = async (cfg, method, params) => {
+        const res = await fetch(cfg.url, {
+          method: 'POST',
+          headers: { Authorization: cfg.headers[0].value, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+        })
+        return (await res.json()).result
+      }
+      try {
+        const colabHttp1 = bridge1.httpConfigs.find((c) => c.name === 'dynamic-colab')
+        const list1 = await callBridge(colabHttp1, 'tools/list', {})
+        assert.deepEqual(list1.tools.map((t) => t.name), ['connect_browser'])
+        const call1 = await callBridge(colabHttp1, 'tools/call', { name: 'connect_browser', arguments: {} })
+        const pid1 = call1.content[0].text
+        await wait(() => listChangedEvents.includes('dynamic-colab'))
+
+        await bridge1.close()
+        await firstMcp.close()
+
+        const secondMcp = await antigravityMcpServices({
+          agentDir,
+          cwd: projectDir,
+          trusted: false,
+          host: hostMgr,
+          native: nativeMgr,
+          onToolsListChanged: (id) => listChangedEvents.push(id)
+        })
+        const bridge2 = await openAntigravityDelegation(
+          resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
+          () => ({ signal: controller.signal, mode: 'auto' }),
+          { delegate: false, services: secondMcp.services, commandHost }
+        )
+        try {
+          const colabHttp2 = bridge2.httpConfigs.find((c) => c.name === 'dynamic-colab')
+          const list2 = await callBridge(colabHttp2, 'tools/list', {})
+          assert.deepEqual(list2.tools.map((t) => t.name), ['connect_browser', 'run_cell'])
+          const call2 = await callBridge(colabHttp2, 'tools/call', { name: 'connect_browser', arguments: {} })
+          assert.equal(call2.content[0].text, pid1, 'Antigravity 重连刷新工具列表时保留原 MCP 进程状态（PID 不变）')
+        } finally {
+          await bridge2.close()
+          await secondMcp.close()
+        }
+        ok(true, 'tools/list_changed 通知可穿透到 Antigravity 服务桥并保留存活的 stdio MCP 连接')
+      } finally {
+        await bridge1.close().catch(() => undefined)
+        await firstMcp.close().catch(() => undefined)
+      }
+    } finally {
+      watcher.close()
+      await hostMgr.close()
+      await nativeMgr.close()
+    }
+
+    const prevEnv = { YAN_DATA_DIR: process.env.YAN_DATA_DIR, YAN_PI_DIR: process.env.YAN_PI_DIR, YAN_MCP_SERVERS_FILE: process.env.YAN_MCP_SERVERS_FILE }
+    process.env.YAN_DATA_DIR = join(root, 'yan-data')
+    process.env.YAN_PI_DIR = agentDir
+    process.env.YAN_MCP_SERVERS_FILE = mcpServersPath
+    writeFileSync(mcpServersPath, '[]', 'utf8')
+    try {
+      const { AgentController } = await compile('src/main/agent.ts', agentTestBuildOptions)
+      const ctl = new AgentController({ cwd: projectDir, push: () => {} })
+      ctl.refreshState = async () => {}
+      ctl.refreshStats = async () => {}
+      ctl.maybeGenerateTitle = async () => {}
+      ctl.confirmExecutionAdmission = () => true
+      ctl.state = { sessionId: randomUUID(), cwd: projectDir, isStreaming: false, autoCompactionEnabled: false }
+      ctl.nativeRuntime = {
+        bridgeCapabilities: ['append_antigravity_turn', 'append_antigravity_compaction'],
+        appendAntigravityTurn: async () => ({ userId: 'u-1', assistantId: 'a-1' })
+      }
+      let selects = 0
+      const liveSession = start().session
+      await liveSession.start(projectDir, undefined, { mode: 'auto' })
+      ctl.acpConnection = {
+        sessionId: ctl.state.sessionId,
+        model: { id: 'flash', name: 'Flash', provider: 'antigravity' },
+        mode: 'auto',
+        mcpFingerprint: await ctl.currentAntigravityMcpFingerprint(),
+        session: liveSession,
+        hasContext: true
+      }
+      ctl.selectAntigravity = async () => {
+        selects++
+        ctl.acpConnection.mcpStale = false
+        ctl.acpConnection.mcpToolsStale = false
+        ctl.acpConnection.mcpFingerprint = await ctl.currentAntigravityMcpFingerprint()
+        return { ok: true }
+      }
+      try {
+        await ctl.reloadMcpServers()
+        await wait(() => ctl.acpConnection.mcpStale === false)
+        assert.equal(selects, 0, '配置未实质变化时不误重连')
+
+        writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({
+          mcpServers: {
+            'dynamic-colab': { command: process.execPath, args: [dynamicServerScript] },
+            'extra-srv': { url: 'https://extra.example/mcp' }
+          }
+        }), 'utf8')
+        await ctl.reloadMcpServers()
+        assert.equal(ctl.acpConnection.mcpStale, true)
+        await wait(() => selects === 1 && ctl.acpConnection.mcpStale === false)
+
+        writeFileSync(mcpServersPath, JSON.stringify([{ id: 'windows-mcp', transport: 'stdio', command: 'uvx', args: [] }]), 'utf8')
+        assert.equal((await ctl.sendAntigravity('使用 windows-mcp')).ok, true)
+        await ctl.acpTurn?.done
+        assert.equal(selects, 2, 'sendAntigravity 在发送前检测配置指纹漂移并自动重连刷新 MCP')
+
+        ctl.markAntigravityMcpChanged('tools')
+        await wait(() => selects === 3 && ctl.acpConnection.mcpStale === false)
+        assert.equal((await ctl.reloadAntigravityMcp()).ok, true)
+        assert.equal(selects, 4)
+
+        const { registerCapabilitiesIpc } = await compile('src/main/ipc/capabilities-ipc.ts', {
+          external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+          plugins: [{
+            name: 'caps-ipc-electron',
+            setup(builder) {
+              builder.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'caps-electron' }))
+              builder.onLoad({ filter: /.*/, namespace: 'caps-electron' }, () => ({
+                contents: `
+                  export const shell = { openPath: async () => '', showItemInFolder() {}, trashItem: async () => {} }
+                  export const app = { getLocale: () => 'zh-CN', getPath: () => ${JSON.stringify(join(root, 'yan-data'))} }
+                `
+              }))
+            }
+          }]
+        })
+        const ipcHandlers = new Map()
+        let ipcReloadCalls = 0
+        let ipcAcpReloadCalls = 0
+        let ipcNativeReloadCalls = 0
+        const fakeIpcAgent = {
+          capabilityProjectId: null,
+          getState: () => ({ sessionId: ctl.state.sessionId, isAgentRunning: false, isStreaming: false, isCompacting: false, pendingMessageCount: 0 }),
+          hasRunningBash: () => false,
+          getPendingUiCount: () => 0,
+          nativeBootWitness: () => null,
+          reloadMcpServers: async () => { ipcReloadCalls++ },
+          nativeReload: async () => { ipcNativeReloadCalls++ },
+          reloadAntigravityMcp: async () => { ipcAcpReloadCalls++; return { ok: true } },
+          listCommands: async () => []
+        }
+        registerCapabilitiesIpc({ handle: (name, fn) => ipcHandlers.set(name, fn) }, {
+          currentAgent: () => fakeIpcAgent,
+          registry: () => ({
+            activeRunner: () => ({ id: 'r-1', cwd: projectDir }),
+            runtimeOf: () => ({ generation: 1 }),
+            agents: () => [fakeIpcAgent],
+            reloadMcpServers: async () => { ipcReloadCalls++ }
+          }),
+          thinExtensionPaths: () => [],
+          settings: async () => ({ projects: [] }),
+          isProjectTrusted: async () => false
+        })
+        const snap = await ipcHandlers.get('yan:capabilities:mcpServices')()
+        const changed = await ipcHandlers.get('yan:capabilities:changeMcpService')({
+          context: snap.context,
+          revision: snap.revision,
+          scope: 'global',
+          action: 'add',
+          name: 'added-via-ui',
+          owner: 'pi',
+          config: { url: 'https://added.example/mcp' }
+        })
+        assert.equal(changed.ok, true)
+        await wait(() => ipcReloadCalls === 1)
+        const applied = await ipcHandlers.get('yan:capabilities:applyMcpServices')({
+          context: snap.context,
+          expectedSessionId: ctl.state.sessionId
+        })
+        assert.equal(applied.ok, true)
+        assert.equal(ipcReloadCalls, 2)
+        assert.equal(ipcNativeReloadCalls, 1)
+        assert.equal(ipcAcpReloadCalls, 1)
+        ok(true, 'AgentController 与 capabilities-ipc 支持空闲自动刷新、发送前指纹兜底刷新及应用到当前会话')
+      } finally {
+        await ctl.closeAntigravity()
+      }
+    } finally {
+      for (const [k, v] of Object.entries(prevEnv)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+      rmSync(root, { recursive: true, force: true })
     }
   }
 })

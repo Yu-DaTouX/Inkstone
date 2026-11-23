@@ -98,6 +98,36 @@ export interface AntigravityPlanEntry {
   priority?: string
 }
 
+export interface AntigravityElicitationOption {
+  value: string
+  label: string
+}
+
+export type AntigravityElicitationField =
+  | {
+      key: string
+      kind: 'select' | 'multi'
+      title: string
+      description?: string
+      required: boolean
+      options: AntigravityElicitationOption[]
+      otherKey?: string
+    }
+  | {
+      key: string
+      kind: 'text' | 'boolean' | 'number'
+      title: string
+      description?: string
+      required: boolean
+      min?: number
+      max?: number
+      integer?: boolean
+    }
+
+export type AntigravityElicitationResult =
+  | { action: 'accept'; content: Record<string, string | string[] | number | boolean> }
+  | { action: 'decline' | 'cancel' }
+
 export type AntigravityEvent =
   | { type: 'text' | 'thought'; text: string }
   | ({ type: 'context' } & AntigravityContext)
@@ -108,6 +138,8 @@ export type AntigravityEvent =
   | { type: 'permission'; id: number; title: string; detail: string; blocked?: string; options: Array<{ id: string; name: string; allow: boolean }> }
   | { type: 'question'; id: number; title: string; options: AntigravityModel[] }
   | { type: 'permission-cleared'; id: number }
+  | { type: 'elicitation'; id: number; message: string; fields: AntigravityElicitationField[] }
+  | { type: 'elicitation-cleared'; id: number }
   | { type: 'closed'; error: string }
 
 export const ANTIGRAVITY_PROMPT_LIMIT = 100_000

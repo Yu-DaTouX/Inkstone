@@ -13,8 +13,11 @@ import {
   stripCompactAppendices
 } from './antigravity-compact'
 import { openAntigravityDelegation } from './antigravity-delegation'
-import { antigravityMcpServices } from './antigravity-mcp'
+import { antigravityMcpFingerprint, antigravityMcpServices, watchAntigravityMcpFiles } from './antigravity-mcp'
+import { loadMcpServers, mcpServersFile, mcpServersForProject } from './mcp/config'
+import { isInkstoneManaged } from './mcp/app-spec'
 import { readAntigravityPreference, saveAntigravityPreference } from './antigravity-preferences'
+import { buildElicitationUi } from './antigravity-elicitation'
 import { DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../shared/context-limits'
 import { estimateTextTokens } from '../shared/session-metrics'
 import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
@@ -675,7 +678,12 @@ export class AgentController extends EventEmitter {
     this.stream.streaming = next
   }
   private acpPreferenceSessionId?: string
-  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpStale?: boolean; session?: AntigravitySession; hasContext: boolean; acpSessionId?: string; acpCwd?: string; acpHeadEntryId?: string }
+  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpFingerprint?: string; mcpStale?: boolean; mcpToolsStale?: boolean; session?: AntigravitySession; hasContext: boolean; acpSessionId?: string; acpCwd?: string; acpHeadEntryId?: string }
+  private acpNativeMcp?: McpConnectionManager
+  private acpMcpRefreshTimer?: ReturnType<typeof setTimeout>
+  private acpMcpRefreshTask?: Promise<void>
+  private acpMcpWatcher?: { close(): void }
+  private acpMcpWatchCwd?: string
   private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; steer?: { item: QueueItem; prompt: AntigravitySteer }; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null; cancel?: () => void }
   private acpCompacting: { abort: AbortController; done: Promise<void>; sessionId: string } | null = null
   private acpCompactHold?: { sessionId: string; untilTokens: number }
@@ -3168,7 +3176,11 @@ export class AgentController extends EventEmitter {
     if (this.acpConnection) {
       if (autoContinue) return { ok: false, error: pick('Antigravity 不支持流式自动续跑。', 'Antigravity does not support automatic stream continuation.') }
       if (this.acpTurn) return this.enqueueAntigravity(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration)
-      return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
+      if (this.acpMcpRefreshTask) await this.acpMcpRefreshTask.catch(() => undefined)
+      if (this.acpConnection) {
+        if (this.acpTurn) return this.enqueueAntigravity(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration)
+        return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
+      }
     }
     const sessionId = this.state?.sessionId
     return this.withOperation('send', expectGeneration, () => this.withReadyLocalModel(sessionId, autoContinue,
@@ -3337,7 +3349,11 @@ export class AgentController extends EventEmitter {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     if (this.acpConnection) {
       if (this.acpTurn) return this.enqueueAntigravity('steering', text, images, expectGeneration)
-      return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
+      if (this.acpMcpRefreshTask) await this.acpMcpRefreshTask.catch(() => undefined)
+      if (this.acpConnection) {
+        if (this.acpTurn) return this.enqueueAntigravity('steering', text, images, expectGeneration)
+        return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
+      }
     }
     return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.steerAdmitted(text, images)))
   }
@@ -4097,6 +4113,7 @@ export class AgentController extends EventEmitter {
     if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
     const result = trusted ? await allowTrust(this.cwd) : await revokeTrust(this.cwd)
     if (!result.ok) throw new Error(result.error ?? pick('项目信任保存失败', 'Failed to save project trust'))
+    this.markAntigravityMcpChanged('config')
   }
 
   private enqueueCapabilityChange<T>(work: () => Promise<T>): Promise<T | { ok: false; error: string }> {
@@ -4277,6 +4294,15 @@ export class AgentController extends EventEmitter {
   private async closeAntigravity(): Promise<void> {
     const connection = this.acpConnection
     this.acpConnection = undefined
+    if (this.acpMcpRefreshTimer) {
+      clearTimeout(this.acpMcpRefreshTimer)
+      this.acpMcpRefreshTimer = undefined
+    }
+    this.acpMcpWatcher?.close()
+    this.acpMcpWatcher = undefined
+    this.acpMcpWatchCwd = undefined
+    const nativeMcp = this.acpNativeMcp
+    this.acpNativeMcp = undefined
     this.acpCompactHold = undefined
     this.acpHeldNotices = []
     this.acpTurn?.delegation.abort()
@@ -4290,7 +4316,7 @@ export class AgentController extends EventEmitter {
       this.acpTodos = []
       this.push({ ch: 'todos', payload: [] })
     }
-    await connection?.session?.close()
+    await Promise.allSettled([connection?.session?.close(), nativeMcp?.close()])
   }
 
   private async compactAntigravity(
@@ -4550,6 +4576,7 @@ export class AgentController extends EventEmitter {
   }
 
   private bindAntigravity(connection: NonNullable<AgentController['acpConnection']>, session: AntigravitySession): void {
+    this.ensureAntigravityMcpWatcher()
     session.onEvent = (event) => {
       if (this.acpConnection !== connection || connection.session !== session) return
       if (event.type === 'closed') {
@@ -4570,7 +4597,7 @@ export class AgentController extends EventEmitter {
         connection.model = this.antigravityModel(connection.model, connection.thinking, connection.supportsImages)
         void this.refreshState()
       } else if (
-        (event.type === 'tool' || event.type === 'plan' || event.type === 'permission' || event.type === 'question' || ((event.type === 'text' || event.type === 'thought') && !!event.text)) &&
+        (event.type === 'tool' || event.type === 'plan' || event.type === 'permission' || event.type === 'question' || event.type === 'elicitation' || ((event.type === 'text' || event.type === 'thought') && !!event.text)) &&
         connection.hasContext &&
         !session.busy &&
         !this.acpTurn &&
@@ -4581,6 +4608,7 @@ export class AgentController extends EventEmitter {
       ) {
         this.startAntigravityTurn({ connection, session, native: this.nativeRuntime, owner: this.asyncOwner(), firstEvent: event })
       } else if (event.type === 'question') session.reply(event.id, null)
+      else if (event.type === 'elicitation') session.replyElicitation(event.id, { action: 'cancel' })
     }
   }
 
@@ -4641,8 +4669,15 @@ export class AgentController extends EventEmitter {
       const proc = session
       const host = this.subagentHost
       const script = this.nativeSessionExtension ? join(dirname(this.nativeSessionExtension), 'antigravity-pi-mcp.mjs') : undefined
-      const mcp = !reuse && script ? await antigravityMcpServices({ agentDir: PI_AGENT_DIR, cwd: this.cwd,
-        trusted: await trustStatus(this.cwd).then(({ trusted }) => trusted, () => false), host: this.mcp.connectionManager() }) : undefined
+      const nativeMcp = !reuse && script ? (this.acpNativeMcp ??= new McpConnectionManager([])) : undefined
+      const mcp = !reuse && script ? await antigravityMcpServices({
+        agentDir: PI_AGENT_DIR,
+        cwd: this.cwd,
+        trusted: await trustStatus(this.cwd).then(({ trusted }) => trusted, () => false),
+        host: this.mcp.connectionManager(),
+        native: nativeMcp,
+        onToolsListChanged: () => this.markAntigravityMcpChanged('tools')
+      }) : undefined
       if (mcp) proc.setCleanup(mcp.close)
       let owned = this.acpDelegatedIds.get(sessionId)
       if (!owned) {
@@ -4701,6 +4736,7 @@ export class AgentController extends EventEmitter {
         supportsImages: models.supportsImages,
         bridgeConfigured: reuse ? previous?.bridgeConfigured : !!bridge && !!host,
         mcpServers: reuse ? previous?.mcpServers : mcp?.services.map(({ name }) => name),
+        mcpFingerprint: reuse ? previous?.mcpFingerprint : mcp?.fingerprint,
         session,
         hasContext: (!!reuse && previous?.hasContext === true) || resumed,
         ...(acpSessionId ? { acpSessionId, acpCwd: this.cwd } : {}),
@@ -4726,8 +4762,110 @@ export class AgentController extends EventEmitter {
         }
         await session.close()
       }
+      if (!this.acpConnection?.session && this.acpNativeMcp) {
+        const nativeMcp = this.acpNativeMcp
+        this.acpNativeMcp = undefined
+        await nativeMcp.close().catch(() => undefined)
+      }
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  private async currentAntigravityMcpFingerprint(): Promise<string> {
+    const trusted = await trustStatus(this.cwd).then(({ trusted }) => trusted, () => false)
+    const hostConfigs = mcpServersForProject(loadMcpServers().servers, this.capabilityOpts?.projectId)
+      .filter((server) => !isInkstoneManaged(server))
+    return antigravityMcpFingerprint({ agentDir: PI_AGENT_DIR, cwd: this.cwd, trusted, hostConfigs })
+  }
+
+  private ensureAntigravityMcpWatcher(): void {
+    if (this.acpMcpWatcher && this.acpMcpWatchCwd === this.cwd) return
+    this.acpMcpWatcher?.close()
+    this.acpMcpWatchCwd = this.cwd
+    this.acpMcpWatcher = watchAntigravityMcpFiles(
+      [join(PI_AGENT_DIR, 'mcp.json'), join(this.cwd, '.pi', 'mcp.json'), mcpServersFile()],
+      () => this.markAntigravityMcpChanged('config')
+    )
+  }
+
+  private markAntigravityMcpChanged(kind: 'config' | 'tools'): void {
+    if (!this.acpConnection) return
+    this.acpConnection.mcpStale = true
+    if (kind === 'tools') this.acpConnection.mcpToolsStale = true
+    this.scheduleAntigravityMcpRefresh()
+  }
+
+  private scheduleAntigravityMcpRefresh(delayMs = 150): void {
+    if (this.acpMcpRefreshTimer) {
+      clearTimeout(this.acpMcpRefreshTimer)
+      this.acpMcpRefreshTimer = undefined
+    }
+    const conn = this.acpConnection
+    if (!conn?.mcpStale || !conn.session || this.stopping) return
+    this.acpMcpRefreshTimer = setTimeout(() => {
+      this.acpMcpRefreshTimer = undefined
+      void this.refreshStaleAntigravity()
+    }, delayMs)
+    this.acpMcpRefreshTimer.unref?.()
+  }
+
+  private async refreshStaleAntigravity(): Promise<void> {
+    if (this.acpMcpRefreshTask) return this.acpMcpRefreshTask
+    const conn = this.acpConnection
+    if (!conn?.mcpStale || !conn.session || this.stopping || this.acpTurn || this.acpCompacting ||
+      this.executionActive() || this.state?.pendingMessageCount || conn.session.busy || this.operations.busy().length) {
+      return
+    }
+    let task: Promise<void>
+    task = this.enqueueCapabilityChange(async () => {
+      const current = this.acpConnection
+      if (!current || current !== conn || !current.mcpStale || !current.session || this.stopping ||
+        this.acpTurn || this.acpCompacting || this.executionActive() || this.state?.pendingMessageCount || current.session.busy) {
+        return { ok: true }
+      }
+      if (!current.mcpToolsStale && current.mcpFingerprint !== undefined) {
+        const latestFingerprint = await this.currentAntigravityMcpFingerprint().catch(() => undefined)
+        if (this.acpConnection !== current || !current.session) return { ok: true }
+        if (latestFingerprint === current.mcpFingerprint) {
+          current.mcpStale = false
+          return { ok: true }
+        }
+      }
+      return this.withOperation('reload', undefined, async () => {
+        const active = this.acpConnection
+        if (!active || active !== conn || !active.mcpStale || !active.session || this.stopping ||
+          this.acpTurn || this.acpCompacting || this.executionActive() || this.state?.pendingMessageCount || active.session.busy) {
+          return { ok: true }
+        }
+        await this.mcp.syncChanged({ immediate: true })
+        return this.selectAntigravity(active.model.id, active.thinking?.current, active.mode ?? active.modes?.current, { allowQueued: true })
+      })
+    }).then(() => undefined, () => undefined).finally(() => {
+      if (this.acpMcpRefreshTask === task) this.acpMcpRefreshTask = undefined
+    })
+    this.acpMcpRefreshTask = task
+    return task
+  }
+
+  async reloadAntigravityMcp(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.acpConnection) return { ok: true }
+    if (this.acpMcpRefreshTimer) {
+      clearTimeout(this.acpMcpRefreshTimer)
+      this.acpMcpRefreshTimer = undefined
+    }
+    this.acpConnection.mcpStale = true
+    this.acpConnection.mcpToolsStale = true
+    if (!this.acpConnection.session) return { ok: true }
+    if (this.acpMcpRefreshTask) await this.acpMcpRefreshTask.catch(() => undefined)
+    const conn = this.acpConnection
+    if (!conn || !conn.mcpStale || !conn.session) return { ok: true }
+    return this.enqueueCapabilityChange(() => this.withOperation('reload', undefined, async () => {
+      const active = this.acpConnection
+      if (!active || active !== conn) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+      if (!active.session) return { ok: true }
+      await this.mcp.syncChanged({ immediate: true })
+      return this.selectAntigravity(active.model.id, active.thinking?.current, active.mode ?? active.modes?.current, { allowQueued: true })
+    }))
   }
 
   private async sendAntigravity(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }> {
@@ -4740,7 +4878,13 @@ export class AgentController extends EventEmitter {
     let media
     try { media = normalizeAntigravityImages(images) }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    if (initial.session && !initial.mcpStale && initial.mcpFingerprint !== undefined) {
+      const latestFingerprint = await this.currentAntigravityMcpFingerprint().catch(() => undefined)
+      if (this.acpConnection !== initial || this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+      if (latestFingerprint !== undefined && latestFingerprint !== initial.mcpFingerprint) initial.mcpStale = true
+    }
     if (!initial.session || initial.mcpStale) {
+      if (initial.mcpStale) await this.mcp.syncChanged({ immediate: true })
       const reconnected = await this.selectAntigravity(initial.model.id, initial.thinking?.current, undefined, { allowQueued: true })
       if (!reconnected.ok) return reconnected
     }
@@ -4926,9 +5070,14 @@ export class AgentController extends EventEmitter {
       if (settleTimer) clearTimeout(settleTimer)
       settleTimer = null
     }
+    const isWaitingSchedule = (call: UIToolCall): boolean => {
+      if (call.status !== 'running' || call.name !== 'Run schedule' || (call.details as { kind?: string } | undefined)?.kind !== 'other') return false
+      const duration = (call.args as { DurationSeconds?: unknown } | null)?.DurationSeconds
+      return typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+    }
     const hasActiveWork = (): boolean =>
       approvals.size > 0 || steps.some((step) => step.toolCalls?.some((call) =>
-        (call.status === 'pending' || call.status === 'running') &&
+        (call.status === 'pending' || call.status === 'running') && !isWaitingSchedule(call) &&
         !((call.details as { kind?: string } | undefined)?.kind === 'execute' && (call.args as { IsDaemon?: boolean } | undefined)?.IsDaemon === true)))
     const rawIdle = Number(process.env.YAN_ACP_UNSOLICITED_IDLE_MS)
     const customIdle = Number.isFinite(rawIdle) && rawIdle >= 50 && rawIdle <= 10_000 ? rawIdle : undefined
@@ -5082,7 +5231,18 @@ export class AgentController extends EventEmitter {
           (answer) => session.reply(event.id, !answer.cancelled && !turn.stopped && !turn.interjected && ownsTurn() ? ids.get(answer.value ?? '') ?? null : null),
           () => session.reply(event.id, null)
         )
-      } else if (event.type === 'permission-cleared') {
+      } else if (event.type === 'elicitation') {
+        if (turn.stopped || turn.interjected) { session.replyElicitation(event.id, { action: 'cancel' }); return }
+        continuousOutput = false
+        const controller = new AbortController()
+        approvals.set(event.id, controller)
+        clearSettleTimer()
+        const { request, parse } = buildElicitationUi(event.message, event.fields)
+        void this.ui.requestHostUi({ ...request, signal: controller.signal, timeout: 180_000 }).then(
+          (answer) => session.replyElicitation(event.id, !turn.stopped && !turn.interjected && ownsTurn() ? parse(answer) : { action: 'cancel' }),
+          () => session.replyElicitation(event.id, { action: 'cancel' })
+        )
+      } else if (event.type === 'permission-cleared' || event.type === 'elicitation-cleared') {
         approvals.get(event.id)?.abort()
         approvals.delete(event.id)
         scheduleSettle()
@@ -5171,7 +5331,13 @@ export class AgentController extends EventEmitter {
       if (finalGenTiming) lastStep.generationTiming = finalGenTiming
       if (turnError) lastStep.error = turnError
       for (const step of steps) {
-        step.toolCalls = step.toolCalls?.map((call) => call.status === 'pending' || call.status === 'running' ? { ...call, status: 'error', cancelled: true, endedAt } : call)
+        step.toolCalls = step.toolCalls?.map((call) => {
+          if (status === 'stop' && isWaitingSchedule(call)) {
+            observe({ type: 'tool-end', callId: call.id, isError: false })
+            return { ...call, status: 'ok', endedAt, output: call.output || pick('已安排定时任务，等待触发。', 'Scheduled; waiting to trigger.') }
+          }
+          return call.status === 'pending' || call.status === 'running' ? { ...call, status: 'error', cancelled: true, endedAt } : call
+        })
         settleStepThinking(step, endedAt)
         if (step !== lastStep) delete step.antigravity
       }
@@ -5314,6 +5480,8 @@ export class AgentController extends EventEmitter {
                   this.push({ ch: 'notify', payload: { id: `acp-queue-fail-${Date.now()}`, method: 'notify', notifyType: 'error', message: res.error } })
                 }
               })
+          } else if (connection.mcpStale && connection.session === session) {
+            this.scheduleAntigravityMcpRefresh(0)
           }
         }
       }
@@ -5930,8 +6098,8 @@ export class AgentController extends EventEmitter {
   async reloadMcpServers(options?: RunnerMcpSyncOptions): Promise<void> {
     this.nativeWitness = null
     this.nativeWitnessPending = null
-    if (this.acpConnection) this.acpConnection.mcpStale = true
     await this.mcp.syncChanged(options)
+    this.markAntigravityMcpChanged('config')
   }
 
   processId(): number | undefined {

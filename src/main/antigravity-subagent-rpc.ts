@@ -52,6 +52,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       session.onEvent = (event) => {
         if (event.type === 'closed') this.handleClosed(event.error)
         else if (event.type === 'question') session.reply(event.id, null)
+        else if (event.type === 'elicitation') session.replyElicitation(event.id, { action: 'cancel' })
       }
       let models = await session.start(this.cwd, undefined, this.options.readOnly ? { mode } : undefined)
       if (models.current !== this.model.id) models = await session.selectModel(this.model.id)
@@ -111,13 +112,15 @@ export class AntigravitySubagentRpc implements SubagentRpc {
     const update = () => emit({ type: 'message_update', message: snapshot() })
     let openBlock: typeof content[number] | undefined
     session.onEvent = (event) => {
-      if (event.type === 'permission-cleared') {
+      if (event.type === 'permission-cleared' || event.type === 'elicitation-cleared') {
         approvals.get(event.id)?.abort()
         approvals.delete(event.id)
       } else if (event.type === 'closed') {
         this.handleClosed(event.error)
       } else if (event.type === 'question') {
         session.reply(event.id, null)
+      } else if (event.type === 'elicitation') {
+        session.replyElicitation(event.id, { action: 'cancel' })
       } else if (this.closed || turn.cancelled) {
         if (event.type === 'permission') session.reply(event.id, null)
       } else if (event.type === 'text') {
@@ -174,6 +177,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       session.onEvent = (event) => {
         if (event.type === 'closed') this.handleClosed(event.error)
         else if (event.type === 'permission' || event.type === 'question') session.reply(event.id, null)
+        else if (event.type === 'elicitation') session.replyElicitation(event.id, { action: 'cancel' })
       }
     }
     if (turn.cancelled || this.closed) { stopReason = 'aborted'; errorMessage = undefined }
