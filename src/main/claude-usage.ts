@@ -2,10 +2,11 @@ import { net } from 'electron'
 import { CLAUDE_OAUTH_HEADERS } from '../shared/account-quota'
 import { pick } from '../shared/ui-lang'
 
-const CLAUDE_MIN_GAP_MS = 60_000
+const CLAUDE_MIN_GAP_MS = 5 * 60_000
 const CLAUDE_BACKOFF_MS = 5 * 60_000
 const claudeUsageCache = new Map<string, { at: number; usage: unknown }>()
 const claudeCooldown = new Map<string, number>()
+const claudeInflight = new Map<string, Promise<unknown>>()
 
 function retryAfterMs(value: string | null): number {
   const seconds = Number(value)
@@ -18,10 +19,20 @@ export function forgetClaudeUsage(): void {
   claudeUsageCache.clear()
 }
 
-export async function claudeUsage(accessToken: string, revoked = pick('登录已失效', 'Sign-in expired')): Promise<unknown> {
-  const now = Date.now()
+export function claudeUsage(accessToken: string, revoked = pick('登录已失效', 'Sign-in expired')): Promise<unknown> {
   const cached = claudeUsageCache.get(accessToken)
-  if (cached && now - cached.at < CLAUDE_MIN_GAP_MS) return cached.usage
+  if (cached && Date.now() - cached.at < CLAUDE_MIN_GAP_MS) return Promise.resolve(cached.usage)
+  const pending = claudeInflight.get(accessToken)
+  if (pending) return pending
+  const request = fetchClaudeUsage(accessToken, revoked).finally(() => {
+    if (claudeInflight.get(accessToken) === request) claudeInflight.delete(accessToken)
+  })
+  claudeInflight.set(accessToken, request)
+  return request
+}
+
+async function fetchClaudeUsage(accessToken: string, revoked: string): Promise<unknown> {
+  const now = Date.now()
   const until = claudeCooldown.get(accessToken) ?? 0
   if (until > now) throw new Error(pick(`查询太频繁，${Math.ceil((until - now) / 60_000)} 分钟后重试`, `Too many requests; retry in ${Math.ceil((until - now) / 60_000)} min`))
   const res = await net.fetch('https://api.anthropic.com/api/oauth/usage?cedar_ember=1', {
