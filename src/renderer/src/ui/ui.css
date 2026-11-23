@@ -1530,7 +1530,9 @@
   .ui-meter--gauge .ui-progress__track {
     height: 22px;
     border-radius: var(--r-full);
-    background: var(--alpha-1);
+    background-color: var(--alpha-1);
+    background-image: repeating-linear-gradient(135deg, transparent 0 1px, var(--alpha-2) 1px 2px, transparent 2px 50%);
+    background-size: 7px 7px;
     box-shadow: var(--ring-line);
     -webkit-mask-image: none;
     mask-image: none;
