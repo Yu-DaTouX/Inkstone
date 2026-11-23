@@ -451,6 +451,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                             <Button
                               variant="secondary"
                               isDisabled={!!busy}
+                              aria-label={`${t('localLaunch.pick')} · ${model.name || model.id}`}
                               data-testid={`ms-local-model-pick-${model.id}`}
                               onPress={() => void chooseModelCommand(item, model)}
                             >
@@ -463,6 +464,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                               variant="secondary"
                               size="sm"
                               isDisabled={!!busy}
+                              aria-label={`${t('localLaunch.detect')} · ${model.name || model.id}`}
                               data-testid={`ms-local-model-detect-${model.id}`}
                               onPress={() => void detectForModel(item, model)}
                             >
@@ -472,6 +474,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                               variant="primary"
                               size="sm"
                               isDisabled={!!busy || !cmdDirty}
+                              aria-label={`${t('localLaunch.save')} · ${model.name || model.id}`}
                               data-testid={`ms-local-model-save-${model.id}`}
                               onPress={() => void saveModelCommand(item, model)}
                             >
@@ -561,6 +564,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                         <Button
                           variant="secondary"
                           isDisabled={!!busy}
+                          aria-label={`${t('localLaunch.pick')} · ${t('localLaunch.addCommand')}`}
                           data-testid={`ms-local-add-pick-${item.provider}`}
                           onPress={() => void pickForAdd(item)}
                         >
@@ -598,6 +602,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                       <Button
                         variant="secondary"
                         isDisabled={!!busy}
+                        aria-label={`${t('localLaunch.pick')} · ${t('localLaunch.stopCommand')}`}
                         data-testid={`ms-local-launch-pick-stop-${item.provider}`}
                         onPress={() => void chooseShared(item, 'stopCommand')}
                       >
@@ -619,6 +624,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                           <Button
                             variant="secondary"
                             isDisabled={!!busy}
+                            aria-label={`${t('localLaunch.pick')} · ${t('localLaunch.sharedCommand')}`}
                             data-testid={`ms-local-launch-pick-${item.provider}`}
                             onPress={() => void chooseShared(item, 'command')}
                           >
@@ -655,6 +661,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                         variant="primary"
                         size="sm"
                         isDisabled={!!busy || !sharedDirty(item)}
+                        aria-label={`${t('localLaunch.save')} · ${t('localLaunch.sharedTitle')}`}
                         data-testid={`ms-local-launch-save-${item.provider}`}
                         onPress={() => void saveShared(item)}
                       >

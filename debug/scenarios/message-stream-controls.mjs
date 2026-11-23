@@ -22,7 +22,7 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
     const notice = document.querySelector('${liveNotice}')
     const orbit = notice.querySelector('[data-testid="v3-act-spin"]')
     const style = getComputedStyle(orbit)
-    return notice.textContent.includes('进行中') && orbit.children.length === 9 && parseFloat(style.width) <= 12 &&
+    return notice.textContent.includes('进行中') && orbit.children.length === 9 && parseFloat(style.width) <= 13 &&
       style.color === 'rgb(255, 255, 255)' && getComputedStyle(orbit.firstElementChild).animationName === 'ui-term-orbit'
   })()`))
   await shot('working-notice-orbit')
@@ -116,7 +116,7 @@ export default async function run({ cdp, newSession, turn, waitFor, sleep, check
       const style = getComputedStyle(el)
       return { width: parseFloat(style.width), height: parseFloat(style.height), color: style.color }
     })()`)
-    check('Orbit 紧凑、不超过 12px，深色主题使用白色墨色', appearance.width > 0 && appearance.width <= 12 &&
+    check('Orbit 紧凑、不超过 13px，深色主题使用白色墨色', appearance.width > 0 && appearance.width <= 13 &&
       appearance.height === appearance.width && appearance.color === 'rgb(255, 255, 255)', appearance)
     await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     check('系统减少动态效果时 Orbit 保持静止', await evaluate(`${orbit}?.children.length === 9 && Array.from(${orbit}.children).every(pixel => getComputedStyle(pixel).animationName === 'none')`))

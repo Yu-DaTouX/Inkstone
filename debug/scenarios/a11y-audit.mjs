@@ -322,6 +322,10 @@ export default async function run(ctx) {
       report.sections[name + ':dialogNames'] = dlg
       if (dlg.some((n) => !n || /^react-aria/.test(n))) note(name, 'dialog 的 AX 名称为空或是自动 id', dlg)
       await axAudit(name)
+      if (await ev(`!!document.querySelector('.ui-tooltip')`)) {
+        await press(close, 0, 400)
+        if (await ev(`!!document.querySelector('.ui-tooltip')`)) note(name, 'Esc 关不掉聚焦提示', await active())
+      }
       await press(close, 0, 700)
       const gone = await ev(`!document.querySelector('[role=dialog],[role=alertdialog],[data-command-surface],[cmdk-root]')`)
       const f2 = await active()

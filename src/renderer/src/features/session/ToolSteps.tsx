@@ -333,13 +333,13 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const rawArgs = !hasArgs(call) && !command && !readPath ? call.argsRaw ?? '' : ''
   const argsShown = entries.length > 0 || !!rawArgs
   const onlyCommand = !!command && !entries.length
-  const copyText = [command ? (kind === 'code' ? command : `$ ${command}`) : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
   const failed = call.status === 'error' && !call.cancelled && !isDeniedCall(call)
   const view = call.output ? toolOutputView(call.name, call.output) : null
   const yan = kind === 'command' && view && isYanJsonCommand(command) ? parseYanSummaries(view.body) : null
   const body = yan ? yan.rest : view?.body ?? ''
   const range = readLineRange(call.args)
   const copy = (): void => {
+    const copyText = [command ? (kind === 'code' ? command : `$ ${command}`) : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
     void navigator.clipboard.writeText(copyText || summarize(call)).then(
       () => { setCopied(true); window.setTimeout(() => setCopied(false), 1600) },
       () => undefined

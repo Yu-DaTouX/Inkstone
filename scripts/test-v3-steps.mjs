@@ -917,7 +917,11 @@ async function main() {
 
   {
     const content = `prefix-${'x'.repeat(8184)}🧪${'x'.repeat(12000)}-suffix`
-    const { detail } = openDetail(tool({ id: 'wr-long', name: 'write', args: { path: 'notes/a.txt', content } }))
+    let serializations = 0
+    const args = { path: 'notes/a.txt', content }
+    Object.defineProperty(args, 'toJSON', { value() { serializations++; return { path: this.path, content: this.content } } })
+    const { detail } = openDetail(tool({ id: 'wr-long', name: 'write', args }))
+    ok(serializations === 0, '只打开工具详情不为复制提前序列化完整参数', serializations)
     const preview = renderSub(renderSub(detail.tree, 'ChangeDetail').tree, 'FileContentPreview')
     const code = byTypeName(preview.tree, 'HighlightedCode')[0].props.code
     ok(code.startsWith('prefix-') && code.endsWith('…') && code.length <= 8193 && code.isWellFormed(), '写入单行过长时只预览开头且不截断半个字符', code.length)

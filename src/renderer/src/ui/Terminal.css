@@ -119,14 +119,13 @@
     --orbit-cell: calc(var(--s-6) / 2);
     display: inline-grid;
     grid-template: repeat(3, var(--orbit-cell)) / repeat(3, var(--orbit-cell));
-    gap: var(--hair, 1px);
+    gap: var(--s-2);
     width: auto;
     height: auto;
     color: var(--ink);
   }
 
   .ui-term-spinner__pixel {
-    border-radius: var(--hair, 1px);
     background: currentColor;
     opacity: 0.15;
     animation: ui-term-orbit 950ms ease-in-out calc(var(--orbit-phase) * 110ms) infinite;
