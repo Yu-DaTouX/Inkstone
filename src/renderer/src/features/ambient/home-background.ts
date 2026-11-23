@@ -31,7 +31,7 @@ export interface HomeEffectParams {
   sessionSpeed: number
 }
 
-export const HOME_PARAM_DEFAULTS: HomeEffectParams = { shape: 'warp', ink: 'accent', pixel: 2, speed: 0.18, strength: 0.42, colorSteps: 4, dotSize: 0.3, contrast: 0.75, grid: 'hex', dotShape: 'classic', twinkle: 0.7, breath: 0.5, scale: 1, offsetX: 0, offsetY: 0, sessionStrength: 0.2, sessionSpeed: 0.1 }
+export const HOME_PARAM_DEFAULTS: HomeEffectParams = { shape: 'simplex', ink: 'mono', pixel: 1, speed: 0.7, strength: 0.8, colorSteps: 4, dotSize: 0.45, contrast: 0.6, grid: 'square', dotShape: 'classic', twinkle: 0.7, breath: 0.5, scale: 0.72, offsetX: 0.16, offsetY: 0.1, sessionStrength: 0.16, sessionSpeed: 0.7 }
 export const HOME_PARAM_RANGES = {
   pixel: [1, 8, 1],
   speed: [0, 1, 0.02],
@@ -97,12 +97,12 @@ export type HomeFlowStyle = 'dither' | 'halftone'
 export const BUILTIN_PAINTING = 'builtin:twilight'
 export const BUILTIN_BLOSSOM = 'builtin:blossom'
 const BUILTIN_IMAGES: Record<string, string> = { [BUILTIN_PAINTING]: twilightPainting, [BUILTIN_BLOSSOM]: blossomPhoto }
-export const BLOSSOM_PARAMS: Partial<HomeEffectParams> = { ink: 'mono', dotShape: 'classic', grid: 'square', dotSize: 0.45, contrast: 0.6, strength: 0.8, speed: 0.3, twinkle: 0.7, breath: 0.5, scale: 0.72, offsetX: 0, offsetY: 0 }
+export const BLOSSOM_PARAMS: Partial<HomeEffectParams> = { ink: 'mono', dotShape: 'classic', grid: 'square', dotSize: 0.45, contrast: 0.6, strength: 0.8, speed: 0.7, twinkle: 0.7, breath: 0.5, scale: 0.72, offsetX: 0.16, offsetY: 0.1 }
 const STORAGE_KEY = 'yan:home-background'
 const MAX_EDGE = 2560
 const DEFAULT_FADE = 0.35
 export const HOME_BLUR_MAX = 40
-const EMPTY: HomeBackground = { mode: null, image: null, fade: DEFAULT_FADE, blur: 0, tone: 'page', effect: 'none', flowImage: false, flowStyle: 'dither', params: HOME_PARAM_DEFAULTS }
+const EMPTY: HomeBackground = { mode: 'dither', image: BUILTIN_BLOSSOM, fade: 0, blur: 30, tone: 'dark', effect: 'dither', flowImage: true, flowStyle: 'dither', params: HOME_PARAM_DEFAULTS }
 
 let cached: HomeBackground | null = null
 const listeners = new Set<() => void>()
@@ -111,6 +111,10 @@ function read(): HomeBackground {
   if (cached) return cached
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<HomeBackground> | null
+    if (!raw || typeof raw !== 'object') {
+      cached = EMPTY
+      return cached
+    }
     cached = {
       mode: raw?.mode === 'ascii' || raw?.mode === 'dither' || raw?.mode === 'image' || raw?.mode === 'none' ? raw.mode : null,
       image: typeof raw?.image === 'string' && (raw.image.startsWith('data:image/') || raw.image in BUILTIN_IMAGES) ? raw.image : null,

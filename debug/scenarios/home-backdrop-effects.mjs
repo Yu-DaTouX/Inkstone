@@ -143,7 +143,7 @@ export default async function run({ cdp, box, check, waitFor, sleep, shot, newSe
   await sleep(800)
   const s2 = await frame('[data-testid="v3-home-dither"]')
   check('会话里网点也在动', s1 !== null && s2 !== null && s1 !== s2, `${s1?.length} ${s2?.length}`)
-  check('会话里用会话浓度', await ev(`getComputedStyle(document.querySelector('[data-testid="v3-home-dither"] .v3-home-shader')).opacity === '0.2'`), await ev(`getComputedStyle(document.querySelector('[data-testid="v3-home-dither"] .v3-home-shader')).opacity`))
+  check('会话里用会话浓度', await ev(`getComputedStyle(document.querySelector('[data-testid="v3-home-dither"] .v3-home-shader')).opacity === '0.16'`), await ev(`getComputedStyle(document.querySelector('[data-testid="v3-home-dither"] .v3-home-shader')).opacity`))
   await shot('dither-in-session')
   await ev(setBg(`{ mode: 'dither', params: { sessionSpeed: 0 } }`))
   await sleep(1200)

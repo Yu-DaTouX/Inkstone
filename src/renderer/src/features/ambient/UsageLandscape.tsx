@@ -30,7 +30,6 @@ import {
   type LandscapeLayerSpec,
   type LandscapeLayout
 } from './usage-landscape-model'
-import { landscapeSky, type SkyBody } from './landscape-sky'
 import './ambient.css'
 
 const LEVELS = 20
@@ -117,33 +116,6 @@ function readPalette(host: HTMLElement): Palette {
     bg,
     dark: bg[0] * 0.299 + bg[1] * 0.587 + bg[2] * 0.114 < 128
   }
-}
-
-function halo(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, palette: Palette): void {
-  const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
-  glow.addColorStop(0, css(palette.ink, alpha))
-  glow.addColorStop(0.35, css(palette.ink, alpha * 0.35))
-  glow.addColorStop(1, css(palette.ink, 0))
-  ctx.fillStyle = glow
-  ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
-}
-
-function drawSun(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, palette: Palette): void {
-  if (alpha <= 0) return
-  const core = (palette.dark ? 0.34 : 0.24) * alpha
-  halo(ctx, x, y, radius * 3.6, (palette.dark ? 0.08 : 0.05) * alpha, palette)
-  const disc = ctx.createRadialGradient(x, y, 0, x, y, radius)
-  disc.addColorStop(0, css(palette.ink, core))
-  disc.addColorStop(0.72, css(palette.ink, core * 0.9))
-  disc.addColorStop(1, css(palette.ink, core * 0.45))
-  ctx.save()
-  ctx.fillStyle = disc
-  ctx.shadowColor = css(palette.ink, core * 0.8)
-  ctx.shadowBlur = radius * 0.35
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.restore()
 }
 
 function css(color: Rgba, alpha = 1): string {
@@ -277,7 +249,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
   let layout: LandscapeLayout | null = null
   let layers: LayerArt[] = []
   let palette = readPalette(host)
-  let sky = landscapeSky(Date.now())
   let mono = readMonoStack()
   let atlas: HTMLCanvasElement | null = null
   let atlasKey = ''
@@ -411,19 +382,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
 
     stir = reduced ? 0 : stir * Math.exp(-dt * 1.6)
     const veil = clamp01(since / 1.6)
-    if (sky) {
-      const discR = plan.rise * 0.12 * dpr
-      const place = (body: SkyBody): { x: number; y: number; alpha: number } => ({
-        x: (width * (0.16 + body.x * 0.68) - parallax * PARALLAX_PX * 0.1) * dpr,
-        y: (plan.base - plan.rise * (0.88 + 0.32 * body.height)) * dpr,
-        alpha: veil * body.fade
-      })
-      if (sky.sun) {
-        const at = place(sky.sun)
-        drawSun(ctx, at.x, at.y, discR * (1 + 0.1 * (1 - sky.sun.height)), at.alpha, palette)
-      }
-    }
-
     const band = (center: number, tall: number, speed: number, strength: number): void => {
       if (reduced) return
       fog ??= buildFog()
@@ -688,7 +646,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     hostRect = host.getBoundingClientRect()
   }
   const onClock = (): void => {
-    sky = landscapeSky(Date.now())
     if (!pageVisible || !inViewport) return
     wake()
     if (!running && !reduced) draw(0)
@@ -749,7 +706,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     if (measure()) rebuild()
     if (!running) draw(0)
   }, MEASURE_MS)
-  const clock = window.setInterval(onClock, 60_000)
   apply()
 
   return {
@@ -771,7 +727,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     dispose: () => {
       stop()
       window.clearTimeout(settle)
-      window.clearInterval(clock)
       ro.disconnect()
       io.disconnect()
       themeObserver.disconnect()
