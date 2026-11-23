@@ -13,7 +13,6 @@ import { usePreviewBindings } from './preview-bindings'
 import { rightPanelText, type RightPanelText } from './right-panel-text'
 import { workbenchText, type WorkbenchText } from './workbench-text'
 import { WORKBENCH_ACTIVE_TABS, type PreviewPaneProps, type WorkbenchPaneComponents, type WorkbenchTabId, type WorkspaceOwner } from './types'
-import { WindowControls } from '../../app/WindowControls'
 import { motionMs } from '../../ui/motion-hooks'
 import { RightPanelFrame } from '../../t3/components/right-panel/RightPanelFrame'
 import { TabStrip } from '../../t3/components/right-panel/TabStrip'
@@ -34,7 +33,6 @@ export interface RightPanelProps {
   dock?: number
   span?: number
   panes: WorkbenchPaneComponents
-  windowControls: boolean
   onOpenTool: (kind: PanelToolKind) => void
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
 }
@@ -59,7 +57,7 @@ export function requestNewPanelMenu(): void {
   useNewPanelRequest.getState().request()
 }
 
-export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotionMs, windowControls, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
+export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotionMs, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
   const { lang } = useI18n()
   const text = workbenchText(lang)
   const panel = rightPanelText(lang)
@@ -140,7 +138,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
       <div
         data-right-panel-tabbar
         className="rp-column-head"
-        data-window-controls={windowControls && last ? '1' : undefined}
+        data-window-controls={last ? '1' : undefined}
       >
         <TabStrip
           tabs={group.surfaces.flatMap((surface) => tabById.get(surface.id) ?? [])}
@@ -168,7 +166,6 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
             </IconButton>
           ) : null}
         </span>
-        {windowControls && last ? <WindowControls /> : null}
       </div>
     )
   }
@@ -252,7 +249,6 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
           </IconButton>
         )}
       </span>
-      {windowControls ? <WindowControls /> : null}
     </>
   )
 
@@ -281,7 +277,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
         onWidth={adapter.onWidth}
         minWidth={columns && groups.length > 1 ? Math.min(room, PANEL_WIDTH_MIN * groups.length) : undefined}
         tabbar={columns ? null : tabbar}
-        tabbarClassName={windowControls ? 't3-rp-frame__tabbar--flush' : undefined}
+        tabbarClassName={mode === 'inline' ? 't3-rp-frame__tabbar--desktop' : undefined}
         toggleSelector='[data-right-panel-toggle]'
         sheet={{ onClose: adapter.onHide, transitionMs: reducedMotion || mode !== 'sheet' ? 0 : motionMs('sheet') }}
         onKeyDown={onPanelKey}

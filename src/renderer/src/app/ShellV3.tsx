@@ -40,6 +40,7 @@ import { SettingsPanelV3 } from './SettingsPanelV3'
 import { openSettingsDialog } from '../features/settings/root/deep-link'
 import { RunAttentionToasts } from '../patterns/RunAttentionToasts'
 import { Header } from './Header'
+import { WindowControls } from './WindowControls'
 import { applyAppearanceV3 } from '../lib/appearance-v3'
 import { ConnBanner } from './ConnBanner'
 import { OnboardingWizard, markOnboarded, shouldAutoWizard } from '../features/onboarding'
@@ -606,7 +607,7 @@ export default function ShellV3(): ReactElement {
 
   return (
     <V3ErrorBoundary>
-      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}>
+      <div className="v3-root" data-workspace-ui="" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}>
         {!sidebarOpen && !drawerPresence.present ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} /> : null}
         <FocusScope contain={drawerOpen}>
           <Sidebar {...sidebarActions} inert={!sidebarOpen || sidebarDragHidden} />
@@ -628,9 +629,6 @@ export default function ShellV3(): ReactElement {
             sessionBarHidden={route.name === 'chat' && sessionBarOn && (hasMessages || !singlePane) && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
             sessionBarShown={sessionBarShown}
-            rightPanelOpen={panelOpen}
-            onToggleRightPanel={toggleWorkspace}
-            windowControls={!(panelOpen && panelMode === 'inline')}
             splitActive={!singlePane}
             openPanes={openPanes}
             activePane={activePane}
@@ -677,11 +675,13 @@ export default function ShellV3(): ReactElement {
             dock={panelDockWidth}
             span={rowWidth}
             panes={WORKBENCH_PANES}
-            windowControls={panelOpen && panelMode === 'inline'}
             onOpenTool={(kind) => void openWorkspaceTab(kind)}
             onRequestActivation={requestActivation}
           />
         ) : null}
+        <div className="v3-window-chrome" inert={drawerPresence.present}>
+          <WindowControls panelOpen={panelOpen} onTogglePanel={route.name === 'chat' ? toggleWorkspace : undefined} />
+        </div>
       </div>
       <CommandPalette
         isOpen={paletteOpen}

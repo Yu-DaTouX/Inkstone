@@ -4,13 +4,12 @@ import {
   type KeyboardEventHandler,
   type ReactNode,
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
 
-import { RESIZABLE_WIDTH_PROPERTY } from "../../hooks/useResizableWidth";
+import { RESIZABLE_WIDTH_PROPERTY, syncRightPanelChrome } from "../../hooks/useResizableWidth";
 import {
   type PreviewPanelInlineSize,
   usePreviewPanelInlineSize,
@@ -138,15 +137,12 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
   const floating = isInline && !maximized;
   const docked = isInline && (!maximized || props.span !== undefined);
   const overlay = floating && props.dock !== undefined && width > props.dock;
-  const overlap = overlay && props.dock !== undefined && open ? Math.round(width - props.dock) : 0;
-  useEffect(() => {
-    const root = document.documentElement;
-    if (overlap > 0) root.style.setProperty("--rp-overlap", `${overlap}px`);
-    else root.style.removeProperty("--rp-overlap");
-    return () => {
-      root.style.removeProperty("--rp-overlap");
-    };
-  }, [overlap]);
+  const chromeWidth = isInline && open && !maximized ? width : 0;
+  useLayoutEffect(() => {
+    const dock = props.dock;
+    syncRightPanelChrome(chromeWidth, dock);
+    return () => syncRightPanelChrome(0, dock);
+  }, [chromeWidth, props.dock]);
 
   return (
     <div
@@ -191,6 +187,7 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
       ) : null}
       <div
         data-rp-surface
+        data-native-clip={docked ? '' : undefined}
         className={cx(
           "t3-rp__surface",
           docked && "t3-rp__surface--docked",

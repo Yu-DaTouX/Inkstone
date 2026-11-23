@@ -1,5 +1,7 @@
 @layer features {
   .v3-root {
+    --v3-win-button: 46px;
+    --v3-win-space: calc(3 * var(--v3-win-button) + var(--size-btn) + 2 * var(--s-8));
     position: relative;
     display: flex;
     height: 100%;
@@ -289,8 +291,17 @@
     align-items: center;
     gap: 8px;
     padding-left: 12px;
-    padding-right: var(--rp-overlap, 0px);
+    padding-inline-end: calc(var(--head-actions-space) + var(--v3-win-space));
+    --head-actions-space: calc(var(--size-btn) + var(--s-8));
     user-select: none;
+  }
+
+  .v3-root:has(> .v3-main > .v3-head[data-chat]) {
+    --v3-win-space: calc(3 * var(--v3-win-button) + 2 * var(--size-btn) + var(--s-4) + 2 * var(--s-8));
+  }
+
+  .v3-root[data-panel='inline'] .v3-head {
+    padding-inline-end: calc(var(--head-actions-space) + var(--rp-overlap, 0px));
   }
 
   .v3-head button,
@@ -366,42 +377,44 @@
   }
 
   .v3-head-actions {
-    flex: none;
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    z-index: calc(var(--z-panel) + 1);
+    display: flex;
+    height: var(--size-head);
+    align-items: center;
+    gap: var(--s-4);
+    padding-inline-end: var(--s-8);
+    translate: calc(-1 * max(var(--v3-win-space), var(--rp-head-offset, 0px))) 0;
+    transition: translate var(--panel-dur, var(--dur-sheet)) var(--ease-inout);
+  }
+
+  html:is([data-rp-dragging], [data-window-resizing], [data-splitter-dragging]) .v3-head-actions {
+    transition: none;
+  }
+
+  .v3-window-chrome {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    z-index: calc(var(--z-panel) + 2);
+    -webkit-app-region: no-drag;
+  }
+
+  .v3-win,
+  .v3-win-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding-right: 4px;
   }
 
-  .v3-head-actions[data-win='0'] {
-    padding-right: var(--s-8);
-  }
-
-  .v3-head-pane {
-    position: relative;
-  }
-
-  .v3-head-pane-glyph {
-    position: relative;
-    display: inline-flex;
-  }
-
-  .v3-head-sep.ui-separator[aria-orientation='vertical'] {
-    align-self: center;
-    height: var(--s-16);
-    margin: 0 var(--s-6);
-  }
-
-  .v3-head-sep--win.ui-separator[aria-orientation='vertical'] {
-    margin: 0 0 0 var(--s-12);
-  }
-
-  .v3-win {
-    display: flex;
+  .v3-win-actions {
+    gap: var(--s-4);
+    padding-inline: var(--s-8);
   }
 
   .v3-winbtn {
-    width: 46px;
+    width: var(--v3-win-button);
     height: var(--size-head);
     display: grid;
     place-items: center;

@@ -8,8 +8,8 @@
     height: var(--workspace-topbar-height);
     padding: 0 0.75rem 0 0.5rem;
   }
-  .t3-rp-frame__tabbar--flush {
-    padding-right: 0;
+  .t3-rp-frame__tabbar--desktop {
+    padding-inline-end: var(--v3-win-space);
   }
   .t3-rp-frame__content {
     display: flex;

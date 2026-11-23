@@ -2,6 +2,15 @@ import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useState } fro
 
 export const RESIZABLE_WIDTH_PROPERTY = "--rp-w";
 
+export function syncRightPanelChrome(width: number, dock?: number): void {
+  const { style } = document.documentElement;
+  if (width > 0) style.setProperty("--rp-head-offset", `${width}px`);
+  else style.removeProperty("--rp-head-offset");
+  const overlap = Math.round(width - (dock ?? width));
+  if (overlap > 0) style.setProperty("--rp-overlap", `${overlap}px`);
+  else style.removeProperty("--rp-overlap");
+}
+
 export interface ResizeBounds {
   readonly min: number;
   readonly max: number;
@@ -178,8 +187,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
           const dock = Number.parseFloat(host?.style.getPropertyValue("--rp-dock") ?? "");
           if (Number.isFinite(dock)) {
             host?.toggleAttribute("data-rp-overlay", rounded > dock);
-            if (rounded > dock) document.documentElement.style.setProperty("--rp-overlap", `${rounded - dock}px`);
-            else document.documentElement.style.removeProperty("--rp-overlap");
+            syncRightPanelChrome(rounded, dock);
           }
         }
         return rounded;
@@ -196,8 +204,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
           const dock = Number.parseFloat(host?.style.getPropertyValue("--rp-dock") ?? "");
           if (Number.isFinite(dock)) {
             host?.toggleAttribute("data-rp-overlay", startWidth > dock);
-            if (startWidth > dock) document.documentElement.style.setProperty("--rp-overlap", `${startWidth - dock}px`);
-            else document.documentElement.style.removeProperty("--rp-overlap");
+            syncRightPanelChrome(startWidth, dock);
           }
         }
       },

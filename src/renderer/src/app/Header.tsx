@@ -1,13 +1,11 @@
 import { memo, useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Columns3, PanelLeft, PanelRight, Pin, SquarePen } from '../ui/icons'
+import { ArrowLeft, Columns3, PanelLeft, SquarePen } from '../ui/icons'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings } from './shortcuts'
-import { IconButton, Separator, TooltipText } from '../ui'
+import { IconButton, TooltipText } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
-import { rightPanelText } from '../features/workbench/right-panel-text'
-import { WindowControls } from './WindowControls'
 import { v3Text, withShortcutKeys } from './v3-text'
 import { plainTitleText } from '../../../shared/title-text'
 import { sessionProjectLabel } from '../features/sidebar/sidebar-model'
@@ -24,9 +22,6 @@ interface Props {
   sessionBarHidden?: boolean
   onToggleSessionBar: () => void
   sessionBarShown?: boolean
-  rightPanelOpen: boolean
-  onToggleRightPanel: () => void
-  windowControls: boolean
   splitActive?: boolean
   openPanes: ReadonlySet<WorkbenchTabId>
   activePane?: string | null
@@ -35,7 +30,7 @@ interface Props {
   onTogglePane: (tab: WorkbenchTabId) => void
 }
 
-export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSidebar, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, splitActive = false }: Props): ReactElement {
+export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSidebar, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, splitActive = false }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -54,10 +49,7 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
     if (!summary || summary.scope === 'global') return ''
     return sessionProjectLabel(summary, s.settings?.projects ?? [], s.settings?.projectNames ?? {}).label
   })
-  const alwaysOnTop = useStore((s) => s.alwaysOnTop)
-  const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
-  const panelText = rightPanelText(lang)
 
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
 
@@ -71,7 +63,7 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
   }, [route, peekedSessionId, sessionName, namedTitle, firstUserTitle, hasMessages, t, lang, text.newSessionTitle])
 
   return (
-    <header className="v3-head">
+    <header className="v3-head" data-chat={route === 'chat' ? '' : undefined}>
       <div className="v3-head-left">
         {route === 'chat' ? (
           !sidebarOpen || sidebarOverlay ? (
@@ -113,52 +105,19 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
 
       <div className="v3-head-drag" aria-hidden />
 
-      <div className="v3-head-actions" data-win={windowControls ? '1' : '0'}>
-        {route === 'chat' ? (
-          <>
-            <IconButton
-              tooltip={sessionBarLabel}
-              aria-label={sessionBarLabel}
-              aria-pressed={sessionBarOpen && !sessionBarHidden}
-              className="v3-head-pane"
-              onPress={onToggleSessionBar}
-              data-testid="v3-head-sessionbar-toggle"
-            >
-              <Columns3 size={16} />
-            </IconButton>
-            <IconButton
-              tooltip={rightPanelOpen ? panelText.hidePanel : panelText.panel}
-              aria-label={rightPanelOpen ? panelText.hidePanel : panelText.panel}
-              aria-pressed={rightPanelOpen}
-              pressedTone="mark"
-              className="v3-head-pane"
-              onPress={onToggleRightPanel}
-              data-testid="v3-head-panel-toggle"
-              data-right-panel-toggle
-            >
-              <span className="v3-head-pane-glyph">
-                <PanelRight size={16} />
-              </span>
-            </IconButton>
-          </>
-        ) : null}
-        <IconButton
-          tooltip={text.keepOnTop}
-          aria-label={text.keepOnTop}
-          aria-pressed={alwaysOnTop}
-          className="v3-head-pane"
-          onPress={() => void toggleAlwaysOnTop()}
-          data-testid="v3-always-on-top"
-        >
-          <Pin size={16} />
-        </IconButton>
-        {windowControls ? (
-          <>
-            <Separator orientation="vertical" className="v3-head-sep v3-head-sep--win" />
-            <WindowControls />
-          </>
-        ) : null}
-      </div>
+      {route === 'chat' ? (
+        <div className="v3-head-actions">
+          <IconButton
+            tooltip={sessionBarLabel}
+            aria-label={sessionBarLabel}
+            aria-pressed={sessionBarOpen && !sessionBarHidden}
+            onPress={onToggleSessionBar}
+            data-testid="v3-head-sessionbar-toggle"
+          >
+            <Columns3 size={16} />
+          </IconButton>
+        </div>
+      ) : null}
     </header>
   )
 })

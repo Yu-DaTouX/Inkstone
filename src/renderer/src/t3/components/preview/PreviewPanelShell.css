@@ -27,6 +27,9 @@
   .t3-rp--collapsed {
     pointer-events: none;
   }
+  :root[data-rp-dragging] .t3-rp__surface--slides:not(.t3-rp__surface--maximized) {
+    transition: none;
+  }
   .t3-rp > .t3-rp__resize {
     left: calc(min(var(--rp-w), var(--rp-dock, var(--rp-w))) - var(--rp-w) - 0.25rem);
   }
@@ -52,18 +55,25 @@
     width: auto;
   }
   .t3-rp[data-rp-overlay] > .t3-rp__surface--docked {
-    background: var(--glass-noise-image), color-mix(in srgb, var(--surface-3) calc(var(--glass-opacity) + 25%), transparent);
-    box-shadow: inset 1px 0 0 var(--glass-rim), var(--shadow-side);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    box-shadow: var(--shadow-side);
   }
-  .t3-rp__surface--slides {
-    transition: translate var(--panel-dur, var(--dur-sheet));
+  .t3-rp__surface--slides:not(.t3-rp__surface--maximized) {
+    overflow: clip;
+    transition: width var(--panel-dur, var(--dur-sheet)) var(--ease-inout);
   }
-  .t3-rp__surface--open {
-    translate: 0 0;
+  .t3-rp__surface--slides:not(.t3-rp__surface--maximized) > .t3-rp__body {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    width: calc(var(--rp-w) - 1px);
   }
-  .t3-rp__surface--closed {
-    translate: var(--rp-w) 0;
+  .t3-rp__surface--docked.t3-rp__surface--closed:not(.t3-rp__surface--maximized) {
+    width: 0;
+  }
+  @starting-style {
+    .t3-rp__surface--slides.t3-rp__surface--open:not(.t3-rp__surface--maximized) {
+      width: 0;
+    }
   }
   .t3-rp__body {
     width: 100%;
