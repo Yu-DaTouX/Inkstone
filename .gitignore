@@ -31,6 +31,7 @@ release/
 *.woff
 *.woff2
 !website/fonts/*.woff2
+!src/renderer/src/assets/fonts/**/*.ttf
 *.tgz
 
 # ---- 临时 / 日志 ----
