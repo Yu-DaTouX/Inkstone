@@ -1736,6 +1736,11 @@ await runSuite(import.meta.url, async (ok, compile) => {
     let watchHits = 0
     const watcher = watchAntigravityMcpFiles([join(agentDir, 'mcp.json'), join(projectDir, '.pi', 'mcp.json'), mcpServersPath], () => { watchHits++ })
     try {
+      mkdirSync(agentDir, { recursive: true })
+      writeFileSync(join(agentDir, 'unrelated.json'), '{}', 'utf8')
+      writeFileSync(join(agentDir, 'unrelated.json'), '{"changed":true}', 'utf8')
+      await delay(400)
+      assert.equal(watchHits, 0)
       mkdirSync(join(projectDir, '.pi'), { recursive: true })
       writeFileSync(join(projectDir, '.pi', 'mcp.json'), JSON.stringify({ mcpServers: { 'proj-only': { url: 'https://proj.example/mcp' } } }), 'utf8')
       await wait(() => watchHits >= 1, 2500)
@@ -1922,6 +1927,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
           settings: async () => ({ projects: [] }),
           isProjectTrusted: async () => false
         })
+        if (process.platform === 'win32') {
+          await wait(() => ipcReloadCalls === 1)
+          ipcReloadCalls = 0
+        }
         const snap = await ipcHandlers.get('yan:capabilities:mcpServices')()
         const changed = await ipcHandlers.get('yan:capabilities:changeMcpService')({
           context: snap.context,

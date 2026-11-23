@@ -143,6 +143,7 @@ export async function antigravityMcpServices(input: {
 
 export function watchAntigravityMcpFiles(files: readonly string[], onChange: () => void): { close(): void } {
   const targetsByDir = new Map<string, Set<string>>()
+  const dirsByDir = new Map<string, Set<string>>()
   const sameCase = process.platform === 'win32'
   const normalizeName = (value: string) => sameCase ? value.toLowerCase() : value
   for (const file of files) {
@@ -157,10 +158,11 @@ export function watchAntigravityMcpFiles(files: readonly string[], onChange: () 
     const parent = resolve(dirname(dir))
     if (parent !== dir) {
       const parentKey = sameCase ? parent.toLowerCase() : parent
-      let parentNames = targetsByDir.get(parentKey)
+      if (!targetsByDir.has(parentKey)) targetsByDir.set(parentKey, new Set<string>())
+      let parentNames = dirsByDir.get(parentKey)
       if (!parentNames) {
         parentNames = new Set<string>()
-        targetsByDir.set(parentKey, parentNames)
+        dirsByDir.set(parentKey, parentNames)
       }
       parentNames.add(normalizeName(basename(dir)))
     }
@@ -193,8 +195,11 @@ export function watchAntigravityMcpFiles(files: readonly string[], onChange: () 
       const dir = actualDir.get(key)
       if (!dir || !existsSync(dir)) continue
       try {
-        const watcher = fsWatch(dir, { persistent: false }, (_event, name) => {
-          if (name === null || names.has(normalizeName(name))) schedule()
+        const dirs = dirsByDir.get(key)
+        const watcher = fsWatch(dir, { persistent: false }, (event, name) => {
+          if (name === null) return schedule()
+          const entry = normalizeName(name)
+          if (names.has(entry) || (event === 'rename' && dirs?.has(entry))) schedule()
         })
         watcher.on('error', () => {
           try { watcher.close() } catch {}
