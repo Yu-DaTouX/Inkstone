@@ -213,6 +213,16 @@ export function registerAppUpdate(
     state.percent = 0
     void autoUpdater.downloadUpdate().catch((error) => { state.phase = 'error'; state.error = String(error) })
   }
+  type LatestRelease = { tag_name: string; html_url: string; assets?: { name: string }[]; body?: string }
+  const latestRelease = async (): Promise<LatestRelease> => {
+    const response = await net.fetch(`${RELEASES_API}/latest`, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(20_000) })
+    if (response.ok) return await response.json() as LatestRelease
+    if (response.status !== 403 && response.status !== 429) throw new Error(`GitHub HTTP ${response.status}`)
+    const page = await net.fetch(`${RELEASES}/latest`, { method: 'HEAD', signal: AbortSignal.timeout(20_000) })
+    const tag = /\/releases\/tag\/([^/?#]+)$/.exec(page.url)?.[1]
+    if (!page.ok || !tag) throw new Error(`GitHub HTTP ${response.status}`)
+    return { tag_name: decodeURIComponent(tag), html_url: page.url }
+  }
   let checking: Promise<AppUpdateStatus> | null = null
   const check = (): Promise<AppUpdateStatus> => {
     if (checking) return checking
@@ -220,9 +230,7 @@ export function registerAppUpdate(
     checking = (async () => {
       state.phase = 'checking'; state.error = undefined
       try {
-        const response = await net.fetch('https://api.github.com/repos/Yu-DaTouX/Inkstone/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(20_000) })
-        if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`)
-        const release = await response.json() as { tag_name: string; html_url: string; assets: { name: string }[]; body?: string }
+        const release = await latestRelease()
         state.latest = release.tag_name.replace(/^v/, ''); state.releaseUrl = release.html_url || RELEASES
         latestNotes = release.body?.trim() ? { version: state.latest, text: release.body.trim().slice(0, NOTES_MAX_CHARS) } : undefined
         const parts = (value: string): number[] => value.split('.').map((part) => Number.parseInt(part, 10) || 0)
@@ -230,8 +238,12 @@ export function registerAppUpdate(
         let newer = false
         for (let i = 0; i < Math.max(latest.length, current.length); i++) { if ((latest[i] ?? 0) !== (current[i] ?? 0)) { newer = (latest[i] ?? 0) > (current[i] ?? 0); break } }
         if (!newer) state.phase = 'current'
-        else if (!app.isPackaged || !!process.env.PORTABLE_EXECUTABLE_FILE || !!process.env.PORTABLE_EXECUTABLE_DIR || !release.assets.some((asset) => asset.name === 'latest.yml')) state.phase = 'manual'
-        else { const result = await autoUpdater.checkForUpdates(); state.phase = result?.updateInfo && result.updateInfo.version !== state.current ? 'available' : 'current' }
+        else if (!app.isPackaged || !!process.env.PORTABLE_EXECUTABLE_FILE || !!process.env.PORTABLE_EXECUTABLE_DIR || (release.assets && !release.assets.some((asset) => asset.name === 'latest.yml'))) state.phase = 'manual'
+        else {
+          let feedMissing = false
+          const result = await autoUpdater.checkForUpdates().catch((error: unknown) => { if (release.assets) throw error; feedMissing = true; return null })
+          state.phase = feedMissing ? 'manual' : result?.updateInfo && result.updateInfo.version !== state.current ? 'available' : 'current'
+        }
       } catch (error) { state.phase = 'error'; state.error = error instanceof Error ? error.message : String(error) }
       if (state.phase === 'available' && state.automatic) startDownload()
       return { ...state }
@@ -261,7 +273,8 @@ export function registerAppUpdate(
     let notes = prefs.notes?.version === version ? prefs.notes.text : ''
     if (!notes) {
       const response = await net.fetch(`${RELEASES_API}/tags/v${version}`, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) }).catch(() => null)
-      const release = response?.ok ? await response.json().catch(() => null) as { body?: string } | null : null
+      if (!response || response.status === 403 || response.status === 429) return null
+      const release = response.ok ? await response.json().catch(() => null) as { body?: string } | null : null
       notes = release?.body?.trim().slice(0, NOTES_MAX_CHARS) ?? ''
     }
     if (notes) return { version, notes }
