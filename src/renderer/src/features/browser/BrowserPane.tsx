@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, LogIn, Monitor, MonitorSmartphone, Pin, PinOff, Plus, RotateCw, Server, Smartphone, Tablet, X } from '../../ui/icons'
+import { ArrowLeft, ArrowRight, Camera, ExternalLink, Globe, LogIn, Monitor, MonitorSmartphone, Pin, PinOff, Plus, RotateCw, Server, Smartphone, Tablet, X } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import {
@@ -26,8 +26,10 @@ import {
   SiteIcon,
   Spinner,
   Splitter,
-  TextField
+  TextField,
+  showToast
 } from '../../ui'
+import { imageAttachmentFromDataUrl, sendToChat } from '../preview/canvas-share'
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { addressShown, addressTarget, isBlankAddress, nextAddressInput, nextAddressMemory, type AddressMemory } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
@@ -153,6 +155,19 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   })
   const controlRef = useRef(control)
   controlRef.current = control
+  const [shooting, setShooting] = useState(false)
+  const shotToChat = async (): Promise<void> => {
+    if (!controlRef.current) return
+    setShooting(true)
+    try {
+      const dataUrl = await window.yan.browser.snapshot().catch(() => null)
+      const image = dataUrl ? imageAttachmentFromDataUrl(dataUrl, 'browser') : null
+      if (!image) showToast(text.shotFailed, { tone: 'danger' })
+      else if (!sendToChat({ images: [image] })) showToast(text.shotNoComposer, { tone: 'danger' })
+    } finally {
+      setShooting(false)
+    }
+  }
 
   const inView = useBrowserBoundsSync(control, viewportRef)
   const surfaceActive = control && inView
@@ -716,6 +731,15 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           }}
         >
           <ExternalLink size={14} aria-hidden="true" />
+        </IconButton>
+        <IconButton
+          aria-label={text.shotToChat}
+          tooltip={text.shotToChat}
+          data-testid="browser-pane-shot"
+          isDisabled={!shownUrl || shooting}
+          onPress={() => void shotToChat()}
+        >
+          <Camera size={14} aria-hidden="true" />
         </IconButton>
         <MenuTrigger>
           <IconButton aria-label={text.viewMenuValue(text.viewportName(viewport))} tooltip={text.viewMenuValue(text.viewportName(viewport))} tooltipPlacement="left" aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">

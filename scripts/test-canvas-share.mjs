@@ -17,25 +17,15 @@ const ok = (cond, label) => {
 const captureCalls = []
 const scopeCalls = []
 let captureResult = { ok: true, data: 'aGVsbG8=', width: 200, height: 100, scaleFactor: 2 }
-const listeners = new Map()
 const added = []
+const inserted = []
+const focused = []
+let composerNode = null
 
-globalThis.CustomEvent = class CustomEvent {
-  constructor(type, init) {
-    this.type = type
-    this.detail = init?.detail
-  }
+globalThis.document = {
+  querySelector: (selector) => (selector === '[data-testid="composer-input"]' ? composerNode : null)
 }
 globalThis.window = {
-  addEventListener: (type, fn) => {
-    if (!listeners.has(type)) listeners.set(type, new Set())
-    listeners.get(type).add(fn)
-  },
-  removeEventListener: (type, fn) => listeners.get(type)?.delete(fn),
-  dispatchEvent: (event) => {
-    for (const fn of listeners.get(event.type) ?? []) fn(event)
-    return true
-  },
   yan: {
     canvas: {
       capture: async (rect, scope) => {
@@ -47,7 +37,11 @@ globalThis.window = {
   }
 }
 globalThis.__canvasShareStore = {
-  getState: () => ({ addAttachments: (items) => added.push(...items) })
+  getState: () => ({
+    addAttachments: (items) => added.push(...items),
+    insertIntoComposer: (text) => inserted.push(text),
+    requestComposerFocus: (request) => focused.push(request)
+  })
 }
 
 const storeStub = {
@@ -242,19 +236,17 @@ try {
   captureResult = { ok: true, data: 'aGVsbG8=', width: 200, height: 100, scaleFactor: 2 }
   ok(true, '区域截图接线')
 
-  assert.equal(share.sendToChat({ text: '看图' }), false, '没有输入框监听时返回 false')
-  assert.equal(added.length, 0, '未送达时不加附件')
+  assert.equal(share.sendToChat({ text: '看图' }), false, '没有输入框时返回 false')
+  composerNode = { getClientRects: () => [] }
+  assert.equal(share.sendToChat({ text: '看图' }), false, '输入框不可见时返回 false')
+  assert.equal(added.length + inserted.length, 0, '未送达时不加附件也不写文字')
 
-  const texts = []
-  const listener = (event) => {
-    if (event.detail.text) texts.push(event.detail.text)
-    event.detail.handled = true
-  }
-  window.addEventListener(share.CANVAS_SEND_TO_CHAT_EVENT, listener)
-  assert.equal(share.sendToChat({ text: '  这个卡片偏色  ', images: [shot] }), true, '有输入框监听时返回 true')
-  assert.deepEqual(texts, ['这个卡片偏色'], '文本去空白后交给输入框')
+  composerNode = { getClientRects: () => [{}] }
+  assert.equal(share.sendToChat({ text: '  这个卡片偏色  ', images: [shot] }), true, '输入框可见时返回 true')
+  assert.deepEqual(inserted, ['这个卡片偏色'], '文本去空白后写入输入框')
   assert.deepEqual(added.map((item) => item.name), [shot.name], '图片附件进 store')
-  window.removeEventListener(share.CANVAS_SEND_TO_CHAT_EVENT, listener)
+  assert.equal(share.sendToChat({ images: [shot] }), true, '只有图片也能发送')
+  assert.equal(focused.length, 1, '只有图片时把焦点交给输入框')
   ok(true, '发送到聊天')
 
   console.log(`\n${checks} 项检查通过`)

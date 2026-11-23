@@ -29,6 +29,7 @@ import {
   BoxArrowUp as PBoxArrowUp,
   BracketsCurly as PBracketsCurly,
   Brain as PBrain,
+  Camera as PCamera,
   Cards as PCards,
   CaretDown as PCaretDown,
   CaretLeft as PCaretLeft,
@@ -235,6 +236,7 @@ export const BookmarkIcon = icon(PBookmarkSimple, 'BookmarkIcon')
 export const Bot = icon(PRobot, 'Bot')
 export const Braces = icon(PBracketsCurly, 'Braces')
 export const Brain = icon(PBrain, 'Brain')
+export const Camera = icon(PCamera, 'Camera')
 export const Check = icon(PCheck, 'Check')
 export const CheckCircle2 = icon(PCheckCircle, 'CheckCircle2')
 export const CheckIcon = icon(PCheck, 'CheckIcon')

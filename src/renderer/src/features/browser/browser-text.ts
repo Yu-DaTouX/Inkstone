@@ -33,6 +33,9 @@ export interface BrowserText {
   sitesError(result: BrowserSiteAddResult): string
   sitesLoadError: string
   importLogin: string
+  shotToChat: string
+  shotFailed: string
+  shotNoComposer: string
   importing: string
   importHint: string
   importWaiting: string
@@ -105,6 +108,9 @@ const ZH: BrowserText = {
           : '允许列表已达上限，无法添加更多。',
   sitesLoadError: '读取允许列表失败。',
   importLogin: '一键导入登录态',
+  shotToChat: '截图发到对话',
+  shotFailed: '截图失败，请等页面加载完再试。',
+  shotNoComposer: '当前没有可用的输入框。',
   importing: '正在导入登录态…',
   importHint: '从默认 Chrome / Edge 当前档案导入全部网站的登录 Cookie，覆盖同名旧值。首次需安装并授权扩展；不含密码和其他设置。',
   importWaiting: '等待来源浏览器连接；首次请按来源页面提示安装扩展。再次点击可取消。',
@@ -179,6 +185,9 @@ const EN: BrowserText = {
           : 'The allow list is full.',
   sitesLoadError: 'Could not read the allow list.',
   importLogin: 'Import sign-ins',
+  shotToChat: 'Screenshot to chat',
+  shotFailed: 'Screenshot failed. Wait for the page to load and try again.',
+  shotNoComposer: 'No message box is available.',
   importing: 'Importing sign-ins…',
   importHint: 'Import all website cookies from the current profile in your default Chrome / Edge, replacing matching cookies. First use requires the extension. Passwords and other settings are not included.',
   importWaiting: 'Waiting for the source browser. Install the extension there on first use. Click again to cancel.',

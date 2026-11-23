@@ -5,14 +5,6 @@ import { pick } from '../../../../shared/ui-lang'
 
 export type { CanvasElementInfo }
 
-export const CANVAS_SEND_TO_CHAT_EVENT = 'yan:canvas:send-to-chat'
-
-export interface CanvasSendToChatDetail {
-  text: string
-  images: Attachment[]
-  handled: boolean
-}
-
 export interface CanvasSendToChatInput {
   text?: string
   images?: Attachment[]
@@ -42,11 +34,17 @@ function attachmentName(prefix: string, ext: string): string {
   return `${prefix}-${stamp}-${Math.random().toString(36).slice(2, 6)}.${ext}`
 }
 
-function imageAttachment(base64: string, name: string): Attachment {
+export function imageAttachmentFromDataUrl(dataUrl: string, prefix: string): Attachment | null {
+  const match = /^data:(image\/(png|jpeg|webp));base64,(.+)$/.exec(dataUrl)
+  if (!match) return null
+  return imageAttachment(match[3], attachmentName(prefix, match[2] === 'jpeg' ? 'jpg' : match[2]), match[1])
+}
+
+function imageAttachment(base64: string, name: string, mimeType = IMAGE_MIME): Attachment {
   return {
     id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name,
-    mimeType: IMAGE_MIME,
+    mimeType,
     size: base64Bytes(base64),
     data: base64,
     preview: base64,
@@ -116,14 +114,14 @@ export async function composeAnnotatedImage(base: Attachment, overlaySvg: string
 }
 
 export function sendToChat(input: CanvasSendToChatInput): boolean {
-  const detail: CanvasSendToChatDetail = {
-    text: (input.text ?? '').trim(),
-    images: input.images ?? [],
-    handled: false
-  }
-  window.dispatchEvent(new CustomEvent<CanvasSendToChatDetail>(CANVAS_SEND_TO_CHAT_EVENT, { detail }))
-  if (!detail.handled) return false
-  if (detail.images.length) useStore.getState().addAttachments(detail.images)
+  const composer = document.querySelector('[data-testid="composer-input"]')
+  if (!composer || composer.getClientRects().length === 0) return false
+  const text = (input.text ?? '').trim()
+  const images = input.images ?? []
+  const store = useStore.getState()
+  if (images.length) store.addAttachments(images)
+  if (text) store.insertIntoComposer(text)
+  else store.requestComposerFocus({})
   return true
 }
 
