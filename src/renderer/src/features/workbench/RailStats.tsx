@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { MiniBars, SegmentBar, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
@@ -110,6 +110,12 @@ function useLiveClock(active: boolean): number {
   return now
 }
 
+function noteParts(text: string): ReactElement[] {
+  return text.split(' · ').map((part, i) => (
+    <Fragment key={i}>{i ? ' · ' : null}<span className="wb-rs-part">{part}</span></Fragment>
+  ))
+}
+
 function barLabel(label: string, segments: readonly RailSegment[]): string {
   return `${label}: ${segments.map((s) => `${s.label} ${s.text}`).join(', ')}`
 }
@@ -162,7 +168,9 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
     },
     { key: 'speed', label: speed?.label ?? t('sm.tps'), value: speed?.value ?? '—', unit: speed ? speed.unit : undefined, title: speed?.title ?? undefined }
   ]
-  const cells = timed ? allCells : allCells.filter((cell) => cell.key === 'total' || cell.key === 'cost' || cell.key === 'hit')
+  const shown = timed ? allCells : allCells.filter((cell) => cell.key === 'total' || cell.key === 'cost' || cell.key === 'hit')
+  const settled = running || live ? shown : shown.filter((cell) => cell.value !== '—')
+  const cells = settled.length ? settled : shown
   const breakdown: ReactElement[] = []
   if (tokens && tokens.segments.length) {
     const fresh = tokens.segments.filter((seg) => seg.key !== 'cacheRead')
@@ -188,7 +196,7 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
       <section key="time" className="wb-rs-block" data-block="time" title={time.title ?? undefined}>
         <span className="wb-rs-label">{time.ariaLabel}</span>
         <SegmentBar aria-label={barLabel(time.ariaLabel, time.segments)} segments={time.segments} />
-        <p className="wb-rs-note wb-rs-num">{time.detail}</p>
+        <p className="wb-rs-note wb-rs-num">{noteParts(time.detail)}</p>
       </section>
     )
   }
@@ -197,7 +205,7 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
       <section key="speed" className="wb-rs-block" data-block="speed" title={speed.title ?? undefined}>
         <span className="wb-rs-label">{speed.label}</span>
         <MiniBars values={speed.bars} pending={speed.live} slots={SPEED_BARS} stretch />
-        {speed.caption ? <p className="wb-rs-note wb-rs-num">{speed.caption}</p> : null}
+        {speed.caption ? <p className="wb-rs-note wb-rs-num">{noteParts(speed.caption)}</p> : null}
       </section>
     )
   }

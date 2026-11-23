@@ -167,7 +167,7 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
         {shownRows.map((row) => (
           <li key={row.file.path} className="v3-chg-row" data-testid="v3-turn-changes-row" title={row.file.path}>
             <ChangePath row={row} onOpen={openChange} />
-            {row.file.added + row.file.removed > 0 ? <DiffStat className="v3-chg-stats" added={row.file.added} removed={row.file.removed} /> : null}
+            {row.file.added + row.file.removed > 0 ? <DiffStat className="v3-chg-stats" hideZero added={row.file.added} removed={row.file.removed} /> : null}
           </li>
         ))}
         {more > 0 ? (

@@ -42,6 +42,10 @@
     color: var(--fg);
   }
 
+  .wb-rs-part {
+    white-space: nowrap;
+  }
+
   .wb-rs-note {
     margin: 0;
     min-width: 0;

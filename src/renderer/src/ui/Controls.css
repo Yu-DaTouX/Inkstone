@@ -423,7 +423,7 @@
     flex: none;
     align-items: baseline;
     gap: var(--s-4);
-    font: var(--t-code) / var(--t-code-lh) var(--font-mono);
+    font: var(--t-code) / var(--t-code-lh) var(--font-num);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }

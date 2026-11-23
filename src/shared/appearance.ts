@@ -3,7 +3,7 @@ export type FontCodePreset = 'maple' | 'mono' | 'custom'
 
 const MAPLE = "'Maple Mono CN', ui-monospace, Consolas, monospace"
 const SANS = "'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Segoe UI', system-ui, sans-serif"
-const SERIF = "'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Songti SC', SimSun, Georgia, 'Times New Roman', serif"
+const SERIF = "'OpenSI Serif', 'LXGW WenKai', 'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Songti SC', SimSun, Georgia, 'Times New Roman', serif"
 const MONO = "ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Liberation Mono', monospace"
 
 export const FONT_STACKS = { maple: MAPLE, sans: SANS, serif: SERIF, mono: MONO } as const
