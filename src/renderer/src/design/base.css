@@ -16,7 +16,7 @@
   }
 
   ::selection {
-    background: var(--sel);
+    background: var(--text-sel);
   }
 
   :root[data-focus-modality='pointer'] {

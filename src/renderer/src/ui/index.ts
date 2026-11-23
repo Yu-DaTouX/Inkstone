@@ -1,4 +1,5 @@
 import './ui.css'
+import './workspace.css'
 
 export { cx } from './cx'
 export { useScrollbarReveal } from './scrollbar-reveal'

@@ -5,7 +5,7 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-background-tertiary": "light-dark(#F4F4F2, #0A0A0A)",
   "--color-background-inverse": "light-dark(#0B0B0B, #FFFFFF)",
   "--color-background-ghost": "transparent",
-  "--color-background-info": "light-dark(rgba(42,120,214,.1), rgba(42,120,214,.26))",
+  "--color-background-info": "light-dark(rgba(11,11,11,.07), rgba(255,255,255,.09))",
   "--color-background-danger": "light-dark(#FCEBEB, rgba(236,126,126,.12))",
   "--color-background-success": "light-dark(#E6F4E4, rgba(50,215,75,.12))",
   "--color-background-warning": "light-dark(#FDF1D6, rgba(250,178,25,.12))",

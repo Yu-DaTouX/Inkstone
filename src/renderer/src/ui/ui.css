@@ -278,7 +278,7 @@
     box-shadow: var(--ring-ctl);
   }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[aria-pressed='true']:not([data-disabled], [data-active='0']) {
-    color: var(--accent-t);
+    color: var(--fg);
   }
   .ui-btn.ui-icon-btn--neutral-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled]) {
     color: var(--fg);
@@ -789,7 +789,7 @@
   .ui-menu__item[data-selected],
   .ui-listbox__item[data-selected] {
     background: var(--sel);
-    color: var(--accent-t);
+    color: var(--fg);
   }
   .ui-menu__item[data-disabled],
   .ui-listbox__item[data-disabled] {
@@ -1356,14 +1356,14 @@
   }
   .ui-badge--accent {
     background: var(--sel);
-    color: var(--accent-t);
+    color: var(--fg);
   }
   .ui-badge--ok {
     background: var(--ok-bg);
     color: var(--ok-t);
   }
   .ui-badge--run {
-    background: var(--sel);
+    background: var(--run-bg);
     color: var(--run-t);
   }
   .ui-badge--ask {
@@ -1530,7 +1530,7 @@
   .ui-meter--gauge .ui-progress__track {
     height: 22px;
     border-radius: var(--r-full);
-    background: repeating-linear-gradient(135deg, var(--line2) 0 1px, transparent 1px 6px);
+    background: var(--alpha-1);
     box-shadow: var(--ring-line);
     -webkit-mask-image: none;
     mask-image: none;

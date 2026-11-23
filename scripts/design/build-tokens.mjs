@@ -43,6 +43,7 @@ function buildCss() {
   lines.push('  :root {')
   lines.push('    color-scheme: light dark;')
   for (const [name, value] of Object.entries(tokens.color)) lines.push(`    --${name}: ${pair(value)};`)
+  for (const [name, value] of Object.entries(tokens.workspaceColor)) lines.push(`    --workspace-${name}: ${pair(value)};`)
   for (const [name, value] of Object.entries(tokens.syntax ?? {})) lines.push(`    --syn-${name}: ${pair(value)};`)
   const [inkLight, inkDark] = tokens.alphaInk
   tokens.alpha.forEach((a, i) => lines.push(`    --alpha-${i}: ${pair([`rgba(${inkLight},${a})`, `rgba(${inkDark},${a})`])};`))

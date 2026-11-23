@@ -47,6 +47,7 @@
 | 组件 | 许可 | 说明 |
 | --- | --- | --- |
 | T3 Code（`apps/web/src/components/` 中左栏、右栏与输入框相关组件） | MIT，Copyright (c) 2026 T3 Tools Inc. | 许可原文见 [`src/renderer/src/t3/LICENSE`](src/renderer/src/t3/LICENSE) |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)（Base Nova 控件样式） | MIT，Copyright (c) 2023 shadcn | 控件样式适配到 [`workspace.css`](src/renderer/src/ui/workspace.css)，沿用砚的行为实现；许可原文见 [`LICENSE-shadcn-ui`](src/renderer/src/ui/LICENSE-shadcn-ui) |
 
 ## 其它运行时组件
 

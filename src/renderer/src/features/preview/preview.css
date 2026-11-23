@@ -582,7 +582,7 @@
   }
 
   .v3-pdf-text ::selection {
-    background: var(--sel);
+    background: var(--text-sel);
   }
 
   .v3-preview-audio {

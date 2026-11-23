@@ -189,7 +189,7 @@
 
   .ui-settings-nav__item[data-active='1'] {
     background: var(--sel);
-    color: var(--accent-t);
+    color: var(--fg);
     font-weight: var(--w-medium);
   }
 

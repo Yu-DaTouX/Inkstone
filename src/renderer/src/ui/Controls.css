@@ -453,7 +453,7 @@
     outline: none;
   }
   .ui-inline-rename::selection {
-    background: var(--sel);
+    background: var(--text-sel);
   }
 
   .ui-qr {

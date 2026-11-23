@@ -19,6 +19,7 @@ export const Popover = forwardRef<HTMLElement, PopoverProps>(function Popover({ 
       {...props}
       triggerRef={triggerRef}
       data-density-scope={scope}
+      data-workspace-ui=""
       ref={ref}
       className={composeRenderProps(className, (cn) => cx('ui-popover ui-float', surface === 'solid' && 'ui-float--solid', variant === 'panel' && 'ui-popover--panel', cn))}
     />

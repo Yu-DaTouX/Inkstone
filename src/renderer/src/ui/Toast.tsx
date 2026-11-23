@@ -82,6 +82,7 @@ export function ToastRegion({ className }: { className?: string } = {}) {
   return (
     <RACToastRegion
       queue={toastQueue}
+      data-workspace-ui=""
       aria-label={t('ui.toastRegion')}
       className={composeRenderProps(className, (cn) => cx('ui-toast-region', cn))}
     >

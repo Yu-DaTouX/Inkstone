@@ -26,15 +26,14 @@ export const ModalOverlay = forwardRef<HTMLDivElement, ModalOverlayProps>(functi
     <RACModalOverlay
       {...props}
       ref={ref}
+      data-workspace-ui=""
       className={composeRenderProps(className, (cn) => cx('ui-modal-overlay', cn))}
     />
   )
 })
 
 export const Modal = forwardRef<HTMLDivElement, ModalOverlayProps>(function Modal({ className, ...props }, ref) {
-  return (
-    <RACModal {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-modal', cn))} />
-  )
+  return <RACModal {...props} ref={ref} data-workspace-ui="" className={composeRenderProps(className, (cn) => cx('ui-modal', cn))} />
 })
 
 export interface DialogProps extends RACDialogProps {

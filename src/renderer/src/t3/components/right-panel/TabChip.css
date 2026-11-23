@@ -18,7 +18,7 @@
   .t3-tab-chip--active {
     max-width: min(calc(var(--t-footnote) * 12), var(--t3-tab-room, 100vw));
     background: var(--sel);
-    color: var(--accent-t);
+    color: var(--fg);
   }
   .t3-tab-chip--idle {
     color: var(--root-fg2);

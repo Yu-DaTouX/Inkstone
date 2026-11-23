@@ -84,6 +84,7 @@ function RetainedSheet({ isOpen, onOpenChange, label, className, overlayClassNam
     <Overlay disableFocusManagement>
       <div
         {...underlayProps}
+        data-workspace-ui=""
         data-open={isOpen ? '' : undefined}
         aria-hidden={isOpen ? undefined : true}
         className={cx('ui-sheet-overlay', 'ui-sheet-overlay--retained', overlayClassName)}
@@ -113,7 +114,7 @@ export function Sheet(props: SheetProps) {
   if (props.keepMounted) return <RetainedSheet {...props} />
   const { isOpen, onOpenChange, label, className, overlayClassName, testId, children } = props
   return (
-    <RACModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable className={cx('ui-sheet-overlay', overlayClassName)}>
+    <RACModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable data-workspace-ui="" className={cx('ui-sheet-overlay', overlayClassName)}>
       <RACModal className={cx('ui-sheet', className)} data-testid={testId}>
         <RACDialog aria-label={label} className="ui-sheet__dialog">
           <SheetModalToken />

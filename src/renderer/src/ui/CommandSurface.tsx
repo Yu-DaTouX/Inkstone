@@ -35,7 +35,7 @@ export function CommandSurface({
   'data-testid': testId
 }: CommandSurfaceProps) {
   return (
-    <RACModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable={isDismissable} className="ui-command-overlay">
+    <RACModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable={isDismissable} data-workspace-ui="" className="ui-command-overlay">
       <RACModal className={cx('ui-command', `ui-command--${width}`, className)} data-testid={testId}>
         <RACDialog aria-label={ariaLabel} className="ui-command__dialog">
           <ModalToken />

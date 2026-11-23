@@ -28,6 +28,7 @@ export const Tooltip = forwardRef<HTMLDivElement, TooltipVariantProps>(function 
       {...props}
       ref={ref}
       offset={offset}
+      data-workspace-ui=""
       className={composeRenderProps(className, (cn) => cx('ui-tooltip ui-tip-surface', variant === 'card' && 'ui-tooltip--card', cn))}
     />
   )
