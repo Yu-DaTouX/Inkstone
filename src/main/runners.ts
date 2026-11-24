@@ -953,6 +953,11 @@ export class RunnerRegistry {
     return null
   }
 
+  runnerOf(agent: AgentController): { id: string; cwd: string } | null {
+    for (const r of this.runners.values()) if (r.agent === agent) return { id: r.id, cwd: r.cwd }
+    return null
+  }
+
   async stopOne(id: string, preserveSelection = false, automatic = false): Promise<boolean> {
     const r = this.runners.get(id)
     if (!r) {

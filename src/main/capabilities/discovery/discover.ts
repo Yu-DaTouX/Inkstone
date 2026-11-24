@@ -421,6 +421,10 @@ export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
   const packageVersion = str(pkg?.version)
   const runtimeHint = str(pkg?.runtimeHint)
   const fileSha256 = str(pkg?.fileSha256)
+  const requiredEnv = asArray(pkg?.environmentVariables)
+    .filter((item) => (item as Record<string, unknown> | null)?.isRequired === true)
+    .map((item) => str((item as Record<string, unknown>).name))
+    .filter((name): name is string => !!name && /^[A-Za-z_][A-Za-z0-9_]{0,99}$/.test(name))
   const localPackage =
     pkg && registryType && packageIdentifier
       ? {
@@ -428,7 +432,8 @@ export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
           identifier: packageIdentifier,
           ...(packageVersion ? { version: packageVersion } : {}),
           ...(runtimeHint ? { runtimeHint } : {}),
-          ...(fileSha256 ? { fileSha256 } : {})
+          ...(fileSha256 ? { fileSha256 } : {}),
+          ...(requiredEnv.length ? { requiredEnv } : {})
         }
       : undefined
   const repository = safeSourceUrl((server.repository as Record<string, unknown> | undefined)?.url)

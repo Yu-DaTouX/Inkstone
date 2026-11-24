@@ -23,6 +23,9 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan mcp list
   yan mcp describe --server <ID> --tool <名称>
   yan mcp call --request-file request.json
+  yan mcp add --name <名字> --command <命令> [--arg …] | --url <地址>   添加 MCP 服务（用户在面板上批准）
+  yan plugin install --id <砚插件ID>               装砚插件；yan plugin list 看有哪些
+  yan package install --source npm:<包>@<版本>|git:<仓库>   装 pi 插件
   yan tasks apply --request-file task-update.json     兼容入口：会话里有 todos 工具时优先用工具
   yan artifact attach --path <项目内文件> [--description <说明>]
   yan artifact preview --path <项目内 HTML> [--at 1.5,4]   截图自查（视频合成逐时间点截总览图）
@@ -97,7 +100,12 @@ const GROUP_USAGE = {
               state=skipped    → 不要再次请求同一个技能；有 userReply 时按用户的话调整
               state=blocked    → 内容审查发现疑似提示注入，已拒绝
             你不能替用户批准，也不需要先在对话里征求同意。
-            新 MCP 服务由 pi 原生管理（/mcp），这里不登记 MCP；砚自己连接的服务（如电脑操作 windows-mcp）用 yan mcp list 查看。
+            MCP 服务候选（mcp-registry:…）：弹批准面板，用户选全局或当前项目后写入配置。
+              state=needs-config → 服务需要密钥；按 notice 用 question 的 secret 字段向用户要，
+                                    再带 --env 名字=$YAN_SECRET_… 重试（值你看不到）
+            pi 插件候选（npm:…）：弹确认框，允许后下载；这一轮结束后自动装到当前项目并接着任务继续。
+              要装到全局、或来源是 git 仓库时改用 yan package install。
+            直接按名字装（不经 discover）：yan mcp add / yan plugin install / yan package install。
 
 `,
   skill: `yan skill <动作> [选项]
@@ -128,8 +136,44 @@ const GROUP_USAGE = {
                         "schemaRevision":"<从 describe 拿的>"}
             传了 schemaRevision 且已变化时，回**可重试**的 schema-changed（不会拿旧参数硬调）。
             工具自己失败是 toolError:true 的结果（不是崩溃）；结果过大时会落盘，stdout 只回摘要。
-            服务在宿主文件 YAN_DIR/mcp-servers.json 里登记——模型不能新增服务。
+  services  列出已配置的 MCP 服务（全局与当前项目，含停用的）：
+              yan mcp services
+  add       添加一个 MCP 服务。砚弹批准面板，用户选「所有会话」或「当前项目」后才写入：
+              yan mcp add --name github --command npx --arg -y --arg @modelcontextprotocol/server-github \\
+                --env GITHUB_TOKEN=$YAN_SECRET_GITHUB_TOKEN --reason "读写 issue"
+              yan mcp add --name docs --url https://example.com/mcp
+              yan mcp add --request-file - <<EOF   # 参数含 -- 开头时用请求文件
+              {"name":"…","command":"…","args":["…"],"env":{"KEY":"$YAN_SECRET_KEY"}}
+              EOF
+            密钥一律先用 question 工具的 secret 字段向用户要，再用 $YAN_SECRET_… 传；不要让用户把密钥发在对话里。
+            --app 表示带界面的 MCP App（由砚连接）；--scope project 只是把「当前项目」选项排前。
+  remove / enable / disable  删除、启用、停用一个已配置的服务（同样先弹面板）：
+              yan mcp disable --name github [--scope project]
+            改动在当前会话这一轮结束后自动重启生效，用户下一条消息起可用。
 
+`,
+  plugin: `yan plugin <动作> [选项]
+
+砚插件（插件市场里的「砚插件」，如桌宠、ComfyUI、语音输入、Minecraft 模组开发）。
+
+动作：
+  list     列出可装的砚插件与是否已装： yan plugin list
+  install  安装（先弹批准面板）：        yan plugin install --id comfyui
+  remove   卸载（先弹批准面板）：        yan plugin remove --id comfyui
+装好后当前会话在这一轮结束后自动重启加载。
+`,
+  package: `yan package <动作> [选项]
+
+pi 插件（pi-package：扩展、技能、提示词模板的合集）。
+
+动作：
+  list     列出已登记的 pi 插件（scope=user 是全局，project 是当前项目）： yan package list
+  install  安装；弹批准面板让用户选全局或当前项目：
+             yan package install --source npm:包名@版本 [--reason "用途"]
+             yan package install --source git:github.com/用户/仓库
+           装好后先试加载一次，加载失败会撤销；安装脚本（npm lifecycle）不运行。
+  remove   卸载： yan package remove --source <来源或包名>
+改动在当前会话这一轮结束后自动重启生效。
 `,
 
   consent: `yan consent <动作> [选项]
@@ -599,10 +643,18 @@ const GROUP_SPECS = {
   },
 
   mcp: {
-    actions: ['list', 'describe', 'call'],
+    actions: ['list', 'describe', 'call', 'services', 'add', 'remove', 'enable', 'disable'],
     required: {
       describe: ['server', 'tool']
     }
+  },
+  plugin: {
+    actions: ['list', 'install', 'remove'],
+    required: { install: ['id'], remove: ['id'] }
+  },
+  package: {
+    actions: ['list', 'install', 'remove'],
+    required: { install: ['source'], remove: ['source'] }
   },
 
   subagent: {
@@ -709,7 +761,7 @@ const GROUP_SPECS = {
   }
 }
 
-const REPEATABLE_FLAGS = new Set(['query-text'])
+const REPEATABLE_FLAGS = new Set(['query-text', 'arg', 'env'])
 
 const PARAM_ALIASES = {
   'query-text': ['queries', 'query', 'text'],

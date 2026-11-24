@@ -37,6 +37,7 @@ import type { McpConnectionManager } from '../mcp/connection-manager'
 import type { RawSkillCommand } from './skill-service'
 import type { MainPush, SessionState } from '../../shared/ipc'
 import { paramNumber, paramString } from '../command-params'
+import { envOf, type McpAddRequest } from '../agent-commands/install-command'
 
 export interface CapabilityAcquisitionHost {
   capabilityOpts(): CapabilityRunOptions | undefined
@@ -49,6 +50,22 @@ export interface CapabilityAcquisitionHost {
   confirmCapabilityAuthorization(): ((request: CapabilityAuthorizationPrompt) => Promise<CapabilityAuthorizationChoice>) | undefined
   bundledSkills(): string[]
   requestApproval(request: { title: string; message: string; options: string[]; placeholder: string; timeout: number }): Promise<{ value?: string; cancelled?: boolean }>
+  installMcp(request: McpAddRequest): Promise<{ data: unknown; summary: Record<string, unknown> }>
+}
+
+export function mcpServiceNameOf(candidate: CapabilityCandidate): string {
+  const raw = candidate.localPackage?.identifier ?? candidate.candidateId.replace(/^mcp-registry:/, '').replace(/@[^@]*$/, '')
+  const tail = raw.split('/').pop() ?? raw
+  return tail.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'mcp-service'
+}
+
+export function mcpLaunchOf(candidate: CapabilityCandidate): { command: string; args: string[] } | { url: string } | null {
+  if (candidate.remoteUrl) return { url: candidate.remoteUrl }
+  const pkg = candidate.localPackage
+  if (!pkg) return null
+  if (pkg.registryType === 'npm') return { command: 'npx', args: ['-y', pkg.version ? `${pkg.identifier}@${pkg.version}` : pkg.identifier] }
+  if (pkg.registryType === 'pypi') return { command: 'uvx', args: [pkg.version ? `${pkg.identifier}==${pkg.version}` : pkg.identifier] }
+  return null
 }
 
 const SKILL_SCOPE_OPTIONS: Record<AcquiredSkillScope, string> = {
@@ -278,30 +295,9 @@ export class CapabilityAcquisition {
     }
     const { plan, candidate, digest } = entry
     const operationId = operationIdOf({ planId: plan.planId, planRevision: plan.revision })
-    const explicitAuthorize = params.authorize === true || params.authorize === 'true'
+    const explicitAuthorize = params.authorize !== false && params.authorize !== 'false'
 
-    if (['remote', 'mcp-package'].includes(candidate.installKind)) {
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          executable: false,
-          state: 'mcp-native-only',
-          notice:
-            '通用 MCP 服务的登记已收口到 pi 原生：砚不再写入宿主 MCP 配置。' +
-            '需要时请在设置页「MCP 服务」里添加；此获取分支不会下载或登记。'
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          state: 'mcp-native-only',
-          executed: false
-        }
-      }
-    }
+    if (candidate.kind === 'mcp-server') return this.acquireMcp(candidate, params)
 
     if (plan.policyResult === 'needs-auth' || plan.policyResult === 'unsupported') {
       const notice =
@@ -355,7 +351,7 @@ export class CapabilityAcquisition {
           executable: false,
           state: 'needs-authorization',
           notice:
-            '本地包的临时环境加载验证（smoke）会在安装前执行候选扩展代码，以当前桌面用户权限读写文件并联网；临时目录 / 清空继承环境不是操作系统沙箱，禁用 npm lifecycle scripts 不会阻止扩展运行。模型不能自行授权；用 `--authorize` 发起砚的确认对话框并由你选择后，才会保存精确候选 + 指纹 + 项目级授权。'
+            '用户没有允许安装这个 pi 插件，没有改动任何东西。不要再次请求同一个；改用不装插件的办法继续，并在回复里说明缺了什么。'
         },
         summary: {
           kind: 'capabilities',
@@ -460,16 +456,16 @@ export class CapabilityAcquisition {
     }
 
     const stateNotice = npmFailure
-      ? `npm 下载 / staging 失败：${npmFailure}。同一计划可显式使用 --retry 重试（最多一次）。`
+      ? `下载失败，没有安装：${npmFailure}。可以对同一候选加 --retry 再试一次。`
       : npmStaged
         ? tx.piPackageTarget
-          ? 'npm tarball 已按 prepare 固定的 SHA-512 校验并落入受管 staging；已持久绑定原项目 / runner / 会话，未运行 npm lifecycle、pi install 或包代码，等待目标项目 runner 安全边界调度。'
-          : 'npm tarball 已按 prepare 固定的 SHA-512 校验并落入受管 staging；未运行 npm lifecycle、pi install 或包代码。当前会话尚无可持久恢复的目标绑定，需等会话保存后重试 acquire。'
+          ? '已下载并核对校验值。这一轮结束、会话空闲后，砚会先试加载，通过后装到当前项目并自动接着这个任务继续；现在不用再调用。告诉用户插件会在这一轮结束后装好。'
+          : '已下载，但当前会话还没保存，没法安排后续安装；等会话保存后再调用一次 acquire。'
         : tx.state === 'failed'
-          ? `这个接入事务已失败：${tx.failure?.detail ?? '无更多错误细节'}。如尚有重试次数，可对同一计划使用 --retry。`
+          ? `这次安装失败了：${tx.failure?.detail ?? '没有更多细节'}。还能重试时可以加 --retry。`
         : tx.state === 'pending-boundary'
-          ? '事务正在等待安全边界；本次未执行安装、运行包代码或重启 runner。'
-          : `这个候选的 installKind 是 ${candidate.installKind}，对应下载 / 安装 / 临时环境加载验证仍待实施。`
+          ? '正在等会话空闲后安装，现在还没有安装。'
+          : `这个候选暂时不能用 acquire 安装；git 来源或要装到全局时用 yan package install --source <来源>。`
     return {
       data: {
         plan,
@@ -543,6 +539,35 @@ export class CapabilityAcquisition {
       ...(input.userBlocked ? [input.userBlocked] : []),
       pick('不批准就点「跳过」；到时间没有选择也会自动跳过。', 'Click Skip to decline. It is skipped automatically on timeout.')
     ].join('\n')
+  }
+
+  private async acquireMcp(candidate: CapabilityCandidate, params: Record<string, unknown>) {
+    const summary = (state: string, extra: Record<string, unknown> = {}) => ({ kind: 'capabilities', action: 'acquire', candidateId: candidate.candidateId, state, ...extra })
+    const launch = mcpLaunchOf(candidate)
+    if (!launch) {
+      const notice = pick(
+        '这个 MCP 服务在目录里没有给出可用的启动方式（只支持 npm、PyPI 包和网络地址）。看它的仓库说明后用 yan mcp add 手动填启动命令。',
+        'The directory gives no usable way to start this MCP service (only npm, PyPI packages and network addresses are supported). Read its repository and add it with yan mcp add.'
+      )
+      return { data: { state: 'unsupported', candidateId: candidate.candidateId, sourceUrls: candidate.sourceUrls, notice }, summary: summary('unsupported') }
+    }
+    const env = envOf(params.env)
+    const missing = (candidate.localPackage?.requiredEnv ?? []).filter((name) => !env?.[name])
+    if (missing.length > 0) {
+      const retry = `yan capabilities acquire --candidate "${candidate.candidateId}" ${missing.map((name) => `--env ${name}=$YAN_SECRET_${name.toUpperCase()}`).join(' ')}`
+      const notice = pick(
+        `这个服务需要 ${missing.join('、')}，还没有添加。先用 question 工具的 secret 字段向用户要（字段名用变量名，值你看不到），再运行：${retry}`,
+        `This service needs ${missing.join(', ')} and was not added yet. Ask the user with a secret field of the question tool (name the field after the variable; you never see the value), then run: ${retry}`
+      )
+      return { data: { state: 'needs-config', candidateId: candidate.candidateId, requiredEnv: missing, notice }, summary: summary('needs-config', { requiredEnv: missing }) }
+    }
+    return this.host.installMcp({
+      name: paramString(params, ['name']) ?? mcpServiceNameOf(candidate),
+      ...launch,
+      ...(env ? { env } : {}),
+      reason: candidate.summary.slice(0, 200),
+      source: candidate.sourceUrls[0] ?? candidate.candidateId
+    })
   }
 
   private async acquireSkill(input: { plan: AcquisitionPlan; candidate: CapabilityCandidate }) {

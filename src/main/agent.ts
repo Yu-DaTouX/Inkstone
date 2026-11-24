@@ -25,6 +25,7 @@ import { EventEmitter } from 'node:events'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { runPluginCommand } from './plugin-commands'
+import { INSTALL_COMMANDS, runInstallCommand, runMcpAddFor, type InstallCommandHost, type InstallServices } from './agent-commands/install-command'
 import { lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
@@ -494,6 +495,11 @@ export class AgentController extends EventEmitter {
   private getResponseDetail?: () => ResponseDetail
   private getBrowserHost?: () => BrowserCommandHost | null
   private subagentHost?: SubagentCommandHost
+  private installServices?: () => InstallServices
+  private readonly installHost: InstallCommandHost = {
+    services: () => this.installServices?.(),
+    requestApproval: (request) => this.requestApprovalChoice(request)
+  }
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
@@ -631,7 +637,8 @@ export class AgentController extends EventEmitter {
       } : undefined
     },
     bundledSkills: () => this.bundledSkills,
-    requestApproval: (request) => this.requestApprovalChoice(request)
+    requestApproval: (request) => this.requestApprovalChoice(request),
+    installMcp: (request) => runMcpAddFor(this.installHost, request)
   })
 
   private async requestApprovalChoice(request: { title: string; message: string; options: string[]; placeholder: string; timeout: number }): Promise<HostUiResponse> {
@@ -813,6 +820,7 @@ export class AgentController extends EventEmitter {
     getResponseDetail?: () => ResponseDetail
     browserHost?: () => BrowserCommandHost | null
     subagentHost?: SubagentCommandHost
+    installServices?: () => InstallServices
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -900,6 +908,7 @@ export class AgentController extends EventEmitter {
     this.getResponseDetail = opts.getResponseDetail
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
+    this.installServices = opts.installServices
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
@@ -1562,6 +1571,9 @@ export class AgentController extends EventEmitter {
     }
     if (command === 'skill.save') {
       return runSkillSave(this.commandHost, params)
+    }
+    if (INSTALL_COMMANDS.has(command)) {
+      return runInstallCommand(this.installHost, command, params)
     }
     if (command.startsWith('mcp.app.')) {
       return this.runMcpAppCommand(command, params, signal)

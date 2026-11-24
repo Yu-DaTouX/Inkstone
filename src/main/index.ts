@@ -33,7 +33,8 @@ import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from '.
 import { approvalNoticeTitle, createAttentionNotices, noticeLang, terminalNoticeText } from './attention-notice'
 import { RunnerVisibility } from './runner-reclaim'
 import { isBroadAllowRoot } from './guard-roots'
-import { getSettings, patchSettings } from './settings'
+import { getSettings, onProjectsAdded, patchSettings } from './settings'
+import { trustProjectFolders } from './project-auto-trust'
 import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
@@ -100,6 +101,8 @@ import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
 import { BundledPlugins } from './bundled-plugins'
+import { installServicesFor } from './install-services'
+import { loadPluginCatalog } from './plugin-catalog'
 import { appModelRuntime, completePluginText, setModelCallProviderExtensions } from './plugin-completion'
 import { callModel } from './model-call'
 import { runModelAsk } from './model-ask'
@@ -1918,6 +1921,18 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
         subagentHost: { run: (command, params, context, signal) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : command.startsWith('model.') ? runModelAsk(params, context, { call: async (req) => callModel(req, await appModelRuntime()) }, signal) : subagentService.capabilityHost.run(command, params, context, signal) },
+        installServices: () => installServicesFor({
+          registry: () => runners,
+          settings: () => getSettings(),
+          isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted,
+          isKnownProject: isKnownPackageProject,
+          catalog: () => loadPluginCatalog(false),
+          bundledAction: (pluginId, action) => {
+            launchResourceCache = null
+            return bundledPlugins.action(pluginId, action).finally(() => { launchResourceCache = null })
+          },
+          refresh: () => void restartAgent('install')
+        }, agent),
         switchSpareAccount,
         activeAccountKey,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
@@ -2151,6 +2166,15 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
   void isolation.initialize()
 
+  onProjectsAdded((projects) => {
+    void trustProjectFolders(projects).then((trusted) => {
+      for (const project of trusted) {
+        push({ ch: 'notify', payload: { id: `project-trusted-${project.cwd}`, method: 'notify', notifyType: 'info',
+          message: pick(`已信任「${project.name}」：砚会加载这个文件夹里 .pi/ 的设置、扩展和技能。`, `Trusted "${project.name}": Inkstone loads the settings, extensions and skills in its .pi/ folder.`) } })
+      }
+    })
+  })
+  await trustProjectFolders(settings.projects)
   const piProbe = resolvePi(settings.piBin ? { override: settings.piBin } : {})
   const piBin = piProbe.args.at(-1)
   configurePackageContext({

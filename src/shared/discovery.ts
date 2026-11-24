@@ -12,6 +12,7 @@ export type CandidateLocalPackage = {
   version?: string
   runtimeHint?: string
   fileSha256?: string
+  requiredEnv?: string[]
 }
 
 export type GithubSkillFile = { path: string; sha: string; size: number }

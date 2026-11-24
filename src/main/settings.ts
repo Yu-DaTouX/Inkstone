@@ -552,5 +552,16 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   cached = next
   setUiLang(next.lang)
   setThinkingDisplayMode(next.thinkingDisplay)
+  const known = new Set(cur.projects.map((project) => project.cwd))
+  const added = next.projects.filter((project) => !known.has(project.cwd))
+  if (added.length > 0 && projectsAddedListener) {
+    try { projectsAddedListener(added.map((project) => ({ cwd: project.cwd, name: project.name }))) } catch { }
+  }
   return structuredClone(next)
+}
+
+let projectsAddedListener: ((projects: Array<{ cwd: string; name: string }>) => void) | null = null
+
+export function onProjectsAdded(listener: ((projects: Array<{ cwd: string; name: string }>) => void) | null): void {
+  projectsAddedListener = listener
 }

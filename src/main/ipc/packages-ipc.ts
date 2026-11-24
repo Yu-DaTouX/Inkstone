@@ -1,6 +1,6 @@
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
-import { configurePackageContext, listPackages, runPackageAction } from '../packages'
+import { configurePackageContext, listPackages, runPackageAction, type PackageActionRequest, type PackageActionResult } from '../packages'
 import { trustStatus } from '../project-trust'
 import { resolvePi } from '../protocol'
 import { smokeInstalledPiPackage } from '../capabilities/pi-package-smoke'
@@ -63,9 +63,43 @@ export function refreshMinecraftPluginOnStartup(): void {
   }).catch((error) => console.warn('[minecraft-plugin] \u542f\u52a8\u68c0\u67e5\u5931\u8d25', error))
 }
 
+export async function runPiPackageAction(request: PackageActionRequest, deps: PackagesIpcDeps): Promise<PackageActionResult> {
+  const { hasBusyCwd, hasAnyBusy, isKnownProject } = deps
+  const st = await getSettings()
+  const piBin = resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null
+  configurePackageContext({
+    bin: () => piBin,
+    agentDir: () => PI_AGENT_DIR,
+    hasRunningTask: hasBusyCwd,
+    ...(hasAnyBusy ? { hasAnyRunningTask: hasAnyBusy } : {}),
+    smoke: (packageDir) => smokeInstalledPiPackage({ packageRoot: packageDir, ...(piBin ? { piBin } : {}) }),
+    isKnownProject,
+    isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
+  })
+  return runPackageAction(request)
+}
+
+export async function minecraftPluginInstalled(): Promise<boolean> {
+  return (await minecraftPluginStatus(await minecraftPaths())).installed === true
+}
+
+export async function minecraftPluginAction(action: 'install' | 'remove', isBusy: () => boolean): Promise<MinecraftPluginResult> {
+  const paths = await minecraftPaths()
+  if (action === 'remove') return queueMinecraft(() => isBusy()
+    ? Promise.resolve({ ok: false, error: pick('请等待当前任务结束再修改 Minecraft 插件', 'Wait for running tasks before changing the Minecraft plugin') })
+    : removeMinecraftPlugin(paths))
+  const checked = await checkMinecraftUpdate(await minecraftPluginStatus(paths))
+  const expectedRelease = checked.status?.releaseKey
+  if (!checked.ok || !expectedRelease) return checked
+  return queueMinecraft(async () => {
+    if (isBusy()) return { ok: false, error: pick('请等待当前任务结束再更新 Minecraft 插件', 'Wait for running tasks before updating the Minecraft plugin') }
+    return installMinecraftPlugin(paths, { fetch: pluginFetch, expectedRelease, keepDev: checked.status?.devEnabled === true })
+  })
+}
+
 export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): void {
   const { handle } = ipc
-  const { hasBusyCwd, hasAnyBusy, isKnownProject } = deps
+  const { hasAnyBusy } = deps
   handle('yan:packages:search', async (query: unknown, offset: unknown) => {
     if (typeof query !== 'string' || (offset !== undefined && (typeof offset !== 'number' || !Number.isFinite(offset)))) {
       return { ok: false, entries: [], total: 0, error: pick('无效的搜索参数', 'Invalid search parameters') }
@@ -140,24 +174,13 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     try {
       const kind = raw.kind === 'install' || raw.kind === 'remove' || raw.kind === 'update' ? raw.kind : null
       if (!kind) return { ok: false, error: pick('未知的操作', 'Unknown action') }
-      const st = await getSettings()
-      const piBin = resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null
-      configurePackageContext({
-        bin: () => piBin,
-        agentDir: () => PI_AGENT_DIR,
-        hasRunningTask: hasBusyCwd,
-        ...(hasAnyBusy ? { hasAnyRunningTask: hasAnyBusy } : {}),
-        smoke: (packageDir) => smokeInstalledPiPackage({ packageRoot: packageDir, ...(piBin ? { piBin } : {}) }),
-        isKnownProject,
-        isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
-      })
-      return await runPackageAction({
+      return await runPiPackageAction({
         kind,
         source: String(raw.source ?? ''),
         local: raw.local === true,
         cwd: String(raw.cwd ?? ''),
         allowLifecycleScripts: raw.allowLifecycleScripts === true
-      })
+      }, deps)
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }

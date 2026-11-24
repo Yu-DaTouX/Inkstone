@@ -138,9 +138,23 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'mcp',
     'MCP 服务',
-    '列出已登记的 MCP 服务、查看某个工具的参数（describe），或调用工具（call）。',
+    '列出已登记的 MCP 服务、查看某个工具的参数（describe）或调用工具（call）；按用户批准添加、删除、启停 MCP 服务（services / add / remove / enable / disable）。',
     'unknown',
     'yan mcp list'
+  ),
+  builtin(
+    'plugin',
+    '砚插件安装',
+    '列出、按用户批准安装或卸载砚插件（桌宠、ComfyUI、语音输入、Minecraft 模组开发）。',
+    'write',
+    'yan plugin list'
+  ),
+  builtin(
+    'package',
+    'pi 插件安装',
+    '列出、按用户批准安装或卸载 pi 插件（npm 或 git 来源，全局或当前项目）。',
+    'write',
+    'yan package list'
   ),
   builtin(
     'search',

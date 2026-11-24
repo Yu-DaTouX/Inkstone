@@ -19,12 +19,12 @@ import { builtinCapabilities } from '../extensions-inventory'
 import type { AppSettings, PromptTemplateDirectories } from '../../shared/ipc'
 import type { AgentController } from '../agent'
 import type { RunnerRegistry } from '../runners'
-import { PI_AGENT_DIR, YAN_DIR } from '../paths'
+import { PI_AGENT_DIR } from '../paths'
 import { mergeCommandDescriptors } from '../command-registry'
 import { listNativeMcpServers } from '../mcp/native-list'
 import { manageNativeMcpServer } from '../mcp/native-manage'
 import { changeMcpServiceSettings, listMcpServiceSettings, type McpSettingsHost } from '../mcp/service-settings'
-import { verifyNativeStartupWitness } from '../mcp/app-native-witness'
+import { createMcpSettingsHost, mcpContextOf, type McpSettingsTarget } from '../mcp/settings-host'
 import { McpCheckHistory, mcpConfigFingerprint, withConnectionFacts, type McpCheckScope } from '../mcp/connection-facts'
 import { loadMcpServers } from '../mcp/config'
 import { mcpAppProxyService } from '../mcp/app-proxy-service'
@@ -123,42 +123,9 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     return listNativeMcpServers({ agentDir: PI_AGENT_DIR, ...(projectCwd ? { projectCwd, projectTrusted } : {}) })
   }
   handle('yan:capabilities:nativeMcpServers', currentNativeMcpList)
-  const mcpContext = (): string => {
-    const runner = registry()?.activeRunner()
-    const state = currentAgent()?.getState()
-    return JSON.stringify([runner?.id, state?.sessionId, runner?.cwd, currentAgent()?.capabilityProjectId, runner ? registry()?.runtimeOf(runner.id)?.generation : undefined])
-  }
-  const mcpSettingsHost = async (): Promise<McpSettingsHost> => {
-    const context = mcpContext()
-    const agent = currentAgent()
-    const runner = registry()?.activeRunner()
-    const st = await settings()
-    const project = st.projects.find((entry) => entry.id === agent?.capabilityProjectId)
-    const projectTrusted = project && runner ? await isProjectTrusted(runner.cwd).catch(() => false) : false
-    const witness = agent?.nativeBootWitness()
-    const nativeConfigChanged = witness ? !(await verifyNativeStartupWitness(witness)).ok : null
-    const busy = (): boolean => registry()?.agents().some((item) => {
-      const state = item.getState()
-      return !!(state?.isAgentRunning || state?.isStreaming || state?.isCompacting || state?.pendingMessageCount || item.hasRunningBash() || item.getPendingUiCount())
-    }) ?? false
-    if (context !== mcpContext()) throw new Error(pick('当前会话或项目已切换，请重新读取', 'Session or project changed; reload'))
-    return {
-      agentDir: PI_AGENT_DIR, context, minecraftPluginDir: join(YAN_DIR, 'plugins', 'inkstone-minecraft'),
-      project: project && runner ? { id: project.id, name: project.name, cwd: runner.cwd } : null,
-      projectTrusted, projects: st.projects, nativeConfigChanged,
-      busy: busy(), isBusy: busy,
-      managedToolsChanged: () => mcpAppProxyService().toolsChangedServers(agent?.capabilityProjectId ?? undefined),
-      refreshManagedTools: async () => {
-        const result = await mcpAppProxyService().refresh({ callerProjectId: agent?.capabilityProjectId ?? undefined, allowEmpty: true })
-        const problems = [
-          ...result.errors.map((entry) => `${entry.serverId}: ${entry.error}`),
-          ...result.collisions.map((entry) => pick(`工具名 ${entry.name} 重名，已跳过相关工具`, `Tool name ${entry.name} is duplicated; the affected tools were skipped`))
-        ]
-        return problems.length ? { ok: false, warning: problems.join('；') } : { ok: true }
-      },
-      assertContext: () => { if (context !== mcpContext()) throw new Error(pick('当前会话或项目已切换，请重新读取', 'Session or project changed; reload')) }
-    }
-  }
+  const activeTarget = (): McpSettingsTarget => ({ agent: currentAgent(), runner: registry()?.activeRunner() ?? null })
+  const mcpContext = (): string => mcpContextOf(registry(), activeTarget())
+  const mcpSettingsHost = (): Promise<McpSettingsHost> => createMcpSettingsHost({ registry, settings, isProjectTrusted }, activeTarget)
   handle('yan:capabilities:mcpServices', async () => listMcpServiceSettings(await mcpSettingsHost()))
   handle('yan:capabilities:changeMcpService', async (input: McpSettingsMutation) => {
     const host = await mcpSettingsHost()
