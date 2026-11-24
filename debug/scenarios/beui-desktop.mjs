@@ -50,10 +50,10 @@ export default async function run({ cdp, box, runDir, newSession, waitFor, check
 
   await click(`${open}[aria-label$="工作台预览-v2.png"]`)
   await waitFor(`${find(image)}?.naturalWidth === 720`)
-  check('大图没有外框或底板，关闭和底部工具独立悬浮', await ev(`(() => {
+  check('大图没有外框或底板，没有关闭按钮，标题居中无阴影，底部工具独立悬浮', await ev(`(() => {
     const modal=${find('.imgv-modal')}, viewport=${find('.imgv-viewport')}, dock=${find('.imgv-dock')};
     return [modal, viewport].every(el => getComputedStyle(el).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(el).boxShadow === 'none') &&
-      dock.getBoundingClientRect().top >= viewport.getBoundingClientRect().bottom && !!modal.querySelector('.imgv-close.ui-float');
+      dock.getBoundingClientRect().top >= viewport.getBoundingClientRect().bottom && !modal.querySelector('.imgv-close') && getComputedStyle(modal.querySelector('.imgv-label')).boxShadow === 'none' && getComputedStyle(modal.querySelector('.imgv-label')).textAlign === 'center';
   })()`))
   await sleep(250)
   await shot('image-viewer-frameless-dark')
@@ -137,13 +137,14 @@ export default async function run({ cdp, box, runDir, newSession, waitFor, check
   await click(`${open}[aria-label$="工作台预览-v2.png"]`)
   await waitFor(`${find(image)}?.naturalWidth === 720`)
   await sleep(250)
-  check('浅色窄窗下工具可换行，图片和关闭按钮都在窗口内', await ev(`(() => {
+  check('浅色窄窗下工具可换行，图片和按钮都在窗口内', await ev(`(() => {
     const scope=${find('[data-testid="image-viewer"]')};
     return [...scope.querySelectorAll('button, .imgv-viewport')].every(el => {const r=el.getBoundingClientRect();return r.width>0 && r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;});
   })()`))
   check('浅色窄窗下两侧按钮仍同尺寸、等距', await ev(symmetric))
   await shot('image-viewer-frameless-light-narrow')
-  await click('.imgv-close')
+  const blank = await ev(`(() => {const r=${find('.imgv-head')}.getBoundingClientRect(); return {x: r.left + 8, y: r.top + r.height / 2}})()`)
+  for (const type of ['mousePressed', 'mouseReleased']) await cdp.call('Input.dispatchMouseEvent', { type, ...blank, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 })
   await waitFor(`!${find('[data-testid="image-viewer"]')}`)
   await cdp.call('Emulation.clearDeviceMetricsOverride')
   await kit.theme('dark')
