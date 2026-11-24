@@ -2,7 +2,13 @@ import { runSuite } from './lib/test-suite.mjs'
 import { claudeQuotaFixture } from './fixtures/claude-quota.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { claudeUsageWindows, claudeResetCredits } = await compile('src/shared/account-quota.ts')
+  const { claudeUsageWindows, claudeResetCredits, claudePlan } = await compile('src/shared/account-quota.ts')
+  ok(claudePlan({ organization: { organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_20x' } }) === 'Max 20x', 'Max 套餐带倍数')
+  ok(claudePlan({ organization: { organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_5x' } }) === 'Max 5x', 'Max 5x')
+  ok(claudePlan({ organization: { organization_type: 'claude_pro' } }) === 'Pro', 'Pro 套餐')
+  ok(claudePlan({ organization: { organization_type: 'claude_team' } }) === 'Team', 'Team 套餐')
+  ok(claudePlan({ account: { has_claude_max: true } }) === 'Max', '缺组织类型时退回账号标记')
+  ok(claudePlan({ organization: { organization_type: 'api' } }) === undefined && claudePlan(null) === undefined, '未知或缺失不编套餐')
   const now = Date.UTC(2026, 10, 11, 12)
   const payload = claudeQuotaFixture(now)
   const windows = claudeUsageWindows(payload)
@@ -59,7 +65,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     fetch: async (url, init = {}) => {
       requests.push({ url: String(url), ...init })
       const body = init.method === 'POST' ? { result: 'reset' }
-        : String(url).endsWith('/profile') ? { organization: { uuid: 'fixture-org' } } : claudeQuotaFixture()
+        : String(url).endsWith('/profile') ? { organization: { uuid: 'fixture-org', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_5x' } } : claudeQuotaFixture()
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
   }
@@ -81,6 +87,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const report = await main.accountQuotaReport()
     ok(report.cards[0].windows.some((window) => window.label === 'Fable' && window.used === 99), '宿主报告贯通 Fable 真实解析路径')
     ok(report.cards[0].resetCredits.groups.length === 2, '宿主报告保留两种重置卡')
+    ok(report.cards[0].plan === 'Max 5x', '宿主报告带上 Claude 套餐')
     ok(requests[0].url.includes('cedar_ember=1') && requests[0].headers['User-Agent'] === 'claude-cli/2.1.322 (external, cli)', '查询携带重置卡参数，并用 Claude Code 的 UA 格式通过来源端资格判定')
     for (const grantId of ['fable-grant', 'normal-grant']) {
       const result = await main.consumeResetCredit('anthropic', 'fixture-account', grantId)

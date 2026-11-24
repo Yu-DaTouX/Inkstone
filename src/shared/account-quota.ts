@@ -123,6 +123,19 @@ export function chatGptIdentity(accessToken: unknown, idToken?: unknown, fallbac
   }
 }
 
+export function claudePlan(profile: unknown): string | undefined {
+  const root = obj(profile) ?? {}
+  const organization = obj(root.organization) ?? {}
+  const account = obj(root.account) ?? {}
+  const type = str(organization.organization_type)
+  const multiple = /(\d+)x$/i.exec(str(organization.rate_limit_tier) ?? '')?.[1]
+  if (type === 'claude_max' || (!type && account.has_claude_max === true)) return multiple ? `Max ${multiple}x` : 'Max'
+  if (type === 'claude_pro' || (!type && account.has_claude_pro === true)) return 'Pro'
+  if (type === 'claude_team') return 'Team'
+  if (type === 'claude_enterprise') return 'Enterprise'
+  return undefined
+}
+
 export function quotaWindowLabel(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return pick('额度', 'Quota')
   const hours = seconds / 3600

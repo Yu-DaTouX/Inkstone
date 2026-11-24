@@ -10,6 +10,7 @@ import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
 import { oauthAccountTargets, type OAuthAccountTarget } from './oauth-accounts'
 import { CredentialVaultError } from './credential-vault'
 import {
+  claudePlan,
   claudeResetCredits,
   claudeUsageWindows,
   CLAUDE_OAUTH_HEADERS,
@@ -79,9 +80,10 @@ function yanClaudeCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
   return settle({ key: account.key, source: 'yan', provider: 'anthropic', name: 'Claude', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
     if (account.credential.expires <= Date.now()) return { status: 'expired', refreshable: !!account.credential.refresh, hint: pick('登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it when you chat with a Claude model after switching.') }
     const usage = await claudeUsage(account.credential.access) as { cedar_ember?: unknown }
+    const plan = await claudeAccountPlan(account.key, account.credential.access)
     const windows = claudeUsageWindows(usage)
     const resetCredits = claudeResetCredits(usage?.cedar_ember, Date.now())
-    return { windows, status: limitedIf(windows), ...(resetCredits ? { resetCredits } : {}) }
+    return { windows, status: limitedIf(windows), ...(plan ? { plan } : {}), ...(resetCredits ? { resetCredits } : {}) }
   })
 }
 
@@ -113,6 +115,21 @@ async function yanKeyCard(provider: { id: string; name: string; quotaProvider?: 
 const CODEX_CREDIT_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits'
 const CLAUDE_API = 'https://api.anthropic.com'
 const CLAUDE_HEADERS = { ...CLAUDE_OAUTH_HEADERS, 'Content-Type': 'application/json' }
+
+const CLAUDE_PLAN_TTL_MS = 60 * 60_000
+const claudePlans = new Map<string, { at: number; plan?: string }>()
+
+async function claudeAccountPlan(key: string, access: string): Promise<string | undefined> {
+  const cached = claudePlans.get(key)
+  if (cached && Date.now() - cached.at < CLAUDE_PLAN_TTL_MS) return cached.plan
+  try {
+    const plan = claudePlan(await getJson(`${CLAUDE_API}/api/oauth/profile`, { headers: { Authorization: `Bearer ${access}`, ...CLAUDE_HEADERS } }))
+    claudePlans.set(key, { at: Date.now(), plan })
+    return plan
+  } catch {
+    return cached?.plan
+  }
+}
 
 function codexHeaders(accessToken: string, accountId: string): Record<string, string> {
   return {

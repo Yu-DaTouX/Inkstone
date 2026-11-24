@@ -22,7 +22,7 @@ import { QuotaMeter } from './QuotaMeter'
 import type { QuotaPaneProps } from './types'
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
-const planLabel = (value?: string): string => (value ? value.toUpperCase() : '')
+const planLabel = (value?: string): string => (value ? value.toUpperCase().replace(/(\d)X$/, '$1x') : '')
 const GROUP_KEYS = new Set(['openai-codex', 'anthropic', 'google'])
 
 function claudeCreditLimitName(t: TFunc, id: string): string {
