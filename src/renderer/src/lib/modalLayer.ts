@@ -38,15 +38,20 @@ export function isModalOpen(): boolean {
   return stack.length > 0
 }
 
-export function useModalCount(): number {
-  const [count, setCount] = useState(() => stack.length)
+export function modalsAbove(token: symbol): number {
+  const at = stack.indexOf(token)
+  return at < 0 ? 0 : stack.length - at - 1
+}
+
+export function useModalsAbove(token: symbol): number {
+  const [count, setCount] = useState(() => modalsAbove(token))
   useEffect(() => {
-    const f = (): void => setCount(stack.length)
+    const f = (): void => setCount(modalsAbove(token))
     subs.add(f)
     f()
     return () => {
       subs.delete(f)
     }
-  }, [])
+  }, [token])
   return count
 }

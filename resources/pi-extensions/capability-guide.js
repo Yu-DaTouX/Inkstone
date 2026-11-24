@@ -42,7 +42,7 @@ const GUIDE_LINES = [
   '- model: one direct model call without tools (translate or rewrite given text, second opinion); batches use `model()` in `yan workflow`',
   '- image: generate images; artifact: attach an existing file to this reply',
   '- file: recoverable delete; session: move this session to another folder; operations: look up an operation\'s result',
-  '- capabilities: find installed commands, skills and MCP tools when unsure a capability exists',
+  '- capabilities: find installed commands, skills and MCP tools when unsure a capability exists; install or remove skills, MCP services and plugins right in the chat (read skill capabilities first)',
   ...CLI_ONLY_GROUPS,
   '- Everything else: `yan --help`',
   '',

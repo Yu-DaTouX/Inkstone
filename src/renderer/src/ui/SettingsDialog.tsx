@@ -11,7 +11,7 @@ import {
 } from 'react'
 import { Dialog as RACDialog, Heading, Modal as RACModal } from 'react-aria-components'
 import { Search, SearchX, X } from './icons'
-import { popModal, pushModal, useModalCount } from '../lib/modalLayer'
+import { popModal, pushModal, useModalsAbove } from '../lib/modalLayer'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { IconButton } from './IconButton'
@@ -20,13 +20,11 @@ import { ModalOverlay } from './Dialog'
 
 const NARROW_QUERY = '(max-width: 767px)'
 
-function ModalLayerToken(): null {
-  const token = useRef(Symbol('settings-dialog'))
+function ModalLayerToken({ token }: { token: symbol }): null {
   useEffect(() => {
-    const current = token.current
-    pushModal(current)
-    return () => popModal(current)
-  }, [])
+    pushModal(token)
+    return () => popModal(token)
+  }, [token])
   return null
 }
 
@@ -69,7 +67,8 @@ export function SettingsDialog({
 }: SettingsDialogProps): ReactElement {
   const t = useOptionalT()
   const stacked = narrow === true && narrowNav != null
-  const modalCount = useModalCount()
+  const layer = useRef(Symbol('settings-dialog')).current
+  const nestedAbove = useModalsAbove(layer)
   const [peek, setPeek] = useState(false)
   const startPeek = (event: PointerEvent<HTMLDivElement>): void => {
     const target = event.target as HTMLElement
@@ -89,7 +88,7 @@ export function SettingsDialog({
   }
   return (
     <ModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable className="ui-settings-overlay">
-      <RACModal className="ui-settings-modal" data-nested-dialog-open={modalCount > 1 ? '1' : undefined} data-peek={peek ? '' : undefined}>
+      <RACModal className="ui-settings-modal" data-nested-dialog-open={nestedAbove > 0 ? '1' : undefined} data-peek={peek ? '' : undefined}>
         <RACDialog className="ui-settings-dialog">
           {({ close }) => {
             const closeButton = (
@@ -112,7 +111,7 @@ export function SettingsDialog({
                 onKeyDown={onKeyDown}
                 onPointerDownCapture={startPeek}
               >
-                <ModalLayerToken />
+                <ModalLayerToken token={layer} />
                 {stacked ? (
                   <header className="ui-settings-narrow">
                     <div className="ui-settings-narrow__head">
