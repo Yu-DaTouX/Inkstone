@@ -602,7 +602,6 @@ export default function ShellV3(): ReactElement {
         {drawerPresence.present ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
-        <div className="v3-dock-slot" ref={setDockLeftSlot} />
         <main className="v3-main" inert={drawerPresence.present}>
           <Header
             narrow={narrow}
@@ -625,6 +624,8 @@ export default function ShellV3(): ReactElement {
           />
           <RunAttentionToasts onOpen={openRunFromPill} />
           <CurrentRunsSeen />
+          <div className="v3-dock-row">
+          <div className="v3-dock-slot" ref={setDockLeftSlot} />
           <div
             className="v3-body"
             ref={bodyRef}
@@ -651,6 +652,7 @@ export default function ShellV3(): ReactElement {
                 ) : null}
               </div>
             ) : null}
+          </div>
           </div>
           <div className="v3-dock-slot" ref={setDockBottomSlot} />
         </main>

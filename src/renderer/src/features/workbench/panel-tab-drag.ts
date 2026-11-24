@@ -89,7 +89,7 @@ export function panelDropZone(layout: PanelDropLayout, x: number, y: number, sou
   if (chat && inside(chat, x, y)) {
     if (x < chat.left + chat.width * CHAT_SIDE_SHARE) return { kind: 'dock', side: 'left' }
     if (y >= chat.top + chat.height * (1 - CHAT_BOTTOM_SHARE)) return { kind: 'dock', side: 'bottom' }
-    if (x >= chat.left + chat.width * (1 - CHAT_SIDE_SHARE)) return layout.columns.length ? { kind: 'edge', side: 'left' } : { kind: 'right' }
+    if (x >= chat.left + chat.width * (1 - CHAT_SIDE_SHARE)) return { kind: 'right' }
     return null
   }
   return panelTabDropZone(layout.columns, x, y, source, sourceHead)
@@ -155,6 +155,11 @@ export function predictedDockBox(layout: PanelDropLayout, drop: PanelTabDrop, si
     if (!chat) return null
     const height = Math.min(sizes.bottom, chat.height * DOCK_PREVIEW_SHARE)
     return inset({ left: chat.left, top: chat.top + chat.height - height, width: chat.width, height })
+  }
+  if (drop.kind === 'right' && layout.columns.length) {
+    const first = layout.columns[0]
+    const last = layout.columns[layout.columns.length - 1]
+    return inset({ left: first.left, top: first.top, width: last.left + last.width - first.left, height: first.height })
   }
   if (drop.kind === 'right' && chat) {
     const width = Math.min(sizes.right, chat.width * DOCK_PREVIEW_SHARE)

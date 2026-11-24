@@ -31,26 +31,64 @@
   .v3-dock-slot {
     display: contents;
   }
+  .v3-dock-row {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .v3-dock-row > .v3-body {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .rp-dock {
-    --workspace-topbar-height: var(--size-head);
     position: relative;
     display: flex;
     flex: none;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    background: var(--bg);
+    padding: var(--s-8);
   }
   .rp-dock--left {
-    height: 100%;
-    border-right: 1px solid var(--line);
+    align-self: stretch;
+    padding-inline-end: var(--s-4);
   }
   .rp-dock--bottom {
     width: 100%;
-    border-top: 1px solid var(--line);
+    padding-top: var(--s-4);
   }
-  .rp-dock > .rp-column {
+  .rp-dock > .rp-tile {
     flex: 1 1 auto;
+    overflow: clip;
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--bg);
+  }
+  .rp-tile-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-8);
+    height: var(--size-head);
+    min-width: 0;
+    padding-inline: var(--s-12) var(--s-8);
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    cursor: grab;
+    user-select: none;
+  }
+  .rp-tile-icon {
+    display: inline-flex;
+    flex: none;
+  }
+  .rp-tile-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .rp-dock > .ui-splitter.rp-dock-resizer {
     position: absolute;

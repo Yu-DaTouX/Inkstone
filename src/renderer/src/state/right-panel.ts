@@ -176,6 +176,19 @@ function withGroups(entry: RightPanelEntry, groups: RightPanelGroup[], focus: nu
       same.origins.push(index)
     } else merged.push({ group, origins: [index] })
   })
+  const evicted: RightPanelSurface[] = []
+  for (const item of merged) {
+    const group = item.group
+    if (!group.side || group.surfaces.length < 2) continue
+    const keep = group.surfaces.find((surface) => surface.id === group.active) ?? group.surfaces[group.surfaces.length - 1]
+    evicted.push(...group.surfaces.filter((surface) => surface !== keep))
+    item.group = { ...group, surfaces: [keep], active: keep.id }
+  }
+  if (evicted.length) {
+    const right = merged.find((item) => !item.group.side)
+    if (right) right.group = { ...right.group, surfaces: [...right.group.surfaces, ...evicted] }
+    else merged.push({ group: { active: evicted[evicted.length - 1].id, surfaces: evicted, size: 1 }, origins: [] })
+  }
   merged.sort((a, b) => SIDE_RANK[groupSide(a.group)] - SIDE_RANK[groupSide(b.group)])
   const kept: RightPanelGroup[] = []
   let nextFocus = 0
@@ -186,6 +199,7 @@ function withGroups(entry: RightPanelEntry, groups: RightPanelGroup[], focus: nu
   })
   if (!kept.length) return { ...entry, surfaces: [], active: null, open: false, maximized: false, groups: [], focus: 0 }
   const rights = rightGroupCount(kept)
+  if (!rights && rightGroupCount(panelGroups(entry)) > 0) open = false
   const total = kept.reduce((sum, group) => sum + (group.side ? 0 : group.size), 0)
   if (Math.abs(total - rights) > 1e-6 || kept.some((group) => group.side && group.size !== 1)) {
     const scale = total > 0 ? rights / total : 1
@@ -197,6 +211,7 @@ function withGroups(entry: RightPanelEntry, groups: RightPanelGroup[], focus: nu
   return {
     ...entry,
     open,
+    maximized: open ? entry.maximized : false,
     groups: kept,
     focus: nextFocus,
     surfaces: kept.length === 1 ? kept[0].surfaces : kept.flatMap((group) => group.surfaces),
@@ -219,7 +234,9 @@ export function upsertSurface(entry: RightPanelEntry, surface: RightPanelSurface
   if (at < 0) {
     if (!groups.length) return withGroups(entry, [{ active: surface.id, surfaces: [surface], size: 1 }], 0, true)
     const focus = panelFocus(entry)
-    return mapGroup(entry, focus, (group) => ({ ...group, surfaces: [...group.surfaces, surface], active: activate ? surface.id : group.active ?? surface.id }), focus, true)
+    const target = groups[focus]?.side ? groups.findIndex((group) => !group.side) : focus
+    if (target < 0) return withGroups(entry, [{ active: surface.id, surfaces: [surface], size: 1 }, ...groups], activate ? 0 : focus + 1, true)
+    return mapGroup(entry, target, (group) => ({ ...group, surfaces: [...group.surfaces, surface], active: activate ? surface.id : group.active ?? surface.id }), activate ? target : focus, true)
   }
   return mapGroup(
     entry,
@@ -378,8 +395,7 @@ export function moveSurfaceToRight(entry: RightPanelEntry, id: string): RightPan
   const groups = panelGroups(entry)
   const from = groupIndexOf(groups, id)
   if (from < 0 || !groups[from].side) return entry
-  const rights = rightGroupCount(groups)
-  return moveSurfaceToGroup(entry, id, rights < PANEL_GROUPS_MAX ? groups.length : rights - 1)
+  return moveSurfaceToGroup(entry, id, rightGroupCount(groups) > 0 ? 0 : groups.length)
 }
 
 export function canMoveSurfaceToDock(entry: RightPanelEntry, id: string, side: PanelEdgeDock): boolean {

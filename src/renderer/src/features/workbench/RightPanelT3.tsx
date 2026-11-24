@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type KeyboardEventHandler, type ReactElement, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from '../../ui/icons'
+import { EllipsisVertical, Eye, Minimize2, PanelRight, PanelRightClose, SquareX, X } from '../../ui/icons'
+import { SurfaceIcon } from '../../t3/components/right-panel/TabChip'
 import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Spinner, Splitter, SubmenuTrigger, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
@@ -140,7 +141,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
   const totalSize = rightGroups.reduce((sum, group) => sum + group.size, 0) || 1
 
   const columnHead = (group: RightPanelGroup, index: number): ReactNode => {
-    const last = !group.side && index === rightCount - 1
+    const last = index === rightCount - 1
     return (
       <div
         data-right-panel-tabbar
@@ -162,7 +163,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
           onDragOut={(id, start) => startPanelTabDrag(start, id, tabById.get(id)?.label ?? '', room, panel)}
         />
         <span className="rp-tabbar-actions">
-          {group.side || rightCount > 1 ? (
+          {rightCount > 1 ? (
             <IconButton data-t3-btn size="sm" className="rp-close-column" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
               <SquareX size={14} />
             </IconButton>
@@ -172,6 +173,39 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
               <Minimize2 size={14} />
             </IconButton>
           ) : null}
+        </span>
+      </div>
+    )
+  }
+
+  const tileHead = (group: RightPanelGroup): ReactNode => {
+    const surface = group.surfaces[0]
+    const tab = surface ? tabById.get(surface.id) : undefined
+    if (!surface || !tab) return null
+    return (
+      <div
+        className="rp-tile-head"
+        data-testid={`rp-tile-head-${group.side}`}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+          startPanelTabDrag({ button: 0, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY }, surface.id, tab.label, room, panel)
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          adapter.onContextMenu(surface.id, event.currentTarget)
+        }}
+      >
+        <span className="rp-tile-icon" aria-hidden>
+          <SurfaceIcon surface={tab} />
+        </span>
+        <span className="rp-tile-title">{tab.label}</span>
+        <span className="rp-tabbar-actions">
+          <IconButton data-t3-btn size="sm" aria-label={panel.toRightPanel} tooltip={panel.toRightPanel} data-testid={`rp-tile-back-${group.side}`} onPress={() => useRightPanel.getState().moveToRight(surface.id)}>
+            <PanelRight size={14} />
+          </IconButton>
+          <IconButton data-t3-btn size="sm" aria-label={closeTipOf(surface)} tooltip={closeTipOf(surface)} data-testid={`rp-tile-close-${group.side}`} onPress={() => adapter.onClose(surface.id)}>
+            <X size={14} />
+          </IconButton>
         </span>
       </div>
     )
@@ -259,7 +293,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
     </>
   )
 
-  const dockShown = mode === 'inline' && entry.open && !adapter.maximized && !!owner
+  const dockShown = mode === 'inline' && !adapter.maximized && !!owner
   const rightShownWidth = columnar && entry.open && !adapter.maximized ? Math.min(adapter.width, dock ?? Number.POSITIVE_INFINITY) : 0
   const leftRoom = (span ?? window.innerWidth) - rightShownWidth - DOCK_CHAT_ROOM_PX
   const leftWidth = dockShown && groups.some((group) => group.side === 'left') && leftSlot ? Math.max(DOCK_LEFT_MIN, Math.min(dockLeftStored, leftRoom)) : 0
@@ -270,15 +304,14 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
     return createPortal(
       <DockFrame key={`${owner!.key}:${side}`} side={side} room={side === 'left' ? leftRoom : window.innerHeight * DOCK_HEIGHT_FRACTION} label={side === 'left' ? panel.dockLeft : panel.dockBottom} resizeLabel={panel.resizeDock} onKeyDown={onPanelKey}>
         <section
-          className="rp-column"
+          className="rp-column rp-tile"
           data-rp-column={index}
           data-rp-dock={side}
-          data-focused={groups.length > 1 && index === focus ? '1' : undefined}
           data-testid={`rp-dock-column-${side}`}
           onPointerDownCapture={() => useRightPanel.getState().focusGroup(index)}
           onFocusCapture={() => useRightPanel.getState().focusGroup(index)}
         >
-          {columnHead(group, index)}
+          {tileHead(group)}
           <div className="rp-surfaces">
             {group.surfaces
               .filter((item) => visitedIds.has(item.id) || item.id === group.active)
@@ -291,7 +324,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
     )
   }
 
-  const content = dockedOnly ? null : !entry.surfaces.length ? (
+  const content = dockedOnly || !entry.surfaces.length ? (
     <Launcher actions={adapter.actions} title={panel.launcherTitle} />
   ) : columns ? (
     columns
@@ -306,7 +339,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
       <RightPanelFrame
         inlineExitMs={panelMotionMs}
         mode={mode}
-        open={entry.open && !dockedOnly}
+        open={entry.open}
         maximized={adapter.maximized}
         width={adapter.width}
         room={room}
