@@ -18,7 +18,7 @@ export default async function run({ autoApprove, cdp, waitFor, sleep, log, repor
   await waitFor('s.sessions.length > 0', 60000, 20)
   await sleep(1500)
   await ev(FX_HOOK)
-  await ev(`window.__yanStore.getState().patchSettings({ sidebarLayout: ${JSON.stringify(process.env.YAN_FX_LAYOUT ?? 'flat')}, reduceMotion: false })`)
+  await ev(`window.__yanStore.getState().patchSettings({ reduceMotion: false })`)
   await sleep(500)
 
   const profiling = (process.env.YAN_FX_PROFILE ?? '').split(',').filter(Boolean)

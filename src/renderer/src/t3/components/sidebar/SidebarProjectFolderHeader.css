@@ -10,9 +10,9 @@
   .t3-folder__header {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: 0.5rem;
     width: 100%;
-    height: 2rem;
+    height: 1.875rem;
     padding-inline: var(--sidebar-row-content-inset);
     border-radius: var(--r-md);
     text-align: left;
@@ -32,15 +32,21 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: color-mix(in oklab, var(--fg) 90%, transparent);
-    font-size: 0.875rem;
-    line-height: 1.429;
-    font-weight: 500;
+    color: var(--root-fg2);
+    font-size: 0.8125rem;
+    line-height: 1.385;
+    font-weight: 600;
+    letter-spacing: 0.01em;
     text-overflow: ellipsis;
     white-space: nowrap;
+    transition: color var(--dur-quick);
   }
   .t3-folder__name--empty {
-    color: var(--root-fg2);
+    color: var(--root-fg3);
+    font-weight: 500;
+  }
+  .t3-folder__header:hover .t3-folder__name {
+    color: var(--fg);
   }
   .t3-folder__hidden-count {
     flex-shrink: 0;

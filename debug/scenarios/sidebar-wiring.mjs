@@ -14,7 +14,7 @@ export default async function run({ cdp, waitFor, check, log, sleep, box, shot, 
   }
   await waitFor('s.conn === "ready" && s.sessions.length >= 4')
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false })
-  await ev(`window.__yanStore.getState().patchSettings({lang:'zh-CN',sidebarLayout:'projects',theme:'dark'})`)
+  await ev(`window.__yanStore.getState().patchSettings({lang:'zh-CN',theme:'dark'})`)
   await sleep(1200)
   await ev(`window.__yanRightPanel.getState().closeAll()`)
   await ev(`window.__yanRightPanel.getState().open({id:'pr:101',kind:'pullRequest',number:101})`)
@@ -120,12 +120,9 @@ export default async function run({ cdp, waitFor, check, log, sleep, box, shot, 
   await waitFor(`s.settings.projects.find(x=>x.id===window.__auditEmptyProject)?.archived===false`)
   check('归档项目取消归档后回到左栏', await ev(`!!document.querySelector('[data-sidebar-row="folder:'+CSS.escape(window.__auditEmptyProject)+'"]')`))
   await ev(`window.__yanStore.setState({sessions:window.__auditSessions})`)
-  await ev(`window.__yanStore.getState().patchSettings({sidebarLayout:'flat'})`)
+  await ev(`window.__yanStore.getState().patchSettings({theme:'light'})`)
   await sleep(350)
-  check('平铺设置隐藏项目分组并保留会话列表', await ev(`!document.querySelector('[data-testid="sidebar-project-folder"]') && !!document.querySelector('[data-testid="v3-sidebar"] [role="treeitem"]')`))
-  await ev(`window.__yanStore.getState().patchSettings({sidebarLayout:'projects',theme:'light'})`)
-  await sleep(350)
-  check('切回项目设置恢复分组', await ev(`!!document.querySelector('[data-testid="sidebar-project-folder"]')`))
+  check('左栏保持按项目分组', await ev(`!!document.querySelector('[data-testid="sidebar-project-folder"]')`))
   const quoteDrag = await ev(`(() => {const row=document.querySelector('[data-sidebar-parent^="folder:"][data-session-path]');row?.scrollIntoView({block:'nearest'});const target=document.querySelector('[data-session-quote-drop]');if(!row||!target)return null;const r=row.getBoundingClientRect(),t=target.getBoundingClientRect();return{start:{x:r.left+60,y:r.top+r.height/2},end:{x:t.left+t.width/2,y:t.top+t.height/2},before:window.__yanStore.getState().attachments.length}})()`)
   if (quoteDrag) {
     await cdp.call('Input.dispatchMouseEvent', { type:'mouseMoved', ...quoteDrag.start })

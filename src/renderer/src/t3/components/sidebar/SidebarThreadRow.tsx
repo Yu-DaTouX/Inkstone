@@ -371,6 +371,14 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       aria-hidden
       className={cx(
         "t3-thread-row__title",
+        (isActive ||
+          variant === "card" ||
+          view.isUnread ||
+          view.isWoke ||
+          status === "working" ||
+          status === "approval" ||
+          status === "input") &&
+          "t3-thread-row__title--emphasized",
         view.recede && "t3-thread-row__title--receded",
         variant === "slim" &&
           !(isActive || view.isWoke || status === "input" || view.isUnread) &&

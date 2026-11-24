@@ -69,10 +69,6 @@ export interface SettingsText {
   densityDesc: string
   densityCompact: string
   densityComfortable: string
-  sidebarLayout: string
-  sidebarLayoutDesc: string
-  sidebarLayoutProjects: string
-  sidebarLayoutFlat: string
   reduceMotion: string
   reduceMotionDesc: string
   fontRead: string
@@ -210,10 +206,6 @@ const ZH: SettingsText = {
   densityDesc: '紧凑 13px，舒适 14px，行距更大。',
   densityCompact: '紧凑',
   densityComfortable: '舒适',
-  sidebarLayout: '左栏布局',
-  sidebarLayoutDesc: '按项目分组，或按最近活动平铺。',
-  sidebarLayoutProjects: '按项目',
-  sidebarLayoutFlat: '平铺',
   reduceMotion: '减少动效',
   reduceMotionDesc: '关闭过渡与动画；系统已开启时始终生效。',
   fontRead: '阅读字体',
@@ -351,10 +343,6 @@ const EN: SettingsText = {
   densityDesc: 'Compact 13px; comfortable 14px with more space.',
   densityCompact: 'Compact',
   densityComfortable: 'Comfortable',
-  sidebarLayout: 'Sidebar layout',
-  sidebarLayoutDesc: 'Group by project, or one flat recent list.',
-  sidebarLayoutProjects: 'By project',
-  sidebarLayoutFlat: 'Flat',
   reduceMotion: 'Reduce motion',
   reduceMotionDesc: 'Turn off transitions; always on if the OS asks.',
   fontRead: 'Reading font',

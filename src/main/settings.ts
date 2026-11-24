@@ -314,7 +314,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.contrast = sanitizeContrast(settings.contrast)
   settings.codeWrap = settings.codeWrap === false ? false : undefined
   settings.panelMotionMs = sanitizePanelMotion(settings.panelMotionMs)
-  settings.sidebarLayout = settings.sidebarLayout === 'flat' ? 'flat' : undefined
+  delete (settings as { sidebarLayout?: unknown }).sidebarLayout
   settings.cloneDir = cleanCloneDir(settings.cloneDir)
   delete (settings as { peerGithubLogins?: unknown }).peerGithubLogins
   settings.autoArchiveDays = typeof settings.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(settings.autoArchiveDays) : undefined
@@ -443,7 +443,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','frictionRecorder','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','windowGlass','windowGlassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','frictionRecorder','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','windowGlass','windowGlassOpacity','contrast','codeWrap','panelMotionMs','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))
@@ -489,7 +489,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.translateTarget = next.translateTarget !== 'auto' && isTranslateTarget(next.translateTarget) ? next.translateTarget : undefined
   next.translateModel = typeof next.translateModel === 'string' && /^[^/\s]+\/\S+$/.test(next.translateModel) && next.translateModel.length <= 200 ? next.translateModel : undefined
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
-  next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
+  delete (next as { sidebarLayout?: unknown }).sidebarLayout
   next.cloneDir = cleanCloneDir(next.cloneDir)
 
   if (Array.isArray(patch.recentCwds)) {

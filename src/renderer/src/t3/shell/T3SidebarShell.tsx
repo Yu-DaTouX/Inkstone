@@ -185,7 +185,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const projectRecords = useStore((s) => s.settings?.projects)
   const profileName = useStore((s) => s.settings?.profile?.name)
   const shortcutOverrides = useStore((s) => s.settings?.shortcutOverrides)
-  const flatLayout = useStore((s) => s.settings?.sidebarLayout === 'flat')
   const conn = useStore((s) => s.conn)
   const connDetail = useStore((s) => s.connDetail)
   const currentSessionFile = useStore((s) => s.session?.sessionFile)
@@ -308,8 +307,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   useSessionJump(asideRef, jumpToPath)
   useSessionFileDrop(asideRef, t)
 
-  const projectFolders = useMemo<SidebarProjectFolderView[] | null>(() => {
-    if (flatLayout) return null
+  const projectFolders = useMemo<SidebarProjectFolderView[]>(() => {
     const grouped = new Map<string, SidebarThreadView[]>()
     for (const view of sections.active) {
       const list = grouped.get(view.projectId)
@@ -336,7 +334,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         manageable: project !== undefined
       }
     })
-  }, [activeKey, collapsedFolders, flatLayout, now, own.attention, projects, sections.active, text.groupUngrouped])
+  }, [activeKey, collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
 
   const toggleFolder = useCallback((projectKey: string): void => {
     setCollapsedFolders((previous) => {

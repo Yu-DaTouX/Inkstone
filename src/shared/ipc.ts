@@ -685,7 +685,6 @@ export interface AppSettings {
   contrast?: number
   codeWrap?: boolean
   panelMotionMs?: number
-  sidebarLayout?: 'projects' | 'flat'
   cloneDir?: string
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
