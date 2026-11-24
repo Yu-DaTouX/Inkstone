@@ -28,6 +28,42 @@
   .rp-columns > .ui-splitter.rp-column-splitter:focus-visible::after {
     background: var(--accent);
   }
+  .v3-dock-slot {
+    display: contents;
+  }
+  .rp-dock {
+    --workspace-topbar-height: var(--size-head);
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg);
+  }
+  .rp-dock--left {
+    height: 100%;
+    border-right: 1px solid var(--line);
+  }
+  .rp-dock--bottom {
+    width: 100%;
+    border-top: 1px solid var(--line);
+  }
+  .rp-dock > .rp-column {
+    flex: 1 1 auto;
+  }
+  .rp-dock > .ui-splitter.rp-dock-resizer {
+    position: absolute;
+    z-index: 2;
+  }
+  .rp-dock--left > .ui-splitter.rp-dock-resizer {
+    inset-block: 0;
+    right: -1px;
+  }
+  .rp-dock--bottom > .ui-splitter.rp-dock-resizer {
+    inset-inline: 0;
+    top: -1px;
+  }
   .rp-column-head {
     display: flex;
     flex: none;

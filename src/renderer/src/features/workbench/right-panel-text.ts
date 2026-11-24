@@ -26,6 +26,12 @@ export interface RightPanelText {
   moveRight: string
   closeColumn: string
   resizeColumns: string
+  dockLeft: string
+  dockBottom: string
+  resizeDock: string
+  toDockLeft: string
+  toDockBottom: string
+  toRightPanel: string
   restore: string
   hidePanel: string
   resize: string
@@ -58,6 +64,12 @@ const ZH: RightPanelText = {
   moveRight: '移到右侧列',
   closeColumn: '关闭此列',
   resizeColumns: '调整列宽',
+  dockLeft: '左侧停靠栏',
+  dockBottom: '下方停靠栏',
+  resizeDock: '调整停靠栏大小',
+  toDockLeft: '停靠到对话左侧',
+  toDockBottom: '停靠到对话下方',
+  toRightPanel: '移回右侧面板',
   restore: '还原面板',
   hidePanel: '收起右侧面板',
   resize: '调整右侧面板宽度',
@@ -99,6 +111,12 @@ const EN: RightPanelText = {
   moveRight: 'Move to right column',
   closeColumn: 'Close column',
   resizeColumns: 'Resize columns',
+  dockLeft: 'Left dock',
+  dockBottom: 'Bottom dock',
+  resizeDock: 'Resize dock',
+  toDockLeft: 'Dock left of chat',
+  toDockBottom: 'Dock below chat',
+  toRightPanel: 'Move back to right panel',
   restore: 'Restore panel',
   hidePanel: 'Hide right panel',
   resize: 'Resize right panel',

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type KeyboardEventHandler, type ReactElement, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from '../../ui/icons'
 import { create } from 'zustand'
-import { Button, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Spinner, SubmenuTrigger, motionAllowed, useReducedMotion } from '../../ui'
+import { Button, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Spinner, Splitter, SubmenuTrigger, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
+import { DOCK_BOTTOM_DEFAULT, DOCK_BOTTOM_MIN, DOCK_LEFT_DEFAULT, DOCK_LEFT_MIN, PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, rightGroupCount, useRightPanel, useRightPanelEntry, type PanelEdgeDock, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
 import { SubagentTranscriptPane } from '../session/SubagentTranscriptPane'
 import { PullRequestDetail } from '../github/PullRequestDetail'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
@@ -33,6 +34,8 @@ export interface RightPanelProps {
   dock?: number
   span?: number
   panes: WorkbenchPaneComponents
+  leftSlot?: HTMLElement | null
+  bottomSlot?: HTMLElement | null
   onOpenTool: (kind: PanelToolKind) => void
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
 }
@@ -57,7 +60,7 @@ export function requestNewPanelMenu(): void {
   useNewPanelRequest.getState().request()
 }
 
-export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotionMs, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
+export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, bottomSlot, panelMotionMs, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
   const { lang } = useI18n()
   const text = workbenchText(lang)
   const panel = rightPanelText(lang)
@@ -65,6 +68,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
   const entry = useRightPanelEntry()
   const panelKey = useRightPanel((state) => state.key)
   const adapter = useRightPanelAdapter({ owner, mode, room, onPick: onOpenTool })
+  const dockLeftStored = useRightPanel((state) => state.dockLeft)
   const [addMenuFor, setAddMenuFor] = useState<number | null>(null)
   const addMenuOpen = addMenuFor !== null
   const setAddMenuOpen = (open: boolean): void => setAddMenuFor(open ? 0 : null)
@@ -75,7 +79,10 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
   const active = entry.surfaces.find((item) => item.id === entry.active) ?? null
   const groups = panelGroups(entry)
   const focus = panelFocus(entry)
-  const columnar = mode === 'inline' && groups.length > 0 && !!owner
+  const rightCount = rightGroupCount(groups)
+  const rightGroups = groups.slice(0, rightCount)
+  const columnar = mode === 'inline' && rightCount > 0 && !!owner
+  const dockedOnly = mode === 'inline' && !!owner && entry.surfaces.length > 0 && rightCount === 0
   const groupActives = groups.map((group) => group.active ?? '').join('\n')
 
   useEffect(() => {
@@ -92,12 +99,12 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
 
   useEffect(() => {
     if (!entry.open) return
-    const shown = columnar ? groupActives.split('\n').filter(Boolean) : active ? [active.id] : []
+    const shown = columnar || dockedOnly ? groupActives.split('\n').filter(Boolean) : active ? [active.id] : []
     if (!shown.length) return
     setVisited((prev) =>
       prev.owner === ownerKey && shown.every((id) => prev.ids.has(id)) ? prev : { owner: ownerKey, ids: new Set([...(prev.owner === ownerKey ? prev.ids : []), ...shown]) }
     )
-  }, [entry.open, active, ownerKey, columnar, groupActives])
+  }, [entry.open, active, ownerKey, columnar, dockedOnly, groupActives])
 
   const onPanelKey = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.defaultPrevented) return
@@ -130,10 +137,10 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
   const closeTipOf = (surface: RightPanelSurface): string =>
     closeShortcut ? `${panel.closeTab(baseName(surface.id))} · ${closeShortcut}` : panel.closeTab(baseName(surface.id))
   const tabById = new Map(adapter.tabs.map((tab) => [tab.id, tab]))
-  const totalSize = groups.reduce((sum, group) => sum + group.size, 0) || 1
+  const totalSize = rightGroups.reduce((sum, group) => sum + group.size, 0) || 1
 
   const columnHead = (group: RightPanelGroup, index: number): ReactNode => {
-    const last = index === groups.length - 1
+    const last = !group.side && index === rightCount - 1
     return (
       <div
         data-right-panel-tabbar
@@ -155,7 +162,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
           onDragOut={(id, start) => startPanelTabDrag(start, id, tabById.get(id)?.label ?? '', room, panel)}
         />
         <span className="rp-tabbar-actions">
-          {groups.length > 1 ? (
+          {group.side || rightCount > 1 ? (
             <IconButton data-t3-btn size="sm" className="rp-close-column" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
               <SquareX size={14} />
             </IconButton>
@@ -198,8 +205,8 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
     ) : null
 
   const columns = columnar ? (
-    <div className="rp-columns" key={owner!.key} data-columns={groups.length}>
-      {groups.flatMap((group, index) => [
+    <div className="rp-columns" key={owner!.key} data-columns={rightCount}>
+      {rightGroups.flatMap((group, index) => [
         ...(index > 0 ? [columnSplitter(index)] : []),
         <section
           key={`col:${index}`}
@@ -252,7 +259,39 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
     </>
   )
 
-  const content = !entry.surfaces.length ? (
+  const dockShown = mode === 'inline' && entry.open && !adapter.maximized && !!owner
+  const rightShownWidth = columnar && entry.open && !adapter.maximized ? Math.min(adapter.width, dock ?? Number.POSITIVE_INFINITY) : 0
+  const leftRoom = (span ?? window.innerWidth) - rightShownWidth - DOCK_CHAT_ROOM_PX
+  const leftWidth = dockShown && groups.some((group) => group.side === 'left') && leftSlot ? Math.max(DOCK_LEFT_MIN, Math.min(dockLeftStored, leftRoom)) : 0
+  const dockArea = (side: PanelEdgeDock, slot: HTMLElement | null | undefined): ReactNode => {
+    const index = groups.findIndex((group) => group.side === side)
+    if (!dockShown || index < 0 || !slot) return null
+    const group = groups[index]
+    return createPortal(
+      <DockFrame key={`${owner!.key}:${side}`} side={side} room={side === 'left' ? leftRoom : window.innerHeight * DOCK_HEIGHT_FRACTION} label={side === 'left' ? panel.dockLeft : panel.dockBottom} resizeLabel={panel.resizeDock} onKeyDown={onPanelKey}>
+        <section
+          className="rp-column"
+          data-rp-column={index}
+          data-rp-dock={side}
+          data-focused={groups.length > 1 && index === focus ? '1' : undefined}
+          data-testid={`rp-dock-column-${side}`}
+          onPointerDownCapture={() => useRightPanel.getState().focusGroup(index)}
+          onFocusCapture={() => useRightPanel.getState().focusGroup(index)}
+        >
+          {columnHead(group, index)}
+          <div className="rp-surfaces">
+            {group.surfaces
+              .filter((item) => visitedIds.has(item.id) || item.id === group.active)
+              .map((surface) => renderSurface(surface, surface.id === group.active))}
+          </div>
+        </section>
+      </DockFrame>,
+      slot,
+      `rp-dock-${side}`
+    )
+  }
+
+  const content = dockedOnly ? null : !entry.surfaces.length ? (
     <Launcher actions={adapter.actions} title={panel.launcherTitle} />
   ) : columns ? (
     columns
@@ -267,15 +306,15 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
       <RightPanelFrame
         inlineExitMs={panelMotionMs}
         mode={mode}
-        open={entry.open}
+        open={entry.open && !dockedOnly}
         maximized={adapter.maximized}
         width={adapter.width}
         room={room}
-        dock={dock}
+        dock={dock !== undefined && leftWidth ? Math.max(PANEL_WIDTH_MIN, dock - leftWidth) : dock}
         span={span}
         label={panel.panel}
         onWidth={adapter.onWidth}
-        minWidth={columns && groups.length > 1 ? Math.min(room, PANEL_WIDTH_MIN * groups.length) : undefined}
+        minWidth={columns && rightCount > 1 ? Math.min(room, PANEL_WIDTH_MIN * rightCount) : undefined}
         tabbar={columns ? null : tabbar}
         tabbarClassName={mode === 'inline' ? 't3-rp-frame__tabbar--desktop' : undefined}
         toggleSelector='[data-right-panel-toggle]'
@@ -285,6 +324,8 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
       >
         {content}
       </RightPanelFrame>
+      {dockArea('left', leftSlot)}
+      {dockArea('bottom', bottomSlot)}
       <TabContextMenu
         anchor={adapter.menu?.anchor ?? null}
         open={!!adapter.menu}
@@ -299,6 +340,51 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, panelMotion
 }
 
 const COLUMN_KEY_STEP_PX = 16
+const DOCK_KEY_STEP_PX = 16
+const DOCK_CHAT_ROOM_PX = 480
+const DOCK_HEIGHT_FRACTION = 0.6
+
+interface DockFrameProps {
+  side: PanelEdgeDock
+  room: number
+  label: string
+  resizeLabel: string
+  onKeyDown: KeyboardEventHandler<HTMLElement>
+  children: ReactNode
+}
+
+function DockFrame({ side, room, label, resizeLabel, onKeyDown, children }: DockFrameProps): ReactElement {
+  const stored = useRightPanel((state) => (side === 'left' ? state.dockLeft : state.dockBottom))
+  const min = side === 'left' ? DOCK_LEFT_MIN : DOCK_BOTTOM_MIN
+  const max = Math.max(min, Math.floor(room))
+  const size = Math.max(min, Math.min(stored, max))
+  const axis = min + max
+  const setSize = (next: number): void => useRightPanel.getState().setDockSize(side, next)
+  return (
+    <aside
+      className={`rp-dock rp-dock--${side}`}
+      aria-label={label}
+      data-native-clip=""
+      data-testid={`rp-dock-${side}`}
+      style={side === 'left' ? { width: `${size}px` } : { height: `${size}px` }}
+      onKeyDown={onKeyDown}
+    >
+      {children}
+      <Splitter
+        className="rp-dock-resizer"
+        orientation={side === 'left' ? 'vertical' : 'horizontal'}
+        value={side === 'left' ? size : axis - size}
+        min={side === 'left' ? min : axis - max}
+        max={side === 'left' ? max : axis - min}
+        step={DOCK_KEY_STEP_PX}
+        aria-label={resizeLabel}
+        data-testid={`rp-dock-resizer-${side}`}
+        onChange={(value) => setSize(side === 'left' ? value : axis - value)}
+        onReset={() => setSize(side === 'left' ? DOCK_LEFT_DEFAULT : DOCK_BOTTOM_DEFAULT)}
+      />
+    </aside>
+  )
+}
 
 function ColumnSplitter({ index, share, pairGrow, label }: { index: number; share: number; pairGrow: number; label: string }): ReactElement {
   const drag = useRef<{ pointerId: number; startX: number; startLeft: number; pair: number; left: HTMLElement; right: HTMLElement; share: number } | null>(null)

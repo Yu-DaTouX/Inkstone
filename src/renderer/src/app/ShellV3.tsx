@@ -124,6 +124,8 @@ export default function ShellV3(): ReactElement {
   }, [tilesWidth])
   const bodyRef = useRef<HTMLDivElement>(null)
   const chatRef = useRef<HTMLDivElement>(null)
+  const [dockLeftSlot, setDockLeftSlot] = useState<HTMLDivElement | null>(null)
+  const [dockBottomSlot, setDockBottomSlot] = useState<HTMLDivElement | null>(null)
   const [bodyWidth, setBodyWidth] = useState(1000)
   const [measuredChatWidth, setMeasuredChatWidth] = useState(0)
   useLayoutEffect(() => {
@@ -600,6 +602,7 @@ export default function ShellV3(): ReactElement {
         {drawerPresence.present ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
+        <div className="v3-dock-slot" ref={setDockLeftSlot} />
         <main className="v3-main" inert={drawerPresence.present}>
           <Header
             narrow={narrow}
@@ -649,6 +652,7 @@ export default function ShellV3(): ReactElement {
               </div>
             ) : null}
           </div>
+          <div className="v3-dock-slot" ref={setDockBottomSlot} />
         </main>
         {route.name === 'chat' ? (
           <RightPanelT3
@@ -659,6 +663,8 @@ export default function ShellV3(): ReactElement {
             dock={panelDockWidth}
             span={rowWidth}
             panes={WORKBENCH_PANES}
+            leftSlot={dockLeftSlot}
+            bottomSlot={dockBottomSlot}
             onOpenTool={(kind) => void openWorkspaceTab(kind)}
             onRequestActivation={requestActivation}
           />
