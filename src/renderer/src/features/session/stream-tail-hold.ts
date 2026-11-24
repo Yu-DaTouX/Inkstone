@@ -2,6 +2,8 @@ import { cancelClockFrame, requestClockFrame } from '../../lib/frame-clock'
 
 const BLANK_LIMIT_OF_VIEWPORT = 0.5
 const USER_TOGGLE_PAUSE_MS = 700
+export const BLANK_HOLD_MS = 600
+export const INPUT_IDLE_MS = 250
 
 function naturalHeight(el: HTMLElement, top: number): number {
   const style = getComputedStyle(el)
@@ -17,7 +19,7 @@ export function heldTailHeight(current: number, natural: number, visibleBottom: 
   return Math.min(kept, natural + viewport * BLANK_LIMIT_OF_VIEWPORT)
 }
 
-export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElement | null): () => void {
+export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElement | null, now: () => number = () => performance.now()): () => void {
   let target: HTMLElement | null = null
   let written = ''
   let paddingBottom: string | null = null
@@ -25,12 +27,16 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   let pausedUntil = 0
   let resume = 0
   let width = ''
+  let blankSince = 0
+  let inputAt = -Infinity
+  let settle: ReturnType<typeof setTimeout> | undefined
   const release = (): void => {
     if (target) target.style.minHeight = ''
     target = null
     written = ''
     paddingBottom = null
     width = ''
+    blankSince = 0
   }
   const sync = (): void => {
     const tail = findTail()
@@ -62,7 +68,19 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     const inner = scroller.firstElementChild
     const reserve = inner ? parseFloat(getComputedStyle(inner).paddingBottom) || 0 : 0
     const visible = Math.max(0, scroller.clientHeight - reserve)
-    const held = heldTailHeight(rect.height, natural, scroller.getBoundingClientRect().bottom - rect.top, visible)
+    let held = heldTailHeight(rect.height, natural, scroller.getBoundingClientRect().bottom - rect.top, visible)
+    if (held > natural + 0.5) {
+      const at = now()
+      if (!blankSince) blankSince = at
+      const due = Math.max(blankSince + BLANK_HOLD_MS, inputAt + INPUT_IDLE_MS)
+      if (at >= due) {
+        held = natural
+        blankSince = 0
+      } else {
+        clearTimeout(settle)
+        settle = setTimeout(onScroll, due - at + 16)
+      }
+    } else blankSince = 0
     const value = `${Math.ceil(held)}px`
     if (value === written) return
     written = value
@@ -85,14 +103,21 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
       sync()
     })
   }
+  const onInput = (): void => {
+    inputAt = now()
+  }
+  const inputs = ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const
   sync()
   scroller.addEventListener('scroll', onScroll, { passive: true })
   scroller.addEventListener('click', onToggle, true)
+  for (const name of inputs) scroller.addEventListener(name, onInput, { passive: true, capture: true })
   return () => {
     cancelClockFrame(frame)
     clearTimeout(resume)
+    clearTimeout(settle)
     scroller.removeEventListener('scroll', onScroll)
     scroller.removeEventListener('click', onToggle, true)
+    for (const name of inputs) scroller.removeEventListener(name, onInput, { capture: true })
     observer.disconnect()
     release()
   }
