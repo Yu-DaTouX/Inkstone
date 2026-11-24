@@ -12,6 +12,7 @@ import { compactNumber, useUsageStats } from '../usage/UsageOverview'
 import { NewSessionPicker } from '../sidebar/NewSessionPicker'
 import { importSessionBundles } from '../sidebar/session-import'
 import { isSessionBundleDrag } from '../composer/session-bundle-drag'
+import { WorktreeToggle } from '../composer/WorktreeToggle'
 import { shortProject } from '../sidebar/sidebar-model'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { homeBackgroundMode, useHomeBackground } from '../ambient/home-background'
@@ -174,6 +175,7 @@ function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.El
       >
         {hidden > 0 ? `+${hidden}` : null}
       </Button>
+      <WorktreeToggle />
       <NewSessionPicker placement="top end" anchor={moreRef} open={pickerOpen} onOpenChange={setPickerOpen} onProject={(project) => void start(project)} onStarted={() => void useStore.getState().refreshSessions()} />
     </div>
   )

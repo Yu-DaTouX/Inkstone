@@ -47,9 +47,12 @@
   }
 
   .wb-rs-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s-2) var(--s-10);
     margin: 0;
     min-width: 0;
-    overflow-wrap: anywhere;
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
     color: var(--fg3);

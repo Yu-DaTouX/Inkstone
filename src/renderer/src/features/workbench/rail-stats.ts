@@ -32,6 +32,7 @@ export interface RailTime {
   partial: boolean
   ariaLabel: string
   segments: RailSegment[]
+  ttft?: { label: string; text: string } | null
   detail: string
   title: string | null
 }
@@ -267,10 +268,11 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
   })
   const model = segment('model', t('sm.modelShort'), modelMs)
   const tool = segment('tool', t('sm.toolShort'), toolMs)
+  const ttft = metrics.ttftMs === null ? null : { label: t('sm.ttftShort'), text: spanText(metrics.ttftMs) }
   const detail = [
     ...(metrics.modelMs === null ? [] : [`${model.label} ${model.text}`]),
     ...(toolMs > 0 ? [`${tool.label} ${tool.text}`] : []),
-    ...(metrics.ttftMs === null ? [] : [`${t('sm.ttftShort')} ${spanText(metrics.ttftMs)}`])
+    ...(ttft ? [`${ttft.label} ${ttft.text}`] : [])
   ].join(' · ')
   return {
     label: t('sm.elapsed'),
@@ -279,6 +281,7 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
     partial,
     ariaLabel: t('sm.timeSplit'),
     segments: [...(metrics.modelMs === null ? [] : [model]), ...(toolMs > 0 ? [tool] : [])],
+    ttft,
     detail,
     title: joinNotes([t('sm.timingOverlapTip'), ...(partial ? [t('sm.timingPartialTip')] : [])])
   }

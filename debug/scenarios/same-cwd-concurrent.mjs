@@ -26,7 +26,7 @@ const VIEW = `(() => {
 
 export default async function run({ cdp, box, check, report, waitFor, sleep, shot, log }) {
   const ev = (expr) => cdp.evaluate(expr)
-  const flip = () => click('[data-testid="composer-worktree"] .ui-switch__track')
+  const flip = () => click('[data-testid="composer-worktree"]')
   const click = async (selector) => {
     const [x, y] = await ev(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })

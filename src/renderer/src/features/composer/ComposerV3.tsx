@@ -71,7 +71,6 @@ import { ComposerHeightHandle } from './ComposerHeightHandle'
 import { PendingModelChange } from './PendingModelChange'
 import { ComposerWidthHandles } from './ComposerWidthHandles'
 import { loadDraft, restoreDraft, saveDraft } from './draft-store'
-import { WorktreeToggle } from './WorktreeToggle'
 import './composer.css'
 import './ComposerV3.css'
 
@@ -730,7 +729,6 @@ export function ComposerV3(): JSX.Element {
           <>
             <AttachButton onFiles={attachments.addFiles} />
             <VoiceButton onText={appendVoiceText} scope={sessionId ?? undefined} />
-            <WorktreeToggle text={value} />
           </>
         }
         controls={<ComposerModelControls />}

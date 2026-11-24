@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { MiniBars, SegmentBar, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
@@ -112,7 +112,7 @@ function useLiveClock(active: boolean): number {
 
 function noteParts(text: string): ReactElement[] {
   return text.split(' · ').map((part, i) => (
-    <Fragment key={i}>{i ? ' · ' : null}<span className="wb-rs-part">{part}</span></Fragment>
+    <span key={i} className="wb-rs-part">{part}</span>
   ))
 }
 
@@ -196,7 +196,22 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
       <section key="time" className="wb-rs-block" data-block="time" title={time.title ?? undefined}>
         <span className="wb-rs-label">{time.ariaLabel}</span>
         <SegmentBar aria-label={barLabel(time.ariaLabel, time.segments)} segments={time.segments} />
-        <p className="wb-rs-note wb-rs-num">{noteParts(time.detail)}</p>
+        <ul className="wb-rs-legend">
+          {time.segments.map((seg) => (
+            <li key={seg.key} title={seg.title} data-seg={seg.key}>
+              <Swatch tone={seg.tone} />
+              <span className="wb-rs-name">{seg.label}</span>
+              <span className="wb-rs-num wb-rs-val">{seg.text}</span>
+            </li>
+          ))}
+          {time.ttft ? (
+            <li key="ttft" data-seg="ttft">
+              <span aria-hidden="true" />
+              <span className="wb-rs-name">{time.ttft.label}</span>
+              <span className="wb-rs-num wb-rs-val">{time.ttft.text}</span>
+            </li>
+          ) : null}
+        </ul>
       </section>
     )
   }

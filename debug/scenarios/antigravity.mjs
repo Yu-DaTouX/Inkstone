@@ -501,8 +501,8 @@ class Fixture {
   for (let index = 0; index < 3 && await ev(`!!document.querySelector('${menu}')`); index++) await kit.key('Escape')
   await waitFor(`!document.querySelector('${menu}')`)
   const worktree = '[data-testid="composer-worktree"]'
-  await waitFor(`!!document.querySelector('${worktree} .ui-switch__track')`)
-  assert.ok(await kit.click(`${worktree} .ui-switch__track`))
+  await waitFor(`!!document.querySelector('${worktree}')`)
+  assert.ok(await kit.click(worktree))
   await waitFor(`document.querySelector('${worktree}')?.hasAttribute('data-selected')`)
   writeFileSync(effortFailure, 'fail once')
   await send('检查权限档')
