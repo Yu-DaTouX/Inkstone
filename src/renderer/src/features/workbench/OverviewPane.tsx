@@ -730,7 +730,10 @@ function StatsGlance({ model, text }: { model: RailStatsModel; text: RailText })
   return (
     <span className="wb-rail-glance" title={glance.title} data-testid="wb-rail-stats-glance">
       {glance.hit !== null ? (
-        <RailValue className="wb-rail-hit" aria-label={text.cacheHit} value={<><span className="wb-rail-hit-label">{text.hitShort} </span>{glance.hitText}</>} />
+        <>
+          <span className="wb-rail-hit-label" aria-hidden="true"><span>{text.hitShort}</span></span>
+          <RailValue className="wb-rail-hit" aria-label={text.cacheHit} value={glance.hitText} />
+        </>
       ) : null}
       {metric.kind === 'speed' ? (
         <RailValue

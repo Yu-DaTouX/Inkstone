@@ -1231,10 +1231,23 @@
     }
   }
 
-  @container (max-width: 230px) {
-    .wb-rail-hit-label {
-      display: none;
-    }
+  .wb-rail-hit-label {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+    height: 1lh;
+    overflow: hidden;
+  }
+
+  .wb-rail-hit-label::before {
+    content: '';
+    height: 1lh;
+  }
+
+  .wb-rail-glance > .wb-rail-hit-label + .wb-rail-hit {
+    margin-inline-start: calc(-1 * var(--s-4) + 0.25em);
   }
 
   .wb-tile-open {
