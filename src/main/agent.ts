@@ -193,6 +193,7 @@ const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
 const STOP_ABORT_TIMEOUT_MS = 5_000
 const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
 const STOP_TOTAL_BUDGET_MS = 12_000
+const ANTIGRAVITY_SILENT_STALL_MS = 20_000
 const STARTUP_STDERR_LINES = 200
 
 async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
@@ -5031,6 +5032,7 @@ export class AgentController extends EventEmitter {
     let firstTokenMono: number | undefined
     let lastTokenMono: number | undefined
     let firstTextAt: number | undefined
+    let produced = false
     let lastTextAt: number | undefined
     let continuousOutput = true
     let turnContext: NonNullable<UIMessage['antigravity']>['context']
@@ -5139,6 +5141,7 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'msg-add', payload: { ...currentStep } })
     const handleEvent = (event: AntigravityEvent): void => {
       if (!ownsTurn()) return
+      if (event.type === 'text' || event.type === 'thought' || event.type === 'tool' || event.type === 'plan') produced = true
       if (event.type === 'text' && !turn.stopped && !turn.interjected) {
         if (!event.text) return
         const now = Date.now()
@@ -5324,13 +5327,15 @@ export class AgentController extends EventEmitter {
           status = 'error'
           turnError = antigravityStopError(reason)
         }
-        connection.hasContext = connection.session === session && (handingOff || status === 'stop' || (status === 'aborted' && cleanCancel && !turn.steer))
+        const silentStall = !produced && performance.now() - startedMono >= ANTIGRAVITY_SILENT_STALL_MS
+        connection.hasContext = connection.session === session && (handingOff || status === 'stop' || (status === 'aborted' && cleanCancel && !turn.steer && !silentStall))
         const tail = status === 'stop' && !handingOff ? steps[steps.length - 1] : undefined
         const reported = tail ? splitAntigravityErrorLine(tail.text) : null
         if (tail && reported) {
           tail.text = reported.text
           status = 'error'
           turnError = reported.error
+          connection.hasContext = false
           authBlipRetry = isAuthBlip(reported.error, { retried: false, continued: options.userText === continuationPrompt('model-error') })
         }
       } catch (error) {

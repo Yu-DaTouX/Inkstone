@@ -599,7 +599,23 @@ class Fixture {
     const failed = msgs.find(m => m.role === 'assistant' && m.error?.includes('UNAUTHENTICATED (code 401)'))
     const leaked = msgs.some(m => m.role === 'assistant' && m.text?.includes('UNAUTHENTICATED'))
     const continued = msgs.filter(m => m.role === 'user' && m.text?.startsWith('[模型错误恢复')).length
-    return { ok: !!failed && failed.text === '正在重新截图。' && !leaked && continued === 1, error: failed?.error, text: failed?.text, leaked, continued }
+    const cold = msgs.some(m => m.role === 'assistant' && m.text?.includes('认证恢复后继续完成。冷交接'))
+    return { ok: !!failed && failed.text === '正在重新截图。' && !leaked && continued === 1 && cold, error: failed?.error, text: failed?.text, leaked, continued, cold }
   })()`)
-  check('agy 把 401 写进正文时改为回合错误、正文不含错误行，5 秒后自动续跑一次', authState.ok, authState.ok ? undefined : authState)
+  check('agy 把 401 写进正文时改为回合错误、正文不含错误行，丢弃出错的 agy 对话，5 秒后冷交接续跑一次', authState.ok, authState.ok ? undefined : authState)
+
+  const sinceBase = await ev(`${app}.messages.length`)
+  await send('检查交接')
+  await waitFor(`${idle} && s.messages.slice(${sinceBase}).some(m => m.role === 'assistant' && m.entryId && m.text?.startsWith('交接方式'))`, 20000)
+  const baseReply = await ev(`${app}.messages.slice(${sinceBase}).find(m => m.role === 'assistant' && m.text?.startsWith('交接方式'))?.text`)
+  check('正常回合之后沿用同一个 agy 对话', baseReply === '交接方式：同一对话', baseReply)
+  await send('STALL')
+  await sleep(21000)
+  await ev(`${app}.abort()`)
+  await waitFor(idle, 20000)
+  const sinceStall = await ev(`${app}.messages.length`)
+  await send('检查交接')
+  await waitFor(`${idle} && s.messages.slice(${sinceStall}).some(m => m.role === 'assistant' && m.entryId && m.text?.startsWith('交接方式'))`, 20000)
+  const stallReply = await ev(`${app}.messages.slice(${sinceStall}).find(m => m.role === 'assistant' && m.text?.startsWith('交接方式'))?.text`)
+  check('agy 对话 20 秒没有任何输出、用户停止后，下一条消息换新对话冷交接，不再回到卡住的对话', stallReply === '交接方式：冷交接', stallReply)
 }

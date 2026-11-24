@@ -270,8 +270,14 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
+    if (text === 'STALL') continue
+    if (text === '检查交接') {
+      chunk(raw.includes('Continue the same Inkstone conversation.') ? '交接方式：冷交接' : '交接方式：同一对话')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
     if (text.startsWith('[模型错误恢复 · 自动继续 1/1]')) {
-      chunk('认证恢复后继续完成。')
+      chunk(`认证恢复后继续完成。${raw.includes('Continue the same Inkstone conversation.') ? '冷交接' : '原生续接'}`)
       reply(id, { stopReason: 'end_turn' })
       continue
     }
