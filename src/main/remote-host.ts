@@ -558,11 +558,13 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   }))
   const plan = before ? undefined : await remotePlan(summary.path, summary.id)
   const queue = before ? undefined : sessionQueue(summary.id)
+  const state = before ? null : remoteSessionState(sessionAgent(summary.id)?.getState() ?? null)
   return {
     ok: true,
     data: {
       session: remoteSessionSummary(summary),
       messages,
+      ...(state ? { state } : {}),
       ...(plan ? { plan } : {}),
       ...(queue ? { queue } : {}),
       total: result.total,

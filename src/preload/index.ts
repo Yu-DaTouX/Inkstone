@@ -540,6 +540,18 @@ const api: YanBridge = {
     relayForget: (id) => invoke('yan:remote:relayForget', id),
     resetIdentity: () => invoke('yan:remote:resetIdentity')
   },
+  sessionShare: {
+    start: (sessionId, title) => invoke('yan:share:start', sessionId, title),
+    get: (sessionId) => invoke('yan:share:get', sessionId),
+    stop: (sessionId) => invoke('yan:share:stop', sessionId),
+    removeViewer: (sessionId, deviceId) => invoke('yan:share:removeViewer', sessionId, deviceId)
+  },
+  watch: {
+    join: (invite) => invoke('yan:watch:join', invite),
+    list: () => invoke('yan:watch:list'),
+    refresh: (id) => invoke('yan:watch:refresh', id),
+    leave: (id) => invoke('yan:watch:leave', id)
+  },
 
   terminal: {
     available: () => invoke('yan:terminal:available'),

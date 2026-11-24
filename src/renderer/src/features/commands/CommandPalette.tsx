@@ -21,9 +21,12 @@ import {
   SquareTerminal,
   Sun,
   TextSearch,
+  Users,
   X,
   type LucideIcon
 } from '../../ui/icons'
+import { useSessionWatch } from '../../state/session-watch'
+import { watchText } from '../watch/watch-text'
 import { useI18n } from '../../i18n'
 import type { SessionSummary, UIMessage } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
@@ -117,7 +120,9 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   [COMMAND_ACTION_IDS.workspaceBrowser]: Globe,
   [COMMAND_ACTION_IDS.workspacePreview]: Eye,
   [COMMAND_ACTION_IDS.settingsUsage]: BarChart3,
-  [COMMAND_ACTION_IDS.stopSession]: Square
+  [COMMAND_ACTION_IDS.stopSession]: Square,
+  [COMMAND_ACTION_IDS.shareSession]: Users,
+  [COMMAND_ACTION_IDS.joinWatch]: Users
 }
 
 function commandIcon(item: CommandItem, theme: string): LucideIcon {
@@ -282,6 +287,18 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         group: 'action',
         label: text.settingsUsage,
         keywords: 'usage tokens cost 用量 费用'
+      },
+      {
+        id: COMMAND_ACTION_IDS.shareSession,
+        group: 'action',
+        label: watchText(lang).paletteShare,
+        keywords: 'share watch viewer invite 共享 旁观 邀请 多人'
+      },
+      {
+        id: COMMAND_ACTION_IDS.joinWatch,
+        group: 'action',
+        label: watchText(lang).paletteJoin,
+        keywords: 'join watch viewer invite 加入 旁观 共享 邀请 多人'
       }
     ]
     if (running) {
@@ -294,7 +311,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       })
     }
     return items
-  }, [text, settingsCopy, theme, running])
+  }, [text, settingsCopy, theme, running, lang])
 
   const sessionItemsOf = useCallback(
     (archived: boolean): CommandItem[] =>
@@ -483,6 +500,17 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       }
       case COMMAND_ACTION_IDS.settingsUsage:
         useUiV3.getState().navigate({ name: 'usage' })
+        return { ok: true }
+      case COMMAND_ACTION_IDS.shareSession: {
+        const state = useStore.getState()
+        const sessionId = state.session?.sessionId
+        if (!sessionId) return { ok: false, error: watchText(lang).noSession }
+        const title = state.manualTitles[sessionId] || state.titles[sessionId] || state.session?.sessionName || sessionId
+        useSessionWatch.getState().openShare(sessionId, title)
+        return { ok: true }
+      }
+      case COMMAND_ACTION_IDS.joinWatch:
+        useSessionWatch.getState().openJoin()
         return { ok: true }
       case COMMAND_ACTION_IDS.stopSession:
         await store.abort()

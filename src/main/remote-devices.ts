@@ -45,6 +45,10 @@ export type PairResult =
   | { ok: true; device: RemoteDeviceSummary; token: string }
   | { ok: false; error: 'no_pairing' | 'expired' | 'invalid_code' | 'too_many_attempts' | 'device_limit' }
 
+export type ViewerPairResult =
+  | { ok: true; device: RemoteDeviceSummary; token: string }
+  | { ok: false; error: 'invalid_code' | 'device_limit' }
+
 export class RemoteDeviceStore {
   private readonly file: string
   private devices: StoredDevice[] | null = null
@@ -53,6 +57,8 @@ export class RemoteDeviceStore {
   private lastSeenWrittenAt = new Map<string, number>()
   private writing: Promise<void> = Promise.resolve()
   private queue: Promise<unknown> = Promise.resolve()
+  private readonly shares = new Map<string, string>()
+  private viewerDevices: StoredDevice[] = []
 
   constructor(dir: string, private readonly now: () => number = Date.now) {
     this.file = join(dir, 'remote-devices.json')
@@ -84,7 +90,7 @@ export class RemoteDeviceStore {
           const document = parsed as Partial<DeviceFile>
           if (document.version !== 1 || !Array.isArray(document.devices)) throw new SyntaxError('设备表格式无效')
           return document.devices
-            .filter((device) => typeof device?.id === 'string' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash))
+            .filter((device) => typeof device?.id === 'string' && device.kind !== 'viewer' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash))
             .map((device) => ({ ...device, name: cleanName(device.name) }))
         } catch (error) {
           await copyFile(this.file, `${this.file}.corrupt-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`).catch(() => undefined)
@@ -186,9 +192,56 @@ export class RemoteDeviceStore {
     })
   }
 
+  allowShare(code: string, sessionId: string): void {
+    this.shares.set(hashToken(code), sessionId)
+  }
+
+  dropShare(sessionId: string): string[] {
+    for (const [hash, target] of this.shares) if (target === sessionId) this.shares.delete(hash)
+    const removed = this.viewerDevices.filter((device) => device.watchSessionId === sessionId).map((device) => device.id)
+    this.viewerDevices = this.viewerDevices.filter((device) => device.watchSessionId !== sessionId)
+    return removed
+  }
+
+  pairViewer(code: unknown, deviceName: unknown, maxViewers: number): ViewerPairResult {
+    const given = typeof code === 'string' ? code.trim() : ''
+    const sessionId = given ? this.shares.get(hashToken(given)) : undefined
+    if (!sessionId) return { ok: false, error: 'invalid_code' }
+    if (this.viewerDevices.filter((device) => device.watchSessionId === sessionId).length >= maxViewers) return { ok: false, error: 'device_limit' }
+    const token = randomBytes(32).toString('base64url')
+    const device: StoredDevice = {
+      id: `viewer-${randomUUID()}`,
+      name: cleanName(deviceName),
+      kind: 'viewer',
+      createdAt: this.now(),
+      lastSeenAt: this.now(),
+      revokedAt: null,
+      tokenHash: hashToken(token),
+      encrypted: true,
+      watchSessionId: sessionId
+    }
+    this.viewerDevices = [...this.viewerDevices, device]
+    return { ok: true, device: summaryOf(device), token }
+  }
+
+  viewers(sessionId: string): RemoteDeviceSummary[] {
+    return this.viewerDevices.filter((device) => device.watchSessionId === sessionId).map(summaryOf)
+  }
+
+  removeViewer(id: string): boolean {
+    const before = this.viewerDevices.length
+    this.viewerDevices = this.viewerDevices.filter((device) => device.id !== id)
+    return this.viewerDevices.length !== before
+  }
+
   async authenticate(token: string): Promise<RemoteDeviceSummary | null> {
     if (!token) return null
     const hash = hashToken(token)
+    const viewer = this.viewerDevices.find((item) => sameHash(item.tokenHash, hash))
+    if (viewer) {
+      viewer.lastSeenAt = this.now()
+      return summaryOf(viewer)
+    }
     const devices = await this.load()
     const device = devices.find((item) => item.revokedAt === null && sameHash(item.tokenHash, hash))
     if (!device) return null
@@ -257,5 +310,6 @@ export class RemoteDeviceStore {
 }
 
 function summaryOf(device: StoredDevice): RemoteDeviceSummary {
+  if (device.kind === 'viewer') return { id: device.id, name: device.name, kind: 'viewer', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, encrypted: true, ...(device.watchSessionId ? { watchSessionId: device.watchSessionId } : {}) }
   return { id: device.id, name: device.name, kind: device.kind === 'peer' || device.kind === 'agent' ? device.kind : 'phone', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, ...(device.encrypted ? { encrypted: true } : {}), ...(device.tunnelClientId ? { tunnelClientId: device.tunnelClientId } : {}) }
 }

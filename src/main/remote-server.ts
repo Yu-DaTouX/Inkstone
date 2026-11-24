@@ -22,6 +22,8 @@ import {
 import type { RemoteHumanApproval } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
+import { WATCH_EVENT_BUFFER, WATCH_HISTORY_LIMIT, WATCH_MAX_VIEWERS, watchMessage, watchSessionState, type WatchEventChannel } from '../shared/session-watch'
+import type { UIMessage } from '../shared/ui-message'
 
 export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
@@ -94,6 +96,7 @@ export interface RemoteServerOptions {
   tunnel?: RemoteTunnelHooks
   relayClientPaired?: (clientId: string) => void | Promise<void>
   relayClientRevoked?: (clientId: string) => void | Promise<void>
+  viewersChanged?: (sessionId: string) => void
 }
 
 export interface RemoteTunnelHooks {
@@ -115,6 +118,9 @@ export interface RemoteServerInfo {
 const MAX_BODY_BYTES = 64 * 1024
 const IDEMPOTENCY_MAX_ENTRIES = 2000
 const DEVICE_STREAM_LIMIT = 4
+const VIEWER_STREAM_LIMIT = 2
+const WATCH_STREAMS_MAX = 64
+const WATCH_BUFFER_BYTES = 8 * 1024 * 1024
 const MAX_MESSAGE_CHARS = 20_000
 const MAX_NAME_CHARS = 200
 const SESSION_ID_MAX = 200
@@ -294,6 +300,10 @@ export class RemoteServer {
   private pairAttempts: number[] = []
   private readonly pairAttemptsBySource = new Map<string, number[]>()
   private readonly inviteAttempts = new Map<string, number[]>()
+  private readonly watchers = new Map<ServerResponse, { sessionId: string; deviceId: string }>()
+  private watchSeq = 0
+  private readonly watchBuffer: Array<{ seq: number; sessionId: string; text: string; bytes: number }> = []
+  private watchBufferBytes = 0
   private inviteCache: { key: string; issued: number; value: { hostKey: string; code: string; hostFingerprint?: string } } | null = null
 
   constructor(private readonly options: RemoteServerOptions) {
@@ -366,6 +376,7 @@ export class RemoteServer {
       for (const client of this.clients) {
         this.writeSse(client, ': heartbeat\n\n')
       }
+      for (const client of [...this.watchers.keys()]) this.writeSse(client, ': heartbeat\n\n')
       this.pruneIdempotency()
     }, 25_000)
     this.heartbeat.unref()
@@ -387,6 +398,13 @@ export class RemoteServer {
       }
     }
     this.clients.clear()
+    for (const client of this.watchers.keys()) {
+      try {
+        client.end()
+      } catch {
+      }
+    }
+    this.watchers.clear()
     this.options.tunnel?.stop?.()
     const server = this.server
     this.server = null
@@ -435,6 +453,10 @@ export class RemoteServer {
       try { client.end() } catch { }
     }
     this.clients.clear()
+    for (const client of this.watchers.keys()) {
+      try { client.end() } catch { }
+    }
+    this.watchers.clear()
   }
 
   disconnectDevice(deviceId: string): void {
@@ -444,6 +466,40 @@ export class RemoteServer {
         this.clients.delete(client)
       }
     }
+    for (const [client, meta] of [...this.watchers]) {
+      if (meta.deviceId !== deviceId) continue
+      this.watchers.delete(client)
+      try { client.end() } catch { }
+    }
+  }
+
+  endWatch(sessionId: string): void {
+    for (const [client, meta] of [...this.watchers]) {
+      if (meta.sessionId !== sessionId) continue
+      this.watchers.delete(client)
+      try {
+        client.write(`event: ended\ndata: {}\n\n`)
+        client.end()
+      } catch { }
+    }
+    for (let index = this.watchBuffer.length - 1; index >= 0; index -= 1) {
+      if (this.watchBuffer[index].sessionId !== sessionId) continue
+      this.watchBufferBytes -= this.watchBuffer[index].bytes
+      this.watchBuffer.splice(index, 1)
+    }
+  }
+
+  publishWatch(sessionId: string, channel: WatchEventChannel, payload: unknown): void {
+    const seq = ++this.watchSeq
+    const text = `id: ${seq}\nevent: ${channel}\ndata: ${JSON.stringify({ seq, at: Date.now(), channel, payload })}\n\n`
+    const bytes = Buffer.byteLength(text)
+    this.watchBuffer.push({ seq, sessionId, text, bytes })
+    this.watchBufferBytes += bytes
+    while (this.watchBuffer.length > WATCH_EVENT_BUFFER || this.watchBufferBytes > WATCH_BUFFER_BYTES) {
+      this.watchBufferBytes -= this.watchBuffer.shift()!.bytes
+    }
+    if (!this.server) return
+    for (const [client, meta] of [...this.watchers]) if (meta.sessionId === sessionId) this.writeSse(client, text)
   }
 
   publish(message: MainPush): void {
@@ -477,6 +533,7 @@ export class RemoteServer {
       return true
     } catch {
       this.clients.delete(client)
+      this.watchers.delete(client)
       client.destroy()
       return false
     }
@@ -651,6 +708,11 @@ export class RemoteServer {
     if (this.options.relayToken && caller.device && !caller.device.encrypted && (caller.device.kind ?? 'phone') === 'phone') {
       const client = req.headers[RELAY_HANDOFF_HEADER]
       await this.options.devices?.markEncrypted(caller.device.id, typeof client === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(client) ? client : undefined)
+    }
+
+    if (caller.device?.kind === 'viewer') {
+      await this.viewerRoute(req, res, url, caller.device)
+      return
     }
 
     if (req.method === 'POST' && url.pathname === '/remote/v1/devices/self/revoke') {
@@ -1095,6 +1157,19 @@ export class RemoteServer {
     this.pairAttempts.push(now)
     this.pairAttemptsBySource.set(source, [...recent, now])
     const body = await this.readJson(req)
+    if (body.kind === 'viewer') {
+      if (!this.options.relayToken) return writeError(res, 426, pick('旁观只能经加密通道连接', 'Viewers can only connect through the encrypted tunnel'), 'tunnel_required')
+      const viewer = this.options.devices.pairViewer(body.code, body.deviceName, WATCH_MAX_VIEWERS)
+      if (!viewer.ok) {
+        return viewer.error === 'device_limit'
+          ? writeError(res, 409, pick('旁观的人太多了，请让对方先移除不用的', 'Too many viewers. Ask the host to remove some first'), 'device_limit')
+          : writeError(res, 403, pick('共享已结束或邀请无效', 'Sharing has ended or the invite is invalid'), 'invalid_code')
+      }
+      this.log(pick(`旁观者已加入：${viewer.device.name}`, `Viewer joined: ${viewer.device.name}`))
+      if (viewer.device.watchSessionId) this.options.viewersChanged?.(viewer.device.watchSessionId)
+      writeJson(res, 200, { ok: true, deviceId: viewer.device.id, token: viewer.token, apiVersion: REMOTE_API_VERSION, device: viewer.device, computer: { name: hostname() } })
+      return
+    }
     if (body.kind === 'agent') {
       writeError(res, 403, pick('Agent Hub 已退役，不再接受礁石配对', 'Agent Hub is retired and no longer accepts reef pairing'), 'agent_retired')
       return
@@ -1179,6 +1254,80 @@ export class RemoteServer {
         ? { ok: true, data: result.data, ...(replayed ? { replayed: true } : {}) }
         : { ok: false, error: scrubRemoteError(result.error ?? pick('远程操作失败', 'Remote operation failed')), ...(result.code ? { code: result.code } : {}) }
     )
+  }
+
+  private async viewerRoute(req: IncomingMessage, res: ServerResponse, url: URL, device: RemoteDeviceSummary): Promise<void> {
+    const sessionId = device.watchSessionId
+    if (!sessionId || !this.options.relayToken) return writeError(res, 403, pick('旁观只能读取被共享的会话', 'A viewer can only read the shared session'), 'viewer_scope')
+    if (req.method === 'GET' && url.pathname === '/remote/v1/info') {
+      writeJson(res, 200, { ok: true, apiVersion: REMOTE_API_VERSION, transport: ['http', 'sse'], tokenRequired: true, capabilities: ['watch'], device, computer: { name: hostname() } })
+      return
+    }
+    if (req.method === 'GET' && url.pathname === '/remote/v1/watch') {
+      const before = url.searchParams.get('before') ?? undefined
+      if (before !== undefined && (!before || before.length > 2000 || /[\r\n]/.test(before))) return writeError(res, 400, pick('历史游标无效', 'Invalid history cursor'))
+      const limit = Math.min(WATCH_HISTORY_LIMIT, clampHistoryLimit(url.searchParams.get('limit')))
+      const result = await this.options.handlers.history(sessionId, limit, before)
+      const seq = this.watchSeq
+      if (!result.ok) return this.writeOperation(res, result)
+      const data = isRecord(result.data) ? result.data : {}
+      const session = isRecord(data.session) ? data.session : {}
+      const messages = Array.isArray(data.messages) ? (data.messages as UIMessage[]).map(watchMessage) : []
+      writeJson(res, 200, {
+        ok: true,
+        data: {
+          seq,
+          title: typeof session.title === 'string' ? session.title : '',
+          messages,
+          state: watchSessionState(data.state),
+          hasMore: data.hasMore === true,
+          ...(typeof data.nextBefore === 'string' ? { nextBefore: data.nextBefore } : {})
+        }
+      })
+      return
+    }
+    if (req.method === 'GET' && url.pathname === '/remote/v1/watch/events') {
+      this.openWatch(req, res, device.id, sessionId, url.searchParams.get('since'))
+      return
+    }
+    if (req.method === 'POST' && url.pathname === '/remote/v1/devices/self/revoke') {
+      await this.readJson(req)
+      this.options.devices?.removeViewer(device.id)
+      writeJson(res, 200, { ok: true })
+      this.disconnectDevice(device.id)
+      this.options.viewersChanged?.(sessionId)
+      return
+    }
+    writeError(res, 403, pick('旁观只能读取被共享的会话', 'A viewer can only read the shared session'), 'viewer_scope')
+  }
+
+  private openWatch(req: IncomingMessage, res: ServerResponse, deviceId: string, sessionId: string, sinceRaw: string | null): void {
+    const mine = [...this.watchers].filter(([, meta]) => meta.deviceId === deviceId).map(([client]) => client)
+    for (const stale of mine.slice(0, Math.max(0, mine.length - (VIEWER_STREAM_LIMIT - 1)))) {
+      this.watchers.delete(stale)
+      try { stale.end() } catch { }
+    }
+    if (this.watchers.size >= WATCH_STREAMS_MAX) return writeError(res, 429, pick('旁观连接过多，请稍后重试', 'Too many viewer connections. Try again later'))
+    this.watchers.set(res, { sessionId, deviceId })
+    res.on('close', () => this.watchers.delete(res))
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-store',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no'
+    })
+    if (!this.writeSse(res, `event: ready\ndata: ${JSON.stringify({ apiVersion: REMOTE_API_VERSION, at: Date.now(), latestSeq: this.watchSeq })}\n\n`)) return
+    const lastEventId = req.headers['last-event-id']
+    const since = Number(sinceRaw ?? (typeof lastEventId === 'string' ? lastEventId : NaN))
+    if (!Number.isSafeInteger(since) || since < 0) return
+    const oldest = this.watchBuffer[0]?.seq ?? this.watchSeq + 1
+    if (since > this.watchSeq || since < oldest - 1) {
+      this.writeSse(res, `event: resync\ndata: ${JSON.stringify({ latestSeq: this.watchSeq })}\n\n`)
+      return
+    }
+    for (const entry of this.watchBuffer) {
+      if (entry.seq > since && entry.sessionId === sessionId && !this.writeSse(res, entry.text)) break
+    }
   }
 
   private async openEvents(req: IncomingMessage, res: ServerResponse, caller: Caller, sinceRaw: string | null): Promise<void> {

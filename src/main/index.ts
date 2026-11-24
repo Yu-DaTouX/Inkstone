@@ -84,6 +84,8 @@ import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { listTerminalJobs, onTerminalJobs } from './terminal-jobs'
 import { registerRemoteIpc } from './ipc/remote-ipc'
+import { registerWatchIpc } from './ipc/watch-ipc'
+import { WatchClient } from './watch-client'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerGithubIpc } from './ipc/github-ipc'
@@ -542,6 +544,8 @@ const workflowService: WorkflowService = new WorkflowService({
   push: (view) => push({ ch: 'workflow', payload: view })
 })
 let remoteAccess: RemoteAccess | null = null
+let watchClient: WatchClient | null = null
+const watches = (): WatchClient => (watchClient ??= new WatchClient({ push: (update) => push({ ch: 'watch', payload: update }) }))
 
 async function applyToAllAgents(
   apply: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
@@ -1273,6 +1277,7 @@ async function runShutdown(): Promise<void> {
   const outcomes = await runShutdownSteps(
     [
       { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
+      { name: 'watch-client', run: () => { watchClient?.stopAll(); watchClient = null } },
       { name: 'terminals', run: () => disposeTerminals() },
       { name: 'runners', run: () => runners?.stopAll({ parallel: true }) },
       { name: 'antigravity-probes', run: () => disposeAntigravityProbes?.() },
@@ -1436,6 +1441,7 @@ async function startRemoteServer(): Promise<void> {
         else console.log(`[remote] ${text}`)
       }
     )
+    remoteAccess.onSharesChanged = (sessionId) => push({ ch: 'session-share', payload: { sessionId, share: remoteAccess?.shareView(sessionId) ?? null } })
   }
   try {
     await remoteAccess.apply((await getSettings()).remoteAccess)
@@ -2663,6 +2669,7 @@ function registerIpc(): void {
     ensureStarted: startRemoteServer,
     saveSettings: (remote) => patchSettings({ remoteAccess: remote })
   })
+  registerWatchIpc(ipc, watches)
 
   registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
 }

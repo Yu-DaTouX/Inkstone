@@ -11,6 +11,7 @@ export type RightPanelSurface =
   | { id: `pr:${number}`; kind: 'pullRequest'; number: number; title?: string; state?: PrSurfaceState; tab?: PrDetailTab }
   | { id: `subagent:${string}`; kind: 'subagent'; runId: string }
   | { id: `term:${string}`; kind: 'terminalTab'; terminalId: string; title?: string }
+  | { id: `watch:${string}`; kind: 'watch'; watchId: string; title: string }
 
 export type PanelDockSide = 'left' | 'right' | 'bottom'
 export type PanelEdgeDock = Exclude<PanelDockSide, 'right'>
@@ -97,6 +98,10 @@ export function pullRequestSurface(number: number, meta: { title?: string; state
 
 export function subagentSurface(runId: string): RightPanelSurface {
   return { id: `subagent:${runId}`, kind: 'subagent', runId }
+}
+
+export function watchSurface(watchId: string, title: string): RightPanelSurface {
+  return { id: `watch:${watchId}`, kind: 'watch', watchId, title }
 }
 
 export function terminalTabSurface(terminalId: string, title?: string): RightPanelSurface {

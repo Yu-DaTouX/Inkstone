@@ -26,6 +26,7 @@ export function surfaceLabelOf(surface: RightPanelSurface, ctx: SurfaceLabelCont
   if (surface.kind === 'pullRequest') return ctx.pullRequestLabel(surface.number)
   if (surface.kind === 'subagent') return ctx.subagentLabel(surface.runId)
   if (surface.kind === 'terminalTab') return surface.title || ctx.toolLabel('terminal')
+  if (surface.kind === 'watch') return surface.title
   return ctx.toolLabel(surface.kind)
 }
 
@@ -37,5 +38,6 @@ export function t3SurfaceOf(surface: RightPanelSurface, ctx: SurfaceLabelContext
   if (surface.kind === 'subagent') return { ...base, ...badge, detail: surface.runId }
   if (surface.kind === 'terminalTab') return { ...base, ...badge, detail: `${ctx.toolLabel('terminal')} · ${base.label}` }
   if (surface.kind === 'terminal') return { ...base, ...badge, detail: ctx.terminalLabel ?? undefined }
+  if (surface.kind === 'watch') return { ...base, detail: surface.title }
   return { ...base, ...badge }
 }

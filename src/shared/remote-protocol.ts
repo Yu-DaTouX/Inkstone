@@ -44,11 +44,12 @@ export interface RemoteModel {
 export interface RemoteDeviceSummary {
   id: string
   name: string
-  kind?: 'phone' | 'peer' | 'agent'
+  kind?: 'phone' | 'peer' | 'agent' | 'viewer'
   createdAt: number
   lastSeenAt: number | null
   encrypted?: boolean
   tunnelClientId?: string
+  watchSessionId?: string
 }
 
 export interface RemoteDeviceRecord extends RemoteDeviceSummary {

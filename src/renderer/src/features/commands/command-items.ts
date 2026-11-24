@@ -18,7 +18,9 @@ export const COMMAND_ACTION_IDS = {
   workspaceFiles: 'workspaceFiles',
   workspaceBrowser: 'workspaceBrowser',
   workspacePreview: 'workspacePreview',
-  settingsUsage: 'settingsUsage'
+  settingsUsage: 'settingsUsage',
+  shareSession: 'shareSession',
+  joinWatch: 'joinWatch'
 } as const
 
 export type CommandPrefix = '>' | '@' | '#' | '/' | '%' | '?'

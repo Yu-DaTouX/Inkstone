@@ -36,6 +36,7 @@ import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { useA11yAnnouncements } from './a11y-announcements'
 import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
+import { SessionWatchDialogs } from '../features/watch/SessionWatchDialogs'
 import { StopBackgroundDialog } from '../features/session/StopBackgroundDialog'
 import { SettingsPanelV3 } from './SettingsPanelV3'
 import { openSettingsDialog } from '../features/settings/root/deep-link'
@@ -698,6 +699,7 @@ export default function ShellV3(): ReactElement {
       <SplitDropLayer />
       <NoticeBridge />
       <BrowserSiteAskDialog />
+      <SessionWatchDialogs />
       <StopBackgroundDialog />
     </V3ErrorBoundary>
   )

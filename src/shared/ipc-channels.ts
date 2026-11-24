@@ -128,6 +128,14 @@ export interface IpcChannelMap {
   'yan:remote:relayRevoke': Contract<B['remote']['relayRevoke']>
   'yan:remote:relayForget': Contract<B['remote']['relayForget']>
   'yan:remote:resetIdentity': Contract<B['remote']['resetIdentity']>
+  'yan:share:start': Contract<B['sessionShare']['start']>
+  'yan:share:get': Contract<B['sessionShare']['get']>
+  'yan:share:stop': Contract<B['sessionShare']['stop']>
+  'yan:share:removeViewer': Contract<B['sessionShare']['removeViewer']>
+  'yan:watch:join': Contract<B['watch']['join']>
+  'yan:watch:list': Contract<B['watch']['list']>
+  'yan:watch:refresh': Contract<B['watch']['refresh']>
+  'yan:watch:leave': Contract<B['watch']['leave']>
   'yan:pinnedNetworkStatus': Contract<B['pinnedNetwork']['status']>
   'yan:piRuntimePrefs': Contract<B['piRuntimePrefs']>
   'yan:piNativeSettings': Contract<B['piNativeSettings']>

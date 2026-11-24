@@ -15,6 +15,9 @@ import { DirectTunnelEndpoint } from './relay-bridge/direct'
 import { REMOTE_TUNNEL_PATH, RemoteServer, type RemoteServerHandlers } from './remote-server'
 import { RemotePushCoalescer } from './remote-push-coalesce'
 import { remotePushPayload } from './remote-host'
+import { hostname } from 'node:os'
+import { encodeWatchInvite, type SessionShareStartResult, type SessionShareView } from '../shared/session-watch'
+import { watchProjection } from './session-watch-host'
 
 type AddressKind = RemoteAccessStatus['addresses'][number]['kind']
 
@@ -85,6 +88,8 @@ export class RemoteAccess {
   private relayPairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null = null
   private readonly outgoing: RemotePushCoalescer
   private readonly direct: DirectTunnelEndpoint
+  private readonly shares = new Map<string, { title: string; invite: string; startedAt: number }>()
+  onSharesChanged: (sessionId: string) => void = () => undefined
 
   constructor(
     dataDir: string,
@@ -182,6 +187,7 @@ export class RemoteAccess {
           relayToken: this.relayToken,
           relayClientPaired: (clientId) => this.relay.store.markPaired(clientId).then(() => undefined),
           relayClientRevoked: (clientId) => this.relay.revoke(clientId).then(() => undefined),
+          viewersChanged: (sessionId) => this.onSharesChanged(sessionId),
           onLog: this.log
         })
         await server.start()
@@ -223,7 +229,78 @@ export class RemoteAccess {
   private async stopServer(): Promise<void> {
     const server = this.server
     this.server = null
+    for (const sessionId of [...this.shares.keys()]) this.stopShare(sessionId)
     if (server) await server.stop().catch(() => undefined)
+  }
+
+  private directTunnelUrl(): string | null {
+    const info = this.server?.running ? this.server.info : null
+    if (!info) return null
+    return `ws://${info.host.includes(':') ? `[${info.host}]` : info.host}:${info.port}${REMOTE_TUNNEL_PATH}`
+  }
+
+  async startShare(sessionId: string, title: string): Promise<SessionShareStartResult> {
+    const direct = this.directTunnelUrl()
+    if (!direct || !this.relayServer?.running) {
+      return { ok: false, reason: 'remote-off', error: pick('先在「设置 › 设备」里开启设备连接（Tailscale 或 Radmin）', 'Turn on device access (Tailscale or Radmin) in Settings › Devices first') }
+    }
+    const existing = this.shares.get(sessionId)
+    if (existing) return { ok: true, share: this.shareView(sessionId)! }
+    try {
+      await this.relay.prepare()
+      const code = randomBytes(24).toString('base64url')
+      const invite = encodeWatchInvite({
+        hostKey: await this.relay.hostPublicKey(),
+        host: hostname().slice(0, 60),
+        direct: [direct],
+        code,
+        fingerprint: await this.relay.identity(),
+        title: title.slice(0, 200),
+        sessionId
+      })
+      this.relay.allowShare(code, sessionId)
+      this.devices.allowShare(code, sessionId)
+      this.shares.set(sessionId, { title: title.slice(0, 200), invite, startedAt: Date.now() })
+      this.log(pick(`开始共享会话：${sessionId}`, `Sharing session: ${sessionId}`))
+      return { ok: true, share: this.shareView(sessionId)! }
+    } catch (error) {
+      return { ok: false, reason: 'failed', error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  shareView(sessionId: string): SessionShareView | null {
+    const share = this.shares.get(sessionId)
+    if (!share) return null
+    return {
+      sessionId,
+      title: share.title,
+      invite: share.invite,
+      startedAt: share.startedAt,
+      viewers: this.devices.viewers(sessionId).map((device) => ({ id: device.id, name: device.name, createdAt: device.createdAt, lastSeenAt: device.lastSeenAt }))
+    }
+  }
+
+  sharedSessions(): string[] {
+    return [...this.shares.keys()]
+  }
+
+  stopShare(sessionId: string): boolean {
+    if (!this.shares.delete(sessionId)) return false
+    const removed = this.devices.dropShare(sessionId)
+    this.relayServer?.endWatch(sessionId)
+    for (const id of removed) this.relayServer?.disconnectDevice(id)
+    this.relay.dropShare(sessionId)
+    this.log(pick(`已停止共享会话：${sessionId}`, `Stopped sharing session: ${sessionId}`))
+    this.onSharesChanged(sessionId)
+    return true
+  }
+
+  removeViewer(sessionId: string, deviceId: string): boolean {
+    if (!this.devices.viewers(sessionId).some((device) => device.id === deviceId)) return false
+    this.devices.removeViewer(deviceId)
+    this.relayServer?.disconnectDevice(deviceId)
+    this.onSharesChanged(sessionId)
+    return true
   }
 
   async stop(): Promise<void> {
@@ -242,6 +319,9 @@ export class RemoteAccess {
     if (!this.server && !this.relayServer) return
     const projected = { ...message, payload: remotePushPayload(message.ch, message.payload) } as MainPush
     this.outgoing.push(projected)
+    if (!this.shares.size || !this.relayServer) return
+    const watch = watchProjection(message, (sessionId) => this.shares.has(sessionId))
+    if (watch) this.relayServer.publishWatch(watch.sessionId, watch.channel, watch.payload)
   }
 
   private deliver(message: MainPush): void {

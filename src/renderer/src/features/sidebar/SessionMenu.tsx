@@ -10,8 +10,9 @@ import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { SessionMenuContent } from './SessionMenuContent'
 import { exportSessionFromMenu } from './session-transfer-actions'
 import { isSessionExportFormat } from '../../../../shared/session-transfer'
+import { useSessionWatch } from '../../state/session-watch'
 
-export type MenuKey = `move:${string}` | `export:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'unread'
+export type MenuKey = `move:${string}` | `export:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'unread' | 'share'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -102,6 +103,9 @@ export function SessionMenu({ item, title, isCurrent, anchor, pointAnchor, open,
         return
       case 'reveal':
         void window.yan.revealPath(item.path)
+        return
+      case 'share':
+        useSessionWatch.getState().openShare(item.id, title)
         return
       case 'delete':
         setConfirmDelete(true)

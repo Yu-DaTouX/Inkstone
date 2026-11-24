@@ -47,6 +47,7 @@ const INBOUND_LOW_BYTES = 2 * 1024 * 1024
 const DRAIN_POLL_MS = 20
 const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
 const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
+const VIEWER_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair', '/remote/v1/devices/self/revoke', '/remote/v1/watch', '/remote/v1/watch/events'])
 const TEXT_PROTOCOL = 2
 
 function textual(contentType: string | undefined): boolean {
@@ -63,7 +64,7 @@ const HANDSHAKE_FRAME_MAX = 4096
 export const SEALED_FRAME_MAX = 24 * 1024 * 1024
 
 function declaredKind(value: unknown): RelayClientKind | undefined {
-  return value === 'phone' || value === 'peer' || value === 'agent' ? value : undefined
+  return value === 'phone' || value === 'peer' || value === 'agent' || value === 'viewer' ? value : undefined
 }
 
 export class TunnelSession {
@@ -231,6 +232,7 @@ export class TunnelSession {
     }
     const kind = this.client?.kind ?? 'phone'
     if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, pick('Agent Hub 已退役，礁石不能再使用远程接口', 'Agent Hub is retired; the remote API is no longer available'))
+    if (kind === 'viewer' && !VIEWER_PATHS.has(url.pathname)) return this.fail(id, 403, pick('旁观只能读取被共享的会话', 'A viewer can only read the shared session'))
     if (msg.stream === 'in') return this.fail(id, 400, pick('这个请求不支持流式上传', 'This request does not accept a streamed upload'))
     if (this.pending.size >= MAX_REQUESTS) return this.fail(id, 429, pick('同时进行的请求太多', 'Too many concurrent requests'))
     const target = this.hooks.target()
@@ -302,13 +304,12 @@ export class TunnelSession {
         let finished = false
         const finish = (error?: string, discard = false) => {
           if (finished) return
+          if (!discard && this.pending.get(id) === entry) flush()
+          if (finished) return
           finished = true
           if (timer) clearTimeout(timer)
           if (this.pending.get(id) === entry) {
-            if (!discard) {
-              flush()
-              if (decoder) chunk(Buffer.alloc(0), true)
-            }
+            if (!discard && decoder) chunk(Buffer.alloc(0), true)
             this.pending.delete(id)
             this.post({ t: 'end', id, ...(error ? { error } : {}) })
           }

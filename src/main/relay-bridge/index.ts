@@ -11,7 +11,7 @@ export interface RelayBridgeSettings {
   url: string
 }
 
-export type RelayClientView = Omit<RelayClient, 'key'> & { online: boolean }
+export type RelayClientView = Omit<RelayClient, 'key' | 'kind'> & { kind: Exclude<RelayClientKind, 'viewer'>; online: boolean }
 
 export interface RelayBridgeStatus {
   enabled: boolean
@@ -56,6 +56,12 @@ export class RelayBridge {
     for (const session of [...this.sessions]) {
       const id = session.client?.id
       if (!id) continue
+      if (session.client?.kind === 'viewer') {
+        if (this.store.shareActive(session.client.watchSessionId)) continue
+        session.close()
+        closed += 1
+        continue
+      }
       let alive = expired.has(id)
       if (!alive) alive = await this.store.isActive(id).catch(() => false)
       if (alive) continue
@@ -125,6 +131,25 @@ export class RelayBridge {
     return this.store.pairingCodeActive(code)
   }
 
+  allowShare(code: string, sessionId: string): void {
+    this.store.allowShare(code, sessionId)
+  }
+
+  dropShare(sessionId: string, graceMs = 500): void {
+    this.store.dropShare(sessionId)
+    const close = (): void => {
+      for (const s of [...this.sessions]) {
+        if (s.client?.kind === 'viewer' && s.client.watchSessionId === sessionId && !this.store.shareActive(sessionId)) s.close()
+      }
+    }
+    if (graceMs <= 0) return close()
+    setTimeout(close, graceMs).unref?.()
+  }
+
+  async hostPublicKey(): Promise<string> {
+    return toB64u((await this.store.hostKey()).raw)
+  }
+
   async identity(): Promise<string> {
     return formatHostFingerprint(await sha256((await this.store.hostKey()).raw))
   }
@@ -165,7 +190,7 @@ export class RelayBridge {
       url: this.settings.url,
       connected: !!this.link?.connected,
       detail: this.detail,
-      clients: (await this.store.list()).map(({ key: _key, ...c }) => ({ ...c, online: online.has(c.id) }))
+      clients: (await this.store.list()).flatMap(({ key: _key, ...c }) => (c.kind === 'viewer' ? [] : [{ ...c, kind: c.kind, online: online.has(c.id) }]))
     }
   }
 

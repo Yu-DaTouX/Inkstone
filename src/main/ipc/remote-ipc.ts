@@ -72,6 +72,27 @@ export function registerRemoteIpc(ipc: IpcRegistrar, deps: RemoteIpcDeps): void 
     return status()
   })
 
+  handle('yan:share:start', async (sessionId: string, title: string) => {
+    if (!deps.access()) await deps.ensureStarted()
+    const access = deps.access()
+    const id = String(sessionId ?? '').trim()
+    if (!access || !id) return { ok: false, reason: 'failed', error: pick('远程访问还没有启动', 'Remote access is not started') }
+    return access.startShare(id, String(title ?? '').trim() || id)
+  })
+
+  handle('yan:share:get', async (sessionId: string) => deps.access()?.shareView(String(sessionId ?? '')) ?? null)
+
+  handle('yan:share:stop', async (sessionId: string) => {
+    deps.access()?.stopShare(String(sessionId ?? ''))
+  })
+
+  handle('yan:share:removeViewer', async (sessionId: string, deviceId: string) => {
+    const access = deps.access()
+    if (!access) return null
+    access.removeViewer(String(sessionId ?? ''), String(deviceId ?? ''))
+    return access.shareView(String(sessionId ?? ''))
+  })
+
   handle('yan:remote:resetIdentity', async () => {
     if (!deps.access()) await deps.ensureStarted()
     const access = deps.access()

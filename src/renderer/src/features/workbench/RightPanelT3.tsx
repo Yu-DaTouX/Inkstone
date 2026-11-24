@@ -8,6 +8,7 @@ import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { DOCK_BOTTOM_DEFAULT, DOCK_BOTTOM_MIN, DOCK_LEFT_DEFAULT, DOCK_LEFT_MIN, PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, rightGroupCount, useRightPanel, useRightPanelEntry, type PanelEdgeDock, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
 import { SubagentTranscriptPane } from '../session/SubagentTranscriptPane'
+import { WatchPane } from '../watch/WatchPane'
 import { PullRequestDetail } from '../github/PullRequestDetail'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
 import { previewPathFor, type PreviewOpenOptions } from './preview-state'
@@ -598,7 +599,7 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
     [titleEl, toolsEl, setMenu, room, panel, surface.id]
   )
   const previewPath = usePreviewBindings((s) => previewPathFor(s.bindings, owner.key))
-  const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' && surface.kind !== 'terminalTab' ? surface.kind : null
+  const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' && surface.kind !== 'terminalTab' && surface.kind !== 'watch' ? surface.kind : null
   const blocked = !!tool && !owner.active && WORKBENCH_ACTIVE_TABS.has(tool)
   const extraItems: PaneMenuItem[] =
     tool === 'files' && previewPath
@@ -632,6 +633,8 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
     )
   } else if (surface.kind === 'subagent') {
     body = <SubagentTranscriptPane runId={surface.runId} />
+  } else if (surface.kind === 'watch') {
+    body = <WatchPane watchId={surface.watchId} />
   } else if (surface.kind === 'terminalTab') {
     const Terminal = panes.terminal
     body = Terminal ? <Terminal owner={owner} visible={shown && live} only={surface.terminalId} /> : null

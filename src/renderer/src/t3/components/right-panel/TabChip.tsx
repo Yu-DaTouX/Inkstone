@@ -8,6 +8,7 @@ import {
   Smartphone,
   SquareStack,
   TerminalSquare,
+  Users,
   X,
   type LucideIcon
 } from '../../../ui/icons'
@@ -41,7 +42,8 @@ const KIND_ICONS: Record<
   branch: GitBranch,
   logs: ScrollText,
   quota: Gauge,
-  subagent: Bot
+  subagent: Bot,
+  watch: Users
 }
 
 export function SurfaceIcon({ surface }: { surface: TabSurface }): ReactNode {

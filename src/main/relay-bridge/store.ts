@@ -8,13 +8,14 @@ import { exportKeyPair, generateKeyPair, importKeyPair, randomB64u, sha256, toB6
 export const RELAY_PAIR_TTL_MS = 10 * 60_000
 const MAX_CLIENTS = 16
 
-export type RelayClientKind = 'phone' | 'peer' | 'agent'
+export type RelayClientKind = 'phone' | 'peer' | 'agent' | 'viewer'
 
 export interface RelayClient {
   id: string
   key: string
   name: string
   kind: RelayClientKind
+  watchSessionId?: string
   addedAt: number
   lastSeenAt: number | null
   revokedAt: number | null
@@ -23,6 +24,7 @@ export interface RelayClient {
 }
 
 const KINDS: RelayClientKind[] = ['phone', 'peer', 'agent']
+const VIEWER_NAME_MAX = 60
 
 interface StoredState {
   version: 1
@@ -43,6 +45,7 @@ export class RelayBridgeStore {
   private key: KeyPair | null = null
   private writing: Promise<void> = Promise.resolve()
   private readonly codes = new Map<string, { kind: RelayClientKind | 'any'; expiresAt: number }>()
+  private readonly shareCodes = new Map<string, string>()
 
   constructor(dir: string, private readonly now: () => number = Date.now) {
     this.file = join(dir, 'relay-bridge.json')
@@ -157,7 +160,41 @@ export class RelayBridgeStore {
     return this.mutate(async () => this.expireLocked(await this.load()))
   }
 
+  allowShare(code: string, sessionId: string): void {
+    this.shareCodes.set(hash(code), sessionId)
+  }
+
+  dropShare(sessionId: string): void {
+    for (const [key, target] of this.shareCodes) if (target === sessionId) this.shareCodes.delete(key)
+  }
+
+  shareActive(sessionId: string | undefined): boolean {
+    return !!sessionId && [...this.shareCodes.values()].includes(sessionId)
+  }
+
+  private viewer(clientKey: string, name: string, code: string | undefined): { ok: true; client: RelayClient } | { ok: false; reason: string } {
+    const sessionId = code ? this.shareCodes.get(hash(code)) : undefined
+    if (!sessionId) return { ok: false, reason: pick('共享已结束或邀请无效，请向对方重新要邀请', 'Sharing has ended or the invite is invalid. Ask for a new invite') }
+    const now = this.now()
+    return {
+      ok: true,
+      client: {
+        id: `viewer-${randomUUID()}`,
+        key: clientKey,
+        name: (name || pick('未命名设备', 'Unnamed device')).replace(/[\u0000-\u001f]/g, '').slice(0, VIEWER_NAME_MAX),
+        kind: 'viewer',
+        watchSessionId: sessionId,
+        addedAt: now,
+        lastSeenAt: now,
+        revokedAt: null,
+        pairedAt: now,
+        pendingUntil: null
+      }
+    }
+  }
+
   authenticate(clientKey: string, name: string, code: string | undefined, declared?: RelayClientKind): Promise<{ ok: true; client: RelayClient } | { ok: false; reason: string }> {
+    if (declared === 'viewer') return Promise.resolve(this.viewer(clientKey, name, code))
     return this.mutate(async () => {
       const state = await this.load()
       await this.expireLocked(state)
@@ -174,7 +211,7 @@ export class RelayBridgeStore {
       const h = hash(code)
       const entry = this.codes.get(h)
       if (!entry || entry.expiresAt <= this.now()) return { ok: false, reason: pick('配对码无效或已过期，请在电脑上重新生成', 'Pairing code is invalid or expired. Generate a new one on the computer') }
-      if (declared !== undefined && entry.kind !== 'any' && entry.kind !== declared) {
+      if (entry.kind === 'viewer' || (declared !== undefined && entry.kind !== 'any' && entry.kind !== declared)) {
         return { ok: false, reason: pick('这个配对码不属于这类设备，请在电脑上重新生成', 'This pairing code is not for this kind of device. Generate a new one on the computer') }
       }
       const kind: RelayClientKind = entry.kind === 'any' ? (declared ?? 'phone') : entry.kind

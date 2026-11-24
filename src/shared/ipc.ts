@@ -1141,6 +1141,8 @@ export type MainPushBody =
   | { ch: 'title'; payload: string }
   | { ch: 'win-state'; payload: { maximized: boolean; alwaysOnTop: boolean } }
   | { ch: 'session-title'; payload: { sessionId: string; title: string } }
+  | { ch: 'session-share'; payload: { sessionId: string; share: import('./session-watch').SessionShareView | null } }
+  | { ch: 'watch'; payload: import('./session-watch').WatchPush }
   | { ch: 'editor-text'; payload: string }
   | { ch: 'widget'; payload: { key: string; lines?: string[]; placement?: 'aboveEditor' | 'belowEditor' } }
   | { ch: 'pi-info'; payload: PiInfo }
@@ -1947,6 +1949,20 @@ export interface YanBridge {
     relayRevoke(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayForget(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     resetIdentity(): Promise<{ ok: boolean; revokedDevices?: number; hostFingerprint?: string; error?: string }>
+  }
+
+  sessionShare: {
+    start(sessionId: string, title: string): Promise<import('./session-watch').SessionShareStartResult>
+    get(sessionId: string): Promise<import('./session-watch').SessionShareView | null>
+    stop(sessionId: string): Promise<void>
+    removeViewer(sessionId: string, deviceId: string): Promise<import('./session-watch').SessionShareView | null>
+  }
+
+  watch: {
+    join(invite: string): Promise<import('./session-watch').WatchJoinResult>
+    list(): Promise<import('./session-watch').WatchView[]>
+    refresh(id: string): Promise<void>
+    leave(id: string): Promise<void>
   }
 
   terminal: {

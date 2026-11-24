@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
-import { Eye, FileCode, FileText, FolderInput, FolderOpen, Globe, Mail, MailOpen, Package, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2, Upload } from '../../ui/icons'
+import { Eye, FileCode, FileText, FolderInput, FolderOpen, Globe, Mail, MailOpen, Package, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2, Upload, Users } from '../../ui/icons'
+import { watchText } from '../watch/watch-text'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Menu, MenuItem, MenuSeparator, Popover, SubmenuTrigger } from '../../ui'
@@ -88,6 +89,9 @@ export function SessionMenuContent({ item, isCurrent, pointAnchor, onOpenChange,
           </Menu>
         </Popover>
       </SubmenuTrigger>
+      <MenuItem id="share" textValue={watchText(lang).menuShare} data-testid="v3-session-share" icon={<Users size={14} />}>
+        {watchText(lang).menuShare}
+      </MenuItem>
       <MenuSeparator />
       <MenuItem id="rename" textValue={t('rail.rename')} icon={<Pencil size={14} />}>
         {t('rail.rename')}
