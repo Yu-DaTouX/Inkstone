@@ -265,6 +265,16 @@ for await (const line of input) {
       continue
     }
     if (text === '额度拒绝') { reply(id, { stopReason: 'refusal' }); continue }
+    if (text === 'AUTH401') {
+      chunk('正在重新截图。\n\n⚠ UNAUTHENTICATED (code 401): Request had invalid authentication credentials. Expected OAuth 2 access token.\n')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
+    if (text.startsWith('[模型错误恢复 · 自动继续 1/1]')) {
+      chunk('认证恢复后继续完成。')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
     if (text === '失效思考签名') {
       send({ id, error: { code: -32603, message: 'Provider error', data: { message: 'messages.12.content.3.thinking.signature: Field required' } } })
       continue

@@ -590,4 +590,16 @@ class Fixture {
     return { ok: users === ${userCountBeforeBg} + 1 && hasTool, users, hasTool }
   })()`)
   check('Antigravity CLI 内部后台任务在 end_turn 后主动推送进度与答复时正常展示并落盘', bgState.ok, bgState.ok ? undefined : bgState)
+
+  const sinceAuth = await ev(`${app}.messages.length`)
+  await send('AUTH401')
+  await waitFor(`s.messages.slice(${sinceAuth}).some(m => m.role === 'assistant' && m.entryId && m.text.includes('认证恢复后继续完成')) && ${idle}`, 20000)
+  const authState = await ev(`(() => {
+    const msgs = ${app}.messages.slice(${sinceAuth})
+    const failed = msgs.find(m => m.role === 'assistant' && m.error?.includes('UNAUTHENTICATED (code 401)'))
+    const leaked = msgs.some(m => m.role === 'assistant' && m.text?.includes('UNAUTHENTICATED'))
+    const continued = msgs.filter(m => m.role === 'user' && m.text?.startsWith('[模型错误恢复')).length
+    return { ok: !!failed && failed.text === '正在重新截图。' && !leaked && continued === 1, error: failed?.error, text: failed?.text, leaked, continued }
+  })()`)
+  check('agy 把 401 写进正文时改为回合错误、正文不含错误行，5 秒后自动续跑一次', authState.ok, authState.ok ? undefined : authState)
 }

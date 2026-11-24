@@ -261,7 +261,13 @@ export function extractAntigravityProgressNotes(text: string): string[] {
   return notes
 }
 
-export function withGeminiProgressNotes(segments: readonly TurnSegment[], model?: string): TurnSegment[] {
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/
+
+export function replyUsesCjk(visibleText: string, fallback: boolean): boolean {
+  return /\p{L}/u.test(visibleText) ? CJK.test(visibleText) : fallback
+}
+
+export function withGeminiProgressNotes(segments: readonly TurnSegment[], model?: string, replyCjk?: boolean): TurnSegment[] {
   const antigravity = !!model && model.startsWith('antigravity/')
   if (!model || (!antigravity && modelBrand(model) !== 'gemini')) return segments as TurnSegment[]
   let changed = false
@@ -277,6 +283,7 @@ export function withGeminiProgressNotes(segments: readonly TurnSegment[], model?
         : extractGeminiProgressHeadings(part.text)
       for (const heading of extracted) {
         if (seen.has(heading)) continue
+        if (replyCjk !== undefined && CJK.test(heading) !== replyCjk) continue
         seen.add(heading)
         notes.push({
           id: `${segment.id}:gemini:${notes.length}`,

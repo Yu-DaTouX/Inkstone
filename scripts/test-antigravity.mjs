@@ -1349,6 +1349,25 @@ await runSuite(import.meta.url, async (ok, compile) => {
       response: null
     }], 'antigravity/gemini-4-neon')
     ok(acpSegs[0].commentary.length === 2 && acpSegs[0].commentary[0].text.includes('Checking the uncommitted git diff'), '无粗体标题的 Antigravity 思考段在有工具调用时提取清晰进度文字', JSON.stringify(acpSegs[0].commentary))
+    const { splitAntigravityErrorLine } = await compile('src/main/antigravity-error-line.ts')
+    const { isAuthRejected } = await compile('src/shared/model-errors.ts')
+    const agy401 = splitAntigravityErrorLine('正在重新截图。\n\n⚠ UNAUTHENTICATED (code 401): Request had invalid authentication credentials. Expected OAuth 2 access token. See https://developers.google.com/identity/sign-in/web/devconsole-project.\n')
+    ok(agy401?.text === '正在重新截图。' && agy401.error.startsWith('UNAUTHENTICATED (code 401)') && isAuthRejected(agy401.error),
+      'agy 写进正文末尾的 401 错误行拆成回合错误，并按 OAuth 401 认证拒绝处理', JSON.stringify(agy401))
+    ok(splitAntigravityErrorLine('\n⚠ RESOURCE_EXHAUSTED (code 429): quota').error === 'RESOURCE_EXHAUSTED (code 429): quota' &&
+      splitAntigravityErrorLine('⚠ 注意：这是普通提醒') === null &&
+      splitAntigravityErrorLine('⚠ UNAUTHENTICATED (code 401): x\n后面还有正文') === null &&
+      splitAntigravityErrorLine('一切正常。') === null,
+      '只认正文末尾「⚠ 状态名 (code N): …」格式的错误行，普通警示和中间引用不误判')
+    const { replyUsesCjk } = await compile('src/renderer/src/features/session/turn-process.ts')
+    const englishThought = [{ id: 's-acp-2', sourceMessageId: 'm-acp-2', thinking: 'The visual elements are significantly improved.\n\nNext I will rerun the checks.', thinkingLive: false, tools: [{ id: 't-3', name: 'git status', status: 'ok', args: {}, details: { antigravity: true, kind: 'execute' } }], texts: [], commentary: [], response: null }]
+    const chineseThought = [{ ...englishThought[0], id: 's-acp-3', thinking: '正在检查左栏对齐，接下来重新截图。' }]
+    ok(withGeminiProgressNotes(englishThought, 'antigravity/gemini-4-neon', true)[0].commentary.length === 0 &&
+      withGeminiProgressNotes(chineseThought, 'antigravity/gemini-4-neon', true)[0].commentary.length === 1 &&
+      withGeminiProgressNotes(englishThought, 'antigravity/gemini-4-neon', false)[0].commentary.length === 2,
+      '中文对话里英文思考摘要不提升为旁白，只留在思考里；同语言照常提升')
+    ok(replyUsesCjk('类型检查已通过，正在构建。', false) === true && replyUsesCjk('Build passed.', true) === false && replyUsesCjk('', true) === true && replyUsesCjk('`npm` 123', false) === false,
+      '回复语言按本回合已写出的正文判断，没有正文时用界面语言')
     const ttStub = (key) => ({ stepRead: '已读取', stepReadRunning: '正在读取', stepRan: '已运行', stepRunning: '正在运行' }[key] ?? key)
     const acpReadTitle = toolStepTitle({ name: 'File /E:/pi-desktop/src/main/agent.ts', status: 'running', args: { Path: 'E:\\pi-desktop\\src\\main\\agent.ts' }, details: { antigravity: true, kind: 'read' } }, ttStub)
     const acpCmdLabel = toolRunningLabel({ id: 't-2', name: 'git status --short', status: 'running', args: { CommandLine: 'git status --short', toolSummary: 'Check git status' }, details: { antigravity: true, kind: 'execute' } }, '生成参数中', ttStub)

@@ -60,6 +60,7 @@ import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, typ
 import { apiKeyLooksUnusable, isOAuthRefreshFailure, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { accountLogId, logMainEvent, logModelEvent, modelErrorLogFields } from './main-log'
 import { isAuthBlip, providerUsesOAuth, waitAuthBlip } from './auth-blip'
+import { splitAntigravityErrorLine } from './antigravity-error-line'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
@@ -3090,6 +3091,18 @@ export class AgentController extends EventEmitter {
     return this.continueAfterModelError(scope)
   }
 
+  private async continueAntigravityAfterAuthBlip(connection: NonNullable<AgentController['acpConnection']>, owner: ReturnType<AgentController['asyncOwner']>): Promise<void> {
+    const current = () => this.ownerCurrent(owner) && this.acpConnection === connection && this.state?.sessionId === connection.sessionId && !this.acpTurn && !this.executionActive()
+    if (!(await this.readStreamLoopAutoContinue())) return
+    await waitAuthBlip()
+    if (!current()) return
+    const result = await this.withOperation('send', owner.generation, () => this.withExecutionAdmission(() => this.sendAntigravity(continuationPrompt('model-error'))))
+    if (!result.ok && current()) {
+      this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
+        message: pick(`未能自动继续（${result.error ?? '发送失败'}），请手动决定。`, `Could not auto-continue (${result.error ?? 'send failed'}). Decide manually.`) } })
+    }
+  }
+
   private async continueAfterModelError(scope: AutoContinueScope): Promise<boolean> {
     try {
       if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
@@ -5282,6 +5295,7 @@ export class AgentController extends EventEmitter {
     let handingOff = false
     let autoCompactNeeded: { used: number; size: number } | undefined
     let settledOutcome: 'completed' | 'stopped' | 'failed' | null = null
+    let authBlipRetry = false
     const retireAcp = async () => {
       if (!ownsTurn()) return
       connection.hasContext = false
@@ -5311,6 +5325,14 @@ export class AgentController extends EventEmitter {
           turnError = antigravityStopError(reason)
         }
         connection.hasContext = connection.session === session && (handingOff || status === 'stop' || (status === 'aborted' && cleanCancel && !turn.steer))
+        const tail = status === 'stop' && !handingOff ? steps[steps.length - 1] : undefined
+        const reported = tail ? splitAntigravityErrorLine(tail.text) : null
+        if (tail && reported) {
+          tail.text = reported.text
+          status = 'error'
+          turnError = reported.error
+          authBlipRetry = isAuthBlip(reported.error, { retried: false, continued: options.userText === continuationPrompt('model-error') })
+        }
       } catch (error) {
         status = turn.stopped || turn.interjected ? 'aborted' : 'error'
         if ((!turn.stopped && !turn.interjected) || (error instanceof Error && error.name === 'INVALID_THINKING_SIGNATURE')) {
@@ -5485,6 +5507,8 @@ export class AgentController extends EventEmitter {
                   this.push({ ch: 'notify', payload: { id: `acp-queue-fail-${Date.now()}`, method: 'notify', notifyType: 'error', message: res.error } })
                 }
               })
+          } else if (authBlipRetry && !turn.stopped) {
+            void this.continueAntigravityAfterAuthBlip(connection, owner)
           } else if (connection.mcpStale && connection.session === session) {
             this.scheduleAntigravityMcpRefresh(0)
           }
