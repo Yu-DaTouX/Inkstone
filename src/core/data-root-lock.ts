@@ -22,8 +22,9 @@ function ownerAlive(owner: { pid: number; image?: string }): boolean {
   try {
     process.kill(owner.pid, 0)
   } catch (probeError) {
-    if ((probeError as NodeJS.ErrnoException).code !== 'ESRCH') throw probeError
-    return false
+    const code = (probeError as NodeJS.ErrnoException).code
+    if (code === 'ESRCH') return false
+    if (code !== 'EPERM') throw probeError
   }
   const expected = typeof owner.image === 'string' ? owner.image.toLowerCase() : OWN_IMAGE
   const actual = runningImage(owner.pid)
@@ -76,7 +77,7 @@ export async function lockDataRoot(root: string): Promise<() => Promise<void>> {
         continue
       }
       if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) throw new Error('数据目录写入锁无效，拒绝启动')
-      if (ownerAlive(owner)) throw new Error(`数据目录正由进程 ${owner.pid} 使用`)
+      if (ownerAlive(owner)) throw new Error(`数据目录正由进程 ${owner.pid} 使用，请先关闭正在运行的砚（包括以管理员身份运行的）后重试`)
       if (attempt !== 0) throw new Error('数据目录锁竞争，请稍后重试')
       const current = JSON.parse(await readFile(join(lock, 'owner.json'), 'utf8')) as typeof owner
       if (current.nonce !== owner.nonce) throw new Error('数据目录锁已变化')
