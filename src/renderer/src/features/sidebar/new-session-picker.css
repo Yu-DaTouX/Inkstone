@@ -27,9 +27,41 @@
   .nsp__list {
     display: flex;
     flex-direction: column;
-    max-height: min(420px, 60vh);
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .nsp__scroll {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: min(360px, 50vh);
     overflow-y: auto;
     scroll-padding-block: var(--s-4);
+  }
+
+  .nsp__actions {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: var(--s-4);
+    margin-inline: calc(var(--s-6) * -1);
+    margin-bottom: calc(var(--s-6) * -1);
+    padding: var(--s-6);
+    border-top: var(--hair, 1px) solid var(--line);
+  }
+
+  .nsp__option.nsp__action {
+    justify-content: center;
+    gap: var(--s-6);
+    min-height: var(--size-menu-row);
+    padding-inline: var(--s-8);
+    border-radius: var(--r-md);
+    color: var(--fg2);
+  }
+
+  .nsp__action > .ui-row__label {
+    flex: 0 1 auto;
   }
 
   .nsp__group-label {
@@ -82,6 +114,11 @@
     background: var(--press);
     box-shadow: inset 2px 0 0 var(--accent);
   }
+
+  .nsp__option.nsp__action[aria-selected='true'] {
+    box-shadow: none;
+    color: var(--fg);
+  }
 }
 
 @layer features {
@@ -99,6 +136,10 @@
   .nsp__more:hover {
     background: var(--hover, var(--press));
     color: var(--fg);
+  }
+
+  .nsp__option:not([aria-selected='true']):not(:hover) .nsp__more {
+    opacity: 0;
   }
 
   .nsp__count {

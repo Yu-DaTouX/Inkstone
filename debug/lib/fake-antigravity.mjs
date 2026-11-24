@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
@@ -135,6 +135,8 @@ for await (const line of input) {
       }
     })
   } else if (method === 'session/new') {
+    const startDelay = effortFailureFile ? Number(await readFile(join(dirname(effortFailureFile), 'start-delay.txt'), 'utf8').catch(() => '0')) : 0
+    if (startDelay > 0) await delay(startDelay)
     const blocked = await readFile(join(params.cwd, '.acp-fixture-login'), 'utf8').catch(() => '')
     if (noAuth || blocked === 'deny') send({ id, error: { code: -32000, message: 'Authentication required' } })
     else {

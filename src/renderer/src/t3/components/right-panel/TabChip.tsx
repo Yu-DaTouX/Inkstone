@@ -36,6 +36,7 @@ const KIND_ICONS: Record<
   changes: FileDiff,
   files: Files,
   terminal: TerminalSquare,
+  terminalTab: TerminalSquare,
   context: SquareStack,
   branch: GitBranch,
   logs: ScrollText,
@@ -68,6 +69,7 @@ export function SurfaceIcon({ surface }: { surface: TabSurface }): ReactNode {
 export interface TabChipProps {
   surface: TabSurface
   active: boolean
+  compact?: boolean
   controls?: string
   closeLabel: string
   focusable?: boolean
@@ -150,7 +152,7 @@ export function TabChip(props: TabChipProps) {
           />
         ) : null}
       </button>
-      <TooltipTrigger isDisabled={!surface.detail}>
+      <TooltipTrigger isDisabled={!surface.detail && !(props.compact && !active)}>
         <Focusable><button type="button" role="tab" id={`rp-tab-${surface.id}`} aria-selected={active} aria-controls={props.controls} tabIndex={props.focusable === false ? -1 : 0} className="t3-tab-chip__tab" onClick={props.onActivate}>
           <span className="t3-tab-chip__label">{surface.label}</span>
         </button></Focusable>

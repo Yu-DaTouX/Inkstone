@@ -5,6 +5,7 @@ import { keepRef } from '../stable-ref'
 import { sessionRuntimeKey, updateSessionRuntime } from '../session-runtime'
 import { THINK_LABEL } from '../think-label'
 import type { Store } from '../store'
+import { trackSessionSetting } from '../session-setting-changes'
 import { runtimeForState, sessionActionTarget } from './runtime'
 import { piCall, pushNotice, type SliceContext } from './shared'
 
@@ -144,7 +145,7 @@ export function createModelSlice({ set, get }: SliceContext): ModelSlice {
     } catch {
     }
   },
-  setModel: async (provider, id, quiet = false) => {
+  setModel: (provider, id, quiet = false) => trackSessionSetting(get().activeRunnerId, (async () => {
     const target = await sessionActionTarget(get)
     if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
     const res = await piCall(() => window.yan.setModel(provider, id, target.expected))
@@ -158,8 +159,8 @@ export function createModelSlice({ set, get }: SliceContext): ModelSlice {
     try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
     catch (error) { return { ok: false, error: uiText('state.error.modelPrefSaveFailed', { error: String(error) }) } }
     return res
-  },
-  setThinking: async (level) => {
+  })()),
+  setThinking: (level) => trackSessionSetting(get().activeRunnerId, (async () => {
     try {
       const target = await sessionActionTarget(get)
       if (!target) return
@@ -168,7 +169,7 @@ export function createModelSlice({ set, get }: SliceContext): ModelSlice {
     } catch {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotSwitchThinking')) })
     }
-  },
+  })()),
   setUltracode: async (on) => {
     const target = await sessionActionTarget(get)
     if (!target) return

@@ -119,9 +119,10 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
         />
       </InputGroup>
       <div ref={listRef} id="nsp-list" className="nsp__list" role="listbox" aria-label={t('sidebar.t3.newPicker.title')}>
+        <div className="nsp__scroll">
         <div className="nsp__group-label" aria-hidden="true">{t('sidebar.t3.newPicker.title')}</div>
         {projectCount === 0 ? <div className="nsp__empty">{t('sidebar.t3.newPicker.empty')}</div> : null}
-        {options.map((option, index) => {
+        {options.slice(0, projectCount).map((option, index) => {
           const selected = index === safeActive
           const common = {
             id: `nsp-opt-${index}`,
@@ -135,33 +136,46 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
             onMouseMove: () => { if (index !== safeActive) setActive(index) },
             onClick: () => run(option)
           } as const
-          if (option.kind === 'project') {
-            return (
-              <ListRow
-                key={option.project.id}
-                {...common}
-                className="nsp__option nsp__option--project"
-                icon={<ProjectFavicon project={{ projectId: option.project.id, displayName: option.label }} className="t3-favicon--lg" />}
-                description={<span title={option.project.cwd}>{option.project.cwd}</span>}
-                trailing={index < SHORTCUT_SLOTS ? <KbdGroup keys={[MOD_KEY, String(index + 1)]} /> : undefined}
-              >
-                {option.label}
-              </ListRow>
-            )
-          }
-          const isChoose = option.kind === 'choose'
+          if (option.kind !== 'project') return null
           return (
             <ListRow
-              key={option.kind}
+              key={option.project.id}
               {...common}
-              className={isChoose ? 'nsp__option nsp__option--first-action' : 'nsp__option'}
-              icon={isChoose ? <FolderOpen size={15} /> : <FolderPlus size={15} />}
-              data-testid={isChoose ? 'v3-new-session-choose' : 'v3-new-session-create'}
+              className="nsp__option nsp__option--project"
+              icon={<ProjectFavicon project={{ projectId: option.project.id, displayName: option.label }} className="t3-favicon--lg" />}
+              description={<span title={option.project.cwd}>{option.project.cwd}</span>}
+              trailing={index < SHORTCUT_SLOTS ? <KbdGroup keys={[MOD_KEY, String(index + 1)]} /> : undefined}
             >
-              {t(isChoose ? 'sidebar.t3.newPicker.chooseFolder' : 'sidebar.t3.newPicker.newFolder')}
+              {option.label}
             </ListRow>
           )
         })}
+        </div>
+        <div className="nsp__actions" role="group">
+          {options.slice(projectCount).map((option, offset) => {
+            const index = projectCount + offset
+            const isChoose = option.kind === 'choose'
+            return (
+              <ListRow
+                key={option.kind}
+                id={`nsp-opt-${index}`}
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === safeActive}
+                data-index={index}
+                hoverHighlight={false}
+                className="nsp__option nsp__action"
+                icon={isChoose ? <FolderOpen size={15} /> : <FolderPlus size={15} />}
+                onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                onMouseMove={() => { if (index !== safeActive) setActive(index) }}
+                onClick={() => run(option)}
+                data-testid={isChoose ? 'v3-new-session-choose' : 'v3-new-session-create'}
+              >
+                {t(isChoose ? 'sidebar.t3.newPicker.chooseFolder' : 'sidebar.t3.newPicker.newFolder')}
+              </ListRow>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

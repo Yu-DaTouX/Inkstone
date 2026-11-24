@@ -22,7 +22,10 @@ export function PanelTabList(props) {
 }
 export function PanelTab(props) {
   globalThis.__browserTabItems[props.id] = props
-  return <div role="tab">{props.label}</div>
+  return <div role="tab" data-testid={props.testId} aria-selected={props.active ? 'true' : 'false'}>{props.label}</div>
+}
+export function Dialog(props) {
+  return <div>{typeof props.children === 'function' ? props.children({ close: () => {} }) : props.children}</div>
 }
 export function CloseButton(props) { globalThis.__browserButtons[props['data-testid']] = props; return <button data-testid={props['data-testid']} /> }
 export function InputGroup(props) { return <div>{props.children}</div> }
@@ -116,14 +119,15 @@ try {
 
   const column = render({ title: {} })
   assert.equal(globalThis.__browserTitle, null, '标签不再挂到面板标题槽，避免两层标签叠在一起')
-  assert.match(column, /data-testid="browser-pane-tabs"/, '浏览器标签单独成一列')
+  assert.match(column, /data-testid="browser-pane-tabs"/, '浏览器标签使用横排标签栏')
+  assert.match(column, /data-layout="horizontal"/, '浏览器仅保留横排布局')
   assert.match(column, /Example/)
   assert.match(column, /Second/)
-  assert.match(column, /data-testid="browser-pane-tab-tab-a" data-selected="1"/, '当前标签标为选中')
+  assert.match(column, /data-testid="browser-pane-tab-tab-a" aria-selected="true"/, '当前标签标为选中')
   globalThis.__browserButtons['browser-pane-new-tab'].onPress()
-  globalThis.__browserTabItems['browser-pane-tab-tab-b'].onPress()
-  globalThis.__browserButtons['browser-pane-tab-close-tab-a'].onPress()
-  assert.deepEqual(calls, ['new', 'switch:tab-b', 'close:tab-a'], '标签列里新增、切换、关闭标签照常工作')
+  globalThis.__browserTabItems['tab-b'].onSelect()
+  globalThis.__browserTabItems['tab-a'].onClose()
+  assert.deepEqual(calls, ['new', 'switch:tab-b', 'close:tab-a'], '横排标签栏里新增、切换、关闭标签照常工作')
 
   const standalone = render(null)
   assert.match(standalone, /data-testid="browser-pane-tabs"/, '无标题槽的容器同样显示标签列')
@@ -161,7 +165,7 @@ try {
   const inactive = render({ title: {} }, { owner: { ...owner, active: false } })
   assert.match(inactive, /browser-pane-inactive/)
   const before = calls.length
-  globalThis.__browserTabItems['browser-pane-tab-tab-b']?.onPress()
+  globalThis.__browserTabItems['tab-b']?.onSelect()
   assert.equal(calls.length, before, '非活动会话里点标签不切换')
   console.log('test-v3-browser-header: 全部通过')
 } finally {

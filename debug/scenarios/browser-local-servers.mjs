@@ -35,8 +35,8 @@ export default async function run({ cdp, box, waitFor, check, sleep, shot, log, 
     await newSession(box.project)
     await turn(`DEVSERVER DEVSCRIPT=dev-server.mjs DEVPORT=${devPort}`, { timeout: 90000 })
     await sleep(1000)
-    await waitFor(`!!document.querySelector('[data-testid="browser-pane-tabs-toggle"]')`, 20000)
-    await ev(`localStorage.setItem('inkstone.browser.tabsPinned', '1'), document.querySelector('[data-testid="browser-pane-tabs-toggle"]').getAttribute('aria-pressed') === 'true' ? 0 : document.querySelector('[data-testid="browser-pane-tabs-toggle"]').click()`)
+    await waitFor(`!!document.querySelector('[data-testid="browser-pane-servers-menu"]')`, 20000)
+    await ev(`document.querySelector('[data-testid="browser-local-servers"]') ? 0 : document.querySelector('[data-testid="browser-pane-servers-menu"]').click()`)
     await sleep(600)
     const fixtureRow = (title, port) => `[...document.querySelectorAll('[data-testid="browser-local-server-row"]')].find(row => {
       const [name, address] = row.title.split('\\n');

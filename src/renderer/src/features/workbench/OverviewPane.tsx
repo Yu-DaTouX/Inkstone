@@ -267,6 +267,10 @@ function useQuotaTile(provider: string, running: boolean, t: TFunc, text: Overvi
 
 const RAIL_LIST_LIMIT = 5
 
+function samePath(path: string): string {
+  return path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
+}
+
 function glyphTone(tone: string | null | undefined): RailTone | undefined {
   return tone === 'ask' || tone === 'fail' ? tone : undefined
 }
@@ -768,6 +772,12 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const cwd = owner?.cwd || ''
   const session = useStore(useShallow(selectOverviewSession))
   const projectName = useStore((s) => cwd ? s.settings?.projectNames?.[cwd] || lastSegment(cwd) : '')
+  const projectHome = useStore((s) => {
+    const runner = owner?.runId ? s.runners.find((item) => (item.runId ?? item.id) === owner.runId) : undefined
+    const summary = !runner?.projectId && owner?.sessionId ? s.sessions.find((item) => item.id === owner.sessionId) : undefined
+    const projectId = runner?.projectId ?? summary?.projectId
+    return projectId ? s.settings?.projects.find((project) => project.id === projectId)?.cwd ?? '' : ''
+  })
   const messages = useStreamingThrottledStore((s) => s.messages)
   const { total: childTasks, live: childTasksLive } = useStore(useShallow((s) => {
     const { total, live } = viewSubagentMetrics(s)
@@ -813,14 +823,23 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   )
   const dirtyCount = repo?.changedCount ?? 0
   const worktree = !!repo && repo.repoId !== repo.worktreeId
+  const repoHome = worktree && projectHome && samePath(projectHome) !== samePath(cwd) ? projectHome : cwd
+  const worktreeName = worktree ? lastSegment(repo?.branch || cwd) : ''
   const environmentSummary = cwd ? (
     <span
       className="wb-env-sum"
       data-testid="wb-rail-env-summary"
-      title={[`${rail.local} · ${cwd}`, branch ? `${text.branchLabel} ${branch}` : '', dirtyCount > 0 ? rail.uncommittedFiles(dirtyCount) : '', gitRead.status === 'error' ? rail.gitReadFailed : ''].filter(Boolean).join('\n')}
+      title={[`${rail.local} · ${repoHome}`, worktree ? `${rail.worktree} · ${cwd}` : '', branch ? `${text.branchLabel} ${branch}` : '', dirtyCount > 0 ? rail.uncommittedFiles(dirtyCount) : '', gitRead.status === 'error' ? rail.gitReadFailed : ''].filter(Boolean).join('\n')}
     >
-      {branch ? <GitBranch size={12} aria-hidden className="wb-env-sum-icon" /> : null}
-      {branch ? (
+      {worktree ? (
+        <>
+          <FolderGit2 size={12} aria-label={rail.worktree} className="wb-env-sum-icon" />
+          <span className="wb-env-sum-name" data-truncate="start">
+            <bdi>{worktreeName}</bdi>
+          </span>
+        </>
+      ) : branch ? <GitBranch size={12} aria-hidden className="wb-env-sum-icon" /> : null}
+      {worktree ? null : branch ? (
         <span className="wb-env-sum-name" data-truncate="start">
           <bdi>{branch}</bdi>
         </span>
@@ -924,13 +943,13 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     onOpenView('files')
   }
 
-  const runRowAction = (key: RowMenuKey): void => {
+  const runRowAction = (key: RowMenuKey, path = cwd): void => {
     switch (key) {
       case 'reveal':
-        if (cwd) void window.yan.revealPath(cwd)
+        if (path) void window.yan.revealPath(path)
         return
       case 'copyPath':
-        if (cwd) void navigator.clipboard.writeText(cwd)
+        if (path) void navigator.clipboard.writeText(path)
         return
       case 'openFiles':
         onOpenView('files')
@@ -949,13 +968,13 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       body: cwd ? (
         <ul className="wb-ov-items">
           <RailRowMenu
-            label={cwd}
+            label={repoHome}
             truncate="start"
             icon={<Folder size={14} aria-hidden />}
-            title={`${rail.local} · ${cwd}`}
+            title={`${rail.local} · ${repoHome}`}
             menuLabel={rail.folderMenu}
             testId="wb-ov-path"
-            onAction={runRowAction}
+            onAction={(key) => runRowAction(key, repoHome)}
             items={[
               { key: 'reveal', label: rail.reveal, icon: <FolderOpen size={14} aria-hidden /> },
               { key: 'copyPath', label: rail.copyPath, icon: <Copy size={14} aria-hidden /> },
@@ -989,7 +1008,20 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
             />
           ) : null}
           {repo && worktree ? (
-            <RailRow label={rail.worktree} title={`${rail.worktreeTip}\n${repo.root}`} icon={<FolderGit2 size={14} aria-hidden />} data-testid="wb-rail-worktree" />
+            <RailRowMenu
+              label={cwd}
+              truncate="start"
+              icon={<FolderGit2 size={14} aria-label={rail.worktree} />}
+              title={`${rail.worktreeTip}\n${cwd}`}
+              menuLabel={rail.folderMenu}
+              testId="wb-rail-worktree"
+              onAction={(key) => runRowAction(key, cwd)}
+              items={[
+                { key: 'reveal', label: rail.reveal, icon: <FolderOpen size={14} aria-hidden /> },
+                { key: 'copyPath', label: rail.copyPath, icon: <Copy size={14} aria-hidden /> },
+                { key: 'openFiles', label: rail.openFiles, icon: <Files size={14} aria-hidden /> }
+              ]}
+            />
           ) : null}
           {!branch && (gitRead.status === 'pending' || gitRead.status === 'error') ? (
             <RailRow

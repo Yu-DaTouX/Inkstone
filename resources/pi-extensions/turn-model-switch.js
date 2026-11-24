@@ -50,8 +50,10 @@ export function createTurnModelSwitch(pi, root) {
   }
   const runIdle = (ctx) => !ctx?.hasPendingMessages?.()
   return {
-    onInput(event) {
-      if (event?.streamingBehavior === 'steer') queuedSteers += 1
+    async onInput(event, ctx) {
+      if (event?.streamingBehavior !== 'steer') return
+      queuedSteers += 1
+      if (!isHostAutomatedMessage(String(event.text ?? ''))) await apply(ctx)
     },
     async onAgentEnd(event, ctx) {
       queuedSteers = 0

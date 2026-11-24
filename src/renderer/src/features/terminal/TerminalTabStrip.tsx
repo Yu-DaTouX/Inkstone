@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bot, ChevronDown, Plus, SquareTerminal } from '../../ui/icons'
 import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover, StatusDot } from '../../ui'
 import { useT } from '../../i18n'
 import { hiddenTabsAt, tabStripLayout, type TabSpan } from '../preview/preview-tab-strip'
 import { nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'
+import type { DragStart } from '../sidebar/session-drag'
+
+const DRAG_OUT_PX = 12
 
 export interface TerminalTabItem {
   key: string
@@ -26,7 +29,8 @@ export interface TerminalTabStripProps {
   onSelect: (key: string) => void
   onClose: (key: string) => void
   onCloseOthers: (key: string) => void
-  onNew: () => void
+  onNew?: () => void
+  onDragOut?: (key: string, start: DragStart) => void
 }
 
 function measureTabSpans(strip: HTMLElement): TabSpan[] {
@@ -56,7 +60,8 @@ export function TerminalTabStrip({
   onSelect,
   onClose,
   onCloseOthers,
-  onNew
+  onNew,
+  onDragOut
 }: TerminalTabStripProps): JSX.Element {
   const t = useT()
   const stripRef = useRef<HTMLDivElement | null>(null)
@@ -134,6 +139,33 @@ export function TerminalTabStrip({
     setMenuKey(key)
   }
 
+  const watchDragOut = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!onDragOut || event.button !== 0 || !(event.target instanceof Element)) return
+    if (event.target.closest('.ui-ptab__close')) return
+    const key = event.target.closest<HTMLElement>('[data-panel-tab]')?.dataset.panelTab
+    const box = stripRef.current?.getBoundingClientRect()
+    if (!key || !box) return
+    const pointerId = event.pointerId
+    const stop = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    const move = (ev: PointerEvent): void => {
+      if (ev.pointerId !== pointerId) return
+      if (ev.buttons === 0) {
+        stop()
+        return
+      }
+      if (ev.clientY >= box.top - DRAG_OUT_PX && ev.clientY <= box.bottom + DRAG_OUT_PX) return
+      stop()
+      onDragOut(key, { button: 0, pointerId, clientX: ev.clientX, clientY: ev.clientY })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+  }
+
   const closeMenu = (): void => {
     const anchor = menuAnchor.current
     setMenuKey(null)
@@ -143,7 +175,7 @@ export function TerminalTabStrip({
   }
 
   return (
-    <div className="term-tabbar" data-inline={inline ? '' : undefined}>
+    <div className="term-tabbar" data-inline={inline ? '' : undefined} onPointerDownCapture={watchDragOut}>
       <PanelTabList
         ref={stripRef}
         label={text.tabs}
@@ -244,17 +276,19 @@ export function TerminalTabStrip({
           </Menu>
         </Popover>
       ) : null}
-      <IconButton
-        size="sm"
-        className="term-tab-new"
-        aria-label={text.newTab}
-        tooltip={text.newTab}
-        isDisabled={!canAdd}
-        onPress={onNew}
-        data-testid="terminal-new"
-      >
-        <Plus size={14} aria-hidden />
-      </IconButton>
+      {onNew ? (
+        <IconButton
+          size="sm"
+          className="term-tab-new"
+          aria-label={text.newTab}
+          tooltip={text.newTab}
+          isDisabled={!canAdd}
+          onPress={onNew}
+          data-testid="terminal-new"
+        >
+          <Plus size={14} aria-hidden />
+        </IconButton>
+      ) : null}
       {menuKey && tabs.some((tab) => tab.key === menuKey) ? (
         <Popover
           triggerRef={menuAnchor}

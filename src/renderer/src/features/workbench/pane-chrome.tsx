@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import type { DragStart } from '../sidebar/session-drag'
+import type { RightPanelSurface } from '../../state/right-panel'
 
 export interface PaneMenuItem {
   id: string
@@ -15,6 +17,7 @@ export interface PaneChrome {
   title: HTMLElement | null
   tools: HTMLElement | null
   setMenu: (source: string, items: readonly PaneMenuItem[]) => void
+  detach?: (start: DragStart, surface: RightPanelSurface, label: string) => void
 }
 
 export const PaneChromeContext = createContext<PaneChrome | null>(null)

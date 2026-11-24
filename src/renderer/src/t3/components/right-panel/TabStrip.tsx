@@ -123,10 +123,24 @@ export function TabStrip(props: TabStripProps) {
   const setAddMenuOpen = props.onAddMenuOpenChange ?? setAddMenuInternalOpen
   const [drag, setDrag] = useState<{ id: string; offsetX: number } | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
+  const compactRef = useRef({ on: false, need: 0 })
+  const [compact, setCompact] = useState(false)
 
   useEffect(() => () => dragCleanupRef.current?.(), [])
 
   const updateScrollState = useCallback((viewport: HTMLDivElement) => {
+    const compact = compactRef.current
+    const overflowing = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE
+    if (!compact.on && overflowing) {
+      compact.on = true
+      compact.need = viewport.scrollWidth
+      stripRef.current?.setAttribute('data-compact', '')
+      setCompact(true)
+    } else if (compact.on && viewport.clientWidth >= compact.need) {
+      compact.on = false
+      stripRef.current?.removeAttribute('data-compact')
+      setCompact(false)
+    }
     const hasOverflow = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE
     const canScrollLeft = hasOverflow && viewport.scrollLeft > TAB_SCROLL_EDGE_TOLERANCE
     const canScrollRight =
@@ -184,6 +198,14 @@ export function TabStrip(props: TabStripProps) {
     },
     [updateScrollState]
   )
+
+  useEffect(() => {
+    compactRef.current = { on: false, need: 0 }
+    stripRef.current?.removeAttribute('data-compact')
+    setCompact(false)
+    const viewport = tabScrollViewport(rootRef.current)
+    if (viewport) updateScrollState(viewport)
+  }, [props.tabs.length, updateScrollState])
 
   useEffect(() => {
     const viewport = tabScrollViewport(rootRef.current)
@@ -340,6 +362,7 @@ export function TabStrip(props: TabStripProps) {
                 key={surface.id}
                 surface={surface}
                 active={surface.id === props.activeId}
+                compact={compact}
                 focusable={props.tabs.some((tab) => tab.id === props.activeId) ? surface.id === props.activeId : surface.id === props.tabs[0]?.id}
                 controls={`rp-surface-${surface.id}`}
                 closeLabel={closeLabelOf(surface)}

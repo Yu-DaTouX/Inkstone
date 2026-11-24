@@ -2,21 +2,8 @@
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const layout = await compile('src/renderer/src/features/browser/tabs-layout.ts')
   const groups = await compile('src/renderer/src/features/browser/local-server-groups.ts')
   const overlay = await compile('src/renderer/src/features/browser/overlay.ts')
-
-  const store = new Map()
-  const storage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) }
-  ok(layout.readTabsLayout(storage) === 'vertical', '默认竖排')
-  layout.writeTabsLayout('horizontal', storage)
-  ok(layout.readTabsLayout(storage) === 'horizontal', '横排偏好写入后读回')
-  store.set(layout.TABS_LAYOUT_KEY, 'diagonal')
-  ok(layout.readTabsLayout(storage) === 'vertical', '未知值回落竖排')
-  ok(layout.pinnedTabsShown(true, 'vertical', 720) === true, '宽面板固定态显示')
-  ok(layout.pinnedTabsShown(true, 'vertical', 400) === false, '窄面板固定态按收起显示')
-  ok(layout.pinnedTabsShown(true, 'vertical', 0) === true, '尚未测量时保持偏好')
-  ok(layout.pinnedTabsShown(true, 'horizontal', 900) === false, '横排没有固定列')
 
   const servers = [
     { host: '127.0.0.1', port: 5173, title: 'Vite' },

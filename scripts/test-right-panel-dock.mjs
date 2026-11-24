@@ -91,4 +91,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const half = drag.predictedDockBox(layout, { kind: 'dock', side: 'left' }, { left: 2000, bottom: 280, right: 720 })
   ok(half.width === 400 - 16, '左侧停靠预览最多占对话区一半', JSON.stringify(half))
   ok(drag.droppedEntry(entry, 'terminal', { kind: 'dock', side: 'left' }).groups.length === 2, '落点执行与状态函数一致')
+
+  const termOnly = rp.upsertSurface(rp.EMPTY_PANEL, rp.toolSurface('terminal'))
+  const seed = { surface: rp.terminalTabSurface('t1', 'pwsh'), near: 'terminal' }
+  const seeded = drag.seededPanelEntry(termOnly, seed)
+  ok(sides(seeded) === 'right:terminal,term:t1' && seeded.active === 'terminal', '种子拖拽：先虚拟插到源面板所在列', sides(seeded))
+  const termSplit = drag.droppedEntry(seeded, 'term:t1', { kind: 'split', index: 0 })
+  ok(sides(termSplit) === 'right:terminal | right:term:t1' && termSplit.active === 'term:t1', '种子拖拽：拖到分栏拆成新列', sides(termSplit))
+  const termLeft = drag.droppedEntry(seeded, 'term:t1', { kind: 'dock', side: 'left' })
+  ok(sides(termLeft) === 'right:terminal | left:term:t1' && termLeft.open, '种子拖拽：拖到左侧成独立磁贴且右栏保留源面板', sides(termLeft))
+  const termBottom = drag.droppedEntry(seeded, 'term:t1', { kind: 'dock', side: 'bottom' })
+  ok(sides(termBottom) === 'right:terminal | bottom:term:t1', '种子拖拽：拖到底部成独立磁贴', sides(termBottom))
+  const termBack = rp.closeSurface(termLeft, 'term:t1')
+  ok(sides(termBack) === 'right:terminal' && rp.terminalTabIds(termBack).length === 0, '关闭终端磁贴：移出 detached 列表并保留主终端面板', sides(termBack))
 })

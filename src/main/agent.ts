@@ -5390,7 +5390,7 @@ export class AgentController extends EventEmitter {
         ...(turnUsage ? { usage: turnUsage } : {})
       }
       const usage = lastStep.antigravity.usage
-      if (status === 'stop' && continuousOutput && !lastStep.toolCalls?.length && usage && firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt) {
+      if (status === 'stop' && steps.length === 1 && continuousOutput && !lastStep.toolCalls?.length && usage && firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt) {
         const visible = usage.visibleOutput ?? (!lastStep.thinking && usage.thought === undefined ? usage.output : undefined)
         if (visible !== undefined && (usage.output === undefined || visible <= usage.output)) {
           lastStep.antigravity = { ...lastStep.antigravity, usage: { ...usage, visibleOutput: visible }, outputSpanMs: lastTextAt - firstTextAt }
@@ -5497,6 +5497,7 @@ export class AgentController extends EventEmitter {
           if (connection.session === session) this.bindAntigravity(connection, session)
           this.setAgentRunning(false)
           this.markStreaming(false)
+          this.settleExecutionAdmission()
           if (settledOutcome) this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome: settledOutcome } })
           if (autoCompactNeeded) {
             const triggerUsed = autoCompactNeeded.used

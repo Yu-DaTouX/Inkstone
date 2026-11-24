@@ -4,6 +4,7 @@ import type { ExpectedRuntimeOwner, SessionState } from '../../../../shared/ipc'
 import { pick } from '../../../../shared/ui-lang'
 import type { HostT } from '../../lib/host-actions'
 import { composerDraftForView, composerDraftKey, composerSubmitIdentity, type ComposerSubmitIdentity } from '../../state/composer-recovery'
+import { sessionSettingsPending, sessionSettingsSettled } from '../../state/session-setting-changes'
 import { expectedRuntimeFor } from '../../state/slices/runtime'
 import { useStore } from '../../state/store'
 import { loadDraft, restoreDraft, saveDraft } from './draft-store'
@@ -30,23 +31,30 @@ export async function inheritAntigravitySelection(selection: InheritedSelection,
   setThinking: (effort: string) => Promise<CapabilityResult>
 }): Promise<CapabilityResult> {
   const matchesModel = (state: SessionState | null) => state?.model?.provider === ANTIGRAVITY_PROVIDER && state.model.id === selection.modelId
-  if (!ports.current()) return { ok: false }
+  const changed = { ok: false, error: pick('工作树会话已变化。', 'The worktree session changed.') }
+  const step = (result: CapabilityResult): CapabilityResult | null =>
+    !result.ok ? { ok: false, error: result.error ?? pick('设置未被接受。', 'The setting was not accepted.') } : ports.current() ? null : changed
+  if (!ports.current()) return changed
   if (!matchesModel(ports.snapshot())) {
-    const result = await ports.select(selection.modelId)
-    if (!result.ok || !ports.current()) return { ok: false, error: result.error }
+    const failed = step(await ports.select(selection.modelId))
+    if (failed) return failed
   }
   if (selection.mode && ports.snapshot()?.antigravity?.mode !== selection.mode) {
-    const result = await ports.setMode(selection.mode)
-    if (!result.ok || !ports.current()) return { ok: false, error: result.error }
+    const failed = step(await ports.setMode(selection.mode))
+    if (failed) return failed
   }
   if (selection.effort && ports.snapshot()?.antigravity?.thinking?.current !== selection.effort) {
-    const result = await ports.setThinking(selection.effort)
-    if (!result.ok || !ports.current()) return { ok: false, error: result.error }
+    const failed = step(await ports.setThinking(selection.effort))
+    if (failed) return failed
   }
   const final = ports.snapshot()
-  return { ok: ports.current() && matchesModel(final) &&
-    (!selection.mode || final?.antigravity?.mode === selection.mode) &&
-    (!selection.effort || final?.antigravity?.thinking?.current === selection.effort) }
+  if (!ports.current()) return changed
+  if (!final) return { ok: true }
+  return matchesModel(final) &&
+    (!selection.mode || final.antigravity?.mode === selection.mode) &&
+    (!selection.effort || final.antigravity?.thinking?.current === selection.effort)
+    ? { ok: true }
+    : { ok: false, error: pick('新会话没有确认 Antigravity 模型、权限档或思考档。', 'The new session did not confirm the Antigravity model, permission mode, or effort.') }
 }
 
 export type WorktreeOutcome =
@@ -77,14 +85,9 @@ function runtimeAlive(owner: ExpectedRuntimeOwner): boolean {
 async function applySelection(owner: ExpectedRuntimeOwner, selection: InheritedSelection, shown: () => boolean): Promise<boolean> {
   const report = (error?: string) => {
     useStore.getState().notify('error', [shown()
-      ? pick(
-          '工作树已创建，但未能继承 Antigravity 设置。草稿已保留，再次发送会重试继承。',
-          'Worktree created, but Antigravity settings could not be inherited. Your draft was kept; sending again retries setup.'
-        )
-      : pick(
-          '工作树会话没能完成 Antigravity 设置，消息没有发出，草稿留在原会话。',
-          'The worktree session could not finish Antigravity setup. The message was not sent; your draft stays in the original session.'
-        ), error].filter(Boolean).join(' '))
+      ? pick('工作树已创建，但未能继承 Antigravity 设置。草稿已保留，再次发送会重试继承。', 'Worktree created, but Antigravity settings could not be inherited. Your draft was kept; sending again retries setup.')
+      : pick('工作树会话没能完成 Antigravity 设置，消息没有发出，草稿留在原会话。', 'The worktree session could not finish Antigravity setup. The message was not sent; your draft stays in the original session.'),
+    error].filter(Boolean).join(' '))
     return false
   }
   const call = (action: (expected: ExpectedRuntimeOwner) => Promise<CapabilityResult>) => action({ runId: owner.runId, generation: owner.generation })
@@ -97,12 +100,17 @@ async function applySelection(owner: ExpectedRuntimeOwner, selection: InheritedS
       setThinking: (effort) => call((expected) => window.yan.setThinking(effort, expected))
     })
     return result.ok || report(result.error)
-  } catch {
-    return report()
+  } catch (error) {
+    return report(error instanceof Error ? error.message : String(error))
   }
 }
 
 export async function materializeWorktreeIntent(t: HostT): Promise<WorktreeOutcome> {
+  const viewed = useStore.getState().activeRunnerId
+  if (sessionSettingsPending(viewed)) {
+    await sessionSettingsSettled(viewed)
+    if (useStore.getState().activeRunnerId !== viewed) return FAILED
+  }
   const before = useStore.getState()
   const active = before.activeRunnerId
   const pending = active && pendingSelections.get(active)

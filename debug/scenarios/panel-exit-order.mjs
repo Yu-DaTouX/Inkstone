@@ -13,7 +13,7 @@ export default async function run({ cdp, newSession, waitFor, sleep, check, shot
   await waitFor(`!document.documentElement.matches('[data-window-resizing], [data-motion-hold]') && document.querySelector('.v3-root[data-panel="closed"]') && !document.querySelector('.t3-rp--docked')`)
   const chromePositions = `() => {
     const x = id => Math.round(document.querySelector('[data-testid="'+id+'"]').getBoundingClientRect().left)
-    return [x('v3-head-panel-toggle'), x('v3-always-on-top'), x('v3-min'), x('v3-max'), x('v3-close')].join(',')
+    return [x('v3-head-panel-toggle'), x('v3-min'), x('v3-max'), x('v3-close')].join(',')
   }`
   const overviewX = `() => Math.round(document.querySelector('[data-testid="v3-head-sessionbar-toggle"]').getBoundingClientRect().left)`
   const tabX = `() => Math.round(document.querySelector('.t3-rp--docked [data-testid="rp-new-tab"]')?.getBoundingClientRect().left ?? -1)`
@@ -50,10 +50,10 @@ export default async function run({ cdp, newSession, waitFor, sleep, check, shot
       const hit=await ev(`(() => {
         const toggle=document.querySelector('[data-testid="v3-head-panel-toggle"]'), pin=document.querySelector('[data-testid="v3-always-on-top"]'), add=document.querySelector('.t3-rp--docked [data-testid="rp-new-tab"]')
         const r=toggle.getBoundingClientRect(), a=add.getBoundingClientRect()
-        return {noOverlap:a.right<=r.left, nearPin:pin.getBoundingClientRect().left-r.right<=8,
+        return {noOverlap:a.right<=r.left, pinInHeader:!!pin.closest('.v3-head-actions'),
           reachable:[toggle,pin,add].every(node=>{const b=node.getBoundingClientRect();return node.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))})}
       })()`)
-      check('右栏开关紧挨置顶，右栏标签栏与固定控件均可点击',hit.noOverlap&&hit.nearPin&&hit.reachable,hit)
+      check('置顶在聊天顶栏，右栏标签栏与固定控件均可点击',hit.noOverlap&&hit.pinInHeader&&hit.reachable,hit)
       await shot('right-panel-open-dark')
     }
     await ev(`(()=>{

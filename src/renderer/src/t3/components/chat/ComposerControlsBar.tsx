@@ -5,6 +5,7 @@ import { useComposerTraits } from '../../adapters/composer-thinking'
 import { usePermissionAdapter } from '../../adapters/composer-permissions'
 import { useStore } from '../../../state/store'
 import { sessionActionTarget } from '../../../state/slices/runtime'
+import { trackSessionSetting } from '../../../state/session-setting-changes'
 import { ListBoxItem, Select } from '../../../ui'
 import { fastModeSupported } from '../../../../../shared/fast-mode'
 import { UltracodeConfirmDialog } from '../../../patterns/UltracodeConfirmDialog'
@@ -68,16 +69,18 @@ export function ComposerControlsBar(props: {
   const changeAcpMode = async (mode: string) => {
     if (changingAcpMode || mode === acpMode) return
     setChangingAcpMode(true)
-    try {
-      const target = await sessionActionTarget(useStore.getState)
-      if (!target) return
-      const result = await window.yan.antigravity.setMode(mode, target.expected)
-      if (!result.ok && target.current()) useStore.getState().notify('error', result.error ?? t('state.error.settingFailed'))
-    } catch (error) {
-      useStore.getState().notify('error', String(error))
-    } finally {
-      setChangingAcpMode(false)
-    }
+    await trackSessionSetting(useStore.getState().activeRunnerId, (async () => {
+      try {
+        const target = await sessionActionTarget(useStore.getState)
+        if (!target) return
+        const result = await window.yan.antigravity.setMode(mode, target.expected)
+        if (!result.ok && target.current()) useStore.getState().notify('error', result.error ?? t('state.error.settingFailed'))
+      } catch (error) {
+        useStore.getState().notify('error', String(error))
+      } finally {
+        setChangingAcpMode(false)
+      }
+    })())
   }
   const approvalLabel = acpMode === 'default'
     ? lang === 'en-US' ? 'CLI default approval' : 'CLI 默认审批'

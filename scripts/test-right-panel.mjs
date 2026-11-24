@@ -219,6 +219,33 @@ export async function runRightPanelTests(ok) {
     ok(rp.panelGroups(rp.currentPanelEntry()).map((g) => g.size.toFixed(3)).join() === '1.000,1.000,1.000', '分列：已调过宽度后再拆，三列重新均分', rp.panelGroups(rp.currentPanelEntry()).map((g) => g.size))
     const dup = rp.sanitizeRightPanel({ version: 1, width: 900, byKey: { x: { open: true, focus: 5, groups: [{ active: 'files', surfaces: [{ kind: 'files' }], size: -1 }, { active: 'files', surfaces: [{ kind: 'files' }], size: 2 }] } }, order: ['x'] }).byKey.x
     ok(rp.panelGroups(dup).length === 1 && rp.panelGroups(dup)[0].size === 1 && dup.focus === 0, '存档：跨列重复标签与异常列宽被清理', dup)
+
+    const termSaved = rp.sanitizeRightPanel({
+      version: 1,
+      width: 720,
+      order: ['s:term'],
+      byKey: {
+        's:term': {
+          open: true,
+          groups: [
+            { active: 'terminal', surfaces: [{ kind: 'terminal' }, { kind: 'terminalTab', terminalId: '../bad' }, { kind: 'terminalTab', terminalId: 'term-1', title: 'pwsh' }], size: 1 },
+            { active: 'term:term-2', surfaces: [{ kind: 'terminalTab', terminalId: 'term-2', title: 'node' }], size: 1, side: 'left' }
+          ]
+        }
+      }
+    }).byKey['s:term']
+    ok(rp.terminalTabIds(termSaved).join() === 'term-1,term-2', '存档：保留合法 terminalTab 并丢弃非法 terminalId', termSaved)
+    ok(termSaved.surfaces.find((s) => s.id === 'term:term-1')?.title === 'pwsh', '存档：保留 terminalTab 标题', termSaved)
+
+    let nearBase = rp.EMPTY_PANEL
+    nearBase = rp.upsertSurface(nearBase, rp.toolSurface('files'))
+    nearBase = rp.upsertSurface(nearBase, rp.toolSurface('terminal'))
+    nearBase = rp.splitSurface(nearBase, 'terminal')
+    const inserted = rp.insertSurfaceNear(nearBase, rp.terminalTabSurface('t1', 'bash'), 'terminal')
+    ok(rp.panelGroups(inserted)[1].surfaces.map((s) => s.id).join() === 'terminal,term:t1' && inserted.active === 'terminal', 'insertSurfaceNear：插到目标所在列且不抢焦点', inserted)
+    ok(rp.insertSurfaceNear(inserted, rp.terminalTabSurface('t1', 'bash'), 'terminal') === inserted, 'insertSurfaceNear：已存在时不变')
+    const fallback = rp.insertSurfaceNear(nearBase, rp.terminalTabSurface('t2', 'zsh'), 'missing')
+    ok(rp.terminalTabIds(fallback).join() === 't2' && fallback.active === 'terminal', 'insertSurfaceNear：找不到邻近项时回退追加且不抢活动项', fallback)
   } finally {
     if (hadStorage) globalThis.localStorage = previousStorage
     else delete globalThis.localStorage

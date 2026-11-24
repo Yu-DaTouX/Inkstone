@@ -15,7 +15,8 @@ export type T3SurfaceKind =
   | "branch"
   | "logs"
   | "quota"
-  | "subagent";
+  | "subagent"
+  | "terminalTab";
 
 export interface T3Surface {
   id: string;

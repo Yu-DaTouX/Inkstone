@@ -30,6 +30,7 @@ export interface FilesPaneProps {
 export interface TerminalPaneProps {
   owner: WorkspaceOwner
   visible?: boolean
+  only?: string
 }
 
 export interface BrowserPaneProps {

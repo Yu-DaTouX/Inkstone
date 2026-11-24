@@ -1,5 +1,5 @@
 import { memo, useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Columns3, PanelLeft, SquarePen } from '../ui/icons'
+import { ArrowLeft, Columns3, PanelLeft, Pin, SquarePen } from '../ui/icons'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings } from './shortcuts'
@@ -50,6 +50,7 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
     return sessionProjectLabel(summary, s.settings?.projects ?? [], s.settings?.projectNames ?? {}).label
   })
   const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
+  const alwaysOnTop = useStore((s) => s.alwaysOnTop)
 
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
 
@@ -105,8 +106,17 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
 
       <div className="v3-head-drag" aria-hidden />
 
-      {route === 'chat' ? (
-        <div className="v3-head-actions">
+      <div className="v3-head-actions">
+        <IconButton
+          tooltip={text.keepOnTop}
+          aria-label={text.keepOnTop}
+          aria-pressed={alwaysOnTop}
+          onPress={() => void useStore.getState().toggleAlwaysOnTop()}
+          data-testid="v3-always-on-top"
+        >
+          <Pin size={16} />
+        </IconButton>
+        {route === 'chat' ? (
           <IconButton
             tooltip={sessionBarLabel}
             aria-label={sessionBarLabel}
@@ -116,8 +126,8 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
           >
             <Columns3 size={16} />
           </IconButton>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </header>
   )
 })

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, Camera, ExternalLink, Globe, LogIn, Monitor, MonitorSmartphone, Pin, PinOff, Plus, RotateCw, Server, Smartphone, Tablet, X } from '../../ui/icons'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
+import { ArrowLeft, ArrowRight, Camera, ExternalLink, Globe, LogIn, Monitor, MonitorSmartphone, Plus, RotateCw, Server, Smartphone, Tablet, X } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import {
@@ -22,10 +22,8 @@ import {
   Notice,
   PanelTab,
   PanelTabList,
-  RailRow,
   SiteIcon,
   Spinner,
-  Splitter,
   TextField,
   showToast
 } from '../../ui'
@@ -35,7 +33,6 @@ import { addressShown, addressTarget, isBlankAddress, nextAddressInput, nextAddr
 import type { BrowserPaneProps } from '../workbench/types'
 import { BROWSER_VIEWPORT_PRESETS, browserViewportPreset, isBrowserViewport, type BrowserViewport } from '../../../../shared/browser-viewport'
 import { browserText } from './browser-text'
-import { BROWSER_NARROW_PANE, pinnedTabsShown, readTabsLayout, writeTabsLayout, type BrowserTabsLayout } from './tabs-layout'
 import { browserControlAllowed } from './ownership'
 import { BrowserStartPage } from './BrowserStartPage'
 import { LocalServerList } from './LocalServerList'
@@ -44,53 +41,11 @@ import './browser.css'
 
 export type { BrowserPaneProps }
 
-const TABS_PINNED_KEY = 'inkstone.browser.tabsPinned'
 const START_PAGE_TOKEN = 'browser-start-page'
 const LOAD_ERROR_TOKEN = 'browser-load-error'
 const VIEWPORTS = ['responsive', ...Object.keys(BROWSER_VIEWPORT_PRESETS)].filter(isBrowserViewport)
 const VIEWPORT_ICONS = { responsive: MonitorSmartphone, mobile: Smartphone, tablet: Tablet, desktop: Monitor } as const
-const TABS_WIDTH_KEY = 'inkstone.browser.tabsWidth'
-const PEEK_TOKEN = 'browser-tabs-peek'
-const PEEK_OPEN_MS = 380
-const PEEK_CLOSE_MS = 300
 const UNFREEZE_MS = 160
-const TABS_LAYOUTS: readonly BrowserTabsLayout[] = ['vertical', 'horizontal']
-const TABS_WIDTH_MIN = 160
-const TABS_WIDTH_MAX = 480
-const TABS_WIDTH_DEFAULT = 240
-
-function readTabsWidth(): number {
-  try {
-    const value = Number(localStorage.getItem(TABS_WIDTH_KEY))
-    return Number.isFinite(value) && value > 0 ? Math.min(TABS_WIDTH_MAX, Math.max(TABS_WIDTH_MIN, value)) : TABS_WIDTH_DEFAULT
-  } catch {
-    return TABS_WIDTH_DEFAULT
-  }
-}
-
-function writeTabsWidth(width: number): void {
-  try {
-    localStorage.setItem(TABS_WIDTH_KEY, String(Math.round(width)))
-  } catch {
-    return
-  }
-}
-
-function readTabsPinned(): boolean {
-  try {
-    return localStorage.getItem(TABS_PINNED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeTabsPinned(pinned: boolean): void {
-  try {
-    localStorage.setItem(TABS_PINNED_KEY, pinned ? '1' : '0')
-  } catch {
-    return
-  }
-}
 
 function tabHost(url: string): string {
   try {
@@ -186,48 +141,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     return useStore.getState().acquireOverlayBlocker(LOAD_ERROR_TOKEN)
   }, [loadFailed])
 
-  const [tabsPinned, setTabsPinned] = useState(readTabsPinned)
-  const [tabsLayout, setTabsLayout] = useState<BrowserTabsLayout>(() => readTabsLayout())
-  const [tabsWidth, setTabsWidth] = useState(readTabsWidth)
-  const [paneEl, setPaneEl] = useState<HTMLDivElement | null>(null)
-  const [paneWidth, setPaneWidth] = useState(0)
-  const [peek, setPeek] = useState(false)
-  const peekTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const resizingTabs = useRef(false)
-  const pointerFocus = useRef(false)
-  const vertical = tabsLayout === 'vertical'
-  const narrow = paneWidth > 0 && paneWidth < BROWSER_NARROW_PANE
-  const pinnedShown = pinnedTabsShown(tabsPinned, tabsLayout, paneWidth)
-  const peeking = vertical && peek && !pinnedShown
-  const tabsCollapsed = vertical && !pinnedShown && !peek
-  useEffect(() => {
-    if (!paneEl || typeof ResizeObserver === 'undefined') return
-    const measure = (): void => setPaneWidth(Math.round(paneEl.getBoundingClientRect().width))
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(paneEl)
-    return () => observer.disconnect()
-  }, [paneEl])
-  const openPeek = (): void => {
-    clearTimeout(peekTimer.current)
-    setPeek(true)
-  }
-  const closePeek = (): void => {
-    clearTimeout(peekTimer.current)
-    setPeek(false)
-  }
-  const schedulePeek = (open: boolean, delay: number): void => {
-    clearTimeout(peekTimer.current)
-    peekTimer.current = setTimeout(() => (open ? openPeek() : closePeek()), delay)
-  }
-  useEffect(() => () => clearTimeout(peekTimer.current), [])
-  useEffect(() => {
-    if (!vertical || pinnedShown) setPeek(false)
-  }, [vertical, pinnedShown])
-  useEffect(() => {
-    if (!peeking || !surfaceActive) return
-    return useStore.getState().acquireOverlayBlocker(PEEK_TOKEN)
-  }, [peeking, surfaceActive])
   const nativeVisible = useStore((s) => s.browserNativeVisible)
   const cover = useStore((s) => s.browserCover)
   const [coverHeld, setCoverHeld] = useState(false)
@@ -240,23 +153,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     return () => clearTimeout(timer)
   }, [nativeVisible])
   const occludedShot = surfaceActive && !startPage && !loadFailed && (!nativeVisible || coverHeld) ? cover : null
-  const toggleTabs = (): void => {
-    closePeek()
-    setTabsPinned((prev) => {
-      writeTabsPinned(!prev)
-      return !prev
-    })
-  }
-  const changeLayout = (next: BrowserTabsLayout): void => {
-    closePeek()
-    setTabsLayout(next)
-    writeTabsLayout(next)
-  }
-  const resizeTabs = (width: number): void => {
-    setTabsWidth(width)
-    writeTabsWidth(width)
-  }
-
   const shownUrl = isBlankAddress(state.url) ? '' : state.url
   const [draft, setDraft] = useState(shownUrl)
   const [dirty, setDirty] = useState(false)
@@ -471,18 +367,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
       <Plus size={14} aria-hidden="true" />
     </IconButton>
   )
-  const collapseButton = narrow ? null : (
-    <IconButton
-      aria-label={tabsPinned ? text.collapseTabs : text.expandTabs}
-      tooltip={tabsPinned ? text.collapseTabs : text.expandTabs}
-      size="sm"
-      aria-pressed={tabsPinned}
-      data-testid="browser-pane-tabs-toggle"
-      onPress={toggleTabs}
-    >
-      {tabsPinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}
-    </IconButton>
-  )
   const selectBrowserTab = (id: string): void => {
     if (controlRef.current && id !== state.activeTabId) void window.yan.browser.switchTab(id)
   }
@@ -542,119 +426,19 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
       {importButton}
     </nav>
   )
-  const tabColumn = (
-    <nav
-      className="v3-browser__tabcol"
-      aria-label={text.tabLabel}
-      data-testid="browser-pane-tabs"
-      data-collapsed={tabsCollapsed ? '1' : undefined}
-      data-peek={peeking ? '1' : undefined}
-      onPointerEnter={() => {
-        if (pinnedShown) return
-        if (peek) clearTimeout(peekTimer.current)
-        else schedulePeek(true, PEEK_OPEN_MS)
-      }}
-      onPointerLeave={() => {
-        if (pinnedShown || resizingTabs.current) return
-        if (peek) schedulePeek(false, PEEK_CLOSE_MS)
-        else clearTimeout(peekTimer.current)
-      }}
-      onPointerDownCapture={() => {
-        pointerFocus.current = true
-        window.addEventListener('pointerup', () => requestAnimationFrame(() => { pointerFocus.current = false }), { once: true, capture: true })
-      }}
-      onFocus={() => {
-        if (!pinnedShown && !peek && !pointerFocus.current) openPeek()
-      }}
-      onBlur={(event) => {
-        if (!pinnedShown && !event.currentTarget.contains(event.relatedTarget as Node | null)) closePeek()
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && peeking) {
-          event.stopPropagation()
-          closePeek()
-        }
-      }}
-    >
-      {tabsCollapsed ? null : (
-        <Splitter
-          className="v3-browser__tabcol-resize ui-splitter--edge"
-          orientation="vertical"
-          value={tabsWidth}
-          min={TABS_WIDTH_MIN}
-          max={TABS_WIDTH_MAX}
-          step={8}
-          aria-label={text.resizeTabs}
-          data-testid="browser-pane-tabs-resize"
-          onPointerDownCapture={() => {
-            resizingTabs.current = true
-            window.addEventListener('pointerup', () => { resizingTabs.current = false }, { once: true, capture: true })
-          }}
-          onChange={resizeTabs}
-          onReset={() => resizeTabs(TABS_WIDTH_DEFAULT)}
-        />
-      )}
-      <div className="v3-browser__tabcol-head">
-        {tabsCollapsed ? null : <span className="v3-browser__tabcol-title">{t('browser.tabs')}</span>}
-        {newTabButton}
-      </div>
-      <ul className="v3-browser__tablist">
-        {tabEntries.map((tab) => {
-          return (
-            <RailRow
-              key={tab.id}
-              label={tab.label}
-              iconOnly={tabsCollapsed}
-              title={tab.title}
-              icon={tab.icon}
-              selected={tab.id === state.activeTabId}
-              actionReveal="hover"
-              data-testid={`browser-pane-tab-${tab.id}`}
-              buttonProps={{ 'data-testid': `browser-pane-tab-select-${tab.id}` }}
-              onPress={() => selectBrowserTab(tab.id)}
-              action={
-                <CloseButton
-                  aria-label={t('browser.closeTab')}
-                  tooltip={t('browser.closeTab')}
-                  data-testid={`browser-pane-tab-close-${tab.id}`}
-                  onPress={() => closeBrowserTab(tab.id)}
-                />
-              }
-            />
-          )
-        })}
-      </ul>
-      <LocalServerList
-        active={visible}
-        compact
-        iconOnly={tabsCollapsed}
-        onOpen={(url) => {
-          if (controlRef.current) void window.yan.browser.newTab(url)
-        }}
-      />
-      <div className="v3-browser__tabcol-foot">
-        {importButton}
-        {collapseButton}
-      </div>
-    </nav>
-  )
-
   return (
     <div
-      ref={setPaneEl}
       className="v3-browser v3-browser--split"
       data-testid="browser-pane"
       data-active={surfaceActive ? '1' : '0'}
-      data-layout={tabsLayout}
-      data-tabs-collapsed={tabsCollapsed ? '1' : undefined}
-      data-tabs-pinned={pinnedShown ? '1' : undefined}
-      style={{ '--tabs-w': `${tabsWidth}px` } as CSSProperties}
+      data-layout="horizontal"
     >
-      {vertical ? tabColumn : tabRow}
+      {tabRow}
       <div className="v3-browser__main">
 
-      <div className="v3-browser__toolbar">
+      <div className="v3-browser__toolbar" data-testid="browser-pane-toolbar">
         <IconButton
+          size="sm"
           aria-label={t('browser.back')}
           tooltip={t('browser.back')}
           data-testid="browser-pane-back"
@@ -666,6 +450,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <ArrowLeft size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
+          size="sm"
           aria-label={t('browser.forward')}
           tooltip={t('browser.forward')}
           data-testid="browser-pane-forward"
@@ -677,6 +462,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <ArrowRight size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
+          size="sm"
           aria-label={state.loading ? t('browser.stop') : t('browser.reload')}
           tooltip={state.loading ? t('browser.stop') : t('browser.reload')}
           tooltipPlacement="left"
@@ -706,8 +492,8 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
               setDirty(true)
             }}
           >
-            <InputGroup>
-              <InputGroupAddon align="start">
+            <InputGroup size="sm">
+              <InputGroupAddon align="start" className="v3-browser__address-icon">
                 {state.loading ? <Spinner size="sm" label={t('browser.loading')} /> : <Globe size={14} aria-hidden="true" />}
               </InputGroupAddon>
               <InputGroupInput
@@ -722,6 +508,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
         </form>
 
         <IconButton
+          size="sm"
           aria-label={t('browser.openExternal')}
           tooltip={t('browser.openExternal')}
           data-testid="browser-pane-open-external"
@@ -733,6 +520,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <ExternalLink size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
+          size="sm"
           aria-label={text.shotToChat}
           tooltip={text.shotToChat}
           data-testid="browser-pane-shot"
@@ -742,7 +530,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           <Camera size={14} aria-hidden="true" />
         </IconButton>
         <MenuTrigger>
-          <IconButton aria-label={text.viewMenuValue(text.viewportName(viewport))} tooltip={text.viewMenuValue(text.viewportName(viewport))} tooltipPlacement="left" aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">
+          <IconButton size="sm" aria-label={text.viewMenuValue(text.viewportName(viewport))} tooltip={text.viewMenuValue(text.viewportName(viewport))} tooltipPlacement="left" aria-pressed={viewport !== 'responsive'} data-testid="browser-pane-viewport-menu">
             <ViewportIcon size={14} aria-hidden="true" />
           </IconButton>
           <Popover placement="bottom end" surface="solid">
@@ -761,24 +549,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
                 {VIEWPORTS.map((item) => (
                   <MenuItem key={item} id={item} textValue={text.viewportName(item)} data-testid={`browser-pane-viewport-${item}`}>
                     {text.viewportName(item)}
-                  </MenuItem>
-                ))}
-              </MenuSection>
-              <MenuSection
-                id="tabs-layout"
-                selectionMode="single"
-                disallowEmptySelection
-                selectedKeys={[`layout-${tabsLayout}`]}
-                onSelectionChange={(keys) => {
-                  const key = keys === 'all' ? null : String([...keys][0] ?? '')
-                  const next = TABS_LAYOUTS.find((item) => `layout-${item}` === key)
-                  if (next) changeLayout(next)
-                }}
-              >
-                <Header>{text.tabsLayout}</Header>
-                {TABS_LAYOUTS.map((item) => (
-                  <MenuItem key={item} id={`layout-${item}`} textValue={text.tabsLayoutNames[item]} data-testid={`browser-pane-layout-${item}`}>
-                    {text.tabsLayoutNames[item]}
                   </MenuItem>
                 ))}
               </MenuSection>

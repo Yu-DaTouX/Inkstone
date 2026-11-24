@@ -1,10 +1,12 @@
-import { Check, ChevronRight, FolderCog, FolderMinus, FolderPlus, Layers, MoreHorizontal, Search } from '../../ui/icons'
+import { Check, ChevronRight, FolderCog, FolderMinus, FolderOpen, FolderPlus, GitBranch, Layers, MoreHorizontal, Search } from '../../ui/icons'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react'
 import { useT } from '../../i18n'
 import { Dialog, InputGroup, InputGroupAddon, InputGroupInput, isImeComposing, ListRow, Popover } from '../../ui'
 import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 import { SidebarHeaderIconButton } from '../../t3/components/sidebar/SidebarThreadHeader'
 import { NO_PROJECT_ID } from '../../t3/adapters/sidebar/types'
+import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
+import { openAddProjectPalette } from '../projects'
 import type { SidebarProjectView } from '../../t3/adapters/sidebar/types'
 import './new-session-picker.css'
 
@@ -14,7 +16,11 @@ type FilterOption =
   | { kind: 'none' }
   | { kind: 'archived-toggle'; count: number }
   | { kind: 'archived'; project: SidebarProjectView }
-  | { kind: 'add' }
+  | { kind: 'choose' }
+  | { kind: 'create' }
+  | { kind: 'more' }
+
+const ACTIONS: FilterOption[] = [{ kind: 'choose' }, { kind: 'create' }, { kind: 'more' }]
 
 interface Props {
   value: string | null
@@ -69,9 +75,11 @@ export function FolderManager({ value, projects, onChange, onManage, onAdd, coun
                 if (anchorRef.current) onManage(projectId, anchorRef.current)
               }}
               counts={counts}
-              onAdd={() => {
+              onAction={(kind) => {
                 setOpen(false)
-                onAdd()
+                if (kind === 'choose') void newSessionInPickedFolder(t)
+                else if (kind === 'create') openAddProjectPalette('new')
+                else onAdd()
               }}
             />
           )}
@@ -81,12 +89,12 @@ export function FolderManager({ value, projects, onChange, onManage, onAdd, coun
   )
 }
 
-function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
+function FilterBody({ value, projects, onPick, onManage, onAction, counts }: {
   value: string | null
   projects: readonly SidebarProjectView[]
   onPick: (value: string | null) => void
   onManage: (projectId: string) => void
-  onAdd: () => void
+  onAction: (kind: 'choose' | 'create' | 'more') => void
   counts: ReadonlyMap<string, number>
 }): ReactElement {
   const t = useT()
@@ -108,8 +116,7 @@ function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
       list.push({ kind: 'archived-toggle', count: archived.length })
       if (archivedOpen || needle) list.push(...archived.map((project) => ({ kind: 'archived' as const, project })))
     }
-    list.push({ kind: 'add' })
-    return list
+    return [...list, ...ACTIONS]
   }, [archivedOpen, projects, query, counts, value])
 
   const safeActive = Math.min(active, options.length - 1)
@@ -124,7 +131,7 @@ function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
     else if (option.kind === 'none') onPick(NO_PROJECT_ID)
     else if (option.kind === 'project') onPick(option.project.projectId)
     else if (option.kind === 'archived-toggle') setArchivedOpen((previous) => !previous)
-    else if (option.kind === 'add') onAdd()
+    else if (option.kind === 'choose' || option.kind === 'create' || option.kind === 'more') onAction(option.kind)
     else onManage(option.project.projectId)
   }
 
@@ -173,7 +180,8 @@ function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
         />
       </InputGroup>
       <div ref={listRef} id="pf-list" className="nsp__list" role="listbox" aria-label={t('sidebar.t3.filter.label')}>
-        {options.map((option, index) => {
+        <div className="nsp__scroll">
+        {options.slice(0, -ACTIONS.length).map((option, index) => {
           const selected = index === safeActive
           const common = {
             id: `pf-opt-${index}`,
@@ -194,9 +202,7 @@ function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
           if (option.kind === 'none') {
             return <ListRow key="none" {...common} className="nsp__option" icon={<FolderMinus size={15} />} trailing={<>{count(NO_PROJECT_ID)}{check('none')}</>} data-testid="v3-project-filter-none">{t('sidebar.t3.filter.none')}</ListRow>
           }
-          if (option.kind === 'add') {
-            return <ListRow key="add" {...common} className="nsp__option nsp__option--first-action" icon={<FolderPlus size={15} />} data-testid="v3-folder-manager-add">{t('sidebar.t3.folders.add')}</ListRow>
-          }
+          if (option.kind === 'choose' || option.kind === 'create' || option.kind === 'more') return null
           if (option.kind === 'archived-toggle') {
             return (
               <ListRow key="archived-toggle" {...common} aria-expanded={archivedOpen || !!query.trim()} className="nsp__option nsp__option--first-action nsp__group-toggle" icon={<ChevronRight size={15} className="nsp__chevron" />} data-testid="v3-project-filter-archived">
@@ -237,6 +243,34 @@ function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
             </ListRow>
           )
         })}
+        </div>
+        <div className="nsp__actions" role="group">
+          {ACTIONS.map((option, offset) => {
+            const index = options.length - ACTIONS.length + offset
+            const kind = option.kind as 'choose' | 'create' | 'more'
+            const Icon = kind === 'choose' ? FolderOpen : kind === 'create' ? FolderPlus : GitBranch
+            const label = kind === 'choose' ? t('sidebar.t3.newPicker.chooseFolder') : kind === 'create' ? t('sidebar.t3.newPicker.newFolder') : t('sidebar.t3.folders.more')
+            return (
+              <ListRow
+                key={kind}
+                id={`pf-opt-${index}`}
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === safeActive}
+                data-index={index}
+                hoverHighlight={false}
+                className="nsp__option nsp__action"
+                icon={<Icon size={15} />}
+                onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                onMouseMove={() => { if (index !== safeActive) setActive(index) }}
+                onClick={() => run(option)}
+                data-testid={`v3-folder-manager-${kind}`}
+              >
+                {label}
+              </ListRow>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

@@ -20,7 +20,7 @@ export default async function run({ cdp, check, waitFor, sleep, shot, newSession
     const url = `http://127.0.0.1:${port}/`
     const started = Date.now()
     await ev(`window.__yanStore.getState().openLink(${JSON.stringify(url)}); 0`)
-    await waitFor(`window.__yanStore.getState().settings?.rightPanelOpen === true && !!document.querySelector('[data-testid="browser-pane-tabs-toggle"]')`, 30000, 25)
+    await waitFor(`window.__yanStore.getState().settings?.rightPanelOpen === true && !!document.querySelector('[data-testid="browser-pane-servers-menu"]')`, 30000, 25)
     const shown = Date.now() - started
     log('面板出现耗时 ms', shown)
     await shot('browser-open-fast-shown')

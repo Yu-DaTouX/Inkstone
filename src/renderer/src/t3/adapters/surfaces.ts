@@ -25,6 +25,7 @@ export function surfaceLabelOf(surface: RightPanelSurface, ctx: SurfaceLabelCont
   if (surface.kind === 'file') return baseName(surface.path)
   if (surface.kind === 'pullRequest') return ctx.pullRequestLabel(surface.number)
   if (surface.kind === 'subagent') return ctx.subagentLabel(surface.runId)
+  if (surface.kind === 'terminalTab') return surface.title || ctx.toolLabel('terminal')
   return ctx.toolLabel(surface.kind)
 }
 
@@ -34,6 +35,7 @@ export function t3SurfaceOf(surface: RightPanelSurface, ctx: SurfaceLabelContext
   if (surface.kind === 'file') return { ...base, ...badge, detail: surface.path }
   if (surface.kind === 'pullRequest') return { ...base, ...badge, detail: surface.title ? `#${surface.number} ${surface.title}` : undefined, tone: surface.state }
   if (surface.kind === 'subagent') return { ...base, ...badge, detail: surface.runId }
+  if (surface.kind === 'terminalTab') return { ...base, ...badge, detail: `${ctx.toolLabel('terminal')} · ${base.label}` }
   if (surface.kind === 'terminal') return { ...base, ...badge, detail: ctx.terminalLabel ?? undefined }
   return { ...base, ...badge }
 }

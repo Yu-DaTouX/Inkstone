@@ -199,7 +199,7 @@
       border-color: var(--workspace-border);
     }
 
-    :is(.v3-browser__tabrow, .v3-browser__tabcol, .term-pane-bar, .v3-files-col) {
+    :is(.v3-browser__tabrow, .term-pane-bar, .v3-files-col) {
       border-color: var(--workspace-border);
     }
 

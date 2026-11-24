@@ -10,6 +10,7 @@ export type RightPanelSurface =
   | { id: `file:${string}`; kind: 'file'; path: string }
   | { id: `pr:${number}`; kind: 'pullRequest'; number: number; title?: string; state?: PrSurfaceState; tab?: PrDetailTab }
   | { id: `subagent:${string}`; kind: 'subagent'; runId: string }
+  | { id: `term:${string}`; kind: 'terminalTab'; terminalId: string; title?: string }
 
 export type PanelDockSide = 'left' | 'right' | 'bottom'
 export type PanelEdgeDock = Exclude<PanelDockSide, 'right'>
@@ -96,6 +97,15 @@ export function pullRequestSurface(number: number, meta: { title?: string; state
 
 export function subagentSurface(runId: string): RightPanelSurface {
   return { id: `subagent:${runId}`, kind: 'subagent', runId }
+}
+
+export function terminalTabSurface(terminalId: string, title?: string): RightPanelSurface {
+  return { id: `term:${terminalId}`, kind: 'terminalTab', terminalId, ...(title ? { title } : {}) }
+}
+
+export function terminalTabIds(entry: RightPanelEntry | undefined): string[] {
+  if (!entry) return []
+  return panelGroups(entry).flatMap((group) => group.surfaces.flatMap((surface) => (surface.kind === 'terminalTab' ? [surface.terminalId] : [])))
 }
 
 export function panelMaxWidth(room: number): number {
@@ -255,6 +265,14 @@ export function upsertSurface(entry: RightPanelEntry, surface: RightPanelSurface
     activate ? at : panelFocus(entry),
     true
   )
+}
+
+export function insertSurfaceNear(entry: RightPanelEntry, surface: RightPanelSurface, nearId: string): RightPanelEntry {
+  const groups = panelGroups(entry)
+  if (groupIndexOf(groups, surface.id) >= 0) return entry
+  const at = groupIndexOf(groups, nearId)
+  if (at < 0) return upsertSurface(entry, surface, false)
+  return mapGroup(entry, at, (group) => ({ ...group, surfaces: [...group.surfaces, surface] }), panelFocus(entry), true)
 }
 
 export function activateSurface(entry: RightPanelEntry, id: string): RightPanelEntry {
@@ -491,6 +509,10 @@ export function sanitizeSurface(value: unknown): RightPanelSurface | null {
     const runId = text(raw.runId)
     return RUN_ID.test(runId) ? subagentSurface(runId) : null
   }
+  if (kind === 'terminalTab') {
+    const terminalId = text(raw.terminalId)
+    return RUN_ID.test(terminalId) ? terminalTabSurface(terminalId, text(raw.title).slice(0, 200) || undefined) : null
+  }
   return null
 }
 
@@ -606,6 +628,7 @@ export interface RightPanelState {
   open: (surface: RightPanelSurface) => void
   updateSurface: (key: string, surface: RightPanelSurface) => void
   activate: (id: string) => void
+  insertNear: (surface: RightPanelSurface, nearId: string) => void
   close: (id: string) => void
   closeOthers: (id: string) => void
   closeRight: (id: string) => void
@@ -676,6 +699,7 @@ export const useRightPanel = create<RightPanelState>((set, get) => {
       if (next !== current) set({ byKey: { ...state.byKey, [key]: next } })
     },
     activate: (id) => update((entry) => activateSurface(entry, id)),
+    insertNear: (surface, nearId) => update((entry) => insertSurfaceNear(entry, surface, nearId)),
     close: (id) => update((entry) => closeSurface(entry, id)),
     closeOthers: (id) => update((entry) => closeOtherSurfaces(entry, id)),
     closeRight: (id) => update((entry) => closeSurfacesToRight(entry, id)),

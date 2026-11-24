@@ -1311,7 +1311,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const acpProgress = withGeminiProgressNotes(acpWithNote.process, turn.model)
     ok(acpProgress[0].commentary.length === 1 && acpProgress[0].commentary[0].text === '正在检查配置。', 'Gemini 已有正文进度句时不重复叠加思考标题')
 
-    const { stepDecode } = await compile('src/shared/session-metrics.ts')
+    const { stepDecode, stepSpeeds, windowSpeed } = await compile('src/shared/session-metrics.ts')
     const thinkingStep = {
       id: 'a-speed',
       role: 'assistant',
@@ -1322,6 +1322,61 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
     const decoded = stepDecode(thinkingStep)
     ok(decoded !== null && decoded.ms === 500 && decoded.tokens > 0, 'Antigravity 开启思考档且未单报 visibleOutputTokens 时回退 generationTiming 估算速度', JSON.stringify(decoded))
+
+    const summaryOnlyStep = {
+      id: 'a-think-only',
+      role: 'assistant',
+      model: 'antigravity/gemini-4-neon',
+      text: '',
+      thinking: '**Checking layout**\n\nInspecting toolbar css.',
+      toolCalls: [{ id: 'tc-read', name: 'Read', status: 'ok', args: { path: 'a.css' } }],
+      generationTiming: { startEvent: 'turn_start', ttftMs: 150, decodeMs: 12000, durationMs: 12150 }
+    }
+    ok(stepDecode(summaryOnlyStep) === null, 'Antigravity 仅含压缩思考摘要的步骤不拿摘要字数除以思考耗时算出失真低速', JSON.stringify(stepDecode(summaryOnlyStep)))
+
+    const multiStepTurn = [
+      { id: 'u-ms', role: 'user', text: '修复多个问题', timestamp: 1000 },
+      summaryOnlyStep,
+      {
+        id: 'a-mid',
+        role: 'assistant',
+        model: 'antigravity/gemini-4-neon',
+        text: '正在修改样式并运行验证。'.repeat(6),
+        toolCalls: [{ id: 'tc-edit', name: 'Edit', status: 'ok', args: { path: 'a.css' } }],
+        generationTiming: { startEvent: 'turn_start', ttftMs: 120, decodeMs: 1500, outputDecodeMs: 900, durationMs: 1620 }
+      },
+      {
+        id: 'a-tail',
+        role: 'assistant',
+        model: 'antigravity/gemini-4-neon',
+        text: '全部修复完成，共改了两处文件。',
+        antigravity: { usage: { input: 300000, cacheRead: 9900000, output: 47500, visibleOutput: 4000, totalTokens: 10247500 }, outputSpanMs: 2870 },
+        generationTiming: { startEvent: 'turn_start', ttftMs: 150, decodeMs: 1000, outputDecodeMs: 300, durationMs: 1150 }
+      }
+    ]
+    const tailSingle = stepDecode(multiStepTurn[3])
+    const multiSpeeds = stepSpeeds(multiStepTurn, 12)
+    const multiWin = windowSpeed(multiStepTurn, null, null)
+    const multiMetrics = projectSessionMetrics(multiStepTurn, null, { antigravity: true })
+    ok(
+      tailSingle !== null && tailSingle.ms === 300 && tailSingle.tokens < 100 &&
+      multiSpeeds.length === 2 && multiSpeeds.every((v) => v > 20 && v < 200) &&
+      multiWin !== null && multiWin.speed > 20 && multiWin.speed < 200 &&
+      multiMetrics.tps !== null && multiMetrics.tps > 20 && multiMetrics.tps < 200,
+      'Antigravity 多步回合及历史脏 outputSpanMs 不会用整轮 visibleOutput 除以尾步耗时算出 1393 tok/s 爆表速度',
+      JSON.stringify({ tailSingle, multiSpeeds, multiWin, tps: multiMetrics.tps })
+    )
+
+    const cleanSingleTurn = {
+      id: 'a-clean-single',
+      role: 'assistant',
+      model: 'antigravity/gemini-4-neon',
+      text: '这是一段单步纯文本回复。'.repeat(10),
+      antigravity: { usage: { input: 500, output: 140, visibleOutput: 140, totalTokens: 640 }, outputSpanMs: 2000 },
+      generationTiming: { startEvent: 'turn_start', ttftMs: 120, decodeMs: 2000, outputDecodeMs: 2000, durationMs: 2120 }
+    }
+    const cleanDecoded = stepDecode(cleanSingleTurn)
+    ok(cleanDecoded?.tokens === 140 && cleanDecoded?.ms === 2000, 'Antigravity 真正单步纯文本回合仍沿用精确 visibleOutput / outputSpanMs', JSON.stringify(cleanDecoded))
 
     const { classifyModelError, modelErrorCause } = await compile('src/shared/model-errors.ts')
     const { errorCardModel } = await compile('src/renderer/src/features/session/turn-lines.ts')

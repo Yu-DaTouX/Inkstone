@@ -221,18 +221,19 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
     />
   )
 
-  const renderSurface = (surface: RightPanelSurface, shown: boolean): ReactNode =>
+  const renderSurface = (surface: RightPanelSurface, shown: boolean, live = entry.open): ReactNode =>
     owner ? (
       <SurfaceView
         key={surface.id}
         surface={surface}
         panelKey={panelKey}
         shown={shown}
-        live={entry.open}
+        live={live}
         owner={owner}
         panes={panes}
         text={text}
         panel={panel}
+        room={room}
         closeTip={closeTipOf(surface)}
         onRequestActivation={onRequestActivation}
       />
@@ -315,7 +316,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, leftSlot, b
           <div className="rp-surfaces">
             {group.surfaces
               .filter((item) => visitedIds.has(item.id) || item.id === group.active)
-              .map((surface) => renderSurface(surface, surface.id === group.active))}
+              .map((surface) => renderSurface(surface, surface.id === group.active, true))}
           </div>
         </section>
       </DockFrame>,
@@ -561,11 +562,12 @@ interface SurfaceViewProps {
   panes: WorkbenchPaneComponents
   text: WorkbenchText
   panel: RightPanelText
+  room: number
   closeTip: string
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
 }
 
-function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel, onRequestActivation }: SurfaceViewProps): ReactElement {
+function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel, room, onRequestActivation }: SurfaceViewProps): ReactElement {
   const [titleEl, setTitleEl] = useState<HTMLElement | null>(null)
   const [toolsEl, setToolsEl] = useState<HTMLElement | null>(null)
   const [menuGroups, setMenuGroups] = useState<ReadonlyMap<string, readonly PaneMenuItem[]>>(() => new Map())
@@ -586,9 +588,17 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
       return next
     })
   }, [])
-  const chrome = useMemo<PaneChrome>(() => ({ title: titleEl, tools: toolsEl, setMenu }), [titleEl, toolsEl, setMenu])
+  const chrome = useMemo<PaneChrome>(
+    () => ({
+      title: titleEl,
+      tools: toolsEl,
+      setMenu,
+      detach: (start, seed, label) => startPanelTabDrag(start, seed.id, label, room, panel, { surface: seed, near: surface.id })
+    }),
+    [titleEl, toolsEl, setMenu, room, panel, surface.id]
+  )
   const previewPath = usePreviewBindings((s) => previewPathFor(s.bindings, owner.key))
-  const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' ? surface.kind : null
+  const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' && surface.kind !== 'terminalTab' ? surface.kind : null
   const blocked = !!tool && !owner.active && WORKBENCH_ACTIVE_TABS.has(tool)
   const extraItems: PaneMenuItem[] =
     tool === 'files' && previewPath
@@ -622,6 +632,9 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
     )
   } else if (surface.kind === 'subagent') {
     body = <SubagentTranscriptPane runId={surface.runId} />
+  } else if (surface.kind === 'terminalTab') {
+    const Terminal = panes.terminal
+    body = Terminal ? <Terminal owner={owner} visible={shown && live} only={surface.terminalId} /> : null
   } else if (surface.kind === 'file') {
     const Preview = panes.preview
     body = Preview ? <Preview owner={owner} path={surface.path} visible={shown && live} treeShown={false} standalone /> : null

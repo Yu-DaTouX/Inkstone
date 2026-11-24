@@ -45,16 +45,11 @@ export interface BrowserText {
   importFailed: string
   importError(reason: BrowserLoginImportStatus['error']): string
   startAddress: string
-  collapseTabs: string
-  resizeTabs: string
   viewport: string
   viewportName(viewport: BrowserViewport): string
-  expandTabs: string
   viewMenu: string
   viewMenuValue(name: string): string
   loadFailureReason(failure: BrowserLoadFailure): string | null
-  tabsLayout: string
-  tabsLayoutNames: Record<'vertical' | 'horizontal', string>
   localServersOther: (n: number) => string
   searchEngine: string
   searchEngineCustom: string
@@ -126,11 +121,8 @@ const ZH: BrowserText = {
     import_failed: '未能完成 Cookie 写入，请重新发起导入。'
   })[reason ?? 'import_failed'],
   startAddress: '搜索或输入网址',
-  collapseTabs: '取消固定，悬停时展开',
-  resizeTabs: '调整标签栏宽度',
   viewport: '视口尺寸',
   viewportName: viewport => viewportLabel(viewport, '自适应面板', { mobile: '手机', tablet: '平板', desktop: '桌面' }),
-  expandTabs: '固定展开标签栏',
   viewMenu: '视图',
   viewMenuValue: (name) => `视图：${name}`,
   loadFailureReason: (failure) => {
@@ -140,8 +132,6 @@ const ZH: BrowserText = {
     if (failure.proxyReason === 'connect-timeout' || failure.proxyReason === 'upstream-timeout') return `连接 ${target.host} 超时`
     return `连接失败（${failure.proxyReason}）`
   },
-  tabsLayout: '标签布局',
-  tabsLayoutNames: { vertical: '竖排标签', horizontal: '横排标签' },
   localServersOther: (n) => `其他 ${n}`,
   searchEngine: '搜索引擎',
   searchEngineCustom: '自定义…',
@@ -203,11 +193,8 @@ const EN: BrowserText = {
     import_failed: 'Cookie writing did not complete. Start the import again.'
   })[reason ?? 'import_failed'],
   startAddress: 'Search or enter address',
-  collapseTabs: 'Unpin, expand on hover',
-  resizeTabs: 'Resize tab bar',
   viewport: 'Viewport size',
   viewportName: viewport => viewportLabel(viewport, 'Fit panel', { mobile: 'Mobile', tablet: 'Tablet', desktop: 'Desktop' }),
-  expandTabs: 'Pin tabs open',
   viewMenu: 'View',
   viewMenuValue: (name) => `View: ${name}`,
   loadFailureReason: (failure) => {
@@ -217,8 +204,6 @@ const EN: BrowserText = {
     if (failure.proxyReason === 'connect-timeout' || failure.proxyReason === 'upstream-timeout') return `connection to ${target.host} timed out`
     return `connection failed (${failure.proxyReason})`
   },
-  tabsLayout: 'Tab layout',
-  tabsLayoutNames: { vertical: 'Vertical tabs', horizontal: 'Horizontal tabs' },
   localServersOther: (n) => `Other ${n}`,
   searchEngine: 'Search engine',
   searchEngineCustom: 'Custom…',

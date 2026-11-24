@@ -1,7 +1,7 @@
 @layer features {
   .v3-root {
-    --v3-win-button: 46px;
-    --v3-win-space: calc(3 * var(--v3-win-button) + var(--size-btn) + 2 * var(--s-8));
+    --v3-win-button: 40px;
+    --v3-win-space: calc(3 * var(--v3-win-button));
     position: relative;
     display: flex;
     height: 100%;
@@ -274,8 +274,12 @@
     user-select: none;
   }
 
+  .v3-head[data-chat] {
+    --head-actions-space: calc(2 * var(--size-btn) + var(--s-4) + var(--s-8));
+  }
+
   .v3-root:has(> .v3-main > .v3-head[data-chat]) {
-    --v3-win-space: calc(3 * var(--v3-win-button) + 2 * var(--size-btn) + var(--s-4) + 2 * var(--s-8));
+    --v3-win-space: calc(3 * var(--v3-win-button) + var(--size-btn) + 2 * var(--s-4));
   }
 
   .v3-root[data-panel='inline'] .v3-head {
@@ -388,7 +392,7 @@
 
   .v3-win-actions {
     gap: var(--s-4);
-    padding-inline: var(--s-8);
+    padding-inline: var(--s-4);
   }
 
   .v3-winbtn {

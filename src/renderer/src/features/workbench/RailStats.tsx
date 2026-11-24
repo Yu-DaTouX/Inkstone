@@ -64,8 +64,7 @@ export function useRailStats(enabled: boolean, timeline?: UIMessage[]): RailStat
     const liveId = liveStepId(source, streaming)
     const { settled, live } = splitLiveStep(messages, liveId)
     const floor = latencyFloor(settled)
-    const last = settled.findLast((message) => message.role === 'assistant')
-    const reading = antigravity ? (live ? windowSpeed(settled, live, floor) : last ? windowSpeed([last], null, floor) : null) : windowSpeed(settled, live, floor)
+    const reading = windowSpeed(settled, live, floor)
     const identity = JSON.stringify([view, antigravity, messages.findLast((message) => message.role === 'user')?.id])
     speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
     const heldReading = speedHold.current.sample

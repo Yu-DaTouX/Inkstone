@@ -6,6 +6,7 @@ import { useI18n, useT } from '../../i18n'
 import { resourceOwner } from '../../state/resource-owners'
 import { useStore } from '../../state/store'
 import { useTerminalJobs } from '../../state/terminal-jobs'
+import { panelKeyFor, terminalTabIds, terminalTabSurface, useRightPanel } from '../../state/right-panel'
 import { showPreview } from '../workbench/preview-bindings'
 import { isMacPlatform, resolveTerminalPath, terminalSelectionBlock, type TerminalFileLink, type TerminalLinkMatch } from './terminal-links'
 import { terminalText } from './terminal-text'
@@ -29,6 +30,7 @@ import { onActivateTerminal } from './terminal-activate'
 import { onTerminalTabRequest } from './terminal-requests'
 import { useTerminalAgentActivity, useTerminalAgentSeen } from './terminal-agent-activity'
 import type { TerminalPaneProps } from '../workbench/types'
+import type { DragStart } from '../sidebar/session-drag'
 import type { TerminalAvailability, TerminalProcessEntry, TerminalProcessList, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
 import './terminal.css'
 
@@ -104,7 +106,11 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? '')
 }
 
-export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.Element {
+function tabTerminalId(tab: TabSeed, states: Readonly<Record<string, TerminalViewState>>): string | null {
+  return states[tab.key]?.terminalId ?? (typeof tab.adopt === 'object' ? tab.adopt.id : null)
+}
+
+export function TerminalPane({ owner, visible = true, only }: TerminalPaneProps): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = useMemo(() => terminalText(lang), [lang])
@@ -130,6 +136,19 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
   const [view, setView] = useState<TerminalViewSettings>(() => terminalViewStore().get())
   const [tabs, setTabs] = useState<TabSeed[]>([])
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
+  const panelKey = panelKeyFor(owner.sessionId)
+  const detachedKey = useRightPanel((s) => (only ? '' : terminalTabIds(s.byKey[panelKey]).join('|')))
+  const detachedRef = useRef<ReadonlySet<string>>(new Set())
+  detachedRef.current = new Set(detachedKey ? detachedKey.split('|') : [])
+  const onlyRef = useRef(only)
+  onlyRef.current = only
+  const dropTile = useCallback((): void => {
+    const id = onlyRef.current
+    const panel = useRightPanel.getState()
+    if (id && panel.key === panelKeyFor(ownerRef.current.sessionId)) panel.close(terminalTabSurface(id).id)
+  }, [])
   const [active, setActive] = useState<string | null>(null)
   const [states, setStates] = useState<Record<string, TerminalViewState>>({})
   const [phase, setPhase] = useState<PanePhase>('idle')
@@ -154,6 +173,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const selectPaneJobs = useMemo(createTerminalPaneJobsSelector, [])
   const paneJobs = useTerminalJobs((s) => selectPaneJobs(s.jobs, paneTerminalIds))
   const [childProcs, setChildProcs] = useState<Record<string, string | null>>({})
+  const childProcsRef = useRef(childProcs)
+  childProcsRef.current = childProcs
   const awaitingConfirm = useStore((s) => terminalAwaitingConfirm(s.approvals, owner.sessionId))
 
   useEffect(() => {
@@ -236,7 +257,17 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     }
     if (my !== loadSeq.current) return
     const owned = selectOwnedTerminals(list, current.key, resourceOwner)
-    const seeds: TabSeed[] = owned.map((snapshot) => ({ key: snapshot.id, adopt: { id: snapshot.id } }))
+    const single = onlyRef.current
+    if (single && !owned.some((snapshot) => snapshot.id === single)) {
+      setTabs([])
+      setActive(null)
+      setPhase('ready')
+      dropTile()
+      return
+    }
+    const seeds: TabSeed[] = single
+      ? [{ key: single, adopt: { id: single } }]
+      : owned.filter((snapshot) => !detachedRef.current.has(snapshot.id)).map((snapshot) => ({ key: snapshot.id, adopt: { id: snapshot.id } }))
     if (seeds.length === 0) {
       localSeq.current += 1
       seeds.push({ key: `local-${localSeq.current}`, adopt: 'none' })
@@ -244,7 +275,44 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     setTabs(seeds)
     setActive((previous) => (previous && seeds.some((seed) => seed.key === previous) ? previous : seeds[seeds.length - 1]?.key ?? null))
     setPhase('ready')
-  }, [text.listFailed])
+  }, [text.listFailed, dropTile])
+
+  const seenDetached = useRef('')
+  useEffect(() => {
+    if (only) return
+    const before = seenDetached.current ? seenDetached.current.split('|') : []
+    seenDetached.current = detachedKey
+    const now = new Set(detachedKey ? detachedKey.split('|') : [])
+    const gone = new Set(tabsRef.current.filter((tab) => now.has(tabTerminalId(tab, statesRef.current) ?? '')).map((tab) => tab.key))
+    if (gone.size) {
+      const rest = tabsRef.current.filter((tab) => !gone.has(tab.key))
+      setTabs(rest)
+      setStates((previous) => {
+        const next = { ...previous }
+        for (const key of gone) delete next[key]
+        return next
+      })
+      setActive((previous) => (previous && !gone.has(previous) ? previous : rest[rest.length - 1]?.key ?? null))
+    }
+    const returned = before.filter((id) => !now.has(id))
+    if (!returned.length || loadedFor.current !== ownerRef.current.key) return
+    const ownerKey = ownerRef.current.key
+    void window.yan.terminal
+      .list()
+      .then((list) => {
+        if (ownerRef.current.key !== ownerKey) return
+        const back = selectOwnedTerminals(list, ownerKey, resourceOwner).filter(
+          (snapshot) => returned.includes(snapshot.id) && !detachedRef.current.has(snapshot.id)
+        )
+        if (!back.length) return
+        setTabs((previous) => [
+          ...previous,
+          ...back.filter((snapshot) => !findTerminalTabKey(previous, statesRef.current, snapshot.id)).map((snapshot) => ({ key: snapshot.id, adopt: { id: snapshot.id } }))
+        ])
+        setActive(back[back.length - 1].id)
+      })
+      .catch(() => undefined)
+  }, [detachedKey, only])
 
   useEffect(() => {
     loadedFor.current = null
@@ -323,7 +391,11 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   useEffect(
     () =>
       onActivateTerminal((key, id) => {
-        if (key !== ownerRef.current.key) return
+        if (key !== ownerRef.current.key || onlyRef.current) return
+        if (detachedRef.current.has(id)) {
+          useRightPanel.getState().activate(terminalTabSurface(id).id)
+          return
+        }
         const tabKey = findTerminalTabKey(tabs, statesRef.current, id)
         if (!tabKey) return
         setActive(tabKey)
@@ -335,7 +407,11 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   useEffect(
     () =>
       onTerminalTabRequest((request) => {
-        if (request.ownerKey !== ownerRef.current.key) return
+        if (request.ownerKey !== ownerRef.current.key || onlyRef.current) return
+        if (detachedRef.current.has(request.terminalId)) {
+          useRightPanel.getState().activate(terminalTabSurface(request.terminalId).id)
+          return
+        }
         if (loadedFor.current !== ownerRef.current.key) {
           loadedFor.current = ownerRef.current.key
           void load()
@@ -356,7 +432,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   )
 
   const newTab = useCallback((): void => {
-    if (!canAddTerminalTab(tabs.length)) return
+    if (onlyRef.current || !canAddTerminalTab(tabs.length)) return
     localSeq.current += 1
     const seed: TabSeed = { key: `local-${localSeq.current}`, adopt: 'none' }
     setTabs((previous) => [...previous, seed])
@@ -375,8 +451,9 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         return next
       })
       setActive(pickActiveAfterClose(tabs.map((tab) => tab.key), key, active))
+      if (onlyRef.current) dropTile()
     },
-    [active, tabs]
+    [active, tabs, dropTile]
   )
 
   const closeOthersNow = useCallback(
@@ -411,6 +488,12 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         return
       }
       const ids = new Set(targets.map((state) => state.terminalId as string))
+      const knownIdle = targets.every((state) => !state.status && childProcsRef.current[state.terminalId as string] === null)
+      const liveJob = useTerminalJobs.getState().jobs.some((job) => ids.has(job.terminalId) && isLiveAgentJob(job))
+      if (knownIdle && !liveJob) {
+        commitClose({ keys, keep })
+        return
+      }
       const [lists] = await Promise.all([
         Promise.all(targets.map((state) => window.yan.terminal.processes(state.terminalId as string).catch(() => NO_PROCESSES))),
         useTerminalJobs.getState().load().catch(() => undefined)
@@ -660,6 +743,16 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   })
   labelsRef.current = new Map(items.map((item) => [item.key, item.label]))
 
+  const detach = chrome?.detach
+  const dragOut =
+    detach && !only
+      ? (key: string, start: DragStart): void => {
+          const id = statesRef.current[key]?.terminalId
+          if (!id) return
+          const label = labelsRef.current.get(key) || text.tabTitle
+          detach(start, terminalTabSurface(id, label), label)
+        }
+      : undefined
   const strip =
     tabs.length > 0 ? (
       <TerminalTabStrip
@@ -672,7 +765,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         onSelect={selectTab}
         onClose={closeTab}
         onCloseOthers={closeOthers}
-        onNew={newTab}
+        onNew={only ? undefined : newTab}
+        onDragOut={dragOut}
       />
     ) : null
 
@@ -799,7 +893,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
           </div>
         ) : null}
 
-        {!inactive && !unavailable && !loadFailed && !failed && tabs.length === 0 ? (
+        {!only && !inactive && !unavailable && !loadFailed && !failed && tabs.length === 0 ? (
           <div className="term-pane-cover">
             <EmptyState
               size="sm"

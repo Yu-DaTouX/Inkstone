@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { RotateCw, Server } from '../../ui/icons'
+import { RotateCw } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { Button, CollapsibleChevron, IconButton, Notice, RailRow, SiteIcon, StopButton } from '../../ui'
 import type { LocalServerInfo } from '../../../../shared/local-servers'
@@ -12,7 +12,6 @@ const REFRESH_INTERVAL_MS = 5000
 interface LocalServerListProps {
   active: boolean
   compact?: boolean
-  iconOnly?: boolean
   onOpen: (url: string) => void
 }
 
@@ -33,7 +32,7 @@ function ServerFavicon({ url, mark }: { url: string; mark: string }): ReactEleme
   )
 }
 
-export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServerListProps): ReactElement | null {
+export function LocalServerList({ active, compact, onOpen }: LocalServerListProps): ReactElement | null {
   const t = useT()
   const { lang } = useI18n()
   const text = browserText(lang)
@@ -96,31 +95,6 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
   }, [listEl, servers, otherOpen])
 
   const groups = groupLocalServers(servers)
-
-  if (iconOnly) {
-    if (groups.main.length === 0) return null
-    return (
-      <div className="v3-local-servers" data-compact="1" data-icon-only="1" data-ready="1" data-testid="browser-local-servers">
-        <span className="v3-local-servers__glyph" aria-hidden="true">
-          <Server size={14} />
-        </span>
-        <ul ref={setListEl} className="v3-local-servers__list" aria-label={t('browser.localServers')} data-more={more ? '1' : undefined} data-more-above={moreAbove ? '1' : undefined} data-testid="browser-local-servers-list">
-          {groups.main.map((server) => (
-            <RailRow
-              key={server.url}
-              iconOnly
-              label={`${server.title || server.processName || t('browser.localServersListening')} · ${server.host}:${server.port}`}
-              icon={<SiteIcon name={localServerMarkName(server)} variant="outline" className="v3-local-servers__mark" />}
-              title={server.url}
-              data-testid="browser-local-server-row"
-              buttonProps={{ 'data-testid': 'browser-local-server-open' }}
-              onPress={() => onOpen(server.url)}
-            />
-          ))}
-        </ul>
-      </div>
-    )
-  }
 
   const row = (server: LocalServerInfo): ReactElement => (
     <RailRow

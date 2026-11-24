@@ -6,6 +6,7 @@ import {
   PANEL_WIDTH_MIN,
   clampPanelWidth,
   currentPanelEntry,
+  insertSurfaceNear,
   moveSurfaceToDock,
   moveSurfaceToGroup,
   moveSurfaceToRight,
@@ -14,7 +15,8 @@ import {
   splitSurface,
   useRightPanel,
   type PanelEdgeDock,
-  type RightPanelEntry
+  type RightPanelEntry,
+  type RightPanelSurface
 } from '../../state/right-panel'
 
 export type PanelTabDrop =
@@ -174,12 +176,22 @@ const rectOf = (selector: string): DropRect | null => {
   return el ? toRect(el.getBoundingClientRect()) : null
 }
 
-export function startPanelTabDrag(start: DragStart, id: string, label: string, room: number, text: PanelTabDragText): void {
+export interface PanelTabSeed {
+  surface: RightPanelSurface
+  near: string
+}
+
+export function seededPanelEntry(entry: RightPanelEntry, seed?: PanelTabSeed): RightPanelEntry {
+  return seed ? insertSurfaceNear(entry, seed.surface, seed.near) : entry
+}
+
+export function startPanelTabDrag(start: DragStart, id: string, label: string, room: number, text: PanelTabDragText, seed?: PanelTabSeed): void {
   let release: (() => void) | null = null
+  const panelEntry = (): RightPanelEntry => seededPanelEntry(currentPanelEntry(), seed)
   trackPointerDrag(start, () => {
     const host = document.querySelector<HTMLElement>('.rp-columns')
     const columnEls = [...document.querySelectorAll<HTMLElement>('.rp-columns > .rp-column')]
-    const entry = currentPanelEntry()
+    const entry = panelEntry()
     const groups = panelGroups(entry)
     const rights = rightGroupCount(groups)
     const columns = host && columnEls.length === rights ? columnEls.map((el) => toRect(el.getBoundingClientRect())) : []
@@ -229,9 +241,10 @@ export function startPanelTabDrag(start: DragStart, id: string, label: string, r
       },
       drop: () => {
         if (!target) return
-        const next = droppedEntry(currentPanelEntry(), id, target)
-        if (next === currentPanelEntry()) return
+        const before = panelEntry()
+        if (droppedEntry(before, id, target) === before) return
         const panel = useRightPanel.getState()
+        if (seed) panel.insertNear(seed.surface, seed.near)
         if (target.kind === 'dock') panel.moveToDock(id, target.side)
         else if (target.kind === 'right') panel.moveToRight(id)
         else if (target.kind === 'split') panel.split(id)
