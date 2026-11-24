@@ -937,6 +937,16 @@ export interface BrowserLoginImport {
   skipped: number
 }
 
+export interface BrowserLoginImportProfile {
+  id: string
+  name: string
+  isDefault: boolean
+}
+
+export interface BrowserLoginImportSources {
+  firefox: BrowserLoginImportProfile[]
+}
+
 export interface BrowserLoginImportStatus {
   id: string
   phase: 'waiting' | 'importing' | 'done' | 'failed' | 'cancelled'
@@ -1884,6 +1894,8 @@ export interface YanBridge {
     closeExternalChrome(): Promise<BrowserState | undefined>
     syncLocalProfile(): Promise<ChromeSyncReport>
     syncPageStorage(): Promise<ChromeSyncReport>
+    loginImportSources(): Promise<BrowserLoginImportSources>
+    importFirefoxLogin(profileId?: string): Promise<BrowserLoginImportStatus>
     startLoginImport(): Promise<{ id: string }>
     loginImportStatus(id: string): Promise<BrowserLoginImportStatus>
     cancelLoginImport(id: string): Promise<BrowserLoginImportStatus>

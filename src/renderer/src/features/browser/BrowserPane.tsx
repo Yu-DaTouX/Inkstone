@@ -30,6 +30,7 @@ import {
 import { imageAttachmentFromDataUrl, sendToChat } from '../preview/canvas-share'
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { addressShown, addressTarget, isBlankAddress, nextAddressInput, nextAddressMemory, type AddressMemory } from '../../../../shared/browser-navigation'
+import type { BrowserLoginImportProfile } from '../../../../shared/ipc'
 import type { BrowserPaneProps } from '../workbench/types'
 import { BROWSER_VIEWPORT_PRESETS, browserViewportPreset, isBrowserViewport, type BrowserViewport } from '../../../../shared/browser-viewport'
 import { browserText } from './browser-text'
@@ -167,7 +168,17 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   const [importId, setImportId] = useState<string | null>(null)
   const [importPhase, setImportPhase] = useState<'waiting' | 'importing'>('waiting')
   const [importNote, setImportNote] = useState<{ tone: 'ok' | 'fail'; text: string } | null>(null)
+  const [firefoxProfiles, setFirefoxProfiles] = useState<BrowserLoginImportProfile[]>([])
   const navSeq = useRef(0)
+
+  useEffect(() => {
+    if (!visible) return
+    let alive = true
+    void window.yan.browser.loginImportSources?.().then((sources) => {
+      if (alive) setFirefoxProfiles(sources?.firefox ?? [])
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [visible])
 
   useEffect(() => {
     if (!importNote) return
@@ -218,11 +229,58 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     } catch { setImportNote({ tone: 'fail', text: text.importFailed }) }
     finally { setImportStarting(false) }
   }
-  const importButton = (
-    <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} tooltip={importId ? text.importCancel : text.importLogin} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
+  const importFirefox = async (profileId?: string): Promise<void> => {
+    if (importStarting || (importId && importPhase === 'importing')) return
+    setImportStarting(true)
+    setImportNote(null)
+    try {
+      const status = await window.yan.browser.importFirefoxLogin(profileId)
+      setImportId(null)
+      if (status.phase === 'done' && status.result) {
+        const { copied, failed, skipped } = status.result
+        setImportNote({ tone: failed ? 'fail' : 'ok', text: text.importDone(copied, failed, skipped) })
+      } else if (status.phase === 'failed') {
+        setImportNote({ tone: 'fail', text: text.importError(status.error) })
+      }
+    } catch {
+      setImportNote({ tone: 'fail', text: text.importFailed })
+    } finally {
+      setImportStarting(false)
+    }
+  }
+  const importTriggerButton = (onPress?: () => void): ReactElement => (
+    <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} tooltip={importId ? text.importCancel : text.importLogin} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={onPress}>
       <span className="v3-browser__import-label">{importId ? text.importCancel : text.importLogin}</span>
     </Button>
   )
+  const importButton = !importId && firefoxProfiles.length > 0 ? (
+    <MenuTrigger>
+      {importTriggerButton()}
+      <Popover placement="bottom end" surface="solid">
+        <Menu
+          aria-label={text.importMenuLabel}
+          data-testid="browser-pane-import-menu"
+          onAction={(key) => {
+            const id = String(key)
+            if (id === 'chrome') void importLogin()
+            else if (id.startsWith('ff:')) void importFirefox(id.slice(3))
+          }}
+        >
+          <MenuItem id="chrome" textValue={text.importFromChrome} data-testid="browser-import-chrome">
+            {text.importFromChrome}
+          </MenuItem>
+          {firefoxProfiles.map((profile) => {
+            const label = text.importFromFirefox(firefoxProfiles.length > 1 ? profile.name : undefined)
+            return (
+              <MenuItem key={profile.id} id={`ff:${profile.id}`} textValue={label} data-testid={`browser-import-firefox-${profile.id}`}>
+                {label}
+              </MenuItem>
+            )
+          })}
+        </Menu>
+      </Popover>
+    </MenuTrigger>
+  ) : importTriggerButton(() => void importLogin())
   const importStatus = importId || importNote ? (
     <Notice
       tone={importId ? 'info' : importNote?.tone === 'ok' ? 'ok' : 'fail'}

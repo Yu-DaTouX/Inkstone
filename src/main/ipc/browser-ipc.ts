@@ -82,6 +82,10 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:syncLocalProfile', () =>
     browserOf()?.syncLocalProfile() ?? { found: false, copied: [], failed: [], chromeRunning: false, cookiesSynced: false }
   )
+  rawHandle('yan:browser:loginImportSources', () => browserOf()?.loginImportSources() ?? { firefox: [] })
+  rawHandle('yan:browser:importFirefoxLogin', (_event, profileId?: unknown) =>
+    browserOf()?.importFirefoxLogin(typeof profileId === 'string' ? profileId : undefined) ?? Promise.reject(new Error('浏览器未初始化'))
+  )
   rawHandle('yan:browser:startLoginImport', () => browserOf()?.startLoginImport() ?? Promise.reject(new Error('浏览器未初始化')))
   rawHandle('yan:browser:loginImportStatus', (_event, id: string) => browserOf()?.loginImportStatus(id) ?? { id, phase: 'cancelled' })
   rawHandle('yan:browser:cancelLoginImport', (_event, id: string) => browserOf()?.cancelLoginImport(id) ?? { id, phase: 'cancelled' })

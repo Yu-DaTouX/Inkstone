@@ -3,7 +3,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { BrowserLoginImport, BrowserLoginImportStatus } from '../../shared/ipc'
+import type { BrowserLoginImport, BrowserLoginImportProfile, BrowserLoginImportStatus } from '../../shared/ipc'
 
 export const COOKIE_BRIDGE_ORIGIN = 'chrome-extension://lbceoiahmfjmmlpmndopbliceoalblcc'
 const MAX_BODY_BYTES = 16 * 1024 * 1024
@@ -92,6 +92,8 @@ export async function createCookieBridge(options: {
   extensionPath: string
   showExtension(): Promise<void>
   receive(cookies: BridgeCookie[]): Promise<BrowserLoginImport>
+  firefoxProfiles?: () => BrowserLoginImportProfile[]
+  importFirefox?: (profileId?: string) => Promise<BrowserLoginImport>
   timeoutMs?: number
 }) {
   const token = randomBytes(32).toString('hex')
@@ -120,7 +122,7 @@ export async function createCookieBridge(options: {
       return
     }
     const origin = request.headers.origin
-    const localSetup = ['/v1/setup', '/v1/show-extension', '/v1/failure'].includes(request.url ?? '') && (origin === `http://${host}` || (!origin && request.headers['sec-fetch-site'] === 'same-origin'))
+    const localSetup = ['/v1/setup', '/v1/show-extension', '/v1/failure', '/v1/import-firefox'].includes(request.url ?? '') && (origin === `http://${host}` || (!origin && request.headers['sec-fetch-site'] === 'same-origin'))
     if (origin !== undefined && origin !== COOKIE_BRIDGE_ORIGIN && !localSetup) { json(response, 403, { error: 'forbidden' }); return }
     response.setHeader('Access-Control-Allow-Origin', COOKIE_BRIDGE_ORIGIN)
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -146,9 +148,32 @@ export async function createCookieBridge(options: {
       return
     }
     if (localSetup) {
-      if (request.method === 'GET' && request.url === '/v1/setup') json(response, 200, { extensionPath: options.extensionPath })
-      else if (request.method === 'POST' && request.url === '/v1/show-extension') {
+      if (request.method === 'GET' && request.url === '/v1/setup') {
+        json(response, 200, { extensionPath: options.extensionPath, firefoxProfiles: options.firefoxProfiles?.() ?? [] })
+      } else if (request.method === 'POST' && request.url === '/v1/show-extension') {
         try { await options.showExtension(); json(response, 200, { ok: true }) } catch { json(response, 500, { error: 'open_failed' }) }
+      } else if (request.method === 'POST' && request.url === '/v1/import-firefox') {
+        if (!options.importFirefox) { json(response, 404, { error: 'unsupported' }); return }
+        let profileId: string | undefined
+        try {
+          const body = await readJson(request) as { profileId?: unknown } | null
+          if (body && typeof body.profileId === 'string' && body.profileId) profileId = body.profileId
+        } catch {
+          json(response, 400, { error: 'invalid_payload' })
+          return
+        }
+        if (status.phase !== 'waiting' || Date.now() >= expiresAt) { json(response, 409, { error: 'not_waiting' }); return }
+        status = { id, phase: 'importing' }
+        clearTimeout(timer)
+        try {
+          const result = await options.importFirefox(profileId)
+          status = { id, phase: 'done', result }
+          json(response, 200, result)
+        } catch (error) {
+          const reason = error instanceof Error && error.message === 'read_failed' ? 'read_failed' : 'import_failed'
+          status = { id, phase: 'failed', error: reason }
+          json(response, 500, { error: reason })
+        } finally { server.close(); server.closeIdleConnections() }
       } else json(response, 405, { error: 'method_not_allowed' })
       return
     }

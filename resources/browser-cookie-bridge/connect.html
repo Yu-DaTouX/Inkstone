@@ -5,6 +5,13 @@
 <h1>连接砚的导入扩展</h1>
 <p>已安装扩展时会自动导入当前浏览器档案，无需填写配对码。</p>
 <iframe id="bridge" title="登录态导入结果" hidden></iframe>
+<section id="firefox" hidden>
+<h2>从 Firefox 直接导入</h2>
+<p>检测到当前为 Firefox，可直接从本机 Firefox 档案只读导入登录 Cookie，无需安装扩展，也不会修改原浏览器资料。</p>
+<p><label for="ff-profile">选择档案：</label><select id="ff-profile"></select></p>
+<button id="ff-import">导入 Firefox 登录态</button>
+<p>仅导入默认浏览上下文中未过期的网站 Cookie，相同 Cookie 会覆盖砚中的旧值；密码、通行密钥与其他设置不迁移。</p>
+</section>
 <section id="setup" hidden>
 <h2>首次使用：安装扩展</h2>
 <p>请在 Chrome 或 Edge 打开此页面。打开扩展管理页，开启「开发者模式」，选择「加载已解压的扩展」，选择下方目录并确认网站访问权限。不会复制或修改原浏览器资料文件，也不会删除数据。</p>

@@ -1,13 +1,15 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 
-const built = await build({ stdin: { contents: "export * from './src/main/browser/cookie-bridge'; export { browserText } from './src/renderer/src/features/browser/browser-text'", resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent' })
-const { createCookieBridge, COOKIE_BRIDGE_ORIGIN, parseBridgeCookies, writeBridgeCookies, browserText } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+const built = await build({ stdin: { contents: "export * from './src/main/browser/cookie-bridge'; export * from './src/main/browser/firefox-cookies'; export { browserText } from './src/renderer/src/features/browser/browser-text'", resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'esm', external: ['node:sqlite'], logLevel: 'silent' })
+const { createCookieBridge, COOKIE_BRIDGE_ORIGIN, parseBridgeCookies, writeBridgeCookies, discoverFirefoxProfiles, listFirefoxProfiles, parseFirefoxOriginAttributes, readFirefoxCookies, browserText } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 const extensionPath = resolve('resources/browser-cookie-bridge')
 const manifest = JSON.parse(await readFile(`${extensionPath}/manifest.json`, 'utf8'))
 const extensionId = [...createHash('sha256').update(Buffer.from(manifest.key, 'base64')).digest().subarray(0, 16)].map(n => String.fromCharCode(97 + (n >> 4), 97 + (n & 15))).join('')
@@ -190,4 +192,151 @@ assert.equal(connectRequests.at(-1).path, '/v1/failure')
 assert.deepEqual(JSON.parse(connectRequests.at(-1).options.body), { reason: 'read_failed' }, '失败反馈只传安全错误码')
 nodes.retry.click()
 assert.equal(nodes.bridge.hidden, true, '重试仍不显示尚未连接的 iframe')
-console.log('test-cookie-bridge: 认证、字段映射、一次性导入、取消、过期、扩展触发和首次连接提示全部通过')
+
+const ffRoot = await mkdtemp(join(tmpdir(), 'inkstone-ff-test-'))
+try {
+  const defaultDir = join(ffRoot, 'Profiles', 'abc123.default-release')
+  const workDir = join(ffRoot, 'Profiles', 'def456.work')
+  const emptyDir = join(ffRoot, 'Profiles', 'ghi789.empty')
+  await mkdir(defaultDir, { recursive: true })
+  await mkdir(workDir, { recursive: true })
+  await mkdir(emptyDir, { recursive: true })
+  await writeFile(join(ffRoot, 'installs.ini'), '[INST1]\nDefault=Profiles/def456.work\nLocked=1\n')
+  await writeFile(join(ffRoot, 'profiles.ini'), [
+    '[Profile0]',
+    'Name=default-release',
+    'IsRelative=1',
+    'Path=Profiles/abc123.default-release',
+    'Default=1',
+    '',
+    '[Profile1]',
+    'Name=work',
+    'IsRelative=1',
+    'Path=Profiles/def456.work',
+    '',
+    '[Profile2]',
+    'Name=empty',
+    'IsRelative=1',
+    'Path=Profiles/ghi789.empty'
+  ].join('\n'))
+
+  const makeCookiesDb = (dir, withWal) => {
+    const db = new DatabaseSync(join(dir, 'cookies.sqlite'))
+    if (withWal) db.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;')
+    db.exec(`CREATE TABLE moz_cookies (
+      id INTEGER PRIMARY KEY,
+      originAttributes TEXT NOT NULL DEFAULT '',
+      name TEXT,
+      value TEXT,
+      host TEXT,
+      path TEXT,
+      expiry INTEGER,
+      lastAccessed INTEGER,
+      creationTime INTEGER,
+      isSecure INTEGER,
+      isHttpOnly INTEGER,
+      sameSite INTEGER
+    )`)
+    const nowSec = Math.floor(Date.now() / 1000)
+    const stmt = db.prepare('INSERT INTO moz_cookies (originAttributes, name, value, host, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly, sameSite) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    stmt.run('', 'sid', 'v-host', 'example.test', '/', nowSec + 3600, 100, 100, 1, 1, 1)
+    stmt.run('', 'dom_ms', 'v-ms', '.example.test', '/app', (nowSec + 7200) * 1000, 200, 200, 1, 0, 0)
+    stmt.run('', 'none_insecure', 'v-none', 'example.test', '/', 0, 300, 300, 0, 0, 0)
+    stmt.run('^partitionKey=(https,top.test)', 'part', 'v-part', 'embed.test', '/', nowSec + 3600, 400, 400, 1, 1, 2)
+    stmt.run('^userContextId=2', 'container_tok', 'v-skip', 'example.test', '/', nowSec + 3600, 500, 500, 1, 1, 1)
+    stmt.run('^privateBrowsingId=1', 'priv_tok', 'v-priv', 'example.test', '/', nowSec + 3600, 600, 600, 1, 1, 1)
+    stmt.run('', 'expired_tok', 'v-old', 'example.test', '/', 1000, 50, 50, 1, 1, 1)
+    return db
+  }
+
+  const dbDefault = makeCookiesDb(defaultDir, false)
+  dbDefault.close()
+  const dbWork = makeCookiesDb(workDir, true)
+  try {
+    const discovered = discoverFirefoxProfiles({ env: { YAN_FIREFOX_PROFILES_DIR: ffRoot } })
+    assert.equal(discovered.length, 2, '只列出含 cookies.sqlite 的 Firefox 档案')
+    assert.equal(discovered[0].name, 'work', 'installs.ini 的默认档案优先排第一')
+    assert.equal(discovered[0].isDefault, true)
+    assert.equal(discovered[1].isDefault, false)
+    assert.equal(listFirefoxProfiles({ env: { YAN_FIREFOX_PROFILES_DIR: ffRoot } }).every((p) => !('dir' in p) && p.id.startsWith('ff-')), true, '对外档案列表不泄露本地绝对路径')
+
+    const parsedAttrs = parseFirefoxOriginAttributes('^partitionKey=(https,top.test,8443)', 'sub.top.test')
+    assert.deepEqual(parsedAttrs, { skip: false, partitionKey: { topLevelSite: 'https://top.test:8443', hasCrossSiteAncestor: false } })
+    assert.equal(parseFirefoxOriginAttributes('^userContextId=1', 'example.test').skip, true)
+
+    const extracted = await readFirefoxCookies(workDir)
+    assert.equal(extracted.cookies.length, 4, 'WAL 未 checkpoint 时仍完整读出 4 条有效 Cookie')
+    assert.equal(extracted.skipped, 3, '跳过容器、隐私和过期共 3 条 Cookie')
+    const byName = Object.fromEntries(extracted.cookies.map((c) => [c.name, c]))
+    assert.equal(byName.sid.hostOnly, true)
+    assert.equal(byName.sid.sameSite, 'lax')
+    assert.equal(byName.dom_ms.hostOnly, false)
+    assert.equal(byName.dom_ms.sameSite, 'no_restriction')
+    assert.ok(byName.dom_ms.expirationDate < 1e11, 'Firefox 106+ 毫秒级 expiry 自动转换为秒')
+    assert.equal(byName.none_insecure.session, true)
+    assert.equal(byName.none_insecure.sameSite, 'unspecified', '非 Secure 的 SameSite=None 回退 unspecified 避免 Chromium 拒收')
+    assert.deepEqual(byName.part.partitionKey, { topLevelSite: 'https://top.test', hasCrossSiteAncestor: true })
+    assert.equal(byName.part.sameSite, 'strict')
+  } finally {
+    dbWork.close()
+  }
+
+  let ffCalledWith = null
+  const ffBridge = await createCookieBridge({
+    extensionPath,
+    showExtension: async () => {},
+    receive: async () => ({ copied: 0, failed: 0, skipped: 0 }),
+    firefoxProfiles: () => listFirefoxProfiles({ env: { YAN_FIREFOX_PROFILES_DIR: ffRoot } }),
+    importFirefox: async (profileId) => { ffCalledWith = profileId; return { copied: 4, failed: 0, skipped: 3 } }
+  })
+  try {
+    const ffUrl = new URL(ffBridge.url)
+    const ffToken = ffUrl.hash.slice(1).split('.')[1]
+    const setupRes = await fetch(`${ffUrl.origin}/v1/setup`, { headers: { Authorization: `Bearer ${ffToken}`, 'Sec-Fetch-Site': 'same-origin' } })
+    const setupJson = await setupRes.json()
+    assert.equal(setupJson.firefoxProfiles.length, 2, '/v1/setup 返回 Firefox 档案列表')
+    const evilRes = await fetch(`${ffUrl.origin}/v1/import-firefox`, { method: 'POST', headers: { Origin: 'https://evil.test', Authorization: `Bearer ${ffToken}`, 'Content-Type': 'application/json' }, body: '{}' })
+    assert.equal(evilRes.status, 403, '跨站 Origin 不能触发 Firefox 导入')
+    const okRes = await fetch(`${ffUrl.origin}/v1/import-firefox`, { method: 'POST', headers: { Origin: ffUrl.origin, Authorization: `Bearer ${ffToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId: setupJson.firefoxProfiles[0].id }) })
+    assert.equal(okRes.status, 200)
+    assert.deepEqual(await okRes.json(), { copied: 4, failed: 0, skipped: 3 })
+    assert.equal(ffCalledWith, setupJson.firefoxProfiles[0].id)
+    assert.equal(ffBridge.status().phase, 'done')
+  } finally { ffBridge.cancel() }
+
+  const ffNodes = Object.fromEntries(['bridge', 'setup', 'status', 'folder', 'retry', 'path', 'firefox', 'ff-profile', 'ff-import'].map(id => [id, {
+    hidden: true, disabled: false, value: '', textContent: '', options: [],
+    appendChild(child) { this.options.push(child); if (!this.value) this.value = child.value },
+    addEventListener(type, handler) { this[type] = handler }
+  }]))
+  const ffConnectReqs = []
+  runInNewContext(connectSource, {
+    location: { hash: `#12345.${'c'.repeat(64)}`, pathname: '/connect' },
+    history: { replaceState() {} },
+    navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0' },
+    document: {
+      getElementById: id => ffNodes[id],
+      createElement: () => ({ value: '', textContent: '' })
+    },
+    window: { addEventListener() {} },
+    fetch: async (path, options) => {
+      ffConnectReqs.push({ path, options })
+      if (path === '/v1/setup') return { ok: true, json: async () => ({ extensionPath: 'ext', firefoxProfiles: [{ id: 'ff-1', name: 'default-release', isDefault: true }] }) }
+      return { ok: true, json: async () => ({ copied: 4, failed: 0, skipped: 1 }) }
+    },
+    setTimeout: () => 1,
+    clearTimeout: () => {}
+  })
+  await new Promise(setImmediate)
+  assert.equal(ffNodes.firefox.hidden, false, 'Firefox 打开 /connect 时直接展示 Firefox 直导区块')
+  assert.equal(ffNodes.setup.hidden, true, 'Firefox 打开 /connect 时不误展示 Chrome 扩展指引')
+  assert.equal(ffNodes['ff-profile'].options.length, 1)
+  await ffNodes['ff-import'].click()
+  await new Promise(setImmediate)
+  assert.equal(ffConnectReqs.at(-1).path, '/v1/import-firefox')
+  assert.match(ffNodes.status.textContent, /已导入 4 条 Cookie/)
+} finally {
+  await rm(ffRoot, { recursive: true, force: true })
+}
+
+console.log('test-cookie-bridge: 认证、字段映射、一次性导入、取消、过期、扩展触发、首次连接提示与 Firefox 直导全部通过')

@@ -382,6 +382,8 @@ export interface IpcChannelMap {
   'yan:browser:closeExternalChrome': Contract<B['browser']['closeExternalChrome']>
   'yan:browser:syncLocalProfile': Contract<B['browser']['syncLocalProfile']>
   'yan:browser:syncPageStorage': Contract<B['browser']['syncPageStorage']>
+  'yan:browser:loginImportSources': Contract<B['browser']['loginImportSources']>
+  'yan:browser:importFirefoxLogin': Contract<B['browser']['importFirefoxLogin']>
   'yan:browser:startLoginImport': Contract<B['browser']['startLoginImport']>
   'yan:browser:loginImportStatus': Contract<B['browser']['loginImportStatus']>
   'yan:browser:cancelLoginImport': Contract<B['browser']['cancelLoginImport']>

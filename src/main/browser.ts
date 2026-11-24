@@ -14,6 +14,7 @@ import type {
   BrowserState,
   BrowserTabState,
   BrowserLoginImport,
+  BrowserLoginImportSources,
   BrowserLoginImportStatus,
   MainPush
 } from '../shared/ipc'
@@ -39,6 +40,7 @@ import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chr
 import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { createCookieBridge, writeBridgeCookies, type BridgeCookie } from './browser/cookie-bridge'
+import { discoverFirefoxProfiles, listFirefoxProfiles, readFirefoxCookies } from './browser/firefox-cookies'
 import type { BrowserActionOptions, BrowserActionReceipt, BrowserDialogRecord, BrowserObserveOptions } from './browser/receipt'
 import { SCRIPT_GUIDE, ScriptError, disposeScriptRuntimes, runBrowserScript, type ScriptResult } from './browser/script-runner'
 import { transferCookies } from './browser/cookie-transfer'
@@ -278,6 +280,42 @@ export class BrowserController {
   private loginImport?: Awaited<ReturnType<typeof createCookieBridge>>
   private loginImportStarting = false
 
+  loginImportSources(): BrowserLoginImportSources {
+    return { firefox: listFirefoxProfiles() }
+  }
+
+  private async readAndReceiveFirefoxCookies(profileId?: string): Promise<BrowserLoginImport> {
+    const profiles = discoverFirefoxProfiles()
+    const profile = profileId ? profiles.find((item) => item.id === profileId) : profiles[0]
+    if (!profile) throw new Error('read_failed')
+    let extracted: { cookies: BridgeCookie[]; skipped: number }
+    try {
+      extracted = await readFirefoxCookies(profile.dir)
+    } catch {
+      throw new Error('read_failed')
+    }
+    const written = await this.receiveLoginCookies(extracted.cookies)
+    return { ...written, skipped: written.skipped + extracted.skipped }
+  }
+
+  async importFirefoxLogin(profileId?: string): Promise<BrowserLoginImportStatus> {
+    if (this.loginImportStarting || this.loginImport?.status().phase === 'importing') {
+      throw new Error(pick('登录态正在写入，请稍后再试', 'Sign-in data is being written; try again shortly'))
+    }
+    this.loginImportStarting = true
+    const id = randomUUID()
+    try {
+      if (this.loginImport?.status().phase === 'waiting') this.loginImport.cancel()
+      const result = await this.readAndReceiveFirefoxCookies(profileId)
+      return { id, phase: 'done', result }
+    } catch (error) {
+      const reason = error instanceof Error && error.message === 'read_failed' ? 'read_failed' : 'import_failed'
+      return { id, phase: 'failed', error: reason }
+    } finally {
+      this.loginImportStarting = false
+    }
+  }
+
   private loginImportExtensionPath(): string {
     return join(YAN_DIR, 'browser-cookie-bridge')
   }
@@ -297,7 +335,9 @@ export class BrowserController {
         this.loginImport = await createCookieBridge({
           extensionPath: this.loginImportExtensionPath(),
           showExtension: () => this.showLoginImportExtension(),
-          receive: (cookies) => this.receiveLoginCookies(cookies)
+          receive: (cookies) => this.receiveLoginCookies(cookies),
+          firefoxProfiles: () => listFirefoxProfiles(),
+          importFirefox: (profileId) => this.readAndReceiveFirefoxCookies(profileId)
         })
       }
       try { await shell.openExternal(this.loginImport.url) } catch { this.loginImport.cancel(); throw new Error(pick('无法打开来源浏览器', 'Cannot open the source browser')) }
