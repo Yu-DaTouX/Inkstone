@@ -42,7 +42,7 @@ import { YAN_DIR } from './paths'
 import { createCookieBridge, writeBridgeCookies, type BridgeCookie } from './browser/cookie-bridge'
 import { discoverFirefoxProfiles, listFirefoxProfiles, readFirefoxCookies } from './browser/firefox-cookies'
 import type { BrowserActionOptions, BrowserActionReceipt, BrowserDialogRecord, BrowserObserveOptions } from './browser/receipt'
-import { SCRIPT_GUIDE, ScriptError, disposeScriptRuntimes, runBrowserScript, type ScriptResult } from './browser/script-runner'
+import { EVALUATE_RESULT_MAX_CHARS, SCRIPT_GUIDE, ScriptError, disposeScriptRuntimes, localEvaluateExpression, runBrowserScript, type ScriptResult } from './browser/script-runner'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
@@ -1499,6 +1499,7 @@ export class BrowserController {
       navigate: (url) => this.navigate(url),
       observe: (options) => this.observe(options),
       text: () => this.text(),
+      evaluate: (expression) => this.evaluate(expression),
       scope: () => {
         const p = this.parts()
         return p ? `${this.getState().activeTabId ?? ''}:${p.registry.generationKey()}` : ''
@@ -1552,6 +1553,27 @@ export class BrowserController {
     const scope = options.scope ? p.registry.resolve(options.scope) : undefined
     if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('读取页面', 'Reading page'))
     return this.observeTarget(p, { all: options.all === true, ...(scope ? { scope: { backendNodeId: scope.backendNodeId, sessionId: scope.sessionId } } : {}) })
+  }
+
+  async evaluate(expression: string): Promise<unknown> {
+    const p = this.openParts()
+    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('在页面里运行脚本', 'Running script in page'))
+    await this.readyTarget(p)
+    const reply = await p.cdp.send<{ result?: { value?: unknown }; exceptionDetails?: { text?: string; exception?: { description?: string } } }>('Runtime.evaluate', {
+      expression: localEvaluateExpression(expression),
+      returnByValue: true,
+      awaitPromise: true
+    })
+    if (reply.exceptionDetails) {
+      const detail = reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text ?? 'error'
+      throw new ScriptError('EVALUATE_FAILED', `EVALUATE_FAILED: ${detail.slice(0, 2000)}`)
+    }
+    const outcome = reply.result?.value as { denied?: unknown; url?: unknown; value?: unknown } | undefined
+    if (!outcome || typeof outcome !== 'object') throw new ScriptError('EVALUATE_FAILED', 'EVALUATE_FAILED: 页面没有返回结果')
+    if (outcome.denied !== false) throw new ScriptError('EVALUATE_NOT_LOCAL', `EVALUATE_NOT_LOCAL: page.evaluate 只能在本机地址的页面里用，当前是 ${typeof outcome.url === 'string' ? outcome.url.slice(0, 300) : '未知页面'}`)
+    const size = JSON.stringify(outcome.value ?? null)?.length ?? 0
+    if (size > EVALUATE_RESULT_MAX_CHARS) throw new ScriptError('EVALUATE_RESULT_TOO_LARGE', `EVALUATE_RESULT_TOO_LARGE: 返回值约 ${size} 字符，超过 ${EVALUATE_RESULT_MAX_CHARS}；在页面里先筛选或分段返回`)
+    return outcome.value ?? null
   }
 
   async text(): Promise<{ text: string; url: string; title: string }> {

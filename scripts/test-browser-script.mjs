@@ -11,7 +11,8 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(join(tmpdir(), 'yan-browser-script-'))
 const outfile = join(dir, 'script-runner.mjs')
 await build({ entryPoints: [join(ROOT, 'src/main/browser/script-runner.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
-const { runBrowserScript, SCRIPT_GUIDE, disposeScriptRuntimes, scriptRuntimeCount } = await import(pathToFileURL(outfile).href)
+const { runBrowserScript, SCRIPT_GUIDE, disposeScriptRuntimes, scriptRuntimeCount, isLocalPageUrl, localEvaluateExpression } = await import(pathToFileURL(outfile).href)
+const vm = await import('node:vm')
 await rm(dir, { recursive: true, force: true })
 
 let pass = 0
@@ -312,6 +313,43 @@ await check('脚本：超时后常驻运行时被杀掉，下一次重新开始'
   const out = await runBrowserScript('return typeof globalThis.kept', browser, { persistKey: 'session-d' })
   assert.equal(out.runtime, 'new')
   assert.equal(out.result, 'undefined')
+  disposeScriptRuntimes()
+})
+
+await check('page.evaluate：只认 http(s) 的 localhost、127.0.0.1、[::1]', async () => {
+  for (const url of ['http://127.0.0.1:8188/', 'https://localhost/x', 'http://[::1]:3000/']) assert.equal(isLocalPageUrl(url), true, url)
+  for (const url of ['https://example.com/', 'http://127.0.0.1.nip.io/', 'http://localhost.evil.com/', 'http://192.168.1.2/', 'file:///C:/a.html', 'about:blank', 'data:text/html,x', '']) assert.equal(isLocalPageUrl(url), false, url)
+})
+
+await check('page.evaluate：页面里的守卫按 location 严格判断，篡改原型也绕不过', async () => {
+  const run = async (href, poison = false) => {
+    const url = new URL(href)
+    const context = vm.createContext({ location: Object.freeze({ protocol: url.protocol, hostname: url.hostname, href: url.href }), app: { graphToPrompt: async () => ({ output: { 1: 'ok' } }) } })
+    if (poison) vm.runInContext("String.prototype.toLowerCase = () => 'localhost'; String.prototype.endsWith = () => true; Set.prototype.has = () => true; RegExp.prototype.test = () => true", context)
+    return JSON.parse(JSON.stringify(await vm.runInContext(localEvaluateExpression('(() => app.graphToPrompt())()'), context)))
+  }
+  assert.deepEqual(await run('http://127.0.0.1:8188/'), { denied: false, value: { output: { 1: 'ok' } } })
+  assert.deepEqual(await run('https://example.com/', true), { denied: true, url: 'https://example.com/' })
+  assert.equal((await run('http://localhost.evil.com/', true)).denied, true)
+  const thrown = vm.runInContext(localEvaluateExpression('(() => { throw new Error("boom") })()'), vm.createContext({ location: { protocol: 'http:', hostname: 'localhost', href: 'http://localhost/' } }))
+  await assert.rejects(thrown, /boom/)
+})
+
+await check('page.evaluate：函数按源码和参数送到宿主，非本机页面在调用前就拒绝', async () => {
+  const fake = fakeBrowser()
+  const seen = []
+  const browser = { ...fake.browser, evaluate: async (expression) => { seen.push(expression); return { nodes: 12 } } }
+  await assert.rejects(runBrowserScript('return await page.evaluate(() => 1)', browser), (error) => error.code === 'EVALUATE_NOT_LOCAL')
+  assert.equal(seen.length, 0)
+  await runBrowserScript("await page.goto('http://127.0.0.1:8188/')", browser)
+  const out = await runBrowserScript("return await page.evaluate((n) => app.graph(n), { depth: 2 })", browser)
+  assert.deepEqual(out.result, { nodes: 12 })
+  assert.equal(seen[0], '((n) => app.graph(n))({"depth":2})')
+  await runBrowserScript("return await page.evaluate('document.title')", browser)
+  assert.equal(seen[1], 'document.title')
+  await assert.rejects(runBrowserScript('return await page.evaluate(42)', browser), (error) => error.code === 'EVALUATE_INVALID')
+  await assert.rejects(runBrowserScript('return await page.evaluate(() => 1)', { ...fake.browser }), (error) => error.code === 'EVALUATE_UNSUPPORTED')
+  assert.ok(SCRIPT_GUIDE.includes('page.evaluate'))
   disposeScriptRuntimes()
 })
 

@@ -33,6 +33,23 @@ export interface ScriptBrowser {
   newTab(url?: string): Promise<unknown>
   switchTab(id: string): Promise<unknown>
   closeTab(id?: string): Promise<unknown>
+  evaluate?(expression: string): Promise<unknown>
+}
+
+const LOCAL_PAGE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+export const EVALUATE_RESULT_MAX_CHARS = 1_000_000
+
+export function isLocalPageUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && LOCAL_PAGE_HOSTS.has(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+export function localEvaluateExpression(expression: string): string {
+  return `(async () => { const l = location; const p = l.protocol; const h = l.hostname; if (!((p === 'http:' || p === 'https:') && (h === 'localhost' || h === '127.0.0.1' || h === '[::1]'))) return { denied: true, url: l.href }; return { denied: false, value: await (${expression}\n) } })()`
 }
 
 export interface ScriptResult {
@@ -53,7 +70,7 @@ export class ScriptError extends Error {
 export const SCRIPT_GUIDE = `砚内置浏览器脚本（yan browser run --code - <<'JS' … JS，或 --file <脚本>）
 
 脚本是 async 函数体，可直接 await，return 的值（需能转成 JSON）会出现在结果里；console.log 的输出也会带回。
-全局只有 page、task、console、sleep(ms)；没有 require / process / fetch，也不能在网页里执行任意 JavaScript。
+全局只有 page、task、console、sleep(ms)；没有 require / process / fetch。只有本机地址（localhost、127.0.0.1、[::1]）的页面可以用 page.evaluate 在网页里执行 JavaScript。
 所有动作都作用于当前活动标签；默认 ${SCRIPT_TIMEOUT_MS / 1000} 秒超时。
 同一会话里，挂在 globalThis 上的变量（如 globalThis.rows = …）在下一次 run 里还在，前提是期间没有导航、换标签或页面换文档；
 结果的 runtime 为 new 表示变量已清空，kept 表示沿用。
@@ -74,6 +91,9 @@ page.select(ref, value)                下拉框按 value 或可见文案选择
 page.press(key, { dialog })            Enter / Tab / Escape / ArrowDown / Control+A / Shift+Tab …
 page.scroll(deltaY, deltaX?)           滚动，返回 { x, y, maxY }
 page.waitFor({ text, url, ref, gone, timeout })  等条件成立（timeout 默认 10000ms，上限 60000）
+page.evaluate(fn, arg?) / page.evaluate('表达式')  只限本机地址的页面：在当前标签的主框架里执行，可返回 Promise，返回值需能转成 JSON；
+                                       fn 按源码送进页面，拿不到脚本里的变量，要用的值从 arg 传（需能转成 JSON）。
+                                       例：await page.evaluate(() => app.graphToPrompt())；其他网站报 EVALUATE_NOT_LOCAL
 page.back() / page.forward() / page.reload()
 task.pages()                           [{ id, url, title, active }]
 task.newPage(url?)                     新标签并切换过去
@@ -308,6 +328,16 @@ export async function runBrowserScript(
       return plain(observation.elements)
     },
     text: pageText,
+    evaluate: async (expression: unknown) => {
+      actionGuard()
+      if (!browser.evaluate) throw new ScriptError('EVALUATE_UNSUPPORTED', 'EVALUATE_UNSUPPORTED: 当前浏览器不支持 page.evaluate')
+      if (typeof expression !== 'string' || !expression.trim()) throw new ScriptError('EVALUATE_INVALID', 'EVALUATE_INVALID: page.evaluate 需要一个函数或表达式')
+      const state = browser.state()
+      if (!isLocalPageUrl(state.url)) throw new ScriptError('EVALUATE_NOT_LOCAL', `EVALUATE_NOT_LOCAL: page.evaluate 只能在本机地址（localhost、127.0.0.1、[::1]）的页面里用，当前是 ${state.url || '空白页'}`)
+      const value = await browser.evaluate(expression)
+      lastObservation = null
+      return value
+    },
     click: (ref: unknown, opts?: unknown) => act('click', () => browser.click(String(ref ?? ''), dialogOptions(opts))),
     fill: (ref: unknown, text: unknown, opts?: unknown) => act('fill', () => browser.type(String(ref ?? ''), String(text ?? ''), dialogOptions(opts))),
     select: (ref: unknown, value: unknown) => act('select', () => browser.select(String(ref ?? ''), String(value ?? ''))),

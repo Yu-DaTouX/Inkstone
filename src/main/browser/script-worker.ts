@@ -113,7 +113,8 @@ const CONTEXT_SOURCE = String.raw`(function (call, readState, log) {
     back: remote('page.back'),
     forward: remote('page.forward'),
     reload: remote('page.reload'),
-    waitFor: remote('page.waitFor')
+    waitFor: remote('page.waitFor'),
+    evaluate: (fn, arg) => invoke('page.evaluate', [typeof fn === 'function' ? '(' + fn.toString() + ')(' + (arg === undefined ? '' : stringify(arg)) + ')' : fn])
   })
   globalThis.task = Object.freeze({
     pages: () => parse(readState()).pages,
