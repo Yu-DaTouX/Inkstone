@@ -18,6 +18,7 @@ const legacy = process.argv.includes('legacy')
 const noAuth = process.argv.includes('auth')
 const loadOnly = process.argv.includes('load-only')
 const noPlan = process.argv.includes('no-plan')
+const noAuto = process.argv.includes('no-auto')
 const gatewayModels = process.argv.includes('gateway-models')
 const embeddedContext = process.argv.includes('embedded-context')
 const startDefault = process.argv.includes('start-default')
@@ -29,7 +30,7 @@ const effortFailureFile = process.argv.find((arg) => arg.startsWith('--effort-fa
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
 let model = 'flash'
 let effort = 'low'
-let mode = startDefault ? 'default' : 'auto'
+let mode = startDefault || noAuto ? 'default' : 'auto'
 let cwd
 let promptId = null
 let waiting = false
@@ -74,7 +75,7 @@ const selected = (id, category, currentValue, options) => ({ [protocolVersion ==
 const option = (value, name = value) => ({ value, name })
 const config = () => ({ configOptions: [
   selected('model', 'model', model, [{ group: 'gemini', name: 'Gemini', options: available }]),
-  selected('approval-fixture', 'mode', mode, [option('default'), option('accept-edits'), option('auto'), ...(!noPlan ? [option('plan', 'Plan')] : [])]),
+  selected('approval-fixture', 'mode', mode, [option('default'), option('accept-edits'), ...(!noAuto ? [option('auto')] : []), ...(!noPlan ? [option('plan', 'Plan')] : [])]),
   ...(model === 'third-party' ? [] : [selected(`effort-${model}`, 'thought_level', effort, [{
     group: 'common', name: 'Common', options: model === 'flash' ? [option('low', 'Low'), option('high', 'High')] :
       [option('low', 'Low'), option('medium', 'Medium'), option('high', 'High'), option('xhigh', 'Extra')]
@@ -271,6 +272,11 @@ for await (const line of input) {
       continue
     }
     if (text === 'STALL') continue
+    if (text.endsWith('检查续接')) {
+      chunk(resumedHere ? '续接方式：原会话' : '续接方式：新会话')
+      reply(id, { stopReason: 'end_turn' })
+      continue
+    }
     if (text === '检查交接') {
       chunk(raw.includes('Continue the same Inkstone conversation.') ? '交接方式：冷交接' : '交接方式：同一对话')
       reply(id, { stopReason: 'end_turn' })

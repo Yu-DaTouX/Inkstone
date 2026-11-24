@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_PROMPT_LIMIT, ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
+import { ANTIGRAVITY_APPROVAL_MODE, ANTIGRAVITY_DEFAULT_MODE, ANTIGRAVITY_PROMPT_LIMIT, ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { pick } from '../shared/ui-lang'
 import type { UIToolCall } from '../shared/ui-message'
@@ -8,7 +8,7 @@ import type { SubagentRpc } from './subagents'
 
 type Approval = (request: { detail: string; title: string }, signal: AbortSignal) => Promise<boolean>
 
-type Options = { thinkingLevel?: string; readOnly?: boolean; launch?: typeof launchAntigravity }
+type Options = { thinkingLevel?: string; readOnly?: boolean; resumeSessionId?: string; launch?: typeof launchAntigravity }
 type Turn = { cancelled: boolean; done?: Promise<void> }
 
 export class AntigravitySubagentRpc implements SubagentRpc {
@@ -17,6 +17,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
   private ready?: Promise<void>
   private failure?: string
   private thinkingLevel?: string
+  private mode = ANTIGRAVITY_APPROVAL_MODE
   private active = false
   private closed = false
   private exited = false
@@ -34,6 +35,8 @@ export class AntigravitySubagentRpc implements SubagentRpc {
 
   get running(): boolean { return !this.closed && !this.exited && !!this.ready }
 
+  get antigravitySessionId(): string | undefined { return this.session?.acpSessionId || undefined }
+
   private handleClosed(error: string): void {
     this.active = false
     this.failure ??= error
@@ -47,21 +50,24 @@ export class AntigravitySubagentRpc implements SubagentRpc {
     this.ready = (async () => {
       const level = this.options.thinkingLevel
       if (level !== undefined && !THINKING_LEVELS.includes(level)) throw new Error(pick('无效的 Antigravity 思考档。', 'Invalid Antigravity thinking level.'))
-      const mode = this.options.readOnly ? 'plan' : ANTIGRAVITY_APPROVAL_MODE
       const session = this.session = (this.options.launch ?? launchAntigravity)(this.cwd)
       session.onEvent = (event) => {
         if (event.type === 'closed') this.handleClosed(event.error)
         else if (event.type === 'question') session.reply(event.id, null)
         else if (event.type === 'elicitation') session.replyElicitation(event.id, { action: 'cancel' })
       }
-      let models = await session.start(this.cwd, undefined, this.options.readOnly ? { mode } : undefined)
+      const resumeSessionId = this.options.resumeSessionId
+      let models = await session.start(this.cwd, undefined, { ...(this.options.readOnly ? { mode: 'plan' } : {}), ...(resumeSessionId ? { resumeSessionId } : {}) })
+      if (resumeSessionId && !session.resumed) throw new Error(pick('Antigravity 没能恢复这个子代理原来的会话；请新派任务并带上上次结论。', 'Antigravity could not restore this subagent\'s session; start a new one and include the previous result.'))
       if (models.current !== this.model.id) models = await session.selectModel(this.model.id)
       if (level !== undefined && models.thinking?.current !== level) models = await session.selectThinking(level)
+      const mode = this.options.readOnly ? 'plan' : models.modes?.options.some(({ id }) => id === ANTIGRAVITY_DEFAULT_MODE) ? ANTIGRAVITY_DEFAULT_MODE : ANTIGRAVITY_APPROVAL_MODE
       models = await session.confirmPromptMode(mode)
       if (models.current !== this.model.id || !models.available.some(({ id }) => id === this.model.id)) throw new Error(pick('CLI 未切到指定模型。', 'The CLI did not select the requested model.'))
       if (level !== undefined && models.thinking?.current !== level) throw new Error(pick('CLI 未确认指定思考档。', 'The CLI did not confirm the requested thinking level.'))
       if (this.closed || this.exited) return
       this.thinkingLevel = models.thinking?.current
+      this.mode = mode
       this.active = true
     })().catch(async (error: unknown) => {
       this.failure ??= error instanceof Error ? error.message : String(error)
@@ -164,7 +170,7 @@ export class AntigravitySubagentRpc implements SubagentRpc {
       emit({ type: 'message_end', message: user })
       emit({ type: 'message_start', message: snapshot() })
       if (!turn.cancelled && !this.closed) {
-        const reason = await session.prompt(message, this.model.id, this.thinkingLevel, this.options.readOnly ? 'plan' : ANTIGRAVITY_APPROVAL_MODE)
+        const reason = await session.prompt(message, this.model.id, this.thinkingLevel, this.mode)
         if (reason === 'cancelled') turn.cancelled = true
         else if (reason !== 'end_turn') { stopReason = 'error'; errorMessage = antigravityStopError(reason) }
       }

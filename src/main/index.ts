@@ -73,7 +73,7 @@ import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, qui
 import { runShutdownSteps } from './shutdown'
 import { piTreeRegistry } from './process-tree'
 import { createIpcRegistrar } from './ipc/registrar'
-import { registerAntigravityIpc } from './ipc/antigravity-ipc'
+import { discoverAntigravityModels, knownAntigravityModels, registerAntigravityIpc } from './ipc/antigravity-ipc'
 import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerAgentIpc, type PinnedSendTarget } from './ipc/agent-ipc'
@@ -445,10 +445,13 @@ const subagentService: SubagentService = new SubagentService({
     const preferred = settings.subagentDefaultModel
     const external = [requested, preferred && preferred !== 'follow' ? `${preferred.provider}/${preferred.id}` : ''].flatMap(label => label.startsWith(`${ANTIGRAVITY_PROVIDER}/`) ? [{ provider: ANTIGRAVITY_PROVIDER, id: label.slice(ANTIGRAVITY_PROVIDER.length + 1) }] : [])
     if (context.fromAntigravity && !models.length) return { ok: false, error: pick('Pi 没有可用模型，未派发子代理。', 'Pi has no available model; no subagent was started.') }
-    return resolveSubagentModelPick(requested, context.fromAntigravity ? models.filter(model => model.provider !== ANTIGRAVITY_PROVIDER) : [...models, ...external], context.model, {
-      ...(preferred && preferred !== 'follow' ? { model: preferred } : {}),
-      force: settings.subagentModelForce === true
-    })
+    const preference = { ...(preferred && preferred !== 'follow' ? { model: preferred } : {}), force: settings.subagentModelForce === true }
+    if (context.fromAntigravity) return resolveSubagentModelPick(requested, models.filter(model => model.provider !== ANTIGRAVITY_PROVIDER), context.model, preference)
+    const withAntigravity = (agy: Array<{ id: string; name: string }>) => [...models, ...external, ...agy.filter(({ id }) => ![...models, ...external].some((item) => item.provider === ANTIGRAVITY_PROVIDER && item.id === id)).map(({ id, name }) => ({ provider: ANTIGRAVITY_PROVIDER, id, name }))]
+    const first = resolveSubagentModelPick(requested, withAntigravity(knownAntigravityModels()), context.model, preference)
+    if (first.ok || knownAntigravityModels().length || !requested.trim()) return first
+    const discovered = await discoverAntigravityModels(context.cwd)
+    return discovered.length ? resolveSubagentModelPick(requested, withAntigravity(discovered), context.model, preference) : first
   },
   approveAntigravity: async (request, cwd, origin, signal) => {
     const answer = await approvals.askTimed({ ...origin, kind: 'consent', tool: 'Antigravity', title: `Antigravity · ${request.title}`, detail: request.detail, cwd, reasons: [], canRemember: false, onTimeout: 'deny' }, DANGER_CONFIRM_TIMEOUT_MS, signal)

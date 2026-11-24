@@ -485,6 +485,15 @@ class Fixture {
     await sleep(250)
   }
   check('Pi 用原子代理命令派 Antigravity，归属和结果正确', child?.status === 'done' && child.parentSessionId === baseSession && child.transcript.some(m => m.text === '模拟回复 · pro'), child?.status === 'done' ? undefined : child)
+  check('结束的 Antigravity 子代理标为可续派', child?.resumable?.ok === true, child?.resumable)
+  const followUp = await cdp.evaluate(`window.yan.subagents.send(${JSON.stringify(child?.id)}, '检查续接')`)
+  let resumedChild
+  for (let i = 0; i < 80; i++) {
+    resumedChild = await cdp.evaluate(`window.yan.subagents.list().then(runs => runs.find(r => r.id === ${JSON.stringify(child?.id)}))`)
+    if (resumedChild?.transcript.some(m => m.text?.startsWith('续接方式')) && !['starting', 'running'].includes(resumedChild.status)) break
+    await sleep(250)
+  }
+  check('给结束的 Antigravity 子代理续派：按原会话恢复，保留之前的对话', followUp?.ok === true && resumedChild?.status === 'done' && resumedChild.transcript.some(m => m.text === '模拟回复 · pro') && resumedChild.transcript.some(m => m.text === '续接方式：原会话'), { followUp, status: resumedChild?.status, texts: resumedChild?.transcript.map(m => m.text).slice(-4) })
   const switchedRunner = await ev(`${app}.activeRunnerId`)
   await activate(other.sessionFile, other.sessionId)
   assert.equal(await ev(`window.yan.stopRunner(${JSON.stringify(switchedRunner)})`), true)

@@ -35,6 +35,8 @@ export async function runSubagentResumeTests(ok, mods) {
   ok(!gone.ok && /worktree/.test(gone.reason ?? ''), '可续派：已合并的 worktree 不可续派并说明原因', gone.reason)
   ok(!resume.subagentResumability({ ...input, fork: true, live: false }).ok, '可续派：重启后没有来源信息的 fork 不可续派')
   ok(resume.subagentResumability({ ...input, fork: true, live: false, forkLaunchSaved: true }).ok, '可续派：保存了来源信息的 fork 重启后可续派')
+  ok(!resume.subagentResumability({ ...input, model: 'antigravity/gemini-4-hydrogen' }).ok, '可续派：没记下会话 id 的 Antigravity 子代理不可续派')
+  ok(resume.subagentResumability({ ...input, model: 'antigravity/gemini-4-hydrogen', antigravitySessionSaved: true }).ok, '可续派：记下了会话 id 的 Antigravity 子代理结束后可续派')
 
   const forkLaunch = resume.persistableForkLaunch({
     cwd: '/w', args: ['--extension', 'x'], sessionFile: '/s.jsonl', model: 'p/m', thinkingLevel: 'high',

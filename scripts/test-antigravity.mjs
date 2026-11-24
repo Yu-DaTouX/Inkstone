@@ -293,6 +293,18 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
     assert.fail('等待 ACP 事件超时')
   }
+  {
+    const { registerAntigravityIpc, knownAntigravityModels, discoverAntigravityModels } = await compile('src/main/ipc/antigravity-ipc.ts')
+    const handlers = new Map()
+    let probeLaunches = 0
+    const dispose = registerAntigravityIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, async (cwd) => cwd, () => { probeLaunches += 1; return start().session })
+    try {
+      assert.equal(knownAntigravityModels().length, 0)
+      const found = await discoverAntigravityModels(cwd)
+      await discoverAntigravityModels(cwd)
+      ok(probeLaunches === 1 && found.length > 0 && found.every((model) => model.id && model.name) && knownAntigravityModels() === found, '派子代理时可按需探测一次 agy 模型并缓存，之后不再起探测进程')
+    } finally { await dispose() }
+  }
 
   {
     const location = mkdtempSync(join(tmpdir(), 'yan-acp-executable-'))
@@ -667,11 +679,30 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(!noPlan.ready.success && !invalid.ready.success && !unavailable.ready.success &&
         !noPlan.rpc.running && !invalid.rpc.running && !unavailable.rpc.running, '无 Plan 档、非法思考档或所选模型不支持指定档位时启动失败且不降级')
     } finally { await Promise.all([noPlan.rpc.close(), invalid.rpc.close(), unavailable.rpc.close()]) }
+    const auto = await child('flash', {}, () => assert.fail('Auto 下不应弹出批准'), 'start-default')
+    try {
+      await auto.rpc.command('prompt', { message: '权限' })
+      await wait(() => auto.events.some((e) => e.type === 'agent_settled'))
+      ok(auto.events.findLast((e) => e.type === 'message_end').message.content.some((block) => block.text === '审批结果 · once'), '可写 ACP 子代理与主聊天一致，CLI 提供 Auto 时切到 Auto，不再逐条弹出批准')
+    } finally { await auto.rpc.close() }
+    const first = await child('flash', {})
+    let savedId
+    try {
+      await first.rpc.command('prompt', { message: '续派前的一句' })
+      await wait(() => first.events.some((e) => e.type === 'agent_settled'))
+      savedId = first.rpc.antigravitySessionId
+    } finally { await first.rpc.close() }
+    const again = await child('flash', { resumeSessionId: savedId })
+    const lost = await child('flash', { resumeSessionId: 'missing-session' })
+    try {
+      ok(!!savedId && again.ready.success && again.rpc.antigravitySessionId === savedId, '结束的 ACP 子代理按记下的会话 id 恢复原会话')
+      ok(!lost.ready.success && !lost.rpc.running, '原会话恢复不了时启动失败，不悄悄换成新会话')
+    } finally { await Promise.all([again.rpc.close(), lost.rpc.close()]) }
     let approvalSignal
     const cancellable = await child('flash', {}, (_request, signal) => {
       approvalSignal = signal
       return new Promise((resolve) => signal.addEventListener('abort', () => resolve(true), { once: true }))
-    })
+    }, 'no-auto')
     try {
       assert.equal(cancellable.ready.data?.thinkingLevel, 'low')
       await cancellable.rpc.command('prompt', { message: '权限' })

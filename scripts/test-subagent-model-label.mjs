@@ -63,7 +63,11 @@ try {
   assert.deepEqual(pick(undefined, [], parent, pref), { ok: true, label: 'openai-codex/gpt-6-luna' }, '没有模型清单时直接信任设置')
   assert.equal(pick('deepseek-v4.1-flash', models, 'openai-codex/gpt-6-luna').ok, false, '无设置时保持原有歧义报错')
 
-  console.log('test-subagent-model-label: 29 项通过')
+  const withAgy = [...models, { provider: 'commandcode', id: 'google/gemini-4-neon' }, { provider: 'antigravity', id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' }]
+  assert.deepEqual(pick('Gemini 4 Hydrogen', withAgy, parent), { ok: true, label: 'antigravity/gemini-4-hydrogen' }, 'agy 模型按显示名匹配')
+  assert.deepEqual(pick('gemini-4-hydrogen', withAgy, parent), { ok: true, label: 'antigravity/gemini-4-hydrogen' }, 'agy 模型按裸 id 匹配')
+
+  console.log('test-subagent-model-label: 31 项通过')
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

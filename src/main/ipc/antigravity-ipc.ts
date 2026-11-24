@@ -24,6 +24,7 @@ export function createAntigravityDiscoveryProbes(resolveCwd: (cwd: string) => Pr
         try { await session.close() } finally { probes.delete(key) }
       }).then((models) => {
         if (disposed) throw closedError()
+        if (models.available.length) knownModels = models.available.map(({ id, name }) => ({ id, name }))
         return models
       })
       probes.set(key, { result, session })
@@ -36,8 +37,20 @@ export function createAntigravityDiscoveryProbes(resolveCwd: (cwd: string) => Pr
   }
 }
 
-export function registerAntigravityIpc(ipc: IpcRegistrar, resolveCwd: (cwd: string) => Promise<string>): () => Promise<void> {
-  const probes = createAntigravityDiscoveryProbes(resolveCwd)
+let knownModels: Array<{ id: string; name: string }> = []
+let activeProbes: ReturnType<typeof createAntigravityDiscoveryProbes> | null = null
+
+export function knownAntigravityModels(): Array<{ id: string; name: string }> {
+  return knownModels
+}
+
+export async function discoverAntigravityModels(cwd: string): Promise<Array<{ id: string; name: string }>> {
+  if (!knownModels.length && activeProbes) await activeProbes.discover(cwd).catch(() => undefined)
+  return knownModels
+}
+
+export function registerAntigravityIpc(ipc: IpcRegistrar, resolveCwd: (cwd: string) => Promise<string>, launch: typeof launchAntigravity = launchAntigravity): () => Promise<void> {
+  const probes = activeProbes = createAntigravityDiscoveryProbes(resolveCwd, launch)
   ipc.handle('yan:antigravity:quota', (force) => antigravityQuota(force === true))
   ipc.handle('yan:antigravity:discover', probes.discover)
   return probes.dispose

@@ -161,6 +161,7 @@ interface QuotaRecovery {
 
 interface Run extends SubagentRun {
   rpc: SubagentRpc
+  antigravitySessionId?: string
   timer: NodeJS.Timeout
   pushTimer?: NodeJS.Timeout
   lastProgressAt: number
@@ -698,7 +699,7 @@ export class SubagentController {
       result: this.resultFor(run),
       resumable: subagentResumability({
         status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
-        model: run.model, live: true, worktreeAlive: worktreeAlive(run), forkLaunchSaved: !!run.forkSource
+        model: run.model, live: true, worktreeAlive: worktreeAlive(run), forkLaunchSaved: !!run.forkSource, antigravitySessionSaved: !!antigravitySessionOf(run)
       })
     }
   }
@@ -874,7 +875,7 @@ export class SubagentController {
       ...run,
       resumable: subagentResumability({
         status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
-        model: run.model, live: false, worktreeAlive: (run.review === 'pending' || run.review === 'conflict') && !!keptWorktreeOf(record), forkLaunchSaved: !!record.resume?.forkLaunch
+        model: run.model, live: false, worktreeAlive: (run.review === 'pending' || run.review === 'conflict') && !!keptWorktreeOf(record), forkLaunchSaved: !!record.resume?.forkLaunch, antigravitySessionSaved: !!record.resume?.antigravitySessionId
       })
     }
   }
@@ -1165,15 +1166,16 @@ export class SubagentController {
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     id: string,
     sessionFile?: string,
-    fork?: SubagentForkSource
+    fork?: SubagentForkSource,
+    antigravitySessionId?: string
   ): Promise<SubagentRpc> {
     if (model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) {
-      if (fork || sessionFile || isolation === 'controlled-cwd') throw new Error(pick('Antigravity 子代理不支持 fork、只读或原会话续接。', 'Antigravity subagents do not support forks, read-only mode, or resuming a native Pi session.'))
+      if (fork || sessionFile) throw new Error(pick('Antigravity 子代理不支持 fork，也不能续接 Pi 会话。', 'Antigravity subagents do not support forks or resuming a Pi session.'))
       return new AntigravitySubagentRpc(
         cwd,
         model.slice(ANTIGRAVITY_PROVIDER.length + 1),
         (request, signal) => ctx.approveAntigravity?.(request, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }, signal) ?? Promise.resolve(false),
-        { thinkingLevel: ctx.thinkingLevel }
+        { thinkingLevel: ctx.thinkingLevel, readOnly: isolation === 'controlled-cwd', ...(antigravitySessionId ? { resumeSessionId: antigravitySessionId } : {}) }
       )
     }
     if (fork) return this.createForkRpc(ctx, id, fork, sessionFile)
@@ -1360,12 +1362,14 @@ export class SubagentController {
         return { ok: false, error: pick('worktree 子 Agent的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
       }
       if (snapshot.launchFailed) return { ok: false, error: pick('这个子 Agent没有成功启动过，不能续接，请重新派一个', 'This subagent never started successfully and cannot be resumed; start a new one') }
-      if (snapshot.model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) return { ok: false, error: pick('Antigravity 子代理已结束。请新派任务并带上上次结论。', 'The Antigravity subagent ended. Delegate a new task with its prior result.') }
-      const sessionFile = await latestSessionFile(this.sessionDir(id))
+      const viaAntigravity = !!snapshot.model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)
+      const antigravitySessionId = viaAntigravity ? antigravitySessionOf(previous) ?? record?.resume?.antigravitySessionId : undefined
+      if (viaAntigravity && !antigravitySessionId) return { ok: false, error: pick('Antigravity 子代理已结束。请新派任务并带上上次结论。', 'The Antigravity subagent ended. Delegate a new task with its prior result.') }
+      const sessionFile = viaAntigravity ? undefined : await latestSessionFile(this.sessionDir(id))
       if (abandoned()) return abandonedError()
-      if (!sessionFile) return { ok: false, error: pick('找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'Its session record was not found, so it cannot be resumed; start a new one and include its findings') }
+      if (!sessionFile && !viaAntigravity) return { ok: false, error: pick('找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'Its session record was not found, so it cannot be resumed; start a new one and include its findings') }
       const savedFork = record?.resume?.forkLaunch
-      const forkSource = previous?.forkSource ?? (snapshot.fork && savedFork ? restoreForkSource(savedFork, sessionFile) : undefined)
+      const forkSource = previous?.forkSource ?? (snapshot.fork && savedFork && sessionFile ? restoreForkSource(savedFork, sessionFile) : undefined)
       if (snapshot.fork && !forkSource) return { ok: false, error: pick('这个 fork 子 Agent没有保存来源信息，砚重启后不能续接；需要继续时重新派一个', 'This fork subagent has no saved source and cannot be resumed after a restart; start a new one') }
 
       const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
@@ -1382,7 +1386,7 @@ export class SubagentController {
       let rpc: SubagentRpc
       try {
         brief = previous?.brief ?? resumeBrief(snapshot)
-        rpc = await this.createRpc(ctx, workspace.cwd, snapshot.model, workspace.isolation, id, sessionFile, forkSource)
+        rpc = await this.createRpc(ctx, workspace.cwd, snapshot.model, workspace.isolation, id, sessionFile, forkSource, antigravitySessionId)
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
@@ -1426,6 +1430,7 @@ export class SubagentController {
         progressWarning: undefined, recovery: undefined, retryAttempt: undefined, retryMaxAttempts: undefined,
         lastModelErrorText: undefined, quotaBounces: undefined, quotaAccount: undefined, quotaRecovery: undefined, overtimeNoticed: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
       })
+      if (antigravitySessionId) run.antigravitySessionId = antigravitySessionId
       this.runs.set(id, run)
       release()
       this.wireRpc(run, rpc)
@@ -2659,7 +2664,15 @@ function resumeExtra(run: Run): { resume?: ResumeMeta } {
   }
   if (run.forkSource) meta.forkLaunch = persistableForkLaunch(run.forkSource)
   if (run.isolation === 'worktree' && run.workspace.worktreePath) meta.workspace = run.workspace
+  const antigravitySessionId = antigravitySessionOf(run)
+  if (antigravitySessionId) meta.antigravitySessionId = antigravitySessionId
   return Object.keys(meta).length ? { resume: meta } : {}
+}
+
+function antigravitySessionOf(run: Run | undefined): string | undefined {
+  if (!run) return undefined
+  if (run.rpc instanceof AntigravitySubagentRpc) run.antigravitySessionId = run.rpc.antigravitySessionId ?? run.antigravitySessionId
+  return run.antigravitySessionId
 }
 
 function resumeBrief(run: SubagentRun): SubagentBrief {
