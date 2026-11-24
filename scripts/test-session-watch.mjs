@@ -28,8 +28,9 @@ await build({
   platform: 'node',
   format: 'esm',
   logLevel: 'silent',
-  external: ['ws', '@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
-  plugins: [electronStub]
+  external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+  plugins: [electronStub],
+  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }
 })
 const M = await import(pathToFileURL(join(root, 'watch.mjs')).href)
 
