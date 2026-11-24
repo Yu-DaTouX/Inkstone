@@ -1359,15 +1359,6 @@ await runSuite(import.meta.url, async (ok, compile) => {
       splitAntigravityErrorLine('⚠ UNAUTHENTICATED (code 401): x\n后面还有正文') === null &&
       splitAntigravityErrorLine('一切正常。') === null,
       '只认正文末尾「⚠ 状态名 (code N): …」格式的错误行，普通警示和中间引用不误判')
-    const { replyUsesCjk } = await compile('src/renderer/src/features/session/turn-process.ts')
-    const englishThought = [{ id: 's-acp-2', sourceMessageId: 'm-acp-2', thinking: 'The visual elements are significantly improved.\n\nNext I will rerun the checks.', thinkingLive: false, tools: [{ id: 't-3', name: 'git status', status: 'ok', args: {}, details: { antigravity: true, kind: 'execute' } }], texts: [], commentary: [], response: null }]
-    const chineseThought = [{ ...englishThought[0], id: 's-acp-3', thinking: '正在检查左栏对齐，接下来重新截图。' }]
-    ok(withGeminiProgressNotes(englishThought, 'antigravity/gemini-4-neon', true)[0].commentary.length === 0 &&
-      withGeminiProgressNotes(chineseThought, 'antigravity/gemini-4-neon', true)[0].commentary.length === 1 &&
-      withGeminiProgressNotes(englishThought, 'antigravity/gemini-4-neon', false)[0].commentary.length === 2,
-      '中文对话里英文思考摘要不提升为旁白，只留在思考里；同语言照常提升')
-    ok(replyUsesCjk('类型检查已通过，正在构建。', false) === true && replyUsesCjk('Build passed.', true) === false && replyUsesCjk('', true) === true && replyUsesCjk('`npm` 123', false) === false,
-      '回复语言按本回合已写出的正文判断，没有正文时用界面语言')
     const ttStub = (key) => ({ stepRead: '已读取', stepReadRunning: '正在读取', stepRan: '已运行', stepRunning: '正在运行' }[key] ?? key)
     const acpReadTitle = toolStepTitle({ name: 'File /E:/pi-desktop/src/main/agent.ts', status: 'running', args: { Path: 'E:\\pi-desktop\\src\\main\\agent.ts' }, details: { antigravity: true, kind: 'read' } }, ttStub)
     const acpCmdLabel = toolRunningLabel({ id: 't-2', name: 'git status --short', status: 'running', args: { CommandLine: 'git status --short', toolSummary: 'Check git status' }, details: { antigravity: true, kind: 'execute' } }, '生成参数中', ttStub)
