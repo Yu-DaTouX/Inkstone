@@ -38,13 +38,14 @@
   }
 
   .imgv-head {
-    justify-content: space-between;
+    justify-content: center;
   }
 
   .imgv-label {
     min-width: 0;
+    max-width: 100%;
     padding: var(--s-4) var(--s-12);
-    text-align: start;
+    text-align: center;
     font-size: var(--t-footnote);
   }
 
@@ -57,10 +58,6 @@
 
   .imgv-label small {
     color: var(--fg3);
-  }
-
-  .imgv-close {
-    flex: none;
   }
 
   .imgv-dock {

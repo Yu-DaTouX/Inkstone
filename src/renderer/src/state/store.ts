@@ -43,6 +43,7 @@ import { cancelClockFrame, requestClockFrame } from '../lib/frame-clock'
 import { SubagentPatchBatch, applySubagentPatches } from './subagent-patch-batch'
 import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
 import { composerSubmitIdentity, sameComposerView, type ComposerSubmitIdentity } from './composer-recovery'
+import type { SendOwner } from './slices/send'
 import type { QueueOp } from '../features/composer/queue-plan'
 import { replaceIndexedMessage } from './message-index'
 import { reuseIfSame } from './same-messages'
@@ -220,7 +221,8 @@ export interface Store {
   send: (
     text: string,
     images?: { data: string; mimeType: string }[],
-    mode?: 'steer' | 'followUp'
+    mode?: 'steer' | 'followUp',
+    owner?: SendOwner
   ) => Promise<boolean>
   holdSend: (text: string, images?: { data: string; mimeType: string }[]) => void
   releaseSend: (id: string, mode: 'steer' | 'followUp') => Promise<void>

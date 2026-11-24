@@ -215,6 +215,54 @@ check('正文栏变宽而滚动容器不变（切换会话、侧栏开合）：�
   }
 })
 
+check('运行中末行变矮后的空白只短暂保留：停止操作后最多 0.6 秒收回，滚动中顺延，不论空白从何而来', () => {
+  const previous = { ResizeObserver: globalThis.ResizeObserver, requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame, getComputedStyle: globalThis.getComputedStyle, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
+  const frames = []
+  const timers = []
+  let notify
+  let clock = 1000
+  const listeners = {}
+  globalThis.ResizeObserver = class {
+    constructor(callback) { notify = callback }
+    observe() {}
+    disconnect() {}
+  }
+  globalThis.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length }
+  globalThis.cancelAnimationFrame = () => {}
+  globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length }
+  globalThis.clearTimeout = () => {}
+  globalThis.getComputedStyle = () => ({ borderTopWidth: '0', borderBottomWidth: '0', paddingTop: '0', paddingBottom: '0', marginBottom: '0' })
+  let content = 500
+  const tail = { clientWidth: 400, style: { minHeight: '' }, lastElementChild: { getBoundingClientRect: () => ({ bottom: content }) }, getBoundingClientRect: () => ({ top: 0, height: Math.max(content, parseFloat(tail.style.minHeight) || 0) }) }
+  const scroller = { clientWidth: 900, clientHeight: 600, getBoundingClientRect: () => ({ bottom: 600 }), addEventListener(name, fn) { listeners[name] = fn }, removeEventListener() {} }
+  const step = (ms) => { clock += ms; notify(); frames.shift()() }
+  let release
+  try {
+    release = tailHold.holdStreamTail(scroller, () => tail, () => clock)
+    content = 300
+    step(0)
+    assert.equal(tail.style.minHeight, '500px', '刚变矮时先留住，避免跳动')
+    assert.ok(timers.length > 0, '安排了收回检查')
+    step(550)
+    assert.equal(tail.style.minHeight, '500px')
+    listeners.wheel()
+    step(100)
+    assert.equal(tail.style.minHeight, '500px', '用户正在滚动：顺延，不在手下改布局')
+    step(200)
+    assert.equal(tail.style.minHeight, '300px', '停止操作后收回到真实高度')
+    step(5000)
+    assert.equal(tail.style.minHeight, '300px', '收回后不再被旧高度顶回')
+    content = 200
+    step(0)
+    assert.equal(tail.style.minHeight, '300px')
+    step(700)
+    assert.equal(tail.style.minHeight, '200px', '再次变矮同样只短暂保留')
+  } finally {
+    release?.()
+    Object.assign(globalThis, previous)
+  }
+})
+
 check('运行中末行变矮：看得见的空白留住，视口下方的空白收回，最多留半屏', () => {
   assert.equal(tailHold.heldTailHeight(800, 700, 800, 600), 800)
   assert.equal(tailHold.heldTailHeight(800, 700, 760, 600), 760)

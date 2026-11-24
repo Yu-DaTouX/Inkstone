@@ -44,14 +44,82 @@ const record = (name, data) => console.log(name, JSON.stringify(data))
   const file = { id: 'original-file', kind: 'file', path: 'C:/fixture/a.txt' }
   let created
   reset({ messages: [], session: session('A', { isAgentRunning: false }), attachments: [file], newSession: () => new Promise(resolve => { created = resolve }) })
+  const worktreeRunner = { id: 'run-new', runId: 'run-new', sessionId: 'new', generation: 7, cwd: 'C:/fixture-wt', isolationBranch: 'Inkstone/fixture', isActive: false, running: false }
+  useStore.setState({ syncRunners: async () => { if (!get().runners.some(item => item.id === 'run-new')) useStore.setState({ runners: [...get().runners, worktreeRunner] }) } })
   setWorktreeIntent('run-A')
   const move = materializeWorktreeIntent(key => key)
   switchView('B')
   useStore.setState({ attachments: [] })
   created({ ok: true, runId: 'run-new', sessionId: 'new' })
-  assert.equal(await move, 'failed')
+  const outcome = await move
+  assert.equal(outcome.kind, 'created')
+  assert.equal(outcome.shown(), false)
+  assert.deepEqual(outcome.expected, { sessionId: 'new', runId: 'run-new', generation: 7 })
+  assert.equal(outcome.origin.sessionId, 'A')
+  assert.equal(get().session.sessionId, 'B')
   assert.deepEqual(get().attachments, [])
-  record('WORKTREE_RETAIN_OWNER', { selected: get().session.sessionId })
+  record('WORKTREE_SWITCH_AWAY_CONTINUES', { selected: get().session.sessionId, target: outcome.expected.runId })
+}
+
+{
+  const agy = (extra = {}) => ({ provider: 'antigravity', id: 'gemini-fixture', ...extra })
+  const calls = []
+  let created
+  reset({ messages: [], session: session('A', { isAgentRunning: false, model: agy(), antigravity: { mode: 'auto', thinking: { current: 'high' } } }), newSession: () => new Promise(resolve => { created = resolve }) })
+  const worktreeRunner = { id: 'run-new', runId: 'run-new', sessionId: 'new', generation: 7, cwd: 'C:/fixture-wt', isolationBranch: 'Inkstone/fixture', isActive: false, running: false }
+  useStore.setState({ syncRunners: async () => { if (!get().runners.some(item => item.id === 'run-new')) useStore.setState({ runners: [...get().runners, worktreeRunner] }) } })
+  const background = { sessionId: 'new', cwd: 'C:/fixture-wt', model: { provider: 'pi', id: 'default' }, antigravity: {} }
+  const publish = () => get().applyPush({ ch: 'state', runtime: { sessionId: 'new', runId: 'run-new', generation: 7 }, payload: { ...background } })
+  window.yan = {
+    setModel: async (provider, id, expected) => { calls.push(['model', id, expected]); background.model = agy({ id }); publish(); return { ok: true } },
+    antigravity: { setMode: async (mode, expected) => { calls.push(['mode', mode, expected]); background.antigravity = { ...background.antigravity, mode }; publish(); return { ok: true } } },
+    setThinking: async (effort, expected) => { calls.push(['thinking', effort, expected]); background.antigravity = { ...background.antigravity, thinking: { current: effort } }; publish(); return { ok: true } }
+  }
+  setWorktreeIntent('run-A')
+  const move = materializeWorktreeIntent(key => key)
+  switchView('B')
+  created({ ok: true, runId: 'run-new', sessionId: 'new' })
+  const outcome = await move
+  assert.equal(outcome.kind, 'created')
+  assert.deepEqual(calls.map(([kind, value]) => `${kind}:${value}`), ['model:gemini-fixture', 'mode:auto', 'thinking:high'])
+  assert.ok(calls.every(([, , expected]) => expected.runId === 'run-new' && expected.generation === 7))
+  assert.equal(get().session.sessionId, 'B')
+  record('WORKTREE_AGY_SETUP_BACKGROUND', { calls: calls.length, selected: get().session.sessionId })
+}
+
+{
+  let created
+  reset({ messages: [], session: session('A', { isAgentRunning: false, model: { provider: 'antigravity', id: 'gemini-fixture' } }), newSession: () => new Promise(resolve => { created = resolve }) })
+  const worktreeRunner = { id: 'run-new', runId: 'run-new', sessionId: 'new', generation: 7, cwd: 'C:/fixture-wt', isActive: false, running: false }
+  useStore.setState({ syncRunners: async () => { if (!get().runners.some(item => item.id === 'run-new')) useStore.setState({ runners: [...get().runners, worktreeRunner] }) } })
+  window.yan = { setModel: async () => ({ ok: false, error: 'fixture agy down' }) }
+  setWorktreeIntent('run-A')
+  const move = materializeWorktreeIntent(key => key)
+  switchView('B')
+  created({ ok: true, runId: 'run-new', sessionId: 'new' })
+  assert.equal((await move).kind, 'failed')
+  assert.equal(get().session.sessionId, 'B')
+  switchView('A', { isAgentRunning: false })
+  useStore.setState({ messages: [] })
+  let again = false
+  useStore.setState({ newSession: async () => { again = true; return { ok: false } } })
+  await materializeWorktreeIntent(key => key)
+  assert.equal(again, true)
+  record('WORKTREE_AGY_FAIL_KEEPS_INTENT', { retriesWorktree: again })
+}
+
+{
+  reset()
+  const sent = []
+  let activated = false
+  useStore.setState({ ensureActivated: async () => { activated = true; return true } })
+  window.yan = { send: async (text, images, mode, expected) => { sent.push({ text, expected }); return { ok: true } } }
+  const expected = { sessionId: 'new', runId: 'run-new', generation: 7 }
+  const ok = await get().send('fixture-bound', undefined, undefined, { identity: { draftKey: 'new', sessionId: 'new', runId: 'run-new', generation: 7 }, expected, attachments: [] })
+  assert.equal(ok, true)
+  assert.equal(activated, false)
+  assert.deepEqual(sent, [{ text: 'fixture-bound', expected }])
+  record('SEND_BOUND_OWNER', { viewing: get().session.sessionId, target: sent[0].expected.runId })
 }
 
 {

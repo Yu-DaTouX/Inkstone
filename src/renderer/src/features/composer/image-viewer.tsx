@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type CSSProperties, type JSX, type RefObject } from 'react'
-import { BareButton, Button, CloseButton, Dialog, IconButton, Modal, ModalOverlay } from '../../ui'
+import { BareButton, Button, Dialog, IconButton, Modal, ModalOverlay } from '../../ui'
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from '../../ui/icons'
 import { useT } from '../../i18n'
 import { InlineImage } from '../../ui/InlineImage'
@@ -83,6 +83,7 @@ function OpenImageViewer({ initial, gallery, onOpenChange }: {
   const viewport = useRef<HTMLDivElement>(null)
   const zoomAnchor = useRef<ZoomAnchor | null>(null)
   const wheel = useRef({ at: 0, by: 0 })
+  const press = useRef<{ x: number; y: number } | null>(null)
   const changeZoom = (by: number, pointer?: { clientX: number; clientY: number }): void => {
     if (!by || (zoom === 1 && by < 0) || (zoom === 4 && by > 0)) return
     const view = viewport.current
@@ -140,18 +141,25 @@ function OpenImageViewer({ initial, gallery, onOpenChange }: {
     <ModalOverlay ref={overlay} className="imgv-overlay" isOpen onOpenChange={onOpenChange} isDismissable>
       <Modal className="imgv-modal">
         <Dialog className="imgv-dialog" aria-label={name} showClose={false} body="flush" padding="none">
-          <div ref={body} tabIndex={-1} className="imgv-body" data-testid="image-viewer" onKeyDown={(event) => {
+          <div ref={body} tabIndex={-1} className="imgv-body" data-testid="image-viewer" onPointerDown={(event) => {
+            press.current = { x: event.clientX, y: event.clientY }
+          }} onClick={(event) => {
+            const start = press.current
+            press.current = null
+            if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return
+            if ((event.target as HTMLElement).closest('img, button, [role="button"], .imgv-tools, .imgv-label, .ui-image-wipe')) return
+            onOpenChange(false)
+          }} onKeyDown={(event) => {
             if (count < 2 || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
             if ((event.target as HTMLElement).closest('input, [data-zoomed]')) return
             event.preventDefault()
             step(event.key === 'ArrowLeft' ? -1 : 1)
           }}>
             <div className="imgv-head">
-              <div className="ui-float imgv-label" title={name}>
+              <div className="imgv-label" title={name}>
                 <span>{name}</span>
                 {current.caption && current.caption !== current.alt ? <small title={current.caption}>{current.caption}</small> : null}
               </div>
-              <CloseButton className="ui-float imgv-close" size="md" onPress={() => onOpenChange(false)} />
             </div>
             <div className="imgv-stage" data-gallery={count > 1 || undefined}>
               {count > 1 ? (
