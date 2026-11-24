@@ -13,6 +13,12 @@ import { applyQueueRecovery } from './queue-recovery'
 import { EMPTY_QUEUE, hasComposerIdentity, nav, sessionActionTarget, submitRuntimeFor } from './runtime'
 import { piCall, pushNotice, type SliceContext } from './shared'
 
+export type SendOwner = {
+  identity: ComposerSubmitIdentity
+  expected: ExpectedRuntimeOwner
+  attachments: Attachment[]
+}
+
 export type PendingSend = {
   id: string
   sessionId: string | null
@@ -112,9 +118,9 @@ export function createSendSlice({ set, get }: SliceContext): SendSlice {
   pendingSends: [],
   pendingSourceLinks: [],
   submittingMessages: [],
-  send: async (text, images, mode) => {
-    const target = composerSubmitIdentity(get())
-    const attachments = get().attachments
+  send: async (text, images, mode, owner) => {
+    const target = owner?.identity ?? composerSubmitIdentity(get())
+    const attachments = owner?.attachments ?? get().attachments
     const submission: SubmittingMessage = {
       identity: target,
       message: { id: `submitting-${crypto.randomUUID()}`, role: 'user', text, images, timestamp: Date.now(), sourceCwd: get().session?.cwd },
@@ -122,12 +128,12 @@ export function createSendSlice({ set, get }: SliceContext): SendSlice {
     }
     set({ submittingMessages: [...get().submittingMessages, submission] })
     try {
-      const guardView = hasComposerIdentity(target)
-      const earlySessionId = attachments.length && !get().pendingActivation ? get().session?.sessionId : undefined
+      const guardView = !owner && hasComposerIdentity(target)
+      const earlySessionId = !owner && attachments.length && !get().pendingActivation ? get().session?.sessionId : undefined
       const earlySourceIds = earlySessionId ? collectSourceIds(attachments, earlySessionId) : null
-      if (!(await get().ensureActivated(target))) return false
+      if (!owner && !(await get().ensureActivated(target))) return false
       if (guardView && !sameComposerView(get(), target)) return false
-      const sessionId = get().session?.sessionId
+      const sessionId = owner ? owner.expected.sessionId : get().session?.sessionId
       const sourceIds = !sessionId
         ? []
         : earlySourceIds && sessionId === earlySessionId
@@ -137,7 +143,7 @@ export function createSendSlice({ set, get }: SliceContext): SendSlice {
       if (sourceIds.length) {
         set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, text: text.trim(), sourceIds }] })
       }
-      const expected = await submitRuntimeFor(get, target)
+      const expected = owner ? owner.expected : await submitRuntimeFor(get, target)
       if (guardView && !sameComposerView(get(), target)) return false
       const res = expected === null
         ? { ok: false, error: uiText('state.error.sessionNotActivated') }

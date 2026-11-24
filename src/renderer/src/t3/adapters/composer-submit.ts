@@ -13,7 +13,7 @@ import { hasComposerText } from '../../features/composer/composer-text'
 import { fileReferencePath } from '../../features/composer/file-refs'
 import { imageRefPrefix, withImageLegend } from '../../features/composer/image-refs'
 import { loadDraft, saveDraft } from '../../features/composer/draft-store'
-import { materializeWorktreeIntent } from '../../features/composer/worktree-intent'
+import { materializeWorktreeIntent, setWorktreeIntent, type WorktreeOutcome } from '../../features/composer/worktree-intent'
 import { answerComposerForm, composerQuestion, setComposerTextPort } from '../../features/session/question-composer'
 
 export type ComposerSubmitMode = 'steer' | 'followUp'
@@ -131,11 +131,13 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
           })
           return
         }
-        const moved = roundRunning ? 'none' : await materializeWorktreeIntent(t)
-        if (moved === 'failed') return
-        if (moved === 'created') identity = composerSubmitIdentity(useStore.getState())
+        const moved: WorktreeOutcome = roundRunning ? { kind: 'none' } : await materializeWorktreeIntent(t)
+        if (moved.kind === 'failed') return
+        const worktree = moved.kind === 'created' ? moved : null
+        if (worktree) identity = worktree.identity
+        const detached = !!worktree && !worktree.shown()
         const sentIds = attachments.map((a) => a.id)
-        const sentFrom = runtimeKeyOf(useStore.getState())
+        const sentFrom = worktree ? worktree.identity.draftKey : runtimeKeyOf(useStore.getState())
         const images = attachments
           .filter((a) => a.kind !== 'file')
           .map((a) => ({ data: a.data, mimeType: a.mimeType }))
@@ -146,6 +148,20 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
               list: fileRefs.map((a) => `- ${fileReferencePath(a)}`).join('\n')
             })}`
           : body
+        if (worktree) {
+          if (!detached) portsRef.current.clearText()
+          useStore.getState().dropSentAttachments(sentIds, [worktree.origin.draftKey, sentFrom])
+          cleared = true
+          const ok = await send(outgoing, images.length ? images : undefined, undefined, { identity: worktree.identity, expected: worktree.expected, attachments })
+          if (!ok) {
+            if (worktree.shown()) useStore.getState().recoverComposerInput({ identity: worktree.identity, text: value, attachments })
+            else {
+              useStore.getState().recoverComposerInput({ identity: worktree.origin, text: value, attachments })
+              if (worktree.originRunId) setWorktreeIntent(worktree.originRunId)
+            }
+          }
+          return
+        }
         const question = composerQuestion()
         if (question) {
           const stashed = images.length ? await window.yan.stashImages(images).catch(() => []) : []
