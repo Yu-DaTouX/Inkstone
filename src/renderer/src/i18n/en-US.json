@@ -994,6 +994,7 @@
   "sm.subagentsExtra": "Subagents {n}",
   "sm.cacheRead": "Cache read",
   "sm.cacheWrite": "Cache write",
+  "sm.cacheReadWrite": "Cache read/write",
   "sm.output": "Output",
   "sm.partialTip": "Some requests unreported; actual is higher",
   "sm.historyPartialTip": "History partly loaded; actual is higher",

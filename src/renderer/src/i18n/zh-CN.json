@@ -994,6 +994,7 @@
   "sm.subagentsExtra": "子 Agent {n}",
   "sm.cacheRead": "缓存读取",
   "sm.cacheWrite": "缓存写入",
+  "sm.cacheReadWrite": "缓存读/写",
   "sm.output": "输出",
   "sm.partialTip": "部分请求未上报，实际更多",
   "sm.historyPartialTip": "历史未全部载入，实际更多",

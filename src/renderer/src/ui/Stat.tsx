@@ -1,5 +1,7 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
+import { Focusable } from 'react-aria-components'
 import { cx } from './cx'
+import { Tooltip, TooltipHint, TooltipTrigger } from './Tooltip'
 import './Stat.css'
 
 export interface StatGridProps extends HTMLAttributes<HTMLDListElement> {
@@ -47,6 +49,8 @@ export function Stat({ label, value, unit, span, aside, footer, className, style
 export interface MiniBarsProps {
   values: readonly number[]
   pending?: number | null
+  labels?: readonly string[]
+  pendingLabel?: string
   slots?: number
   stretch?: boolean
   className?: string
@@ -56,7 +60,19 @@ function barHeight(v: number, max: number): string {
   return `${max > 0 ? Math.max(12, Math.round((v / max) * 100)) : 12}%`
 }
 
-export function MiniBars({ values, pending, slots, stretch, className }: MiniBarsProps) {
+function TipBar({ label, children }: { label: string | undefined; children: ReactNode }) {
+  if (!label) return <>{children}</>
+  return (
+    <TooltipTrigger>
+      <Focusable>{children as never}</Focusable>
+      <Tooltip placement="top">
+        <TooltipHint label={label} />
+      </Tooltip>
+    </TooltipTrigger>
+  )
+}
+
+export function MiniBars({ values, pending, labels, pendingLabel, slots, stretch, className }: MiniBarsProps) {
   const live = pending !== undefined
   const liveValue = typeof pending === 'number' && Number.isFinite(pending) && pending > 0 ? pending : 0
   const max = values.reduce((top, v) => (v > top ? v : top), liveValue)
@@ -67,14 +83,21 @@ export function MiniBars({ values, pending, slots, stretch, className }: MiniBar
         <span key={`slot-${i}`} className="ui-minibars__bar" data-slot="1" />
       ))}
       {values.map((v, i) => (
-        <span
-          key={i}
-          className="ui-minibars__bar"
-          data-last={i === values.length - 1 ? '1' : undefined}
-          style={{ height: barHeight(v, max) }}
-        />
+        <TipBar key={i} label={labels?.[i]}>
+          <span
+            className="ui-minibars__bar"
+            data-last={i === values.length - 1 ? '1' : undefined}
+            data-tip={labels?.[i] ? '1' : undefined}
+            tabIndex={labels?.[i] ? -1 : undefined}
+            style={{ height: barHeight(v, max) }}
+          />
+        </TipBar>
       ))}
-      {live ? <span key="pending" className="ui-minibars__bar" data-pending="1" style={{ height: barHeight(liveValue, max) }} /> : null}
+      {live ? (
+        <TipBar key="pending" label={pendingLabel}>
+          <span className="ui-minibars__bar" data-pending="1" data-tip={pendingLabel ? '1' : undefined} tabIndex={pendingLabel ? -1 : undefined} style={{ height: barHeight(liveValue, max) }} />
+        </TipBar>
+      ) : null}
     </span>
   )
 }

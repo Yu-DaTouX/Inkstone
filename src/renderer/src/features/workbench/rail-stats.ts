@@ -42,6 +42,8 @@ export interface RailSpeed {
   value: string
   unit: string
   bars: number[]
+  barLabels: string[]
+  liveLabel: string | undefined
   live: number | null | undefined
   estimated: boolean
   caption: string
@@ -308,6 +310,8 @@ function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed |
         : `${estimated ? '≈' : ''}${tpsNumber(live)}`,
     unit: perSec,
     bars,
+    barLabels: bars.map((bar) => tpsText(bar, perSec)),
+    liveLabel: live === undefined ? undefined : `${t('sm.liveStep')} · ${estimated ? '≈' : ''}${tpsText(live, perSec)}`,
     live,
     estimated,
     caption,

@@ -13,6 +13,21 @@
     min-width: 0;
   }
 
+  .wb-rs-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-rs-aside {
+    flex: none;
+    white-space: nowrap;
+    font-size: var(--t-footnote);
+    color: var(--fg2);
+  }
+
   .wb-rs-num {
     font-variant-numeric: tabular-nums;
   }

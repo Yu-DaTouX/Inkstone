@@ -119,6 +119,14 @@ function barLabel(label: string, segments: readonly RailSegment[]): string {
   return `${label}: ${segments.map((s) => `${s.label} ${s.text}`).join(', ')}`
 }
 
+interface LegendRow {
+  key: string
+  label: string
+  text: string
+  title: string
+  swatch?: RailSegment['tone']
+}
+
 interface StatCell {
   key: 'total' | 'cost' | 'hit' | 'time' | 'speed'
   label: string
@@ -174,16 +182,29 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
   if (tokens && tokens.segments.length) {
     const fresh = tokens.segments.filter((seg) => seg.key !== 'cacheRead')
     const barSegments = fresh.some((seg) => seg.value > 0) ? fresh : tokens.segments
+    const read = tokens.segments.find((seg) => seg.key === 'cacheRead')
+    const write = tokens.segments.find((seg) => seg.key === 'cacheWrite')
+    const cached = read && write
+      ? { key: 'cache', label: t('sm.cacheReadWrite'), text: `${read.text} / ${write.text}`, title: `${read.title}\n${write.title}`, swatch: barSegments.includes(write) ? write.tone : undefined }
+      : null
+    const legend: LegendRow[] = []
+    for (const seg of tokens.segments) {
+      if (cached && (seg === read || seg === write)) {
+        if (seg === read) legend.push(cached)
+        continue
+      }
+      legend.push({ key: seg.key, label: seg.label, text: seg.text, title: seg.title, swatch: barSegments.includes(seg) ? seg.tone : undefined })
+    }
     breakdown.push(
       <section key="tokens" className="wb-rs-block" data-block="tokens" title={tokenTitle}>
         <span className="wb-rs-label wb-rs-num">{`${t('sm.total')} ${tokens.total} ${tokens.unit}`}</span>
         <SegmentBar aria-label={barLabel(tokens.ariaLabel, tokens.segments)} segments={barSegments} />
         <ul className="wb-rs-legend">
-          {tokens.segments.map((seg) => (
-            <li key={seg.key} title={seg.title} data-seg={seg.key}>
-              {barSegments.includes(seg) ? <Swatch tone={seg.tone} /> : <span aria-hidden="true" />}
-              <span className="wb-rs-name">{seg.label}</span>
-              <span className="wb-rs-num wb-rs-val">{seg.text}</span>
+          {legend.map((row) => (
+            <li key={row.key} title={row.title} data-seg={row.key}>
+              {row.swatch ? <Swatch tone={row.swatch} /> : <span aria-hidden="true" />}
+              <span className="wb-rs-name">{row.label}</span>
+              <span className="wb-rs-num wb-rs-val">{row.text}</span>
             </li>
           ))}
         </ul>
@@ -193,7 +214,14 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
   if (time?.segments.length) {
     breakdown.push(
       <section key="time" className="wb-rs-block" data-block="time" title={time.title ?? undefined}>
-        <span className="wb-rs-label">{time.ariaLabel}</span>
+        <div className="wb-rs-head">
+          <span className="wb-rs-label">{time.ariaLabel}</span>
+          {time.ttft ? (
+            <span className="wb-rs-aside" data-seg="ttft">
+              {time.ttft.label} <span className="wb-rs-num wb-rs-val">{time.ttft.text}</span>
+            </span>
+          ) : null}
+        </div>
         <SegmentBar aria-label={barLabel(time.ariaLabel, time.segments)} segments={time.segments} />
         <ul className="wb-rs-legend">
           {time.segments.map((seg) => (
@@ -203,22 +231,15 @@ export function RailStatsBody({ model, running = false }: { model: RailStatsMode
               <span className="wb-rs-num wb-rs-val">{seg.text}</span>
             </li>
           ))}
-          {time.ttft ? (
-            <li key="ttft" data-seg="ttft">
-              <span aria-hidden="true" />
-              <span className="wb-rs-name">{time.ttft.label}</span>
-              <span className="wb-rs-num wb-rs-val">{time.ttft.text}</span>
-            </li>
-          ) : null}
         </ul>
       </section>
     )
   }
   if (speed) {
     breakdown.push(
-      <section key="speed" className="wb-rs-block" data-block="speed" title={speed.title ?? undefined}>
+      <section key="speed" className="wb-rs-block" data-block="speed">
         <span className="wb-rs-label">{speed.label}</span>
-        <MiniBars values={speed.bars} pending={speed.live} slots={SPEED_BARS} stretch />
+        <MiniBars values={speed.bars} labels={speed.barLabels} pending={speed.live} pendingLabel={speed.liveLabel} slots={SPEED_BARS} stretch />
         {speed.caption ? <p className="wb-rs-note wb-rs-num">{noteParts(speed.caption)}</p> : null}
       </section>
     )
