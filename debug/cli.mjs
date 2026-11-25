@@ -15,7 +15,7 @@ import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
 import { cleanupInstanceWorktrees } from './lib/subagent-worktrees.mjs'
 
 const scenariosDir = join(debugDir, 'scenarios')
-const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep', 'user-days', 'friction'])
+const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep', 'user-days', 'friction', 'env'])
 
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
@@ -28,6 +28,7 @@ const HELP = `砚调试工具：npm run debug -- <命令> [参数]
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
       --no-quota  不给假模型配演示额度（默认配一张 Max 额度卡）
+      --env K=V[,K=V]  给应用进程加环境变量（父进程的 YAN_* 会被过滤，必须这样传），如 --env YAN_IMAGE_PROVIDER=mock,YAN_IMAGE_MOCK_DELAY_MS=15000
       --user-data 拷贝真实数据副本：最近 N 天会话、项目与标题等小文件、去密钥的模型列表；不拷凭据，关远程访问
       --samples   把 debug/data 里的大会话样本拷进实例
       --cards     预置三个会话「卡片·少字 / 正常 / 多字」，按顺序包含消息流里全部可静态注入的卡片
@@ -90,7 +91,8 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   if (flags.cards) prepareCards(box)
   if (fake && (label.startsWith('up') || flags.quota) && !flags['no-quota']) writeQuotaFixture(box, runDir)
   const cdpPort = flags.port ? Number(flags.port) : await freePort()
-  const app = launchApp({ ...sandboxEnv(box, { fake: !!fake, cdpPort, probe }), ...demoEnv(box) }, { dev: !!flags.dev })
+  const extraEnv = Object.fromEntries(String(flags.env === true ? '' : flags.env ?? '').split(',').filter((pair) => pair.includes('=')).map((pair) => [pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1)]))
+  const app = launchApp({ ...sandboxEnv(box, { fake: !!fake, cdpPort, probe }), ...demoEnv(box), ...extraEnv }, { dev: !!flags.dev })
   if (box.cards) {
     let cdp
     try {

@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../state/store'
-import { Badge, Button, IconButton, Notice, TermSpinner } from '../../ui'
+import { Badge, Button, IconButton, Notice } from '../../ui'
+import { GridReveal } from '../../ui/GridReveal'
 import { isHtmlArtifact, type HtmlArtifactPreviewError } from '../../../../shared/html-artifact-preview'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { HtmlArtifactThumb } from '../artifacts/HtmlArtifactThumb'
@@ -83,9 +84,7 @@ export function TurnArtifacts({
       {imageCount ? (
         <div className={`v3-artifact-grid${imageCount > 1 ? ' multi' : ''}`}>
           {jobs.map(({ job, result }) => (
-            <div key={job.id} className="v3-generated-slot" data-testid="generated-image-slot" data-image-state={result ? 'done' : job.stage}>
-              {result ? <ArtifactCard artifact={result} sessionId={sessionId} messageId={messageId} gallery={gallery} /> : <ImageProgressCard job={job} />}
-            </div>
+            <GeneratedSlot key={job.id} job={job} result={result} sessionId={sessionId} messageId={messageId} gallery={gallery} />
           ))}
           {images.map((artifact) => (
             <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId} messageId={messageId} gallery={gallery} />
@@ -99,19 +98,41 @@ export function TurnArtifacts({
   )
 }
 
-function ImageProgressCard({ job }: { job: ImageGenerationProgress }): JSX.Element {
+function GeneratedSlot({ job, result, sessionId, messageId, gallery }: {
+  job: ImageGenerationProgress
+  result: AssistantArtifact | undefined
+  sessionId: string | null
+  messageId: string | null
+  gallery: readonly ViewerImage[] | undefined
+}): JSX.Element {
+  const [watched] = useState(() => !result)
+  const [revealed, setRevealed] = useState(false)
+  const reveal = watched && !revealed && (!result || !result.unavailable)
+  return (
+    <div className="v3-generated-slot" data-testid="generated-image-slot" data-image-state={result ? 'done' : job.stage}>
+      {result && !reveal ? <ArtifactCard artifact={result} sessionId={sessionId} messageId={messageId} gallery={gallery} /> : <ImageProgressCard job={job} src={result ? filePreviewUrl(result.path) : undefined} alt={result?.filename} onDone={() => setRevealed(true)} />}
+    </div>
+  )
+}
+
+function ImageProgressCard({ job, src, alt, onDone }: { job: ImageGenerationProgress; src?: string; alt?: string; onDone: () => void }): JSX.Element {
   const t = useT()
   const phase = t(`artifact.imageStage.${job.stage}`)
   return (
     <section className="v3-artifact-card v3-image-progress" role="status" aria-label={phase} data-testid="image-generation-progress">
-      <header className="v3-artifact-card-head">
-        <Icon name="image" size={12} />
-        <strong className="v3-artifact-card-name">{t('artifact.imageJob')}</strong>
-        {job.model ? <span className="v3-artifact-card-meta">{job.model}</span> : null}
-      </header>
+      {src || job.stage === 'error' ? (
+        <header className="v3-artifact-card-head">
+          <Icon name="image" size={12} />
+          <strong className="v3-artifact-card-name">{alt ?? t('artifact.imageJob')}</strong>
+          {job.model ? <span className="v3-artifact-card-meta">{job.model}</span> : null}
+        </header>
+      ) : null}
       <div className="v3-artifact-image">
         {job.stage === 'error' ? <Notice tone="fail" compact>{job.detail || phase}</Notice> : (
-          <span className="v3-image-progress-status"><TermSpinner variant="orbit" />{phase}</span>
+          <>
+            <GridReveal className="v3-image-reveal" src={src} alt={alt} aspect={1} inset={8} estimatedDuration={15000} onRevealComplete={onDone} onError={onDone} />
+            {src ? null : <span className="v3-image-progress-status">{phase}</span>}
+          </>
         )}
       </div>
     </section>

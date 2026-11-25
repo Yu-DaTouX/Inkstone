@@ -688,6 +688,9 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
   let generated: Generated
   if (provider === 'mock') {
     report?.('generating', pick('正在生成本地预览', 'Generating local preview'))
+    const mockDelay = Number(process.env.YAN_IMAGE_MOCK_DELAY_MS)
+    if (mockDelay > 0) await new Promise<void>((resolve) => setTimeout(resolve, Math.min(mockDelay, 120_000)))
+    checkImageCancelled(signal)
     generated = { bytes: mockSvg(prompt), model: 'yan-mock-svg' }
   } else if (provider === 'codex') {
     generated = await codexImage(req, sources, credentials, report, signal)

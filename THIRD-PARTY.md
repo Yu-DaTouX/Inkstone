@@ -64,6 +64,7 @@
 | 组件 | 许可 |
 | --- | --- |
 | [Beautiful UI](https://github.com/TurboKach/ai-native-react-components)（提交 `05dab2d`）Loading State 的 Orbit 像素环，适配到消息流过程行 | MIT，Copyright (c) 2026 Turbo；许可原文见 [`LICENSE-beautiful-ui`](src/renderer/src/ui/LICENSE-beautiful-ui) |
+| [Rare UI](https://rareui.com) Grid Reveal（`swamimalode07/rare-ui`）生图卡的网格揭示动画，去掉 Tailwind 与 motion 后改写为 [`GridReveal`](src/renderer/src/ui/GridReveal.tsx) | MIT + Commons Clause + 署名要求，Copyright (c) 2026 Swami Malode；许可原文见 [`LICENSE-rare-ui`](src/renderer/src/ui/LICENSE-rare-ui) |
 | React / React DOM / Zustand / CodeMirror 6 / xterm.js 等 npm 依赖 | 各自包内声明（多为 MIT） |
 | React Aria Components（`react-aria-components`） | Apache-2.0 |
 | Model Context Protocol SDK（`@modelcontextprotocol/sdk`、`@modelcontextprotocol/ext-apps`，MCP 连接与 MCP Apps 宿主） | MIT |

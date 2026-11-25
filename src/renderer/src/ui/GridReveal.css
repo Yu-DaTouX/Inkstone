@@ -1,0 +1,15 @@
+@layer primitives {
+  .ui-grid-reveal {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+  }
+
+  .ui-grid-reveal__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+}
