@@ -44,6 +44,17 @@
     padding: var(--s-12) var(--s-16);
   }
 
+  .v3-preview-doc {
+    display: grid;
+    grid-template-columns: minmax(calc(var(--s-32) + var(--s-8)), 1fr) minmax(0, 78ch) minmax(calc(var(--s-32) + var(--s-8)), 1fr);
+  }
+
+  .v3-preview-doc-body {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
   .v3-preview-md {
     min-width: 0;
     font-size: var(--t-prose);

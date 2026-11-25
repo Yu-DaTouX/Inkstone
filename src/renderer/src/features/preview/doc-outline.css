@@ -1,0 +1,154 @@
+@layer features {
+  .v3-docnav {
+    position: sticky;
+    top: var(--s-12);
+    z-index: var(--z-rail);
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+    justify-self: start;
+    width: var(--s-24);
+  }
+
+  .v3-docnav-ticks {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    height: clamp(var(--s-24), calc(var(--n) * 10px), 60vh);
+    padding-block: var(--s-4);
+    transition: opacity var(--dur-base) var(--ease);
+  }
+
+  .v3-docnav-tick {
+    position: relative;
+    flex: none;
+    width: var(--w);
+    height: 2px;
+    border-radius: 1px;
+    background: color-mix(in oklab, var(--fg) 26%, transparent);
+    cursor: pointer;
+    transition:
+      width var(--dur-sheet) var(--ease-glide),
+      background-color var(--dur-base) var(--ease);
+  }
+
+  .v3-docnav-tick::before {
+    content: '';
+    position: absolute;
+    inset: -4px 0;
+  }
+
+  .v3-docnav-tick[data-active] {
+    width: calc(var(--w) + 10px);
+    background: var(--accent);
+  }
+
+  .v3-docnav-card {
+    position: absolute;
+    top: calc(var(--s-6) * -1);
+    left: calc(var(--s-6) * -1);
+    width: max-content;
+    max-width: 220px;
+    max-height: min(70vh, 480px);
+    overflow: hidden auto;
+    padding: var(--s-6) var(--s-4) var(--s-6) var(--s-6);
+    border-radius: var(--r-md);
+    background: color-mix(in oklab, var(--surface-3) 72%, transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
+    backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-6px) scale(0.97);
+    transform-origin: left top;
+    transition:
+      opacity var(--dur-base) var(--ease),
+      transform var(--dur-sheet) var(--ease-glide);
+  }
+
+  .v3-docnav:is(:hover, :focus-within) .v3-docnav-card {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .v3-docnav:is(:hover, :focus-within) .v3-docnav-ticks {
+    opacity: 0;
+  }
+
+  .v3-docnav-list {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+
+  .v3-docnav-item {
+    padding: var(--s-4) var(--s-4) var(--s-4) calc(var(--s-16) + var(--depth, 0) * var(--s-8));
+    border-radius: var(--r-sm);
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+    text-align: start;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+    transition: color var(--dur-base) var(--ease);
+  }
+
+  .v3-docnav-item[data-active] {
+    color: var(--fg);
+  }
+
+  @media (hover: hover) {
+    .v3-docnav-item:not([data-active]):hover {
+      color: var(--fg2);
+    }
+  }
+
+  .v3-docnav-item:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .v3-docnav-rail {
+    position: absolute;
+    inset: 0;
+    color: var(--accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease);
+  }
+
+  .v3-docnav-rail[data-tone='hover'] {
+    color: color-mix(in oklab, var(--fg) 30%, transparent);
+  }
+
+  .v3-docnav-rail[data-visible] {
+    opacity: 1;
+  }
+
+  .v3-docnav-rail-line {
+    position: absolute;
+    left: 2px;
+    top: var(--from);
+    width: 1px;
+    height: max(0px, calc(var(--y) - var(--corner) - var(--from)));
+    background-image: repeating-linear-gradient(to top, transparent 0 2px, currentColor 2px 4px);
+  }
+
+  .v3-docnav-rail-corner {
+    position: absolute;
+    left: 2px;
+    top: calc(var(--y) - var(--corner));
+  }
+
+  .v3-docnav[data-ready] .v3-docnav-rail-line {
+    transition:
+      top var(--dur-sheet) var(--ease-glide),
+      height var(--dur-sheet) var(--ease-glide);
+  }
+
+  .v3-docnav[data-ready] .v3-docnav-rail-corner {
+    transition: top var(--dur-sheet) var(--ease-glide);
+  }
+}

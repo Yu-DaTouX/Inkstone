@@ -26,6 +26,7 @@ import { prefersRenderedHtml, useLiveHtml } from './live-html'
 import { createPreviewManifestSelector, livePreviewTarget, samePreviewPath } from './preview-stream'
 import { CodeView, type CodeComment, type CodeViewTarget, type CodeViewText } from './CodeView'
 import { PreviewTabs } from './PreviewTabs'
+import { DocOutline } from './DocOutline'
 import { useFileViewSettings } from './use-file-view-settings'
 import { FILE_TAB_SIZES, type FileViewSettings } from './file-view-settings'
 import { previewBodyKind, previewNotes, previewProblem, type PreviewNote, type PreviewProblem } from './preview-issue'
@@ -1177,15 +1178,22 @@ function MarkdownView({
   remoteImages: RemoteImageGroup
   noticeInBar: boolean
 }): ReactElement {
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
   return (
-    <div className="v3-preview-text v3-preview-reading" data-testid="v3-preview-markdown">
-      {noticeInBar ? null : <RemoteImagesNotice group={remoteImages} text={text} />}
-      <div className="v3-preview-md">
-        <RemoteImageGroupScope group={remoteImages}>
-          <Markdown text={view.text} sourceCwd={parentDir(view.abs)} allowHtml />
-        </RemoteImageGroupScope>
+    <div ref={scrollRef} className="v3-preview-text v3-preview-reading" data-testid="v3-preview-markdown">
+      <div className="v3-preview-doc">
+        <DocOutline scrollRef={scrollRef} bodyRef={bodyRef} label={text.docOutline} />
+        <div className="v3-preview-doc-body">
+          {noticeInBar ? null : <RemoteImagesNotice group={remoteImages} text={text} />}
+          <div ref={bodyRef} className="v3-preview-md">
+            <RemoteImageGroupScope group={remoteImages}>
+              <Markdown text={view.text} sourceCwd={parentDir(view.abs)} allowHtml />
+            </RemoteImageGroupScope>
+          </div>
+          {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
+        </div>
       </div>
-      {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
   )
 }

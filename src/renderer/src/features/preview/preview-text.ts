@@ -192,6 +192,7 @@ export interface PreviewText {
   remoteImagesLoading: string
   remoteImagesFailed: string
   remoteImagesRetry: string
+  docOutline: string
 }
 
 const ZH: PreviewText = {
@@ -385,7 +386,8 @@ const ZH: PreviewText = {
   remoteImagesLoadAll: '全部加载',
   remoteImagesLoading: '正在加载 {count} 张远程图片',
   remoteImagesFailed: '{count} 张远程图片未能加载',
-  remoteImagesRetry: '重试'
+  remoteImagesRetry: '重试',
+  docOutline: '文档目录'
 }
 
 const EN: PreviewText = {
@@ -579,7 +581,8 @@ const EN: PreviewText = {
   remoteImagesLoadAll: 'Load all',
   remoteImagesLoading: 'Loading remote images: {count}',
   remoteImagesFailed: 'Remote images not loaded: {count}',
-  remoteImagesRetry: 'Retry'
+  remoteImagesRetry: 'Retry',
+  docOutline: 'Document outline'
 }
 
 export function previewText(lang: Lang): PreviewText {
