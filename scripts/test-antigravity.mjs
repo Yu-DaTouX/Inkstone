@@ -685,6 +685,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await wait(() => auto.events.some((e) => e.type === 'agent_settled'))
       ok(auto.events.findLast((e) => e.type === 'message_end').message.content.some((block) => block.text === '审批结果 · once'), '可写 ACP 子代理与主聊天一致，CLI 提供 Auto 时切到 Auto，不再逐条弹出批准')
     } finally { await auto.rpc.close() }
+    let blipLaunches = 0
+    const blip = new AntigravitySubagentRpc(cwd, 'flash', async () => true, { authRetryDelayMs: 5, launch: () => { blipLaunches += 1; return start().session } })
+    const blipEvents = []
+    const blipExits = []
+    blip.on('event', (event) => blipEvents.push(event))
+    blip.on('exit', (...args) => blipExits.push(args))
+    blip.spawn()
+    try {
+      await blip.command('get_state', undefined, { timeoutMs: 2500 })
+      const blipId = blip.antigravitySessionId
+      await blip.command('prompt', { message: 'AUTH401' })
+      await wait(() => blipEvents.some((e) => e.type === 'agent_settled'))
+      const recovered = blipEvents.findLast((e) => e.type === 'message_end').message
+      const recoveredText = recovered.content.filter((block) => block.type === 'text').map((block) => block.text).join('')
+      ok(blipLaunches === 2 && blip.antigravitySessionId === blipId && recovered.stopReason === 'stop' && !recovered.errorMessage &&
+        recoveredText.includes('正在重新截图。') && recoveredText.includes('认证恢复后继续完成。') && !recoveredText.includes('UNAUTHENTICATED') && blipExits.length === 0 && blip.running,
+        'ACP 子代理正文末尾出现 401 时丢弃旧 agy 进程、按原会话 id 重启并自动继续，不把 401 留在正文里')
+    } finally { await blip.close() }
     const first = await child('flash', {})
     let savedId
     try {

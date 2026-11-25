@@ -284,7 +284,7 @@ for await (const line of input) {
       reply(id, { stopReason: 'end_turn' })
       continue
     }
-    if (text.startsWith('[模型错误恢复 · 自动继续 1/1]')) {
+    if (text.startsWith('[模型错误恢复 · 自动继续 1/1]') || text.startsWith('[Auto-continue 1/1] The previous model request failed')) {
       chunk(`认证恢复后继续完成。${raw.includes('Continue the same Inkstone conversation.') ? '冷交接' : '原生续接'}`)
       reply(id, { stopReason: 'end_turn' })
       continue
