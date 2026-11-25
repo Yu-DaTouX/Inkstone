@@ -101,19 +101,21 @@
     margin-bottom: calc(var(--s-32) * -1);
   }
 
+  .v3-home-folder-btn {
+    flex: none;
+    border-radius: calc(var(--r-sm) - 1px);
+    background: var(--sunken);
+    box-shadow: var(--ring-line);
+    color: var(--fg2);
+  }
+
   .v3-home-worktree {
     display: inline-flex;
     flex: none;
     align-items: center;
     gap: var(--s-6);
-    margin-inline-start: var(--s-2);
-  }
-
-  .v3-home-worktree::before {
-    content: '';
-    width: var(--hair, 1px);
-    height: var(--s-16);
-    background: var(--line);
+    margin-inline-start: auto;
+    padding-inline-start: var(--s-6);
   }
 
   .v3-home-worktree-btn {

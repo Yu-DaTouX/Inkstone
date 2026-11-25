@@ -192,6 +192,7 @@ function UsageTitle({ text, bars, fresh }: { text: HomeText; bars: boolean; fres
       <BareButton className="v3-home-usage" onPress={() => useUiV3.getState().navigate({ name: 'usage' })} data-testid="v3-home-usage-details">
         <span className="v3-home-usage-num" title={stats ? text.meta(stats.sessions.toLocaleString(), String(stats.activeDays)) : undefined}>
           {stats ? compactNumber(Math.round(fresh ? tweened : total)) : '—'}
+        className="v3-home-folder-btn"
         </span>
         <span className="v3-home-usage-label">
           {text.recentTokens}
