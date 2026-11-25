@@ -10,6 +10,32 @@ export interface TerminalTabNameInput {
 
 const TAB_COMMAND_CHARS = 32
 
+export interface TerminalTabWindow {
+  start: number
+  count: number
+}
+
+export interface TerminalTabWindowInput {
+  total: number
+  active: number
+  start: number
+  width: number
+  tabMin: number
+  gap: number
+  button: number
+}
+
+export function terminalTabWindow({ total, active, start, width, tabMin, gap, button }: TerminalTabWindowInput): TerminalTabWindow | null {
+  if (total < 2) return null
+  const fit = (room: number): number => Math.floor((room + gap) / (tabMin + gap))
+  if (fit(width) >= total) return null
+  const count = Math.min(total - 1, Math.max(1, fit(width - button)))
+  let first = Math.max(0, Math.min(start, total - count))
+  if (active < first) first = active
+  else if (active >= first + count) first = active - count + 1
+  return { start: first, count }
+}
+
 export function canAddTerminalTab(count: number): boolean {
   return count < MAX_TERMINAL_TABS
 }

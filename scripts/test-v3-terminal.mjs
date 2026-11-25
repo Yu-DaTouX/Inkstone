@@ -909,6 +909,15 @@ async function runTerminalTabs() {
   const broken = view.createTerminalViewStore({ getItem: () => 'not json', setItem: () => {} })
   assert.deepEqual(broken.get(), view.DEFAULT_TERMINAL_VIEW)
 
+  const room = { tabMin: 55, gap: 2, button: 28 }
+  assert.equal(tabs.terminalTabWindow({ ...room, total: 1, active: 0, start: 0, width: 10 }), null)
+  assert.equal(tabs.terminalTabWindow({ ...room, total: 5, active: 4, start: 0, width: 283 }), null)
+  assert.deepEqual(tabs.terminalTabWindow({ ...room, total: 5, active: 4, start: 0, width: 275 }), { start: 1, count: 4 })
+  assert.deepEqual(tabs.terminalTabWindow({ ...room, total: 5, active: 0, start: 1, width: 275 }), { start: 0, count: 4 })
+  assert.deepEqual(tabs.terminalTabWindow({ ...room, total: 5, active: 2, start: 1, width: 275 }), { start: 1, count: 4 })
+  assert.deepEqual(tabs.terminalTabWindow({ ...room, total: 9, active: 8, start: 0, width: 120 }), { start: 8, count: 1 })
+  assert.deepEqual(tabs.terminalTabWindow({ ...room, total: 5, active: 1, start: 4, width: 275 }), { start: 1, count: 4 })
+
   console.log('test-v3-terminal-tabs: ok')
 }
 

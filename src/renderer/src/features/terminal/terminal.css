@@ -86,10 +86,6 @@
     min-width: calc(var(--size-btn-sm) * 2.75);
   }
 
-  .term-tabs > .ui-ptab[data-overflowed] {
-    visibility: hidden;
-  }
-
   .term-pane-body {
     position: relative;
     display: flex;
