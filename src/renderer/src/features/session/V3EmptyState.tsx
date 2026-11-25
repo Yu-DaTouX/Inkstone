@@ -5,7 +5,9 @@ import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
 import { useUiV3 } from '../../state/ui-v3'
 import type { RunSnapshot } from '../../../../shared/runs'
-import type { ProjectRecord } from '../../../../shared/ipc'
+import type { Attachment, ProjectRecord } from '../../../../shared/ipc'
+import { composerDraftForView, composerDraftKey } from '../../state/composer-recovery'
+import { loadDraft, restoreDraft, saveDraft } from '../composer/draft-store'
 import { BareButton, Button, ListRow, MiniBars, SegmentedControl, type SegmentedControlOption } from '../../ui'
 import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 import { compactNumber, useUsageStats } from '../usage/UsageOverview'
@@ -74,6 +76,24 @@ function awaitingRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
   return [...latest.values()].sort((a, b) => b.startedAt - a.startedAt)
 }
 
+function carryDraft(fromKey: string, carried: { text: string; attachments: Attachment[] }): void {
+  if (!carried.text && carried.attachments.length === 0) return
+  const state = useStore.getState()
+  const toKey = composerDraftKey(state)
+  if (!toKey || toKey === fromKey) return
+  const target = restoreDraft(state.sessionRuntimes[toKey], loadDraft(toKey))
+  const text = [target.text, carried.text].filter(Boolean).join('\n')
+  const known = new Set(target.attachments.map((item) => item.id))
+  saveDraft(toKey, { text, attachments: [...target.attachments, ...carried.attachments.filter((item) => !known.has(item.id))] })
+  state.setSessionDraft(text, toKey)
+  state.addAttachments(carried.attachments)
+  if (carried.text) useStore.setState({ editorInject: { text, mode: 'replace' } })
+  if (fromKey) {
+    saveDraft(fromKey, { text: '', attachments: [] })
+    state.setSessionDraft('', fromKey)
+  }
+}
+
 function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.Element {
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
@@ -88,8 +108,9 @@ function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.El
   const { listed, current, shown } = useMemo(() => {
     const all = (projects ?? []).filter((project) => !project.archived).sort((a, b) => b.updatedAt - a.updatedAt)
     const here = cwd ? all.find((project) => normPath(project.cwd) === normPath(cwd)) ?? null : null
-    const rest = all.filter((project) => project !== here)
-    return { listed: all, current: here, shown: (here ? [here, ...rest] : rest).slice(0, here || !cwd ? PROJECTS_SHOWN : PROJECTS_SHOWN - 1) }
+    const limit = here || !cwd ? PROJECTS_SHOWN : PROJECTS_SHOWN - 1
+    const head = all.slice(0, limit)
+    return { listed: all, current: here, shown: here && !head.includes(here) ? [...head.slice(0, limit - 1), here] : head }
   }, [projects, cwd])
 
   const options = useMemo<SegmentedControlOption<string>[]>(() => {
@@ -118,9 +139,14 @@ function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.El
     setBusy(true)
     setPending(project.id)
     try {
+      const before = useStore.getState()
+      const fromKey = composerDraftKey(before)
+      const carried = { text: composerDraftForView(before, fromKey).text, attachments: before.attachments }
       const created = await useStore.getState().newSession({ cwd: project.cwd, projectId: project.id, scope: 'project' })
-      if (created.ok) await useStore.getState().refreshSessions()
-      else setPending(null)
+      if (created.ok) {
+        carryDraft(fromKey, carried)
+        await useStore.getState().refreshSessions()
+      } else setPending(null)
     } catch {
       setPending(null)
     } finally {
@@ -166,6 +192,7 @@ function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.El
         ref={moreRef}
         variant="ghost"
         size="sm"
+        className="v3-home-folder-btn"
         icon={<FolderOpen size={14} aria-hidden />}
         isDisabled={busy}
         aria-label={text.allProjects}
@@ -192,7 +219,6 @@ function UsageTitle({ text, bars, fresh }: { text: HomeText; bars: boolean; fres
       <BareButton className="v3-home-usage" onPress={() => useUiV3.getState().navigate({ name: 'usage' })} data-testid="v3-home-usage-details">
         <span className="v3-home-usage-num" title={stats ? text.meta(stats.sessions.toLocaleString(), String(stats.activeDays)) : undefined}>
           {stats ? compactNumber(Math.round(fresh ? tweened : total)) : '—'}
-        className="v3-home-folder-btn"
         </span>
         <span className="v3-home-usage-label">
           {text.recentTokens}
