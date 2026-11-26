@@ -1,6 +1,7 @@
 import { pick } from '../shared/ui-lang'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { delimiter, join } from 'node:path'
 
@@ -88,4 +89,23 @@ export function pickFreePort(): Promise<number> {
 
 export function defaultProfileDir(dataDir: string): string {
   return join(dataDir, 'chrome-profile')
+}
+
+export async function clearChromeProfile(child: ChildProcess | null, dir: string, waitMs = 10_000): Promise<boolean> {
+  if (child && child.exitCode === null && child.signalCode === null) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, waitMs)
+      child.once('exit', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
+  }
+  try {
+    await rm(join(dir, 'lockfile'), { force: true, maxRetries: 10, retryDelay: 200 })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+    return true
+  } catch {
+    return false
+  }
 }
