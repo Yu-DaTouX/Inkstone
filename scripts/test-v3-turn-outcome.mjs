@@ -32,7 +32,7 @@ await build({
   outfile,
   logLevel: 'silent'
 })
-const { splitDecision, decisionTitle, replyFileLinks, outcomeFiles, turnAnswers, decisionOutcomes, leadSentence } = await import(pathToFileURL(posix(outfile)).href)
+const { splitDecision, decisionTitle, isYesNoQuestion, replyFileLinks, outcomeFiles, turnAnswers, decisionOutcomes, leadSentence } = await import(pathToFileURL(posix(outfile)).href)
 await rm(outdir, { recursive: true, force: true })
 
 process.stdout.write('\n▌待决策：只取答复末段的提问\n')
@@ -132,6 +132,11 @@ process.stdout.write('\n▌决策卡结局：取下一轮结论首句或状态\n
   const empty = [...completed]
   empty[5] = reply('', { id: 'a3' })
   ok(!decisionOutcomes(empty).has('a2'), '新回合正文为空时移除旧结论')
+}
+
+{
+  for (const q of ['要提交并推送吗？', 'V3的外壳还留着么？', '要我接着查 `Scroll` 吗?', 'Should I push it?']) ok(isYesNoQuestion(q), `是非问句给快捷回复：${q}`)
+  for (const q of ['保持白名单还是删掉检查？', '你想怎么处理？', '要用哪个模型吗？', 'Push now or later?', 'What should I name it?', '这样可以。']) ok(!isYesNoQuestion(q), `选择或开放问句不给快捷回复：${q}`)
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

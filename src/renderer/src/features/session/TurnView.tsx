@@ -453,7 +453,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           <AnimatedHeight className="v3-result-shell">
             {runEnded ? <TurnResult turn={runTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
           </AnimatedHeight>
-          {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
+          {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} readOnly={readOnly} /> : null}
           {streaming ? null : errorCard}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} segments={runTurn.segments} waitMs={runTurn.waitMs} elapsedMs={turnElapsedMs} alertFailures={failuresAlert} /> : null}

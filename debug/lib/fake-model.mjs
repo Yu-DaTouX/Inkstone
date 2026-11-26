@@ -433,7 +433,9 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('QUESTION')) {
       if (done < 1) await callTool('question', { question: '会话栏（环境/统计/上下文/更改那一列）和右栏，你想要哪种？现在的逻辑是右栏一打开会话栏就让位隐藏，而右栏的「概览」标签又和会话栏内容重复。', options: ['两者共存：右栏打开时会话栏照常显示（窗口太窄才让位），右栏去掉重复的「概览」', '合并：去掉独立会话栏，概览变成右栏固定的第一个标签（T3 式只有一个右侧区域）', '保持现状'] })
       else await streamText('好的，按你的选择来。', 20, 10)
-    } else await streamText('好的，收到。', 20, 10)
+    } else if (text.includes('DECIDEYN')) await streamText('改动都做好了，检查也过了。\n\n要提交并推送吗？推送后我会看一下 CI 是否变绿。', 20, 10)
+    else if (text.includes('DECIDEOR')) await streamText('有两种改法。\n\n保持白名单还是删掉检查？', 20, 10)
+    else await streamText('好的，收到。', 20, 10)
   } catch {}
   send({ type: 'response.completed', response: { id, status: 'completed', output, usage: { input_tokens: usage.input, output_tokens: usage.output, total_tokens: usage.input + usage.output, input_tokens_details: { cached_tokens: 0 } } } })
   res.end()

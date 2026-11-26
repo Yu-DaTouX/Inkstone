@@ -84,6 +84,14 @@ export function decisionTitle(question: string): DecisionTitle {
   return { title, rest }
 }
 
+const OPEN_QUESTION = /还是|哪|什么|怎么|怎样|如何|多少|几|为什么|为何|\b(?:or|which|what|how|why|where|when|who)\b/i
+const YES_NO = /(?:[吗么嘛][？?]|^(?:should|shall|do|does|can|could|would|will|want|is|are)\b.*\?)$/i
+
+export function isYesNoQuestion(title: string): boolean {
+  const plain = plainOf(title).replace(/[*_]/g, '').trim()
+  return YES_NO.test(plain) && !OPEN_QUESTION.test(plain)
+}
+
 function pathKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
 }

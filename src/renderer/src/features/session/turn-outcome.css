@@ -5,6 +5,8 @@
   .v3-decision-title { text-wrap: pretty; }
   .v3-decision-status { flex: none; margin-top: 1px; }
   .v3-decision-body { padding: var(--s-4) var(--s-12) var(--s-10); }
+  .v3-decision-actions { margin-top: 0; padding: 0 var(--s-12) var(--s-10); }
+  .v3-decision-head:has(+ .v3-decision-actions) { padding-bottom: var(--s-8); }
   .v3-decision[data-state='answered'] .v3-decision-body .v3-prose { color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); }
   .v3-decision-trail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-4) var(--s-12); margin: 0; padding: var(--s-8) var(--s-12); border-top: var(--hair, 1px) solid var(--line); font-size: var(--t-body); line-height: var(--t-body-lh); }
   .v3-decision.ui-card--receipt > .v3-decision-head { align-items: center; padding: 0; }

@@ -296,6 +296,8 @@ export type SessionTextKey =
   | 'yanSearchResults'
   | 'detailOutput'
   | 'wrapUpDecide'
+  | 'decisionYes'
+  | 'decisionNo'
   | 'browserHandoffTitle'
   | 'browserHandoffReason'
   | 'browserHandoffHint'
@@ -599,6 +601,8 @@ const ZH: Record<SessionTextKey, string> = {
   yanSearchResults: '联网搜索 · {n} 条结果',
   detailOutput: '输出',
   wrapUpDecide: '等你决定',
+  decisionYes: '好',
+  decisionNo: '先不',
   browserHandoffTitle: '浏览器交给你了',
   browserHandoffReason: '需要你在浏览器里亲自完成一步操作，比如登录、验证码或支付。',
   browserHandoffHint: '这期间 Agent 不会操作浏览器。',
@@ -903,6 +907,8 @@ const EN: Record<SessionTextKey, string> = {
   yanSearchResults: 'Web search · {n} results',
   detailOutput: 'Output',
   wrapUpDecide: 'Your call',
+  decisionYes: 'Yes',
+  decisionNo: 'Not now',
   browserHandoffTitle: 'The browser is yours',
   browserHandoffReason: 'A step needs you in the browser, such as signing in, a captcha, or a payment.',
   browserHandoffHint: 'The agent will not touch the browser meanwhile.',

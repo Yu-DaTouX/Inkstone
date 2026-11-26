@@ -1,12 +1,12 @@
-import { useMemo, type JSX } from 'react'
-import { Badge } from '../../ui'
-import { Card, CardHead, CardTitle } from '../../ui/Card'
+import { useMemo, useState, type JSX } from 'react'
+import { Badge, Button } from '../../ui'
+import { Card, CardActions, CardHead, CardTitle } from '../../ui/Card'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { TurnChanges } from './TurnChanges'
 import { useStore } from '../../state/store'
 import { Markdown } from './Markdown'
 import { useSessionText } from './text'
-import { decisionTitle, outcomeFiles, replyFileLinks, type DecisionOutcome } from './turn-outcome'
+import { decisionTitle, isYesNoQuestion, outcomeFiles, replyFileLinks, type DecisionOutcome } from './turn-outcome'
 import { parseUserInline } from './user-text'
 import type { TurnChanges as TurnChangeSet } from './turn-changes'
 import './wrap-up.css'
@@ -14,8 +14,9 @@ import './turn-outcome.css'
 
 const OUTCOME_TEXT = { failed: 'decisionFailed', stopped: 'decisionStopped' } as const
 
-export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer, outcome = null, arrive = false }: {
+export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer, outcome = null, arrive = false, readOnly = false }: {
   arrive?: boolean
+  readOnly?: boolean
   question: string
   sourceCwd?: string
   sessionId: string | null
@@ -28,6 +29,13 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
   const status = answered ? tt('decisionReplied') : tt('wrapUpDecide')
   const { title, rest } = useMemo(() => decisionTitle(question), [question])
   const heading = title ? plainTitle(title) : ''
+  const [sending, setSending] = useState(false)
+  const suggestionsOn = useStore((s) => s.settings?.promptSuggestions !== false)
+  const quick = !answered && !readOnly && !suggestionsOn && !!title && isYesNoQuestion(title)
+  const reply = (text: string): void => {
+    setSending(true)
+    void useStore.getState().send(text).then((ok) => { if (!ok) setSending(false) }, () => setSending(false))
+  }
   const result = !outcome || outcome.state === 'running' ? '' : outcome.state === 'done' ? outcome.text : tt(OUTCOME_TEXT[outcome.state])
   return (
     <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} data-arrive={arrive ? '' : undefined} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
@@ -39,6 +47,12 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
         <div className="v3-para v3-decision-body">
           <Markdown text={rest} sourceCwd={sourceCwd} sessionId={sessionId} messageId={`${messageId}:decision`} />
         </div>
+      ) : null}
+      {quick ? (
+        <CardActions className="v3-decision-actions" data-testid="v3-decision-actions">
+          <Button variant="secondary" size="sm" isDisabled={sending} onPress={() => reply(tt('decisionNo'))} data-testid="v3-decision-no">{tt('decisionNo')}</Button>
+          <Button variant="primary" size="sm" isDisabled={sending} onPress={() => reply(tt('decisionYes'))} data-testid="v3-decision-yes">{tt('decisionYes')}</Button>
+        </CardActions>
       ) : null}
       {answered && result ? (
         <dl className="v3-decision-trail" data-testid="v3-decision-trail">
