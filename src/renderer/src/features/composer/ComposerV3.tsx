@@ -120,6 +120,7 @@ const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element
             activeInstanceId={model.activeInstanceId}
             model={model.model}
             activeModelName={model.activeModelName}
+            switching={model.switching}
             instanceEntries={model.instanceEntries}
             modelOptionsByInstance={model.modelOptionsByInstance}
             favoriteKeys={model.favoriteKeys}

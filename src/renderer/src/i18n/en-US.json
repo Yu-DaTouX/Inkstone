@@ -239,6 +239,7 @@
   "composer.t3.picker.openProviderSetup": "Open provider setup",
   "composer.t3.picker.setUpProvider": "Set up {name}",
   "composer.t3.picker.chooseModel": "Choose model",
+  "composer.t3.picker.switching": "Switching to {model}…",
   "composer.t3.picker.needsSignIn": "No credentials yet — sign in from settings",
   "composer.t3.picker.needsApiKey": "No API key yet — add one in settings",
   "composer.pathError": "Could not read the directory; check project permissions",

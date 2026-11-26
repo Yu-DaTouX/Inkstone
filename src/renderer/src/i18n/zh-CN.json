@@ -239,6 +239,7 @@
   "composer.t3.picker.openProviderSetup": "打开提供商设置",
   "composer.t3.picker.setUpProvider": "设置 {name}",
   "composer.t3.picker.chooseModel": "选择模型",
+  "composer.t3.picker.switching": "正在切换到 {model}…",
   "composer.t3.picker.needsSignIn": "尚未登录，请在设置中登录",
   "composer.t3.picker.needsApiKey": "尚未填写 API Key，请在设置中添加",
   "composer.pathError": "读取目录失败，请检查当前项目权限",

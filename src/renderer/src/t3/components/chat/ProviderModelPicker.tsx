@@ -1,7 +1,7 @@
 import { memo, useRef, useState, type ReactNode } from "react";
 import { ANTIGRAVITY_PROVIDER } from "../../../../../shared/antigravity";
 import { Dialog, DialogTrigger } from "react-aria-components";
-import { BareButton, Badge, Focusable, Popover, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
+import { BareButton, Badge, Focusable, Popover, Spinner, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
 import { composerMenuClosed, composerFloatingLayerProps } from "./composerEventScope";
 import { cx } from "../../../ui/cx";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
@@ -23,6 +23,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   activeInstanceId: ProviderInstanceId;
   model: string;
   activeModelName?: string | undefined;
+  switching?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   favoriteKeys: ReadonlySet<string>;
@@ -79,7 +80,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     setIsMenuOpen(false);
   };
 
-  const triggerTooltipContent = props.triggerLabel ?? triggerLabel;
+  const switchingLabel = props.switching ? t("composer.t3.picker.switching", { model: props.switching }) : null;
+  const triggerTooltipContent = switchingLabel ?? props.triggerLabel ?? triggerLabel;
 
   return (
     <DialogTrigger
@@ -93,8 +95,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       }}
     >
       <BareButton
-        aria-label={props.triggerAriaLabel ?? props.triggerLabel ?? triggerLabel}
+        aria-label={switchingLabel ?? props.triggerAriaLabel ?? props.triggerLabel ?? triggerLabel}
         data-chat-provider-model-picker="true"
+        data-switching={switchingLabel ? "true" : undefined}
         className={cx(
           modelPickerTriggerClassName(size),
           "t3-model-trigger",
@@ -109,7 +112,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         <span
           className={cx("t3-model-trigger__row", size === "xs" && "t3-model-trigger__row--xs")}
         >
-          {activeEntry && props.triggerLabel === undefined && (!props.isComposerOwned || antigravity) ? (
+          {switchingLabel ? (
+            <Spinner size="xs" />
+          ) : activeEntry && props.triggerLabel === undefined && (!props.isComposerOwned || antigravity) ? (
             <span data-chat-provider-model-picker-icon className="t3-model-trigger__icon">
               <ProviderInstanceIcon
                 driverKind={activeEntry.driverKind}
@@ -123,13 +128,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           ) : null}
           {props.isComposerOwned ? (
             <span className="t3-model-trigger__label" data-chat-provider-model-picker-label="true">
-              {props.triggerLabel ?? triggerTitle}
+              {props.switching ?? props.triggerLabel ?? triggerTitle}
             </span>
           ) : (
             <TooltipTrigger>
               <Focusable excludeFromTabOrder>
                 <span className="t3-model-trigger__label" data-chat-provider-model-picker-label="true">
-                  {props.triggerLabel ?? triggerTitle}
+                  {props.switching ?? props.triggerLabel ?? triggerTitle}
                 </span>
               </Focusable>
               <Tooltip placement="top">
