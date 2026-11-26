@@ -5,6 +5,9 @@ import type { PreviewSiteGate } from '../preview-site-gate'
 import { fetchRemoteImage } from '../remote-image'
 import { listLocalServers } from '../browser/local-servers'
 import type { LocalServerControl } from '../browser/local-server-owner'
+import { shell } from 'electron'
+import { userBrowser } from '../user-browser/service'
+import { BRIDGE_REVISION } from '../user-browser/bridge-server'
 
 const CLOSED_STATE = { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 const notReady = () => ({ ok: false, error: pick('浏览器未初始化', 'Browser is not initialized') })
@@ -22,6 +25,19 @@ export function registerBrowserIpc(
     browserOf()?.activateSession(typeof sessionId === 'string' && sessionId ? sessionId : 'workspace') ?? CLOSED_STATE
   )
   rawHandle('yan:browser:install', () => undefined)
+  rawHandle('yan:browser:userBrowserStatus', () => {
+    const status = userBrowser.status()
+    return {
+      running: status.running,
+      connections: status.connections.map((info) => ({ browser: info.browser, browserVersion: info.browserVersion, extensionVersion: info.extensionVersion, trustedInput: info.debugger && info.browser !== 'firefox', stale: info.revision < BRIDGE_REVISION }))
+    }
+  })
+  rawHandle('yan:browser:showUserBrowserExtension', async () => {
+    const dir = userBrowser.extensionDir()
+    if (!dir) throw new Error(pick('扩展目录还没准备好', 'The extension folder is not ready yet'))
+    const error = await shell.openPath(dir)
+    if (error) throw new Error(error)
+  })
   rawHandle('yan:browser:getState', (_e, sessionId?: string) => {
     const browser = browserOf()
     return browser ? browser.getState(typeof sessionId === 'string' && sessionId ? sessionId : undefined) : CLOSED_STATE

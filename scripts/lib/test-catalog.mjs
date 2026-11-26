@@ -17,6 +17,7 @@ export const excludedScripts = {
   'test-debug-demo': 'on-demand-npm-run-test-ondemand',
   'test-browser-frame-network': 'on-demand-npm-run-test-ondemand',
   'test-browser-popup-live': 'needs-direct-chromium-connection-without-pinned-guard',
+  'test-userbrowser-live': 'needs-real-browsers-and-hkcu-native-messaging-registry',
   'test-comfyui-video': 'helper-module-of-test-comfyui-plugin',
   'test-comfyui-workflows': 'helper-module-of-test-comfyui-plugin',
   'test-comfyui-idle': 'helper-module-of-test-comfyui-plugin',
@@ -35,7 +36,8 @@ export const hostEnvScripts = {
   'test-git-runtime-real': 'downloads-real-portablegit',
   'test-debug-demo': 'launches-debug-electron-instance',
   'test-browser-frame-network': 'launches-electron-with-host-network',
-  'test-browser-popup-live': 'launches-electron-with-host-network'
+  'test-browser-popup-live': 'launches-electron-with-host-network',
+  'test-userbrowser-live': 'writes-hkcu-native-messaging-keys-and-launches-real-browsers'
 }
 
 export const serialScripts = {

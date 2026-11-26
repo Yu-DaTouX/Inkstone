@@ -12,9 +12,15 @@ import type { BrowserObservation, BrowserNetworkSnapshot, BrowserState } from '.
 import { browserLocks } from './browser/browser-locks'
 import { receiptSummary, type BrowserActionOptions } from './browser/receipt'
 import { ALL_ITEM_LIMIT, ITEM_LIMIT, diffObservations, elementLine, filterElements, textMatches, type ObservedPage } from './browser/observation-format'
+import { hostname } from 'node:os'
+import { normalizeConsentParts, type ConsentAnswer, type ConsentKeyParts, type ConsentVerdict } from '../shared/tool-consent'
+import { userBrowser } from './user-browser/service'
+import { UserBrowserError, browserLabel } from './user-browser/session-host'
+import { BRIDGE_REVISION, BridgeCallError } from './user-browser/bridge-server'
 
 const ACTION_TIMEOUT_MS = 60_000
 const CONFIRMING_ACTIONS = new Set(['state', 'observe', 'wait', 'screenshot', 'text'])
+const USER_BROWSER_REASON = '会使用你在这个浏览器里的真实登录状态和数据'
 const SCRIPT_MAX_BYTES = 1024 * 1024
 const RESULT_PREVIEW_CHARS = 4000
 const LOG_TAIL_LINES = 20
@@ -28,8 +34,13 @@ function flag(value: unknown): boolean {
 
 class ActionTimeoutError extends Error {}
 
+function userBrowserFailure(error: unknown): unknown {
+  if (error instanceof UserBrowserError || error instanceof BridgeCallError) return new CapabilityCommandError(error.code, error.message)
+  return error
+}
+
 function withActionTimeout<T>(action: string, work: Promise<T>): Promise<T> {
-  if (action === 'wait' || action === 'run') return work
+  if (action === 'wait' || action === 'run' || action === 'connect-user' || action === 'use-current-tab') return work
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new ActionTimeoutError(action)), ACTION_TIMEOUT_MS)
@@ -43,6 +54,7 @@ export interface BrowserCommandsHost {
   conversationId?(): string | undefined
   cwd?(): string
   isActive?(): boolean
+  confirmToolConsent?(request: { parts: ConsentKeyParts; purpose: string; verdict: ConsentVerdict; sessionGrant?: false }): Promise<ConsentAnswer | null>
 }
 
 export class BrowserCommands {
@@ -66,7 +78,7 @@ export class BrowserCommands {
     try {
       const external = (): boolean => {
         const current = this.browserHost().getState()
-        return Boolean(current.external) || current.mode === 'external'
+        return Boolean(current.external) || current.mode === 'external' || current.mode === 'user'
       }
       return await browserLocks.run({ sessionId: this.browserSessionId(), owner, external, connecting: action === 'connect-chrome', confirming: CONFIRMING_ACTIONS.has(action) }, async (resourceId) => {
         if (this.identity !== identity) {
@@ -78,7 +90,7 @@ export class BrowserCommands {
         const current = this.ctl.capabilityOpts()
         if (this.ctl.isActive?.() === false || `${current?.sessionId ?? 'host'}:${current?.runnerGeneration ?? 0}` !== identity) throw new CapabilityCommandError('run_expired', '运行已改变，旧排队操作未执行')
         const state = this.browserHost().getState()
-        const userMutations = new Set(['run', 'navigate', 'open', 'back', 'forward', 'reload', 'new-tab', 'switch-tab', 'close-tab', 'connect-chrome', 'disconnect-chrome', 'click', 'type', 'select', 'press', 'scroll'])
+        const userMutations = new Set(['run', 'navigate', 'open', 'back', 'forward', 'reload', 'new-tab', 'switch-tab', 'close-tab', 'connect-chrome', 'disconnect-chrome', 'connect-user', 'disconnect-user', 'use-current-tab', 'click', 'type', 'select', 'press', 'scroll'])
         if (state.userControl && userMutations.has(action)) {
           throw new CapabilityCommandError('USER_CONTROL_ACTIVE', '浏览器当前由用户接管，请等待用户恢复 Agent 控制。')
         }
@@ -134,6 +146,70 @@ export class BrowserCommands {
   }
 
   private async execute(action: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    try {
+      if (action === 'connect-user' || action === 'disconnect-user' || action === 'use-current-tab') return await this.userBrowserAction(action, params)
+      return await this.executeAction(action, params, signal)
+    } catch (error) {
+      throw userBrowserFailure(error)
+    }
+  }
+
+  private async askUser(capability: string, action: string, resource: string, purpose: string): Promise<boolean> {
+    if (!this.ctl.confirmToolConsent) return false
+    const normalized = normalizeConsentParts({ capability, action, resource: resource.slice(0, 200) }, `host:${hostname().toLowerCase()}`, 'local')
+    if (!normalized.ok) return false
+    const answer = await this.ctl.confirmToolConsent({ parts: normalized.parts, purpose: purpose.slice(0, 500), verdict: { danger: null, reason: USER_BROWSER_REASON }, sessionGrant: false })
+    return answer?.decision === 'allow'
+  }
+
+  private async userBrowserAction(action: string, params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const sessionId = this.browserSessionId()
+    const reason = this.browserText(params, 'reason') ?? ''
+    if (action === 'disconnect-user') {
+      const had = await userBrowser.detach(sessionId)
+      const builtIn = this.ctl.browserHostOrNull()
+      const state = builtIn ? (builtIn.forSession?.(sessionId) ?? builtIn).getState() : { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
+      return { data: state, summary: this.browserSummary(action, state, { disconnected: had, mode: state.mode ?? 'embedded' }) }
+    }
+    if (action === 'connect-user') {
+      const connection = userBrowser.pick(this.browserText(params, 'browser'))
+      const label = browserLabel(connection.info)
+      const existing = userBrowser.hostFor(sessionId)
+      if (!existing || existing.info.id !== connection.info.id) {
+        const allowed = await this.askUser(`你的浏览器（${label}）`, '连接并替你操作网页', '使用你在这个浏览器里的登录状态', reason)
+        if (!allowed) throw new CapabilityCommandError('user_browser_denied', '用户没有批准连接他的浏览器。改用内置浏览器，或先问用户。')
+      }
+      const host = userBrowser.attach(sessionId, connection)
+      const state = host.getState()
+      return {
+        data: state,
+        summary: this.browserSummary(action, state, {
+          browser: label,
+          trustedInput: host.trustedInput,
+          ...(connection.info.revision < BRIDGE_REVISION ? { extensionStale: '用户浏览器里的扩展还在跑旧脚本（代理光标等新功能不可用），请用户在扩展管理页点一次「重新加载」' } : {}),
+          hint: '之后的 yan browser 动作都作用于用户浏览器：navigate 在没有自己的标签或当前是共享标签时会在「砚」标签组里新开标签，否则在当前标签跳转；use-current-tab 接管用户正在看的标签；用完 disconnect-user 切回内置浏览器'
+        })
+      }
+    }
+    const host = userBrowser.hostFor(sessionId)
+    if (!host) throw new CapabilityCommandError('user_browser_not_attached', '先用 yan browser connect-user 连接用户浏览器')
+    const tab = await host.currentTab()
+    if (!tab) throw new CapabilityCommandError('no_current_tab', '用户浏览器里没有当前标签')
+    if (!/^https?:/i.test(tab.url)) throw new CapabilityCommandError('unsupported_url', `用户当前标签不是网页（${tab.url || '空白'}），不能接管`)
+    let target = tab
+    if (!host.ownsTab(tab.tabId)) {
+      const allowed = await this.askUser(`你的浏览器（${browserLabel(host.info)}）`, '操作你当前打开的标签', `${tab.title} · ${tab.url}`, reason)
+      if (!allowed) throw new CapabilityCommandError('user_browser_denied', '用户没有批准接管当前标签。')
+      const latest = await host.tabInfo(tab.tabId)
+      if (!latest) throw new CapabilityCommandError('tab_changed', '等待批准期间该标签已关闭，未接管。')
+      if (latest.url !== tab.url) throw new CapabilityCommandError('tab_changed', `等待批准期间该标签地址已变化（从 ${tab.url} 变为 ${latest.url || '空白'}），未接管。`)
+      target = latest
+    }
+    const state = host.shareTab(target)
+    return { data: state, summary: this.browserSummary(action, state, { activeTabId: state.activeTabId, hint: '已接管用户当前标签：先 observe 再操作；close-tab 只是放开它，不会关闭用户的标签' }) }
+  }
+
+  private async executeAction(action: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const host = this.browserHost()
     switch (action) {
       case 'api': {
@@ -401,6 +477,8 @@ export class BrowserCommands {
   }
 
   browserHost(): BrowserCommandHost {
+    const user = userBrowser.hostFor(this.browserSessionId())
+    if (user) return user
     const host = this.ctl.browserHostOrNull() ?? null
     if (!host) {
       throw new CapabilityCommandError(
@@ -541,6 +619,7 @@ export class BrowserCommands {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (err instanceof CapabilityCommandError) throw err
+      if (err instanceof UserBrowserError || err instanceof BridgeCallError) throw userBrowserFailure(err)
       if (err && typeof err === 'object' && (err as { code?: unknown }).code === 'STALE_ELEMENT') throw new CapabilityCommandError('STALE_ELEMENT', message)
       if (message.includes('浏览器尚未打开')) {
         throw new CapabilityCommandError(
@@ -559,6 +638,7 @@ export class BrowserCommands {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (err instanceof CapabilityCommandError) throw err
+      if (err instanceof UserBrowserError || err instanceof BridgeCallError) throw userBrowserFailure(err)
       if (message.includes('浏览器尚未打开')) {
         throw new CapabilityCommandError(
           'browser_not_open',

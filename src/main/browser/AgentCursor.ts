@@ -1,10 +1,10 @@
 import type { CdpChannel } from './CdpChannel'
 
-const CURSOR_STYLE = [
+export const CURSOR_STYLE = [
   ':host{color-scheme:light dark}',
   '.cursor{position:fixed;left:0;top:0;pointer-events:none;opacity:0;transition-property:transform,opacity;transition-duration:0ms,180ms;transition-timing-function:cubic-bezier(.2,.8,.2,1),ease-out;will-change:transform}',
   '.cursor.on{opacity:1}',
-  '.arrow{position:absolute;left:-3px;top:-2px;width:22px;height:26px;transform-origin:3px 2px;transition:transform 120ms cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 1px 1px rgba(0,0,0,.28)) drop-shadow(0 3px 6px rgba(0,0,0,.18))}',
+  '.arrow{position:absolute;left:-3px;top:-2px;width:22px;height:26px;transform-origin:3px 2px;transition:transform 120ms cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 2px rgba(255,255,255,.7)) drop-shadow(0 0 5px rgba(255,255,255,.35)) drop-shadow(0 2px 3px rgba(0,0,0,.3))}',
   '.arrow svg{display:block;width:100%;height:100%}',
   '.press .arrow{transform:scale(.82)}',
   '.label{position:absolute;left:16px;top:20px;display:flex;align-items:center;gap:6px;max-width:220px;padding:4px 10px 5px;border-radius:4px 12px 12px 12px;background:#2875D2;color:#fff;font:600 12px/16px system-ui,"Segoe UI","Microsoft YaHei UI",sans-serif;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 0 0 1.5px #fff,0 4px 12px rgba(0,0,0,.22);transition:opacity 160ms ease-out}',
@@ -21,7 +21,7 @@ const CURSOR_STYLE = [
   '@media(prefers-reduced-motion:reduce){.cursor,.arrow,.label{transition:none!important}.ripple.go,.busy{animation:none}}'
 ].join('')
 
-const CURSOR_MARKUP = '<div class="cursor"><div class="ripple"></div><div class="arrow"><svg viewBox="0 0 22 26"><path d="M3.2 2.4c0-.9 1-1.4 1.7-.8l14.2 12.1c.7.6.3 1.8-.7 1.8h-6.1c-.4 0-.8.2-1 .5l-3.9 5.9c-.6.9-1.9.5-2-.6Z" fill="#2875D2" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div><div class="label"><span class="busy"></span><span class="text"></span></div></div>'
+export const CURSOR_MARKUP = '<div class="cursor"><div class="ripple"></div><div class="arrow"><svg viewBox="0 0 22 26"><path d="M3.2 2.4c0-.9 1-1.4 1.7-.8l14.2 12.1c.7.6.3 1.8-.7 1.8h-6.1c-.4 0-.8.2-1 .5l-3.9 5.9c-.6.9-1.9.5-2-.6Z" fill="#111" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div><div class="label"><span class="busy"></span><span class="text"></span></div></div>'
 
 const cursorScript = (tap: boolean): string => `function(label, point) {
   const style = ${JSON.stringify(CURSOR_STYLE)}

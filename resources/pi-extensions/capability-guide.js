@@ -21,8 +21,8 @@ const CLI_ONLY_GROUPS = [
   '- tasks: the user\'s to-do panel (see above); skip it for one- or two-step work'
 ]
 const CLI_ONLY_WEB_TOOLS = ['web_docs']
-const BROWSER_GROUP = '- browser: open or operate pages in the built-in browser; `browser run --code -` runs a multi-step script in one call'
-const BROWSER_TEXT_ONLY_GROUP = '- browser: open or operate pages in the built-in browser; `browser run --code -` runs a multi-step script in one call; this model cannot view images, so read pages with `observe` and `text`, not `screenshot`'
+const BROWSER_GROUP = '- browser: open or operate pages in the built-in browser; `browser run --code -` runs a multi-step script in one call; `browser connect-user` switches to the user\'s own Chrome, Edge or Firefox (after the user approves) when they name it or the task needs their real sign-in'
+const BROWSER_TEXT_ONLY_GROUP = '- browser: open or operate pages in the built-in browser; `browser run --code -` runs a multi-step script in one call; `browser connect-user` switches to the user\'s own Chrome, Edge or Firefox (after the user approves) when they name it or the task needs their real sign-in; this model cannot view images, so read pages with `observe` and `text`, not `screenshot`'
 
 export function modelSeesImages(model) {
   return !(Array.isArray(model?.input) && !model.input.includes('image'))

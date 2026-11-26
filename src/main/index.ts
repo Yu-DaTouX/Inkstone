@@ -64,6 +64,8 @@ import { allowTrust, trustStatus } from './project-trust'
 import { resolvePi } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
+import { userBrowser } from './user-browser/service'
+import { shouldRegisterBridge } from './user-browser/native-host'
 import { openableExternalUrl } from './external-url'
 import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal, setTerminalSink, terminalProcessId } from './terminal'
 import { agentTerminalIds } from './terminal-agent'
@@ -162,7 +164,7 @@ import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
 import { createControlExecutor, decodeControlCommand, writeControlResponse, type ControlCommand } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
-import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
+import { DEFAULT_YAN_DIR, DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { fillNativeMcpDescriptions } from './mcp/native-describe'
 import { armProbeRun, armProbeShots } from './probe-hooks'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
@@ -1293,6 +1295,7 @@ async function runShutdown(): Promise<void> {
       { name: 'pi-process-trees', run: () => piTreeRegistry.sweepAll(), timeoutMs: 10_000 },
       { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null } } },
       { name: 'browser', run: () => browser?.dispose() },
+      { name: 'user-browser', run: () => userBrowser.stop() },
       { name: 'pinned-network', run: () => shutdownPinnedNetworkGuard() },
       { name: 'file-name-search', run: () => disposeFileNameSearch() },
       { name: 'usage-stats-worker', run: () => disposeUsageStatsWorker() },
@@ -2145,6 +2148,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             ],
             cwd: request.cwd,
             canRemember: false,
+            ...(request.sessionGrant === false ? { sessionGrant: false as const } : {}),
             ...(verdict.danger ? { danger: verdict.danger } : {})
           })
           if (choice?.choice === 'once' || choice?.choice === 'remember') return { decision: 'allow' }
@@ -3020,8 +3024,22 @@ app.whenReady().then(async () => {
   void loadModelPricing()
   watchPowerSource()
   browser = new BrowserController(() => win, push, askProfileSyncApproval, askLargeDownloadApproval)
+  const resourcesRoot = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
+  void userBrowser.start({
+    dataDir: YAN_DIR,
+    hostSource: join(resourcesRoot, 'browser-bridge-host', 'host.mjs'),
+    extensionSource: join(resourcesRoot, 'browser-cookie-bridge'),
+    execPath: process.execPath,
+    register: !isRestoredReadonly() && shouldRegisterBridge(process.env, process.platform, YAN_DIR, DEFAULT_YAN_DIR)
+  }).catch((error) => reportMainError('user-browser', error))
   setUserHandoffRelease((sessionId) => browser?.releaseUserControlFor(sessionId))
-  setSessionBrowserCloser((sessionId) => browser?.closeSession(sessionId, { keepExternal: true }) ?? Promise.resolve())
+  setSessionBrowserCloser(async (sessionId) => {
+    const [closed] = await Promise.allSettled([
+      Promise.resolve().then(() => browser?.closeSession(sessionId, { keepExternal: true })),
+      Promise.resolve().then(() => userBrowser.detach(sessionId))
+    ])
+    if (closed.status === 'rejected') throw closed.reason
+  })
   onTerminalJobs((jobs) => push({ ch: 'terminal-jobs', payload: jobs }))
   setTerminalSink((event) => {
     if (event.kind === 'exit') {

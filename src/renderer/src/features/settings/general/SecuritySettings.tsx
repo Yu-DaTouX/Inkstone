@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n, useT } from '../../../i18n'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../../shared/approval'
-import type { PinnedNetworkStatus } from '../../../../../shared/ipc'
+import type { PinnedNetworkStatus, UserBrowserStatusView } from '../../../../../shared/ipc'
 import { useStore } from '../../../state/store'
 import { Button, ConfirmDialog, EmptyState, MiddleTruncate, Switch } from '../../../ui'
 import { generalText } from './general-text'
@@ -52,6 +52,7 @@ export function SecuritySettings(): ReactElement {
   const [confirmAll, setConfirmAll] = useState(false)
   const [sitesOpen, setSitesOpen] = useState(false)
   const [network, setNetwork] = useState<PinnedNetworkStatus | null>(null)
+  const [userBrowser, setUserBrowser] = useState<UserBrowserStatusView | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -61,6 +62,12 @@ export function SecuritySettings(): ReactElement {
         .status()
         .then((value) => {
           if (alive) setNetwork(value)
+        })
+        .catch(() => undefined)
+      void window.yan.browser
+        .userBrowserStatus()
+        .then((value) => {
+          if (alive) setUserBrowser(value)
         })
         .catch(() => undefined)
     }
@@ -182,6 +189,22 @@ export function SecuritySettings(): ReactElement {
             <span data-testid="v3-security-network-socks">{network.routing.unsupported}</span>
           </SettingsRow>
         ) : null}
+      </SettingsGroup>
+      <SettingsGroup title={text.userBrowserGroup} settingId="security-user-browser">
+        <SettingsRow settingId="security-user-browser-status" label={text.userBrowserStatus} description={text.userBrowserStatusDesc}>
+          <span data-testid="v3-security-user-browser" data-count={userBrowser?.connections.length ?? 0}>
+            {userBrowser?.connections.length
+              ? userBrowser.connections
+                  .map((item) => `${item.browser === 'firefox' ? 'Firefox' : item.browser === 'edge' ? 'Edge' : 'Chrome'} ${item.browserVersion.split('.')[0]}${item.trustedInput ? ` · ${text.userBrowserTrusted}` : ''}${item.stale ? ` · ${text.userBrowserStale}` : ''}`)
+                  .join('、')
+              : text.userBrowserNone}
+          </span>
+        </SettingsRow>
+        <SettingsRow settingId="security-user-browser-install" label={text.userBrowserInstall} description={text.userBrowserInstallDesc}>
+          <Button variant="secondary" onPress={() => void window.yan.browser.showUserBrowserExtension().catch(() => undefined)} data-testid="v3-security-user-browser-folder">
+            {text.userBrowserOpenFolder}
+          </Button>
+        </SettingsRow>
       </SettingsGroup>
       <AllowedSitesDialog isOpen={sitesOpen} onClose={() => setSitesOpen(false)} />
 

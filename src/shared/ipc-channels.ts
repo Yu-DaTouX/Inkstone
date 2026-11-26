@@ -395,6 +395,8 @@ export interface IpcChannelMap {
   'yan:browser:startLoginImport': Contract<B['browser']['startLoginImport']>
   'yan:browser:loginImportStatus': Contract<B['browser']['loginImportStatus']>
   'yan:browser:cancelLoginImport': Contract<B['browser']['cancelLoginImport']>
+  'yan:browser:userBrowserStatus': Contract<B['browser']['userBrowserStatus']>
+  'yan:browser:showUserBrowserExtension': Contract<B['browser']['showUserBrowserExtension']>
   'yan:browser:setPermission': Contract<B['browser']['setPermission']>
   'yan:browser:setBounds': Contract<B['browser']['setBounds']>
   'yan:browser:setVisible': Contract<B['browser']['setVisible']>

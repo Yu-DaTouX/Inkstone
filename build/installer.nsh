@@ -89,3 +89,11 @@ Function yanWelcomeLeave
 FunctionEnd
 
 !endif
+
+!macro customUnInstall
+  ${ifNot} ${isUpdated}
+    DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\app.inkstone.browser_bridge"
+    DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\app.inkstone.browser_bridge"
+    DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\app.inkstone.browser_bridge"
+  ${endIf}
+!macroend

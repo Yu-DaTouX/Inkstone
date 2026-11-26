@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>砚 · 浏览器连接</title><link rel="stylesheet" href="import.css"></head>
+<body><main>
+<h1>砚 · 浏览器连接</h1>
+<p id="state" role="status" aria-live="polite">正在检查…</p>
+<button id="reconnect">重新连接砚</button>
+<section id="trusted" hidden>
+<h2>可信点击与按键</h2>
+<p>授予调试权限后，砚在这个浏览器里的点击和按键会以真实输入送达网页，兼容性更好。浏览器会在页面顶部显示「正在调试此浏览器」提示，断开后消失。</p>
+<button id="grant">授予调试权限</button>
+</section>
+<p>砚只在你于砚中批准连接后才会操作这个浏览器；它只操作自己打开的标签，或你逐次批准的当前标签。砚打开的标签放在名为「砚」的标签组里。</p>
+</main><script src="options.js"></script></body>
+</html>

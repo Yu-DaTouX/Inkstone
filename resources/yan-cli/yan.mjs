@@ -541,6 +541,14 @@ req.json（UTF-8 JSON）：
                                  把浏览器交给用户处理密码 / 验证码 / 支付；之后结束本轮，用户发消息即交还
   connect-chrome [--url <地址>]  接入本机已安装的 Chrome（需要登录态时用）
   disconnect-chrome              断开并关闭砚启动的那个 Chrome
+  connect-user [--browser chrome|edge|firefox] [--reason <原因>]
+                                 连接用户自己正在用的浏览器（需要用户批准）：只在用户点名「用我的 Chrome / 火狐」，
+                                 或任务离不开用户真实登录态（公司 SSO、二步验证、内网、绑定设备的账号）时用；
+                                 连上后本会话的 yan browser 动作都作用于用户浏览器，navigate 在没有自己的标签或当前是共享标签时会在「砚」标签组里新开标签，否则在当前标签跳转；
+                                 不支持 run / network / download
+  use-current-tab [--reason <原因>]
+                                 接管用户正在看的标签（每个标签都要用户批准）；用户说「这个页面」时用
+  disconnect-user                放开用户浏览器，切回内置浏览器
 
 说明：
   · 操作前用 observe 拿元素 ref，不猜 ref；多步任务优先写一段 run 脚本，把「打开 → 找元素 → 操作 → 回读核对」一次跑完；
@@ -749,7 +757,10 @@ const GROUP_SPECS = {
       'download',
       'request-user-control',
       'connect-chrome',
-      'disconnect-chrome'
+      'disconnect-chrome',
+      'connect-user',
+      'disconnect-user',
+      'use-current-tab'
     ],
     required: {
       click: ['ref'],

@@ -7,7 +7,7 @@ interface ScopeGrants {
   sessions: Map<string, Set<string>>
 }
 
-type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId' | 'detail' | 'cwd'>>
+type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId' | 'detail' | 'cwd' | 'sessionGrant'>>
 
 function commandIdentity(request: GrantFields): string {
   if (!approvalBindsCommand(request)) return ''

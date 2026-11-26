@@ -14,8 +14,9 @@ const extensionPath = resolve('resources/browser-cookie-bridge')
 const manifest = JSON.parse(await readFile(`${extensionPath}/manifest.json`, 'utf8'))
 const extensionId = [...createHash('sha256').update(Buffer.from(manifest.key, 'base64')).digest().subarray(0, 16)].map(n => String.fromCharCode(97 + (n >> 4), 97 + (n & 15))).join('')
 assert.equal(`chrome-extension://${extensionId}`, COOKIE_BRIDGE_ORIGIN)
-assert.deepEqual(manifest.permissions, ['cookies'])
+assert.deepEqual(manifest.permissions, ['cookies', 'nativeMessaging', 'scripting', 'tabs', 'webNavigation', 'alarms', 'tabGroups', 'storage'])
 assert.equal(manifest.permissions.includes('history'), false)
+assert.equal(manifest.permissions.includes('debugger'), false)
 
 const sample = { name: 'fixture', value: 'test-only', domain: 'example.test', path: '/', hostOnly: true, secure: true, httpOnly: true, session: true, sameSite: 'lax' }
 assert.equal(parseBridgeCookies({ cookies: [sample] }).cookies.length, 1)

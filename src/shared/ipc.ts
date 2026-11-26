@@ -902,7 +902,7 @@ export interface BrowserState {
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
   permissions?: BrowserPermissionRecord[]
   blockedRequests?: BrowserBlockedRequest[]
-  mode?: 'embedded' | 'external'
+  mode?: 'embedded' | 'external' | 'user'
   loadError?: BrowserLoadFailure
   external?: BrowserExternalState
 }
@@ -941,6 +941,11 @@ export interface BrowserLoginImportProfile {
   id: string
   name: string
   isDefault: boolean
+}
+
+export interface UserBrowserStatusView {
+  running: boolean
+  connections: Array<{ browser: 'chrome' | 'edge' | 'firefox'; browserVersion: string; extensionVersion: string; trustedInput: boolean; stale: boolean }>
 }
 
 export interface BrowserLoginImportSources {
@@ -1902,6 +1907,8 @@ export interface YanBridge {
     startLoginImport(): Promise<{ id: string }>
     loginImportStatus(id: string): Promise<BrowserLoginImportStatus>
     cancelLoginImport(id: string): Promise<BrowserLoginImportStatus>
+    userBrowserStatus(): Promise<UserBrowserStatusView>
+    showUserBrowserExtension(): Promise<void>
     setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
     setBounds(bounds: BrowserBounds): Promise<void>
     setVisible(visible: boolean): Promise<void>

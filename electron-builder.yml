@@ -37,6 +37,9 @@ extraResources:
   - from: resources/browser-cookie-bridge
     to: browser-cookie-bridge
     filter: ['**/*']
+  - from: resources/browser-bridge-host
+    to: browser-bridge-host
+    filter: ['host.mjs']
   - from: integrations/hermes-inkstone
     to: integrations/hermes-inkstone
     filter: ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']

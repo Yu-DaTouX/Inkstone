@@ -322,6 +322,7 @@ export interface ToolConsentPrompt {
   verdict: ConsentVerdict
   cwd: string
   owner?: ApprovalOwner
+  sessionGrant?: false
 }
 export type CapabilityAuthorizationPrompt = {
   kind: 'remote-mcp' | 'local-package'
@@ -564,7 +565,8 @@ export class AgentController extends EventEmitter {
     browserHostOrNull: () => this.getBrowserHost?.() ?? null,
     capabilityOpts: () => this.capabilityOpts,
     conversationId: () => this.state?.sessionId,
-    cwd: () => this.cwd
+    cwd: () => this.cwd,
+    confirmToolConsent: (request) => this.commandHost.confirmToolConsent({ ...request, cwd: this.cwd, owner: this.approvalOwner() })
   })
 
   private terminalTurnStop = new AbortController()

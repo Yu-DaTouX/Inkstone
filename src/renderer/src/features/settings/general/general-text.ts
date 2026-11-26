@@ -102,6 +102,15 @@ export interface GeneralText {
   securityRemoteImages: string
   securityRemoteImagesDesc: string
   securityRemoteImagesManage: string
+  userBrowserGroup: string
+  userBrowserStatus: string
+  userBrowserStatusDesc: string
+  userBrowserNone: string
+  userBrowserTrusted: string
+  userBrowserStale: string
+  userBrowserInstall: string
+  userBrowserInstallDesc: string
+  userBrowserOpenFolder: string
 
   devicesEnable: string
   devicesEnableDesc: string
@@ -292,6 +301,15 @@ const ZH: GeneralText = {
   securityRemoteImages: '远程图片白名单',
   securityRemoteImagesDesc: '名单内站点的图片直接加载，其余先点击。',
   securityRemoteImagesManage: '管理',
+  userBrowserGroup: '你的浏览器',
+  userBrowserStatus: '连接状态',
+  userBrowserStatusDesc: 'Agent 只在你批准后操作这些浏览器，只动它自己打开的标签或你逐次批准的当前标签。',
+  userBrowserNone: '未连接',
+  userBrowserTrusted: '真实输入',
+  userBrowserStale: '扩展已更新，请在浏览器扩展页点一次重新加载',
+  userBrowserInstall: '安装扩展',
+  userBrowserInstallDesc: 'Chrome / Edge：打开扩展管理页，开启开发者模式，「加载已解压的扩展」选这个文件夹；已装过的点一次重新加载。Firefox 需要经 Mozilla 签名的扩展包。',
+  userBrowserOpenFolder: '打开扩展文件夹',
 
   devicesEnable: '手机接入',
   devicesEnableDesc: '手机可查看、回复会话；任务仍在本机运行。',
@@ -482,6 +500,15 @@ const EN: GeneralText = {
   securityRemoteImages: 'Remote image allowlist',
   securityRemoteImagesDesc: 'Listed sites load directly; others need a click.',
   securityRemoteImagesManage: 'Manage',
+  userBrowserGroup: 'Your browser',
+  userBrowserStatus: 'Status',
+  userBrowserStatusDesc: 'The agent acts in these browsers only after you approve, and only in tabs it opened or tabs you approve one at a time.',
+  userBrowserNone: 'Not connected',
+  userBrowserTrusted: 'real input',
+  userBrowserStale: 'extension updated; reload it once on the browser extensions page',
+  userBrowserInstall: 'Install the extension',
+  userBrowserInstallDesc: 'Chrome / Edge: open the extensions page, turn on Developer mode, and choose Load unpacked with this folder; reload it once if already installed. Firefox needs a Mozilla-signed package.',
+  userBrowserOpenFolder: 'Open extension folder',
 
   devicesEnable: 'Phone access',
   devicesEnableDesc: 'Phones can view and reply; tasks still run here.',

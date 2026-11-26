@@ -34,6 +34,8 @@ export const ELECTRON_CRASH_DUMPS_DIR = PORTABLE_DATA_DIR
 
 export const DOWNLOADS_DIR = envOrArg('YAN_DOWNLOADS_DIR', 'yan-downloads-dir') || undefined
 
+export const DEFAULT_YAN_DIR = PORTABLE_DATA_DIR ? join(PORTABLE_DATA_DIR, 'yan') : join(homedir(), '.pi', 'agent', 'yan')
+
 export const YAN_DIR =
   envOrArg('YAN_DATA_DIR', 'yan-data-dir') ||
   (PORTABLE_DATA_DIR ? join(PORTABLE_DATA_DIR, 'yan') : join(PI_AGENT_DIR, 'yan'))

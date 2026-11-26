@@ -82,6 +82,7 @@ export interface ApprovalRequest {
   cwd: string
   rememberDirs?: string[]
   canRemember: boolean
+  sessionGrant?: false
   createdAt: number
   expiresAt?: number
   held?: boolean
@@ -113,7 +114,8 @@ export function approvalBindsCommand(request: { kind?: string; tool?: string; re
   return request.kind === 'outside' && (request.reasons ?? []).some((reason) => !reason.startsWith(OUTSIDE_WRITE_REASON))
 }
 
-export function approvalSessionGrantable(request: { kind?: string; tool?: string; reasons?: readonly string[]; cwd?: string; rememberDirs?: readonly string[] }): boolean {
+export function approvalSessionGrantable(request: { kind?: string; tool?: string; reasons?: readonly string[]; cwd?: string; rememberDirs?: readonly string[]; sessionGrant?: false }): boolean {
+  if (request.sessionGrant === false) return false
   if (request.kind === 'move') return false
   if (request.kind === 'outside' && !request.rememberDirs?.length) return false
   return !approvalBindsCommand(request) || !!request.cwd?.trim()

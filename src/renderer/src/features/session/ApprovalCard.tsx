@@ -89,7 +89,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const readThrough = !!current && readId === current.id
   const allowBlocked = gated && !readThrough
   const visibleDetail = revealHiddenChars(current?.detail ?? '')
-  const batchable = current ? approvals.filter((item) => item.id === current.id || !requiresApprovalReadGate(item)) : []
+  const batchable = current && current.sessionGrant !== false
+    ? approvals.filter((item) => item.sessionGrant !== false && (item.id === current.id || !requiresApprovalReadGate(item)))
+    : []
   const deferred = useTypingDeferredFocus(cardRef, active ? current?.id : null, approvalFocusTarget, false)
   const now = useTicker(active && !!current?.createdAt)
   const heldRef = useRef<string | null>(null)
@@ -126,9 +128,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const allowBatch = useCallback((): void => {
     const request = current
     const id = request?.id
-    if (!id) return
+    if (!id || request.sessionGrant === false) return
     const live = new Set(useStore.getState().approvals.map((item) => item.id))
-    const batch = approvals.filter((item) => live.has(item.id) && (item.id === id || !requiresApprovalReadGate(item)))
+    const batch = approvals.filter((item) => live.has(item.id) && item.sessionGrant !== false && (item.id === id || !requiresApprovalReadGate(item)))
     if (batch.length < 2 || !ownsApproval(batch, id)) return
     if (!armingRef.current?.isArmed(id)) return
     if (requiresApprovalReadGate(request) && readId !== id) return
@@ -422,7 +424,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
             {t('approval.allowBatch')}
           </Button>
         ) : null}
-        {current.kind !== 'move' && (!approvalBindsCommand(current) || current.cwd.trim()) ? (
+        {current.sessionGrant !== false && current.kind !== 'move' && (!approvalBindsCommand(current) || current.cwd.trim()) ? (
           approvalBindsCommand(current) ? (
             <Button data-testid="v3-approval-session" title={t('approval.sessionCommandTip')} isDisabled={allowBlocked} onPress={clickOnly(() => answer('session'))}>{t('approval.sessionCommand')}</Button>
           ) : (
