@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -11,6 +12,30 @@ import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { runMcpCommand, type McpCommandHost } from './agent-commands/mcp-command'
 import type { AntigravityMcpService } from './antigravity-mcp'
 import { describeMcpTool, type McpCallOutcome } from './mcp/tool-service'
+import { SCRIPT_GUIDE } from './browser/script-runner'
+
+export type AntigravityBrowserCommand = (action: 'run' | 'screenshot', params: Record<string, unknown>, signal: AbortSignal) => Promise<CapabilityCommandResult>
+
+const BROWSER_RESULT_CHARS = 30_000
+const MAX_RELAYED_IMAGES = 4
+
+function imageMime(file: string): string {
+  const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
+  return ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/png'
+}
+
+const BROWSER_TOOLS = [
+  {
+    name: 'browser_run',
+    description: `Run a JavaScript snippet in Inkstone's built-in browser, the panel the user sees beside this chat (with the user's signed-in sites). Use it for any web page task: open pages, read them, fill forms, click. Do several steps in one call and return what you need to check. The user can take over the browser; then calls fail with USER_CONTROL_ACTIVE and you should wait. API (中文):\n\n${SCRIPT_GUIDE}`,
+    inputSchema: { type: 'object' as const, properties: { code: { type: 'string', description: 'Async function body; may use await and return a JSON-serializable value.' } }, required: ['code'], additionalProperties: false }
+  },
+  {
+    name: 'browser_screenshot',
+    description: 'Screenshot the active tab of Inkstone\'s built-in browser and return the image. Use only when layout or visuals matter; prefer browser_run with page.snapshot() or page.text() for content.',
+    inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false }
+  }
+]
 
 interface DelegationTurn {
   signal: AbortSignal
@@ -19,11 +44,12 @@ interface DelegationTurn {
 }
 
 export async function openAntigravityDelegation(script: string, active: () => DelegationTurn | undefined,
-  options: { delegate: boolean; services: AntigravityMcpService[]; commandHost: McpCommandHost; owned?: Set<string> }) {
+  options: { delegate: boolean; browser?: AntigravityBrowserCommand; services: AntigravityMcpService[]; commandHost: McpCommandHost; owned?: Set<string> }) {
   const name = 'inkstone-pi'
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('hex')}`)
   const owned = options.owned ?? new Set<string>()
-  const knownTools = new Set<string>(options.delegate ? ['start_pi_subagent', 'get_pi_subagent'] : [])
+  const knownTools = new Set<string>([...(options.delegate ? ['start_pi_subagent', 'get_pi_subagent'] : []), ...(options.browser ? BROWSER_TOOLS.map((tool) => tool.name) : [])])
+  const ownRoute = options.delegate || !!options.browser
   let started = 0
   let starting = 0
   const createMcp = (service: AntigravityMcpService | undefined, requestSignal: AbortSignal) => {
@@ -35,8 +61,11 @@ export async function openAntigravityDelegation(script: string, active: () => De
             return schema?.type === 'object' ? [{ name: tool.name, description: tool.description, inputSchema: { ...schema, type: 'object' as const } }] : []
           })
         : [
+        ...(options.browser ? BROWSER_TOOLS : []),
+        ...(options.delegate ? [
         { name: 'start_pi_subagent', description: 'Delegate an independent coding task to an Inkstone Pi subagent in the current project. Returns its id; use get_pi_subagent to read the result.', inputSchema: { type: 'object', properties: { task: { type: 'string' }, model: { type: 'string', description: 'Optional exact Pi provider/model' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' }, readOnly: { type: 'boolean' } }, required: ['task'], additionalProperties: false } },
         { name: 'get_pi_subagent', description: 'Read the state and final answer of a Pi subagent started by this Antigravity session.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false } },
+        ] : []),
       ]
       for (const tool of tools) knownTools.add(tool.name)
       return { tools }
@@ -58,8 +87,34 @@ export async function openAntigravityDelegation(script: string, active: () => De
             { ...options.commandHost, mcpConnectionManager: () => service.manager, permissionMode: async () => (turn.mode === 'auto' ? 'all' : 'danger') },
             'call', { serverId: service.name, toolName: params.name, arguments: args }, signal)
           const data = response.data as McpCallOutcome
-          return { content: [{ type: 'text' as const, text: data.text }], ...(data.toolError ? { isError: true } : {}) }
+          const images = await Promise.all((data.images ?? []).slice(0, MAX_RELAYED_IMAGES).map(async (file) => {
+            try { return { type: 'image' as const, data: (await readFile(file)).toString('base64'), mimeType: imageMime(file) } } catch { return null }
+          }))
+          return { content: [{ type: 'text' as const, text: data.text }, ...images.filter((image) => image !== null)], ...(data.toolError ? { isError: true } : {}) }
         }
+        if (options.browser && (params.name === 'browser_run' || params.name === 'browser_screenshot')) {
+          const signal = AbortSignal.any([turn.signal, requestSignal])
+          if (params.name === 'browser_screenshot') {
+            const { summary } = await options.browser('screenshot', {}, signal)
+            const path = typeof summary.savedTo === 'string' ? summary.savedTo : ''
+            const mimeType = typeof summary.mimeType === 'string' ? summary.mimeType : 'image/png'
+            if (!path) return result({ error: 'Screenshot was not saved.' }, true)
+            return { content: [{ type: 'image' as const, data: (await readFile(path)).toString('base64'), mimeType }] }
+          }
+          if (turn.mode === 'plan') return result({ error: 'Plan mode does not permit browser actions; use browser_screenshot to look.' }, true)
+          if (typeof args.code !== 'string' || !args.code.trim()) return result({ error: 'browser_run needs code.' }, true)
+          const { summary, data } = await options.browser('run', { code: args.code }, signal)
+          const out = (data ?? {}) as { result?: unknown; logs?: string[]; url?: string; title?: string; runtime?: string }
+          const full = out.result === undefined || out.result === null ? undefined : typeof out.result === 'string' ? out.result : JSON.stringify(out.result)
+          return result({
+            url: out.url ?? summary.url,
+            title: out.title ?? summary.title,
+            ...(out.runtime ? { runtime: out.runtime } : {}),
+            ...(full !== undefined ? { result: full.length > BROWSER_RESULT_CHARS ? `${full.slice(0, BROWSER_RESULT_CHARS)}…` : full } : {}),
+            ...(out.logs?.length ? { logs: out.logs.slice(-50) } : {})
+          })
+        }
+        if (!options.delegate) return result({ error: 'Unknown tool.' }, true)
         if (!turn.run) return result({ error: 'The Pi subagent bridge is unavailable.' }, true)
         if (params.name === 'start_pi_subagent') {
           if (turn.mode === 'plan' && args.readOnly !== true) return result({ error: 'Plan mode only permits read-only Pi subagents (set readOnly: true).' }, true)
@@ -110,7 +165,7 @@ export async function openAntigravityDelegation(script: string, active: () => De
   const server = createServer((req, res) => {
     const auth = Buffer.from(req.headers.authorization ?? '')
     const service = routes.get(req.url ?? '')
-    if (req.headers.host !== host || req.headers.origin || (!service && !(options.delegate && req.url === '/mcp')) || auth.length !== secret.length || !timingSafeEqual(auth, secret)) {
+    if (req.headers.host !== host || req.headers.origin || (!service && !(ownRoute && req.url === '/mcp')) || auth.length !== secret.length || !timingSafeEqual(auth, secret)) {
       res.writeHead(403).end()
       return
     }
@@ -145,8 +200,8 @@ export async function openAntigravityDelegation(script: string, active: () => De
     type: 'http', name: serverName, url: `http://${host}${path}`, headers: [{ name: 'Authorization', value: secret.toString() }]
   })
   return {
-    httpConfigs: [...(options.delegate ? [httpConfig(name, '/mcp')] : []), ...options.services.map((service) => httpConfig(service.name, `/mcp/${service.name}`))],
-    configs: [...(options.delegate ? [config(name, '/mcp')] : []), ...options.services.map((service) => config(service.name, `/mcp/${service.name}`))],
+    httpConfigs: [...(ownRoute ? [httpConfig(name, '/mcp')] : []), ...options.services.map((service) => httpConfig(service.name, `/mcp/${service.name}`))],
+    configs: [...(ownRoute ? [config(name, '/mcp')] : []), ...options.services.map((service) => config(service.name, `/mcp/${service.name}`))],
     knownTools: () => knownTools as ReadonlySet<string>,
     close: async () => {
       server.close()

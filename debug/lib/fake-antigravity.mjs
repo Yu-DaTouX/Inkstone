@@ -575,7 +575,7 @@ for await (const line of input) {
         }
         await rpc('initialize', { protocolVersion: '2025-06-18', clientInfo: { name: 'fixture', version: '1' }, capabilities: {} })
         const tools = (await rpc('tools/list', {})).tools.map(tool => tool.name).sort().join(',')
-        if (tools !== 'get_pi_subagent,start_pi_subagent') throw new Error('工具范围不符')
+        if (!['get_pi_subagent,start_pi_subagent', 'browser_run,browser_screenshot,get_pi_subagent,start_pi_subagent'].includes(tools)) throw new Error('工具范围不符')
         const tool = (name, args) => rpc('tools/call', { name, arguments: args })
         if (text === '派 Pi 子代理' && !(await tool('get_pi_subagent', { id: 'sub-12345678' })).isError) throw new Error('陌生子代理可读')
         const item = text === '后台派 Pi 子代理' ? 'WFAGENT WFITEM=ACP-WAKE WFDELAY3' : 'WFAGENT WFITEM=ACP-FIXTURE WFDELAY10'

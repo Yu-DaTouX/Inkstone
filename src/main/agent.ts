@@ -4719,7 +4719,7 @@ export class AgentController extends EventEmitter {
           if (oldest) this.acpDelegatedIds.delete(oldest)
         }
       }
-      const bridge = mcp && script && (host || mcp.services.length) ? await openAntigravityDelegation(script, () => {
+      const bridge = mcp && script ? await openAntigravityDelegation(script, () => {
         const turn = this.acpTurn
         if (!turn || turn.session !== proc || !this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) return undefined
         return { signal: turn.delegation.signal, mode: this.acpConnection?.mode, run: host ? (command, params) => host.run(command, params, {
@@ -4727,7 +4727,7 @@ export class AgentController extends EventEmitter {
           parentRunId: this.capabilityOpts?.sessionId, parentGeneration: owner.generation,
           parentMessageId: turn.messages.at(-1)?.id, projectId: this.capabilityOpts?.projectId, fromAntigravity: true
         }, turn.delegation.signal) : undefined }
-      }, { delegate: !!host, services: mcp.services, commandHost: this.commandHost, owned }) : undefined
+      }, { delegate: !!host, browser: (action, params, signal) => this.browserCommands.runBrowserCommand(action, params, signal), services: mcp.services, commandHost: this.commandHost, owned }) : undefined
       if (bridge && mcp) proc.setCleanup(async () => { await bridge.close(); await mcp.close() })
       const explicitMode = restoreMode ?? (previous?.sessionId === sessionId ? previous.modes?.current : undefined)
       let models = reuse
@@ -5493,6 +5493,7 @@ export class AgentController extends EventEmitter {
           return
         }
         turn.delegation.abort()
+        this.releaseComputerControl()
         if (ownsTurn()) {
           if (connection.session === session) this.bindAntigravity(connection, session)
           this.setAgentRunning(false)

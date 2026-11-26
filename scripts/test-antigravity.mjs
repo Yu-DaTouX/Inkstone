@@ -1141,7 +1141,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       listToolsRaw: async () => mockMcpTools,
       listToolsCached: async () => mockMcpTools,
       pinConnection: () => undefined,
-      callTool: async (_serverId, toolName, args) => ({ content: [{ type: 'text', text: `${toolName}:${args.query}` }] })
+      callTool: async (_serverId, toolName, args) => ({ content: [{ type: 'text', text: `${toolName}:${args.query}` }, ...(args.query === 'img' ? [{ type: 'image', data: Buffer.from([137, 80, 78, 71]).toString('base64'), mimeType: 'image/png' }] : [])] })
     }
     const bridge = await openAntigravityDelegation(
       resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
@@ -1212,6 +1212,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
       mode = 'auto'
       const cgAuto = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'codegraph_explore', arguments: { query: 'q2' } })
       ok(!cgAuto.isError && cgAuto.content?.[0]?.text === 'codegraph_explore:q2' && confirmCalls.length === 1, 'Auto 档下同步 MCP 工具关闭宿主审批，直接执行返回结果', JSON.stringify({ cgAuto, confirmCalls: confirmCalls.length }))
+      const cgImage = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'codegraph_explore', arguments: { query: 'img' } })
+      const relayed = cgImage.content?.find((part) => part.type === 'image')
+      ok(!cgImage.isError && relayed?.mimeType === 'image/png' && relayed.data === Buffer.from([137, 80, 78, 71]).toString('base64'), '同步 MCP 工具返回的图片原样交给 agy（如 windows-mcp 截图）', JSON.stringify(cgImage).slice(0, 400))
       mode = 'plan'
       const denied = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'edit files' } })
       ok(denied.isError === true && calls.length === 0, 'Plan 模式下拒绝派发可写 Pi 子代理')
@@ -1246,6 +1249,60 @@ await runSuite(import.meta.url, async (ok, compile) => {
       }
     } finally {
       await bridge.close()
+    }
+  }
+
+  {
+    const { openAntigravityDelegation } = await compile('src/main/antigravity-delegation.ts')
+    const controller = new AbortController()
+    let mode = 'plan'
+    const browserCalls = []
+    const shotDir = mkdtempSync(join(tmpdir(), 'inkstone-acp-shot-'))
+    const shotPath = join(shotDir, 'shot.png')
+    writeFileSync(shotPath, Buffer.from([137, 80, 78, 71]))
+    const bridge = await openAntigravityDelegation(
+      resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),
+      () => ({ signal: controller.signal, mode }),
+      {
+        delegate: false,
+        browser: async (action, params) => {
+          browserCalls.push({ action, params })
+          if (action === 'screenshot') return { summary: { savedTo: shotPath, mimeType: 'image/png' } }
+          if (params.code === 'fail') throw Object.assign(new Error('USER_CONTROL_ACTIVE: 用户接管中'), { code: 'USER_CONTROL_ACTIVE' })
+          return { summary: { url: 'https://example.com/' }, data: { result: { rows: 3 }, logs: ['hi'], url: 'https://example.com/', title: 'Example', runtime: 'new' } }
+        },
+        services: [],
+        commandHost: {}
+      }
+    )
+    try {
+      const [http] = bridge.httpConfigs
+      const callMcp = async (method, params) => {
+        const res = await fetch(http.url, {
+          method: 'POST',
+          headers: { Authorization: http.headers[0].value, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+        })
+        return (await res.json()).result
+      }
+      const listed = await callMcp('tools/list', {})
+      ok(http.name === 'inkstone-pi' && listed.tools.map((tool) => tool.name).join() === 'browser_run,browser_screenshot', '没有子代理宿主时仍给 agy 挂上内置浏览器工具', JSON.stringify(listed.tools.map((tool) => tool.name)))
+      ok(listed.tools[0].description.includes('page.snapshot') && bridge.knownTools().has('browser_run'), 'browser_run 工具说明附带脚本 API')
+      const planned = await callMcp('tools/call', { name: 'browser_run', arguments: { code: 'return 1' } })
+      ok(planned.isError === true && browserCalls.length === 0, 'Plan 模式下不跑浏览器脚本')
+      const shot = await callMcp('tools/call', { name: 'browser_screenshot', arguments: {} })
+      ok(shot.content?.[0]?.type === 'image' && shot.content[0].mimeType === 'image/png' && shot.content[0].data === Buffer.from([137, 80, 78, 71]).toString('base64'), 'Plan 模式允许截图，直接返回图片')
+      mode = 'default'
+      const ran = await callMcp('tools/call', { name: 'browser_run', arguments: { code: 'return rows' } })
+      const payload = JSON.parse(ran.content[0].text)
+      ok(!ran.isError && payload.result === '{"rows":3}' && payload.logs[0] === 'hi' && payload.title === 'Example' && browserCalls.at(-1).params.code === 'return rows', 'browser_run 走宿主浏览器并带回结果与日志', JSON.stringify(payload))
+      const failed = await callMcp('tools/call', { name: 'browser_run', arguments: { code: 'fail' } })
+      ok(failed.isError === true && /USER_CONTROL_ACTIVE/.test(failed.content[0].text), '浏览器报错原样交给 agy')
+      const subagent = await callMcp('tools/call', { name: 'start_pi_subagent', arguments: { task: 'x' } })
+      ok(subagent.isError === true, '未开委派时不接受子代理调用')
+    } finally {
+      await bridge.close()
+      rmSync(shotDir, { recursive: true, force: true })
     }
   }
 
