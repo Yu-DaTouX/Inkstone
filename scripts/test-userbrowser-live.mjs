@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import assert from 'node:assert/strict'
 import { execFile, spawn } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -6,9 +7,37 @@ import http from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import WebSocket from 'ws'
-import { runSuite } from './lib/test-suite.mjs'
+
+const CJS_REQUIRE_BANNER = "import { createRequire as __inkstoneCreateRequire } from 'node:module'; const require = __inkstoneCreateRequire(import.meta.url);"
+
+async function runHostSuite(url, run) {
+  if (!process.argv[1] || pathToFileURL(resolve(process.argv[1])).href !== url) return
+  let checks = 0
+  const dirs = []
+  const ok = (condition, label, detail = '') => {
+    assert.ok(condition, detail ? `${label}: ${detail}` : label)
+    checks++
+    console.log(`  ✓ ${label}`)
+  }
+  const compile = async (entry, options = {}) => {
+    const dir = await mkdtemp(resolve('node_modules/.inkstone-test-build-'))
+    dirs.push(dir)
+    const outfile = join(dir, 'module.mjs')
+    const banner = { ...options.banner, js: `${CJS_REQUIRE_BANNER}${options.banner?.js ?? ''}` }
+    await build({ ...(options.stdin ? {} : { entryPoints: [entry] }), outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', ...options, banner })
+    return import(pathToFileURL(outfile).href)
+  }
+  try {
+    await run(ok, compile)
+    assert.ok(checks > 0, '没有执行任何断言')
+    console.log(`${checks}/${checks} 通过`)
+  } finally {
+    await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
+  }
+}
 
 const ENTRY = [
   "export { BrowserCommands } from './src/main/browser-commands.ts'",
@@ -111,7 +140,7 @@ async function launchFirefox(profile) {
   return { ready: send('webExtension.install', { extensionData: { type: 'path', path: EXTENSION } }), close: async () => { try { await send('session.end') } catch {} try { bidi.close() } catch {} setTimeout(() => proc.kill(), 1000) } }
 }
 
-await runSuite(import.meta.url, async (ok, compile) => {
+await runHostSuite(import.meta.url, async (ok, compile) => {
   const mod = await compile(null, { stdin: { contents: ENTRY, resolveDir: resolve('.'), loader: 'ts' } })
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-userbrowser-live-'))
   const previous = {}

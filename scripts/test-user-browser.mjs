@@ -1,10 +1,10 @@
 #!/usr/bin/env node
+import { runSuite } from './lib/test-suite.mjs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import WebSocket from 'ws'
-import { runSuite } from './lib/test-suite.mjs'
 
 const ENTRY = [
   "export { BrowserCommands } from './src/main/browser-commands.ts'",
