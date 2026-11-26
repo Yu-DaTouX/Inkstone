@@ -237,6 +237,7 @@ function makeStubMap() {
       'src/renderer/src/features/editor/LazyCodeEditor.tsx': 'export function CodeEditor(){ return null }',
       'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }',
       'src/renderer/src/features/preview/HtmlCanvas.tsx': 'export function HtmlCanvas(){ return null }',
+      'src/renderer/src/features/preview/DocOutline.tsx': 'export function DocOutline(){ return null }',
       'src/renderer/src/ui/FileTypeIcon.tsx': 'export function FileTypeIcon(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
