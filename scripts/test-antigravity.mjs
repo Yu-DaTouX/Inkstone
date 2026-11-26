@@ -1366,6 +1366,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(noWriteMetrics.cacheWrite === null && noWriteMetrics.hitRate === 20 && noWriteMetrics.latestHitRate === 20,
       'Antigravity 未上报缓存写入时仍计算整会话及最近回合命中率')
 
+    const missingTurn = [
+      ...multiStep,
+      { id: 'u3', role: 'user', text: '再来', timestamp: 3000 },
+      { id: 'a3', role: 'assistant', model: 'antigravity/gemini-4-neon', text: '被打断了。', timestamp: 3001 },
+      { id: 'u4', role: 'user', text: '继续', timestamp: 4000 },
+      { id: 'a4', role: 'assistant', model: 'antigravity/gemini-4-neon', text: '好了。', antigravity: { usage: { input: 10, output: 5, cacheRead: 90, cacheWrite: 0, totalTokens: 105 } }, timestamp: 4001 }
+    ]
+    const gapMetrics = projectSessionMetrics(missingTurn, null, { antigravity: true })
+    ok(gapMetrics.partial === true && gapMetrics.hitRate === 110 / 200 * 100,
+      '有回合没上报用量时，命中率按已上报的回合计算，不再整个隐藏', JSON.stringify({ partial: gapMetrics.partial, hitRate: gapMetrics.hitRate }))
+
     const headings = extractGeminiProgressHeadings('**检查登录逻辑**\n\n细节如下：\n```\n**代码块里的星号不是标题**\n```\n**准备修改文件**：\n继续分析')
     ok(headings.join('|') === '检查登录逻辑|准备修改文件', '从 Gemini 思考摘要提取阶段标题并忽略代码块', JSON.stringify(headings))
 

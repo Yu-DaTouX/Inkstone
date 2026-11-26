@@ -508,9 +508,13 @@ export function projectSessionMetrics(
     total = sum('totalTokens')
     cost = sum('cost')
     if ([input, output, cacheRead, cacheWrite, total, cost].some((value) => value !== null)) source = 'messages'
-    if (input !== null && cacheRead !== null && !partial && input + cacheRead + (cacheWrite ?? 0) > 0) {
-      externalHit = cacheRead / (input + cacheRead + (cacheWrite ?? 0)) * 100
-    }
+    const hitTurns = turns.flatMap((m) => {
+      const usage = m.antigravity?.usage
+      return usage && isNonNegative(usage.input) && isNonNegative(usage.cacheRead) ? [usage] : []
+    })
+    const hitRead = hitTurns.reduce((total, usage) => total + (usage.cacheRead ?? 0), 0)
+    const hitBase = hitTurns.reduce((total, usage) => total + (usage.input ?? 0) + (usage.cacheRead ?? 0) + (isNonNegative(usage.cacheWrite) ? usage.cacheWrite : 0), 0)
+    if (hitBase > 0) externalHit = hitRead / hitBase * 100
     const latest = turns.at(-1)?.antigravity?.usage
     if (latest?.input != null && latest.cacheRead != null && latest.input + latest.cacheRead + (latest.cacheWrite ?? 0) > 0) {
       latestHitRate = latest.cacheRead / (latest.input + latest.cacheRead + (latest.cacheWrite ?? 0)) * 100
