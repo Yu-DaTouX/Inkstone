@@ -73,7 +73,17 @@ try {
   })
 
   const ipcFile = join(dir, 'browser-ipc.cjs')
-  await build({ entryPoints: ['src/main/ipc/browser-ipc.ts'], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: ipcFile, logLevel: 'silent' })
+  const electronStub = {
+    name: 'electron-stub',
+    setup(b) {
+      b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
+      b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({
+        contents: 'export const app = { isPackaged: false, getPath: () => "" }; export const shell = { openPath: async () => "" };',
+        loader: 'js'
+      }))
+    }
+  }
+  await build({ entryPoints: ['src/main/ipc/browser-ipc.ts'], bundle: true, platform: 'node', format: 'cjs', plugins: [electronStub], outfile: ipcFile, logLevel: 'silent' })
   const { registerBrowserIpc } = require(ipcFile)
   const handlers = new Map()
   const scopedCalls = []
