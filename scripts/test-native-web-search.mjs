@@ -91,11 +91,21 @@ ok(cr.queries.join() === 'Electron latest stable' && cr.opened[0] === 'https://r
 ok(createSearchCollector().record() === null, '没搜索时不产生记录')
 
 const withTool = { role: 'assistant', yanWebSearch: ar, content: [{ type: 'thinking', thinking: 't' }, { type: 'text', text: 'a' }, { type: 'toolCall', name: 'read' }] }
-const history = [{ role: 'user', content: 'q' }, withTool, { role: 'toolResult', content: [] }]
+const firstResult = { role: 'toolResult', content: [{ type: 'text', text: 'r1' }] }
+const lastResult = { role: 'toolResult', content: [{ type: 'text', text: 'r2' }] }
+const history = [{ role: 'user', content: 'q' }, withTool, firstResult, lastResult]
 const injected = withSearchRecords(history)
-ok(injected[1].content.length === 4 && injected[1].content[2].type === 'text' && injected[1].content[3].type === 'toolCall', '记录补在工具调用之前，不打乱工具配对')
-ok(injected[1].content[2].text === searchRecordText(ar) && injected[1].content[2].text.includes('Latest version: 45.2.1'), '补充文字包含引用原文')
-ok(withTool.content.length === 3 && injected[0] === history[0], '不改会话里的原消息')
+ok(injected.length === 4 && injected[1] === withTool && injected[2] === firstResult, '助手消息原样保留，记录不写成助手自己的文字')
+ok(injected[3].content.length === 2 && injected[3].content[1].text === searchRecordText(ar), '记录附在最后一条工具结果后，不打乱工具配对')
+ok(injected[3].content[1].text.includes('Latest version: 45.2.1'), '补充文字包含引用原文')
+ok(lastResult.content.length === 1 && withTool.content.length === 3 && injected[0] === history[0], '不改会话里的原消息')
+const finalReply = { role: 'assistant', yanWebSearch: ar, content: [{ type: 'text', text: 'done' }] }
+const nextTurn = withSearchRecords([finalReply, { role: 'user', content: '继续' }])
+ok(nextTurn.length === 2 && nextTurn[0] === finalReply && nextTurn[1].content[0].text === searchRecordText(ar) && nextTurn[1].content[1].text === '继续', '最终回复的记录放在下一条用户消息开头')
+const trailing = withSearchRecords([finalReply])
+ok(trailing.length === 2 && trailing[1].role === 'user' && trailing[1].content[0].text === searchRecordText(ar), '后面没有消息时单独补一条用户消息')
+const custom = withSearchRecords([finalReply, { role: 'custom', content: 'x' }])
+ok(custom.length === 3 && custom[1].role === 'user' && custom[2].role === 'custom', '后面不是用户或工具结果时单独插入，不改其他消息')
 ok(withSearchRecords([{ role: 'assistant', content: [] }]) === undefined, '没有记录时不改上下文')
 ok(searchRecordText(ar) === searchRecordText(JSON.parse(JSON.stringify(ar))), '同一记录每次补的文字一致（不破坏缓存）')
 
