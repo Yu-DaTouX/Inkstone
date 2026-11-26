@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { ANTIGRAVITY_PROVIDER } from '../../../../shared/antigravity'
 import type { AuthProviderInfo, ModelInfo } from '../../../../shared/ipc'
 import { modelKey, type ModelChoice } from '../../../../shared/model-selection'
@@ -135,14 +135,16 @@ export function useComposerModelAdapter(): ComposerModelAdapter {
 
   const activeRunnerId = useStore((s) => s.activeRunnerId)
   const [pending, setPending] = useState<{ runId: string | null; name: string } | null>(null)
+  const optionsRef = useRef(modelOptionsByInstance)
+  optionsRef.current = modelOptionsByInstance
   const select = useCallback((nextProvider: ProviderInstanceId, nextModel: string) => {
-    const name = modelOptionsByInstance.get(nextProvider)?.find((option) => option.slug === nextModel)?.name || nextModel
+    const name = optionsRef.current.get(nextProvider)?.find((option) => option.slug === nextModel)?.name || nextModel
     const entry = { runId: useStore.getState().activeRunnerId, name }
     setPending(entry)
     void useStore.getState().setModel(nextProvider, nextModel).finally(() => {
       setPending((current) => (current === entry ? null : current))
     })
-  }, [modelOptionsByInstance])
+  }, [])
 
   const toggleFavorite = useCallback((nextProvider: ProviderInstanceId, nextModel: string) => {
     const current = useStore.getState().settings?.modelFavorites ?? []
