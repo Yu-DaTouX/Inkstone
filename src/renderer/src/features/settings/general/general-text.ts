@@ -308,7 +308,7 @@ const ZH: GeneralText = {
   userBrowserTrusted: '真实输入',
   userBrowserStale: '扩展已更新，请在浏览器扩展页点一次重新加载',
   userBrowserInstall: '安装扩展',
-  userBrowserInstallDesc: 'Chrome / Edge：打开扩展管理页，开启开发者模式，「加载已解压的扩展」选这个文件夹；已装过的点一次重新加载。Firefox 需要经 Mozilla 签名的扩展包。',
+  userBrowserInstallDesc: 'Chrome / Edge：打开扩展管理页，开启开发者模式，「加载已解压的扩展」选这个文件夹；已装过的点一次重新加载。Firefox（140 及以上）：把文件夹里的 firefox.xpi 拖进火狐窗口安装。',
   userBrowserOpenFolder: '打开扩展文件夹',
 
   devicesEnable: '手机接入',
@@ -507,7 +507,7 @@ const EN: GeneralText = {
   userBrowserTrusted: 'real input',
   userBrowserStale: 'extension updated; reload it once on the browser extensions page',
   userBrowserInstall: 'Install the extension',
-  userBrowserInstallDesc: 'Chrome / Edge: open the extensions page, turn on Developer mode, and choose Load unpacked with this folder; reload it once if already installed. Firefox needs a Mozilla-signed package.',
+  userBrowserInstallDesc: 'Chrome / Edge: open the extensions page, turn on Developer mode, and choose Load unpacked with this folder; reload it once if already installed. Firefox (140+): drag firefox.xpi from this folder into a Firefox window to install it.',
   userBrowserOpenFolder: 'Open extension folder',
 
   devicesEnable: 'Phone access',

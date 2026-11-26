@@ -96,7 +96,7 @@ export class UserBrowserService {
     if (!connections.length) {
       throw new UserBrowserError(
         'user_browser_not_connected',
-        `没有连上的用户浏览器。请用户在自己的浏览器里装好「砚 · 浏览器连接」扩展并保持浏览器打开：Chrome / Edge 打开扩展管理页（chrome://extensions 或 edge://extensions），开启开发者模式，「加载已解压的扩展」选 ${this.extensionTarget}；已装过旧版的，在扩展管理页点一次重新加载。Firefox 需要经 Mozilla 签名的扩展包。装好后再 connect-user。`
+        `没有连上的用户浏览器。请用户在自己的浏览器里装好「砚 · 浏览器连接」扩展并保持浏览器打开：Chrome / Edge 打开扩展管理页（chrome://extensions 或 edge://extensions），开启开发者模式，「加载已解压的扩展」选 ${this.extensionTarget}；已装过旧版的，在扩展管理页点一次重新加载。Firefox（140 及以上）把 ${join(this.extensionTarget, 'firefox.xpi')} 拖进火狐窗口安装。装好后再 connect-user。`
       )
     }
     const candidates = wanted ? connections.filter((connection) => connection.info.browser === wanted) : connections
