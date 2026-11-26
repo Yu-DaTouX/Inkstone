@@ -15,7 +15,7 @@ export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
 // windows-mcp 0.8.6 起要求 Python >= 3.14；0.8.5 是 3.13 下最后一个可用版本。
 // 传具体版本号是为了让 uv 自动下载对应解释器，不依赖用户机器上已有的 Python。
 const WINDOWS_MCP_PYTHON = '3.14'
-const WINDOWS_MCP_PACKAGE = 'windows-mcp==0.8.9'
+const WINDOWS_MCP_PACKAGE = 'windows-mcp==0.9.0'
 
 export const COMPUTER_USE_TOOLS = [
   'Snapshot',

@@ -41,7 +41,7 @@ try {
     ok(updated === true, '把过期的 windows-mcp 启动参数改写成当前版本')
     const servers = await read()
     const mine = servers.find((server) => server.id === COMPUTER_USE_SERVER_ID)
-    ok(Array.isArray(mine.args) && mine.args.includes('windows-mcp==0.8.9') && mine.args.includes('3.14'), '固定到明确版本的 windows-mcp', JSON.stringify(mine.args))
+    ok(Array.isArray(mine.args) && mine.args.includes('windows-mcp==0.9.0') && mine.args.includes('3.14'), '固定到明确版本的 windows-mcp', JSON.stringify(mine.args))
     ok(mine.args.includes('--tools') && mine.args.includes(COMPUTER_USE_TOOLS.join(',')), '工具白名单随条目写入')
     ok(mine.enabled === false, '刷新不改变用户停用状态')
     ok(servers.some((server) => server.id === 'my-own-server'), '刷新不动其他 MCP 服务')

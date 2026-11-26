@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const computer = await import(new URL('../resources/pi-extensions/computer-tools.js', import.meta.url))
 const guide = await import(new URL('../resources/pi-extensions/capability-guide.js', import.meta.url))
 
-const WINDOWS_MCP_089_PARAMS = {
+const WINDOWS_MCP_PARAMS = {
   Snapshot: ['use_vision', 'use_dom', 'use_annotation', 'use_ui_tree', 'width_reference_line', 'height_reference_line', 'display', 'region', 'save_path'],
   Screenshot: ['use_annotation', 'width_reference_line', 'height_reference_line', 'display', 'region', 'save_path'],
   DisplayInventory: [],
@@ -50,13 +50,13 @@ try {
     await tool.execute(`tc-${tool.name}`, {}, signal, undefined, { cwd: 'C:/w' })
   }
   const mcpTools = calls.map((call) => call.params.tool)
-  assert.deepEqual(new Set(mcpTools), new Set(Object.keys(WINDOWS_MCP_089_PARAMS)), '覆盖 windows-mcp 白名单工具与 ControlStatus')
+  assert.deepEqual(new Set(mcpTools), new Set(Object.keys(WINDOWS_MCP_PARAMS)), '覆盖 windows-mcp 白名单工具与 ControlStatus')
   assert.ok(calls.every((call) => call.command === 'mcp.call' && call.params.server === 'windows-mcp' && call.cwd === 'C:/w'), '全部经宿主 mcp.call（含审批）调用 windows-mcp')
   for (const tool of tools) {
     const name = calls.find((call) => call.toolCallId === `tc-${tool.name}`).params.tool
-    const allowed = WINDOWS_MCP_089_PARAMS[name]
+    const allowed = WINDOWS_MCP_PARAMS[name]
     const extra = Object.keys(tool.parameters.properties).filter((key) => !allowed.includes(key))
-    assert.deepEqual(extra, [], `${tool.name} 只暴露 windows-mcp 0.8.9 的 ${name} 参数`)
+    assert.deepEqual(extra, [], `${tool.name} 只暴露 windows-mcp 0.9.0 的 ${name} 参数`)
     assert.ok(!('save_path' in tool.parameters.properties), `${tool.name} 不暴露 save_path，图片仍由宿主落盘`)
     for (const key of tool.parameters.required ?? []) assert.ok(allowed.includes(key))
   }

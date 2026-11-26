@@ -199,7 +199,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     {
       const { windowsMcpKeepsProcess } = await compile('src/main/mcp/windows-mcp-tree.ts', { packages: 'external' })
       const row = (name, commandLine) => ({ pid: 1, ppid: 0, created: 1, name, ...(commandLine ? { commandLine } : {}) })
-      ok(windowsMcpKeepsProcess(row('uvx.exe', 'uvx --python 3.14 windows-mcp==0.8.9 serve')), 'uvx 根进程算自己的')
+      ok(windowsMcpKeepsProcess(row('uvx.exe', 'uvx --python 3.14 windows-mcp==0.9.0 serve')), 'uvx 根进程算自己的')
       ok(windowsMcpKeepsProcess(row('python.exe', 'C:\\Users\\u\\AppData\\Local\\uv\\cache\\archive-v0\\x\\python.exe -m windows_mcp')), 'uv 缓存里的服务进程算自己的')
       ok(windowsMcpKeepsProcess(row('powershell.exe', 'powershell -NoProfile -EncodedCommand abc')), '服务起的编码命令 PowerShell 算自己的')
       ok(!windowsMcpKeepsProcess(row('powershell.exe', 'powershell.exe')), '用户自己的 PowerShell 不算自己的')

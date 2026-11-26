@@ -10,6 +10,8 @@ import {
   type McpToolDescriptor
 } from '../../shared/mcp'
 import type { McpConnectionManager, McpConnectionPin } from './connection-manager'
+import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
+import { pruneWindowsSnapshot } from './windows-mcp-tree'
 import { COMPUTER_USE_SERVER_ID } from '../computer-use'
 
 export class McpToolError extends Error {
@@ -202,7 +204,9 @@ export async function callMcpTool(
   const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal, longRunning: true, ...(options.connection ? { connection: options.connection } : {}) })
   const snapshotAdvice = await offersSnapshotTool(manager, serverId, options.signal)
   const saved = await saveResultImages(raw, serverId, toolName, options.resultsDir, snapshotAdvice)
-  const { toolError, text } = classifyMcpResult(raw, saved.options)
+  const classified = classifyMcpResult(raw, saved.options)
+  const toolError = classified.toolError
+  const text = serverId === WINDOWS_MCP_SERVER_ID && toolName === 'Snapshot' && !toolError ? pruneWindowsSnapshot(classified.text) : classified.text
   const bytes = Buffer.byteLength(text, 'utf8')
   const images = saved.files.length > 0 ? { images: saved.files } : {}
 
