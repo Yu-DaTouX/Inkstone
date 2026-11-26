@@ -304,6 +304,10 @@ try {
   ok(ui.suggestionKeyAction(key('Escape'), 'auto') === 'dismiss', 'Esc \u5173\u6389\u5efa\u8bae')
   ok(ui.suggestionKeyAction(key('Tab', { shiftKey: true }), 'auto') === null && ui.suggestionKeyAction(key('Enter', { shiftKey: true }), 'auto') === null, 'Shift+Tab\u3001Shift+Enter \u4fdd\u6301\u539f\u6837')
   ok(ui.suggestionKeyAction(key('Tab', { nativeEvent: { isComposing: true } }), 'auto') === null, '\u8f93\u5165\u6cd5\u7ec4\u5b57\u65f6\u4e0d\u63a5\u7ba1\u6309\u952e')
+  const at = (owner) => ({ closest: (selector) => owner && selector.split(', ').includes(owner) ? {} : null })
+  ok(ui.takesOutsideTab(key('Tab'), at(null)) && ui.takesOutsideTab(key('Tab'), null), '焦点在普通按钮、链接或页面上时 Tab 接受预测')
+  ok(['input', 'textarea', '[contenteditable="true"]', '[role="dialog"]', '[role="menu"]', '[role="listbox"]'].every((owner) => !ui.takesOutsideTab(key('Tab'), at(owner))), '在别的输入框、终端、对话框和菜单里 Tab 保持原样')
+  ok(!ui.takesOutsideTab(key('Tab', { shiftKey: true }), null) && !ui.takesOutsideTab(key('Tab', { isComposing: true }), null) && !ui.takesOutsideTab(key('Enter'), null), 'Shift+Tab、组字中与其他键不接管')
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

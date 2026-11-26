@@ -27,6 +27,18 @@ export default async function run({ cdp, fake, check, waitFor, turn, sleep, shot
   check('消息流里没有收尾决策卡', (await ev(`document.querySelectorAll('[data-testid="v3-wrap-up"]').length`)) === 0)
   await shot('prompt-suggestion-dark')
 
+  const outside = await ev(`(() => { const el = [...document.querySelectorAll('button')].find((b) => !b.closest('.v3-composer') && !b.closest('[role="dialog"]') && b.offsetParent); if (!el) return null; el.focus(); return document.activeElement === el })()`)
+  check('焦点移到输入框外的按钮', outside === true, outside)
+  await press('Tab', 'Tab', 9)
+  await sleep(300)
+  const outsideFilled = await composer()
+  const focusedIn = await ev(`!!document.activeElement?.closest('.v3-composer')`)
+  check('焦点在输入框外时 Tab 也填入建议并聚焦输入框', outsideFilled?.text === SUGGESTION && focusedIn, { outsideFilled, focusedIn })
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 })
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 })
+  await press('Backspace', 'Backspace', 8)
+  await sleep(200)
+
   await focus()
   await press('Tab', 'Tab', 9)
   await sleep(200)

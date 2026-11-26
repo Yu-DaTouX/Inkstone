@@ -20,6 +20,13 @@ export function visibleSuggestion(view: SuggestionView): string | null {
   return text
 }
 
+const OWNS_TAB = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="grid"], [role="tablist"]'
+
+export function takesOutsideTab(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey' | 'defaultPrevented' | 'isComposing'>, target: { closest(selector: string): unknown } | null): boolean {
+  if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented || event.isComposing) return false
+  return !target?.closest(OWNS_TAB)
+}
+
 export type SuggestionKeyAction = 'fill' | 'send' | 'dismiss' | null
 
 export function suggestionKeyAction(event: ComposerKeyEvent, sendKey: string): SuggestionKeyAction {

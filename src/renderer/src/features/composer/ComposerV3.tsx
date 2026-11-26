@@ -23,7 +23,7 @@ import { Badge, Kbd, KbdGroup } from '../../ui'
 import { AskDock } from '../session/AskDock'
 import { useComposerQuestionTitle } from '../session/question-composer'
 import { usePastedTextAttach } from './use-pasted-text'
-import { PROMPT_SUGGESTION_STATUS_KEY, suggestionKeyAction, visibleSuggestion } from './prompt-suggestion'
+import { PROMPT_SUGGESTION_STATUS_KEY, suggestionKeyAction, takesOutsideTab, visibleSuggestion } from './prompt-suggestion'
 import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
 import { setComposerEditorHandle } from '../../t3/components/chat/composerEventScope'
 import { useAttachmentAdapter } from '../../t3/adapters/composer-attachments'
@@ -434,6 +434,25 @@ export function ComposerV3(): JSX.Element {
     attachmentCount: attachments.count,
     composing
   })
+  const suggestionRef = useRef(suggestion)
+  suggestionRef.current = suggestion
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const text = suggestionRef.current
+      const target = event.target instanceof Element ? event.target : null
+      if (!text || rootRef.current?.contains(target) || !takesOutsideTab(event, target)) return
+      event.preventDefault()
+      setValue(text)
+      requestAnimationFrame(() => {
+        const editor = editorRef.current
+        if (!editor) return
+        editor.focus({ preventScroll: true })
+        editor.setSelection(text.length)
+      })
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
   const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
