@@ -122,7 +122,7 @@ async function runReasoningDiagnosticsTests() {
   const reply = history?.messages[0]
   check(history?.messages.length === 1 && reply?.entryId === 'reply' && reply.text === settled.text && !reply.error, 'history retains the message and branch anchor without a spurious error')
   check(await readFile(file, 'utf8') === persisted, 'desktop projection does not discard the persisted native diagnostics')
-  check(modules.prefs.applyPiNativePatch({ showCacheMissNotices: true }, { cacheWarming: 'off' }).showCacheMissNotices === true, 'editing desktop native settings preserves pi’s TUI cache diagnostic preference')
+  check(modules.prefs.applyPiNativePatch({ notices: { cacheMisses: true } }, { cacheWarming: 'off' }).notices?.cacheMisses === true, 'editing desktop native settings preserves pi’s TUI notice preferences')
 }
 
 async function runBundledRuntimeTests() {
