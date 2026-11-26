@@ -43,7 +43,7 @@ try {
     'computer_snapshot', 'computer_screenshot', 'computer_displays', 'computer_click', 'computer_type', 'computer_scroll', 'computer_move',
     'computer_shortcut', 'computer_wait', 'computer_wait_for', 'computer_app', 'computer_multi_select', 'computer_multi_edit', 'computer_control'
   ])
-  assert.ok(tools.every((tool) => tool.exposure === 'deferred'), '电脑工具全部按需加载，不进固定前缀')
+  assert.ok(tools.every((tool) => tool.exposure === undefined), '电脑工具常驻，不靠 tool_search 中途加载（中途加工具会让历史思考块失效、缓存整段重写）')
   assert.ok(tools.every((tool) => tool.parameters.type === 'object' && tool.parameters.additionalProperties === false))
 
   for (const tool of tools) {
@@ -99,7 +99,7 @@ try {
   const vision = { input: ['text', 'image'] }
   const textOnly = { input: ['text'] }
   const toolGuide = guide.computerUseGuide(vision, true)
-  assert.match(toolGuide, /`tool_search` "computer"/)
+  assert.doesNotMatch(toolGuide, /tool_search/, '工具常驻后不再要求先 tool_search')
   assert.match(toolGuide, /computer_snapshot \(use_vision=false\)/)
   assert.match(toolGuide, /call computer_screenshot .* only when you need to see the picture/)
   assert.match(toolGuide, /computer_control with release=true/)
@@ -118,14 +118,14 @@ try {
     guide.default({
       registerTool: () => {},
       on: (name, fn) => { if (name === 'before_agent_start') hook = fn },
-      getActiveTools: () => ['read', 'tool_search'],
-      getAllTools: () => allTools.map((name) => ({ name }))
+      getActiveTools: () => ['read', ...allTools],
+      getAllTools: () => ['read', ...allTools].map((name) => ({ name }))
     })
     return hook
   }
   const withTools = {}
-  hookFor(['tool_search', 'computer_snapshot'])({ systemPrompt: 'BASE', systemPromptOptions: { sections: withTools } }, { model: vision })
-  assert.equal(withTools.inkstone_computer_use, toolGuide, '工具已注册且有 tool_search 时提示指向 computer_* 工具')
+  hookFor(['computer_snapshot'])({ systemPrompt: 'BASE', systemPromptOptions: { sections: withTools } }, { model: vision })
+  assert.equal(withTools.inkstone_computer_use, toolGuide, '工具已注册时提示指向 computer_* 工具')
   const withoutTools = {}
   hookFor(['tool_search'])({ systemPrompt: 'BASE', systemPromptOptions: { sections: withoutTools } }, { model: vision })
   assert.equal(withoutTools.inkstone_computer_use, cliGuide, '工具没注册（会话中途才开启）时退回 yan mcp 说明')
@@ -135,7 +135,7 @@ try {
   assert.equal(disabled.inkstone_computer_use, '', '没开电脑操作时分区为空')
 
   const sizes = tools.map((tool) => JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters }).length)
-  console.log(`computer tools ok (${tools.length} deferred tools, definitions ${sizes.reduce((a, b) => a + b, 0)} chars; guide ${toolGuide.length} chars vs ${cliGuide.length})`)
+  console.log(`computer tools ok (${tools.length} resident tools, definitions ${sizes.reduce((a, b) => a + b, 0)} chars; guide ${toolGuide.length} chars vs ${cliGuide.length})`)
 } finally {
   restoreEnv()
   await rm(root, { recursive: true, force: true })

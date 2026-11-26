@@ -190,7 +190,6 @@ export function createComputerTools(call = callHostTool) {
     label: `Computer ${action.replace('_', ' ')}`,
     description,
     parameters: { type: 'object', properties, ...(required ? { required } : {}), additionalProperties: false },
-    exposure: 'deferred',
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const request = { server: COMPUTER_USE_SERVER, tool, arguments: params ?? {}, via: `computer_${action}` }
       return computerResult(await call({ command: 'mcp.call', params: request, toolCallId, cwd: ctx?.cwd, signal }))

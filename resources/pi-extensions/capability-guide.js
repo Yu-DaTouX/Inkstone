@@ -102,7 +102,7 @@ export function sessionSkillsBlock(sessionId) {
 const SESSION_SKILLS_SECTION = 'inkstone_session_skills'
 
 const COMPUTER_USE_BASE = 'Computer use (Windows UI) is enabled. Inkstone connects the windows-mcp server itself, so its tools are not in your tool list: run `yan mcp list` to see them, `yan mcp describe --server windows-mcp --tool <name>` for arguments, then `yan mcp call --request-file call.json`.'
-const COMPUTER_USE_TOOLS_BASE = 'Computer use (Windows UI) is enabled through the computer_* tools; load them with `tool_search` "computer" first.'
+const COMPUTER_USE_TOOLS_BASE = 'Computer use (Windows UI) is enabled through the computer_* tools.'
 const MCP_NAMES = { snapshot: 'Snapshot', screenshot: 'Screenshot', control: 'ControlStatus' }
 const TOOL_NAMES = { snapshot: 'computer_snapshot', screenshot: 'computer_screenshot', control: 'computer_control' }
 const computerUseVision = (n) => `Before clicking or typing, observe with ${n.snapshot} (use_vision=false) and read the UI tree; call ${n.screenshot} (with region when you know the area) only when you need to see the picture. Never repeat an input whose result is uncertain, check the screen first. Images in a result are saved as files and the result text gives the path: open it with the read tool to look at it, and do not write your own python screenshot code.`
@@ -202,9 +202,10 @@ export function createTodosTool(call = callHostTool) {
   }
 }
 
+const toolNames = (pi, key) => (pi[key]?.() ?? []).map((tool) => (typeof tool === 'string' ? tool : tool?.name))
+
 function deferredToolSearchable(pi, name) {
-  const names = (key) => (pi[key]?.() ?? []).map((tool) => (typeof tool === 'string' ? tool : tool?.name))
-  return names('getActiveTools').includes('tool_search') && names('getAllTools').includes(name)
+  return toolNames(pi, 'getActiveTools').includes('tool_search') && toolNames(pi, 'getAllTools').includes(name)
 }
 
 const MARKER = 'Capabilities beyond your tools come through the `yan` CLI'
@@ -225,7 +226,7 @@ export default function capabilityGuideExtension(pi) {
       sessionSkills = sessionSkillsBlock(ctx?.sessionManager?.getSessionId?.())
     } catch {
     }
-    const computerUse = computerUseEnabled() ? computerUseGuide(ctx?.model, tools && deferredToolSearchable(pi, 'computer_snapshot')) : ''
+    const computerUse = computerUseEnabled() ? computerUseGuide(ctx?.model, tools && toolNames(pi, 'getActiveTools').includes('computer_snapshot')) : ''
     const sections = event?.systemPromptOptions?.sections
     if (sections && typeof sections === 'object') {
       reserveInkstoneSections(sections)
