@@ -72,6 +72,23 @@ import './T3SidebarShell.css'
 
 const SHELF_PAGE_SIZE = 10
 const PROJECT_FILTER_KEY = 'inkstone.v3.sidebarProjectFilter'
+const COLLAPSED_FOLDERS_KEY = 'inkstone.v3.sidebarCollapsedFolders'
+const SHELVES_KEY = 'inkstone.v3.sidebarShelves'
+
+function readStored<T>(key: string, parse: (raw: unknown) => T, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? parse(JSON.parse(raw)) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeStored(key: string, value: unknown): void {
+  try { window.localStorage.setItem(key, JSON.stringify(value)) } catch {}
+}
+
+const DEFAULT_SHELVES = { working: true, snoozed: true, settled: true }
 const EMPTY_SORTABLE = {}
 
 const listedPaths = memoByReference((sessions: ReturnType<typeof useStore.getState>['sessions']) => {
@@ -136,8 +153,18 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const closeSessionMenu = useCallback((): void => setSessionMenu((previous) => previous ? { ...previous, open: false } : previous), [])
   const [projectMenu, setProjectMenu] = useState<{ id: string; open: boolean } | null>(null)
   const [draftMenuId, setDraftMenuId] = useState<string | null>(null)
-  const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(() => new Set())
-  const [shelves, setShelves] = useState({ working: true, snoozed: true, settled: true })
+  const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(() => readStored(COLLAPSED_FOLDERS_KEY,
+    (raw) => new Set(Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : []), new Set<string>()))
+  const [shelves, setShelves] = useState(() => readStored(SHELVES_KEY, (raw) => {
+    const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+    return {
+      working: value.working !== false,
+      snoozed: value.snoozed !== false,
+      settled: value.settled !== false
+    }
+  }, DEFAULT_SHELVES))
+  useEffect(() => writeStored(COLLAPSED_FOLDERS_KEY, [...collapsedFolders]), [collapsedFolders])
+  useEffect(() => writeStored(SHELVES_KEY, shelves), [shelves])
   const [settledVisible, setSettledVisible] = useState(SHELF_PAGE_SIZE)
   const [retrying, setRetrying] = useState(false)
   const [announcement, setAnnouncement] = useState('')
