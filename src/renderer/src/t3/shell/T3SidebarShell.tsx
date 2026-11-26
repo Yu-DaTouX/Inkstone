@@ -341,7 +341,9 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       if (list) list.push(view)
       else grouped.set(view.projectId, [view])
     }
-    const order = projects.list.filter((project) => !project.archived).map((project) => project.projectId)
+    const order = projects.list
+      .filter((project) => !project.archived && (projectFilter === null || project.projectId === projectFilter) && (statusFilter === null || grouped.has(project.projectId)))
+      .map((project) => project.projectId)
     const ordered = new Set(order)
     const keys = [...order, ...Array.from(grouped.keys()).filter((id) => !ordered.has(id))]
     return keys.map((projectId) => {
@@ -361,7 +363,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         manageable: project !== undefined
       }
     })
-  }, [activeKey, collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
+  }, [activeKey, collapsedFolders, now, own.attention, projectFilter, projects, sections.active, statusFilter, text.groupUngrouped])
 
   const toggleFolder = useCallback((projectKey: string): void => {
     setCollapsedFolders((previous) => {

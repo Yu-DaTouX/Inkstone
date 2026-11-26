@@ -152,7 +152,8 @@
     flex: 1;
     min-height: 0;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: visible;
+    overflow-y: clip;
     display: flex;
     flex-direction: column;
   }

@@ -473,29 +473,23 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     ) : null;
 
   const archiveButton = onArchive ? (
-    <TooltipTrigger>
-      <Focusable><button type="button" aria-label={t("sidebar.t3.archive")} onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onArchive();
-            }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush">
-        <Check aria-hidden className="t3-icon--sm" />
-      </button></Focusable>
-      <Tooltip><TooltipHint label={t("sidebar.t3.archive")} /></Tooltip>
-    </TooltipTrigger>
+    <button type="button" aria-label={t("sidebar.t3.archive")} onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onArchive();
+          }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush">
+      <Check aria-hidden className="t3-icon--sm" />
+    </button>
   ) : null;
 
   const unarchiveButton = onUnarchive ? (
-    <TooltipTrigger>
-      <Focusable><button type="button" aria-label={t("sidebar.t3.unarchive")} onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onUnarchive();
-            }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush">
-        <Undo2 className="t3-icon--sm" />
-      </button></Focusable>
-      <Tooltip><TooltipHint label={t("sidebar.t3.unarchive")} /></Tooltip>
-    </TooltipTrigger>
+    <button type="button" aria-label={t("sidebar.t3.unarchive")} onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onUnarchive();
+          }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush">
+      <Undo2 className="t3-icon--sm" />
+    </button>
   ) : null;
 
   const unsnoozeButton = onUnsnooze ? (

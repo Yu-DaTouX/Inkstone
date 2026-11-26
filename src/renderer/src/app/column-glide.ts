@@ -1,6 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 
-const TARGETS = '.v3-stream > :first-child, .v3-composer > :first-child'
+const TARGETS = '.v3-stream > :first-child, .v3-composer > :first-child, .v3-sessionbar'
 const MIN_SHIFT = 8
 
 function shiftOf(el: HTMLElement): number {
@@ -9,7 +9,7 @@ function shiftOf(el: HTMLElement): number {
 }
 
 function layoutLeft(el: HTMLElement): number {
-  const probe = el.parentElement?.classList.contains('v3-composer') ? el : el.querySelector<HTMLElement>('.v3-stream-row') ?? el
+  const probe = el.parentElement?.classList.contains('v3-composer') || el.classList.contains('v3-sessionbar') ? el : el.querySelector<HTMLElement>('.v3-stream-row') ?? el
   const padding = Number.parseFloat(getComputedStyle(probe).paddingLeft) || 0
   return probe.getBoundingClientRect().left - shiftOf(el) + padding
 }
@@ -41,6 +41,10 @@ export function useColumnGlide(ref: RefObject<HTMLElement | null>, active: boole
         if (!glide || before === undefined) continue
         const dx = before + shift - now
         if (Math.abs(dx) < MIN_SHIFT) continue
+        if (el.classList.contains('v3-sessionbar') && dx <= 0) {
+          running.get(el)?.cancel()
+          continue
+        }
         running.get(el)?.cancel()
         running.set(el, el.animate([{ translate: `${dx}px 0` }, { translate: '0 0' }], { duration: glide.duration, easing: glide.easing }))
       }
@@ -57,7 +61,7 @@ export function useColumnGlide(ref: RefObject<HTMLElement | null>, active: boole
     const resize = new ResizeObserver(() => sync(true))
     resize.observe(chat)
     const attributes = new MutationObserver(() => sync(true))
-    attributes.observe(chat, { attributes: true, attributeFilter: ['style', 'data-bar-reserve', 'data-outline', 'data-single'] })
+    attributes.observe(chat, { attributes: true, attributeFilter: ['style', 'data-bar-reserve', 'data-sessionbar', 'data-outline', 'data-single'] })
     const children = new MutationObserver(record)
     children.observe(chat, { childList: true, subtree: true })
     return () => {

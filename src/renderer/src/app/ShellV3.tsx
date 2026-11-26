@@ -642,7 +642,7 @@ export default function ShellV3(): ReactElement {
               </Suspense>
             ) : null}
             {route.name === 'chat' ? (
-              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarPresence.present ? '1' : undefined} data-bar-reserve={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
+              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarPresence.present ? '1' : undefined} data-bar-reserve={sessionBarPresence.present ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
                 <SideBySide split={split} narrow={splitParked} maxColumns={splitFit} />
                 {sessionBarPresence.present ? (

@@ -398,8 +398,12 @@
     font-variant-numeric: tabular-nums;
     transition: opacity var(--dur-quick);
   }
+  .t3-thread-row__trailing:has(:focus-visible) .t3-thread-row__trailing-info--fading,
   .t3-g-sidebar-row:hover .t3-thread-row__trailing-info--fading {
+    position: absolute;
+    right: 0;
     opacity: 0;
+    pointer-events: none;
   }
 
   .t3-thread-row__meta {
