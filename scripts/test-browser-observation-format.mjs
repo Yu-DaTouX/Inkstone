@@ -8,6 +8,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(elementLine(el('e3', 'textbox', 'Name', { value: 'Ann', disabled: true })) === 'e3 textbox "Name" ="Ann" disabled', '元素行：短 ref、角色、名称、值与禁用')
   ok(elementLine(el('e4', 'link', 'x'.repeat(90))).length < 80, '元素行：长名称截断')
   ok(ITEM_LIMIT === 80, '默认清单上限仍是 80 行')
+  ok(elementLine(el('e5', 'link', 'checks', { href: '/o/r/actions/runs/1/job/2' })) === 'e5 link "checks" → /o/r/actions/runs/1/job/2', '元素行：链接带地址')
+  ok(filterElements([el('e6', 'link', 'checks', { href: '/a/job/9' }), el('e7', 'link', 'checks', { href: '/a/workflow' })], { find: '/job/' }).map((e) => e.ref).join() === 'e6', '--find 也匹配链接地址')
 
   const list = [el('e1', 'button', 'Save'), el('e2', 'link', 'Help', { offscreen: true }), el('e3', 'textbox', 'Search', { value: 'alpha' })]
   ok(filterElements(list, {}).map((e) => e.ref).join() === 'e1,e3', '默认只列视口内元素')

@@ -35,14 +35,32 @@ const CONTEXT_SOURCE = String.raw`(function (call, readState, log) {
       return (el) => lower(el.name).includes(needle) || lower(el.value).includes(needle)
     }
     const q = query && typeof query === 'object' ? query : {}
+    const invalid = Object.keys(q).filter((key) => !['role', 'name', 'text', 'regex', 'href', 'exact'].includes(key))
+    for (const key of ['role', 'name', 'text', 'regex', 'href']) {
+      if (q[key] !== undefined && typeof q[key] !== 'string' && !(key !== 'role' && q[key] instanceof RegExp)) invalid.push(key)
+    }
+    if (invalid.length) {
+      const error = new Error('INVALID_QUERY: 不支持的查询字段或取值 ' + invalid.join(', ') + '；可用 { role, name, text, regex, href, exact }，name / text / href 可以是字符串或正则')
+      error.code = 'INVALID_QUERY'
+      throw error
+    }
     const role = typeof q.role === 'string' ? lower(q.role.trim()) : ''
-    const name = typeof q.name === 'string' ? lower(q.name.trim()) : ''
-    const text = typeof q.text === 'string' ? lower(q.text.trim()) : ''
+    const field = (value, read) => {
+      if (value instanceof RegExp) return (el) => tests(value, read(el))
+      const needle = typeof value === 'string' ? lower(value.trim()) : ''
+      return needle ? (el) => lower(read(el)).includes(needle) : null
+    }
+    const name = q.exact === true && typeof q.name === 'string'
+      ? ((wanted) => (el) => lower(el.name).trim() === wanted)(lower(q.name.trim()))
+      : field(q.name, (el) => el.name)
+    const text = q.text instanceof RegExp ? (el) => tests(q.text, el.name) || tests(q.text, el.value) : field(q.text, (el) => el.name + '\n' + (el.value || ''))
+    const href = field(q.href, (el) => el.href)
     const regex = asRegex(q.regex)
     return (el) => {
       if (role && lower(el.role) !== role) return false
-      if (name && (q.exact === true ? lower(el.name).trim() !== name : !lower(el.name).includes(name))) return false
-      if (text && !lower(el.name).includes(text) && !lower(el.value).includes(text)) return false
+      if (name && !name(el)) return false
+      if (text && !text(el)) return false
+      if (href && !href(el)) return false
       if (regex && !tests(regex, el.name) && !tests(regex, el.value)) return false
       return true
     }
@@ -57,7 +75,7 @@ const CONTEXT_SOURCE = String.raw`(function (call, readState, log) {
     if (typeof query === 'string') return query
     const hits = await findAll(query)
     if (hits.length === 1) return hits[0].ref
-    const error = new Error(hits.length ? 'AMBIGUOUS_TARGET: ' + hits.length + ' 个元素匹配：' + hits.slice(0, 5).map((el) => el.ref + ' ' + el.role + ' ' + stringify(el.name)).join('；') + '，请写得更具体或用 ref' : 'TARGET_NOT_FOUND: 没有元素匹配 ' + (query instanceof RegExp ? String(query) : format([query])))
+    const error = new Error(hits.length ? 'AMBIGUOUS_TARGET: ' + hits.length + ' 个元素匹配：' + hits.slice(0, 5).map((el) => el.ref + ' ' + el.role + ' ' + stringify(el.name) + (el.href ? ' → ' + el.href : '')).join('；') + '，请写得更具体或用 ref' : 'TARGET_NOT_FOUND: 没有元素匹配 ' + (query instanceof RegExp ? String(query) : format([query])))
     error.code = hits.length ? 'AMBIGUOUS_TARGET' : 'TARGET_NOT_FOUND'
     throw error
   }

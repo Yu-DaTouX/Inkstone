@@ -141,6 +141,28 @@ function safeFrameUrl(value: string | undefined): string | undefined {
   }
 }
 
+const HREF_CHARS = 90
+const SECRET_PARAM = /token|secret|key|sig|auth|session|code|pass|ticket/i
+
+export function linkHref(raw: string | undefined, base: string | undefined, pageUrl: string): string | undefined {
+  const value = String(raw ?? '').trim()
+  if (!value || /^(javascript|data|blob):/i.test(value)) return undefined
+  let url: URL
+  try {
+    url = new URL(value, base || pageUrl)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return url.protocol === 'mailto:' || url.protocol === 'tel:' ? url.href.slice(0, HREF_CHARS) : undefined
+  url.username = ''
+  url.password = ''
+  for (const key of [...url.searchParams.keys()]) if (SECRET_PARAM.test(key)) url.searchParams.set(key, '•')
+  let origin = ''
+  try { origin = new URL(pageUrl).origin } catch {}
+  const text = url.origin === origin ? `${url.pathname}${url.search}${url.hash}` : url.href
+  return text.length > HREF_CHARS ? `${text.slice(0, HREF_CHARS)}…` : text
+}
+
 export class Observer {
   private autoAttach: Promise<void> | null = null
   private readonly sessionsByFrame = new Map<string, string>()
@@ -293,6 +315,9 @@ export class Observer {
         const axName = (ax?.name as { value?: string } | undefined)?.value
         const role = axRole || attributes.role || String(node.localName || node.nodeName || 'element').toLowerCase()
         const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || (String(node.localName).toLowerCase() === 'select' ? attributes.name || attributes.id || '' : textOf(node))
+        const href = String(node.localName || node.nodeName || '').toLowerCase() === 'a'
+          ? linkHref(attributes.href, frameById.get(frameId)?.url, pageResult.result.value?.url || url)
+          : undefined
         const [offsetX, offsetY]: [number, number] = sessionId ? frameOffsets.get(frameId) ?? [0, 0] : [0, 0]
         const placed: [number, number, number, number] = [box[0] + offsetX, box[1] + offsetY, box[2], box[3]]
         candidateScope.push(inScope)
@@ -303,6 +328,7 @@ export class Observer {
           role,
           name: name || role,
           box: placed,
+          ...(href ? { href } : {}),
           ...(offscreen(placed, viewport) ? { offscreen: true } : {}),
           frameId,
           frameUrl: frameUrls.get(frameId),

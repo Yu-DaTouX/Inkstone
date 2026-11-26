@@ -31,7 +31,11 @@ function fakeBrowser() {
     generationId: 'g:0', url: state.url, title: state.title, text,
     elements: [
       { ref: 'g:0:e1', role: 'textbox', name: 'Customer name', box: [0, 0, 1, 1], ...(typed ? { value: typed } : {}) },
-      { ref: 'g:0:e2', role: 'button', name: 'Submit order', box: [0, 0, 1, 1] }
+      { ref: 'g:0:e2', role: 'button', name: 'Submit order', box: [0, 0, 1, 1] },
+      ...(state.links ? [
+        { ref: 'g:0:e3', role: 'link', name: 'checks', href: '/o/r/actions/workflows/check.yml', box: [0, 0, 1, 1] },
+        { ref: 'g:0:e4', role: 'link', name: 'checks', href: '/o/r/actions/runs/5/job/7', box: [0, 0, 1, 1] }
+      ] : [])
     ],
     accessibilityNodeCount: 2
   })
@@ -229,6 +233,31 @@ await check('脚本：动作目标可直接写查询，唯一才动作，多个�
   `, fake.browser)
   assert.deepEqual(out.result, ['AMBIGUOUS_TARGET', 'TARGET_NOT_FOUND'])
   assert.deepEqual(fake.calls.filter((c) => c[0] === 'click' || c[0] === 'type').map((c) => c[1]), ['g:0:e2', 'g:0:e1'])
+})
+
+await check('脚本：同名链接按 href 区分，name 可写正则，写错字段报 INVALID_QUERY', async () => {
+  const fake = fakeBrowser()
+  fake.browser.state().links = true
+  const out = await runBrowserScript(`
+    await page.click({ role: 'link', href: '/job/' })
+    const errors = []
+    try { await page.click({ role: 'link', name: 'checks' }) } catch (e) { errors.push(e.code, /→ \\/o\\/r\\/actions\\/runs/.test(e.message)) }
+    return {
+      byRegexName: (await page.findAll({ role: 'link', name: /^checks$/ })).length,
+      byRegexHref: await page.find({ href: /workflows\\/check/ }),
+      nameRegexNoMatch: await page.find({ name: /^nothing$/ }),
+      errors,
+      invalid: await page.find({ title: 'x' }).catch((e) => e.code),
+      roleRegex: await page.find({ role: /link/ }).catch((e) => e.code)
+    }
+  `, fake.browser)
+  assert.equal(fake.calls.find((c) => c[0] === 'click')[1], 'g:0:e4')
+  assert.deepEqual(out.result.errors, ['AMBIGUOUS_TARGET', true])
+  assert.equal(out.result.byRegexName, 2)
+  assert.equal(out.result.byRegexHref, 'g:0:e3')
+  assert.equal(out.result.nameRegexNoMatch, null)
+  assert.equal(out.result.invalid, 'INVALID_QUERY')
+  assert.equal(out.result.roleRegex, 'INVALID_QUERY')
 })
 
 await check('脚本：动作结果带变化摘要', async () => {

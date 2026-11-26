@@ -31,7 +31,8 @@ function clip(text: string, limit: number): string {
 
 export function elementLine(element: Element): string {
   const value = element.value ? ` =${JSON.stringify(element.value.slice(0, VALUE_CHARS))}` : ''
-  return `${element.ref} ${element.role} ${JSON.stringify(clip(element.name, NAME_CHARS))}${value}${element.disabled ? ' disabled' : ''}`
+  const href = element.href ? ` → ${element.href}` : ''
+  return `${element.ref} ${element.role} ${JSON.stringify(clip(element.name, NAME_CHARS))}${value}${element.disabled ? ' disabled' : ''}${href}`
 }
 
 export function filterElements(elements: readonly Element[], filter: ElementFilter): Element[] {
@@ -41,7 +42,7 @@ export function filterElements(elements: readonly Element[], filter: ElementFilt
   return elements.filter((element) => {
     if (scope && !scope.has(element.ref)) return false
     if (role && element.role.toLowerCase() !== role) return false
-    if (needle) return `${element.name}\n${element.value ?? ''}`.toLowerCase().includes(needle)
+    if (needle) return `${element.name}\n${element.value ?? ''}\n${element.href ?? ''}`.toLowerCase().includes(needle)
     return filter.all || scope !== null || !element.offscreen
   })
 }

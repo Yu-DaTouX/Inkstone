@@ -989,6 +989,7 @@ export interface BrowserObservation {
     box: [number, number, number, number]
     disabled?: boolean
     value?: string
+    href?: string
     frameId?: string
     frameUrl?: string
     offscreen?: boolean

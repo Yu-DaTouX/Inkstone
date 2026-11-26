@@ -77,10 +77,11 @@ export const SCRIPT_GUIDE = `砚内置浏览器脚本（yan browser run --code -
 
 page.goto(url)                         打开 http(s) 页面，返回 { url, title }
 page.url() / page.title()              当前地址 / 标题
-page.snapshot({ all, find, role, in }) 文本快照：每行「ref 角色 "名称" =值」；默认只列视口内，all: true 含视口外，in: ref 只看该元素内部
-page.observe({ all, in })              { url, title, text, elements: [{ ref, role, name, value, disabled, offscreen }] }
+page.snapshot({ all, find, role, in }) 文本快照：每行「ref 角色 "名称" =值」，链接行尾带「→ 地址」（同站只写路径）；默认只列视口内，all: true 含视口外，in: ref 只看该元素内部
+page.observe({ all, in })              { url, title, text, elements: [{ ref, role, name, value, href, disabled, offscreen }] }
 page.text()                            全部可见文本；page.text({ offset, maxChars }) 分段；page.text({ find: '文字' 或 /正则/ }) 返回 [{ offset, snippet }]
-page.find(q) / page.findAll(q)         按文字找元素：q 是字符串（名称或值包含，不分大小写）、正则，或 { name, text, regex, role, exact }；
+page.find(q) / page.findAll(q)         按文字找元素：q 是字符串（名称或值包含，不分大小写）、正则，或 { role, name, text, href, regex, exact }；
+                                       name / text / href 可写字符串（包含）或正则，如 { role: 'link', href: '/job/' }；写错字段报 INVALID_QUERY
                                        find 返回 ref 或 null（最新观察里没有时自动重新观察一次），findAll 返回全部匹配的元素
 click / fill / select 的目标可以是 ref，也可以直接写查询（同 find，如 { role: 'button', name: '登录' } 或 /^搜索$/）：
                                        恰好匹配一个才动作，匹配多个报 AMBIGUOUS_TARGET，没有匹配报 TARGET_NOT_FOUND
