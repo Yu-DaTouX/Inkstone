@@ -234,7 +234,7 @@ export class InputController {
       await this.cursor.show('滚动', {
         x: Math.max(1, Math.round((viewport?.clientWidth ?? 800) / 2)),
         y: Math.max(1, Math.round((viewport?.clientHeight ?? 600) / 2))
-      })
+      }, false)
       await dispatchWheelMotion({
         cdp: (method, params) => this.cdp.send(method, params),
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
