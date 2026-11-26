@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState
 } from 'react'
@@ -17,6 +18,7 @@ import {
 } from './Launcher'
 import { launcherSections } from './model'
 import { SurfaceIcon, TabChip, type TabSurface } from './TabChip'
+import { availableTabStripRoom, shouldEnterCompact, shouldExitCompact, type CompactTabState } from './tab-strip-compact'
 import './TabStrip.css'
 
 const TAB_SCROLL_EDGE_TOLERANCE = 1
@@ -123,40 +125,88 @@ export function TabStrip(props: TabStripProps) {
   const setAddMenuOpen = props.onAddMenuOpenChange ?? setAddMenuInternalOpen
   const [drag, setDrag] = useState<{ id: string; offsetX: number } | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
-  const compactRef = useRef({ on: false, need: 0 })
+  const compactRef = useRef<CompactTabState>({ on: false, need: 0 })
   const [compact, setCompact] = useState(false)
+  const tabsKey = props.tabs.map((surface) => `${surface.id}\u001f${surface.label}`).join('\u001e')
 
   useEffect(() => () => dragCleanupRef.current?.(), [])
 
-  const updateScrollState = useCallback((viewport: HTMLDivElement) => {
-    const compact = compactRef.current
-    const overflowing = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE
-    if (!compact.on && overflowing) {
-      compact.on = true
-      compact.need = viewport.scrollWidth
-      stripRef.current?.setAttribute('data-compact', '')
-      setCompact(true)
-    } else if (compact.on && viewport.clientWidth >= compact.need) {
-      compact.on = false
-      stripRef.current?.removeAttribute('data-compact')
-      setCompact(false)
-    }
-    const hasOverflow = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE
-    const canScrollLeft = hasOverflow && viewport.scrollLeft > TAB_SCROLL_EDGE_TOLERANCE
-    const canScrollRight =
-      hasOverflow &&
-      viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - TAB_SCROLL_EDGE_TOLERANCE
-    const room = `${Math.max(0, Math.floor(viewport.clientWidth - 2 * fadeSizeOf(viewport)))}px`
-    if (hasOverflow) stripRef.current?.style.setProperty('--t3-tab-room', room)
-    else stripRef.current?.style.removeProperty('--t3-tab-room')
-    setScroll((current) =>
-      current.hasOverflow === hasOverflow &&
-      current.canScrollLeft === canScrollLeft &&
-      current.canScrollRight === canScrollRight
-        ? current
-        : { hasOverflow, canScrollLeft, canScrollRight }
-    )
+  const measureAvailableRoom = useCallback((strip: HTMLDivElement, viewport: HTMLDivElement): number => {
+    const style = getComputedStyle(strip)
+    const padInline = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+    const gap = parseFloat(style.columnGap || style.gap) || 0
+    const add = strip.querySelector<HTMLElement>('.t3-tab-strip__add')
+    const addWidth = add ? Math.ceil(add.getBoundingClientRect().width) : 0
+    const scrollRoot = rootRef.current
+    const scrollChrome = scrollRoot ? Math.max(0, scrollRoot.offsetWidth - viewport.clientWidth) : 0
+    return availableTabStripRoom({
+      stripClientWidth: strip.clientWidth,
+      stripPaddingInline: padInline,
+      gap,
+      addWidth,
+      scrollChrome
+    })
   }, [])
+
+  const updateScrollState = useCallback(
+    (viewport: HTMLDivElement) => {
+      const strip = stripRef.current ?? rootRef.current?.closest<HTMLDivElement>('.t3-tab-strip') ?? null
+      const state = compactRef.current
+      let expandedFits = false
+      if (strip && strip.clientWidth > 0) {
+        const availableRoom = measureAvailableRoom(strip, viewport)
+        if (
+          shouldEnterCompact(state, {
+            stripWidth: strip.clientWidth,
+            viewportWidth: viewport.clientWidth,
+            scrollWidth: viewport.scrollWidth,
+            availableRoom,
+            tolerance: TAB_SCROLL_EDGE_TOLERANCE
+          })
+        ) {
+          state.on = true
+          state.need = viewport.scrollWidth
+          strip.setAttribute('data-compact', '')
+        } else if (
+          shouldExitCompact(state, {
+            stripWidth: strip.clientWidth,
+            viewportWidth: viewport.clientWidth,
+            scrollWidth: viewport.scrollWidth,
+            availableRoom
+          })
+        ) {
+          strip.removeAttribute('data-compact')
+          strip.style.removeProperty('--t3-tab-room')
+          const expandedNeed = viewport.scrollWidth
+          if (expandedNeed > availableRoom + TAB_SCROLL_EDGE_TOLERANCE) {
+            state.need = expandedNeed
+            strip.setAttribute('data-compact', '')
+          } else {
+            state.on = false
+            state.need = 0
+            expandedFits = true
+          }
+        }
+        setCompact(state.on)
+      }
+      const hasOverflow = !expandedFits && viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE
+      const canScrollLeft = hasOverflow && viewport.scrollLeft > TAB_SCROLL_EDGE_TOLERANCE
+      const canScrollRight =
+        hasOverflow &&
+        viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - TAB_SCROLL_EDGE_TOLERANCE
+      const room = `${Math.max(0, Math.floor(viewport.clientWidth - 2 * fadeSizeOf(viewport)))}px`
+      if (hasOverflow) strip?.style.setProperty('--t3-tab-room', room)
+      else strip?.style.removeProperty('--t3-tab-room')
+      setScroll((current) =>
+        current.hasOverflow === hasOverflow &&
+        current.canScrollLeft === canScrollLeft &&
+        current.canScrollRight === canScrollRight
+          ? current
+          : { hasOverflow, canScrollLeft, canScrollRight }
+      )
+    },
+    [measureAvailableRoom]
+  )
 
   const attachTabList = useCallback(
     (root: HTMLDivElement | null) => {
@@ -179,10 +229,12 @@ export function TabStrip(props: TabStripProps) {
       }
 
       const content = viewport.firstElementChild
+      const strip = stripRef.current ?? root?.closest<HTMLDivElement>('.t3-tab-strip') ?? null
       const observer = new ResizeObserver(() => {
         update()
         revealActiveChip(viewport)
       })
+      if (strip) observer.observe(strip)
       observer.observe(viewport)
       if (content) observer.observe(content)
       viewport.addEventListener('scroll', update, { passive: true })
@@ -199,20 +251,22 @@ export function TabStrip(props: TabStripProps) {
     [updateScrollState]
   )
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const strip = stripRef.current ?? rootRef.current?.closest<HTMLDivElement>('.t3-tab-strip') ?? null
     compactRef.current = { on: false, need: 0 }
-    stripRef.current?.removeAttribute('data-compact')
-    setCompact(false)
+    strip?.removeAttribute('data-compact')
+    strip?.style.removeProperty('--t3-tab-room')
     const viewport = tabScrollViewport(rootRef.current)
     if (viewport) updateScrollState(viewport)
-  }, [props.tabs.length, updateScrollState])
+    else setCompact(false)
+  }, [tabsKey, props.showAdd, updateScrollState])
 
   useEffect(() => {
     const viewport = tabScrollViewport(rootRef.current)
     if (viewport) updateScrollState(viewport)
     if (!props.activeId || !scroll.hasOverflow) return
     revealActiveChip(viewport)
-  }, [props.activeId, scroll.hasOverflow, props.tabs.length, updateScrollState])
+  }, [props.activeId, scroll.hasOverflow, tabsKey, updateScrollState])
 
   const focusTabAt = (index: number) => {
     const chips = chipsOf(rootRef.current)

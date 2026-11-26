@@ -1,49 +1,329 @@
 const EXTENSION_LANGUAGE: Record<string, string> = {
   mjs: 'javascript',
   cjs: 'javascript',
+  jsx: 'javascript',
+  es6: 'javascript',
   mts: 'typescript',
   cts: 'typescript',
+  tsx: 'typescript',
   jsonc: 'json',
   json5: 'json',
   jsonl: 'json',
+  ndjson: 'json',
+  webmanifest: 'json',
+  arb: 'json',
+  geojson: 'json',
   vue: 'xml',
   svelte: 'xml',
   astro: 'xml',
   htm: 'xml',
   xhtml: 'xml',
   svg: 'xml',
+  xsl: 'xml',
+  xslt: 'xml',
+  xsd: 'xml',
+  plist: 'xml',
+  xaml: 'xml',
+  axaml: 'xml',
+  csproj: 'xml',
+  vbproj: 'xml',
+  fsproj: 'xml',
+  vcxproj: 'xml',
+  props: 'xml',
+  targets: 'xml',
+  nuspec: 'xml',
+  wxs: 'xml',
+  manifest: 'xml',
+  sass: 'scss',
+  styl: 'stylus',
   hpp: 'cpp',
   hh: 'cpp',
+  hxx: 'cpp',
   cc: 'cpp',
+  cxx: 'cpp',
+  inl: 'cpp',
+  ipp: 'cpp',
+  tpp: 'cpp',
+  cu: 'cpp',
+  cuh: 'cpp',
+  csx: 'csharp',
+  fs: 'fsharp',
+  fsi: 'fsharp',
+  fsx: 'fsharp',
+  fsscript: 'fsharp',
+  m: 'objectivec',
+  mm: 'objectivec',
+  sh: 'bash',
   zsh: 'bash',
   fish: 'bash',
+  ksh: 'bash',
+  ash: 'bash',
+  dash: 'bash',
+  command: 'bash',
+  env: 'bash',
+  cmd: 'dos',
+  bat: 'dos',
+  btm: 'dos',
   ps1: 'powershell',
   psm1: 'powershell',
+  psd1: 'powershell',
+  py: 'python',
+  pyi: 'python',
+  pyw: 'python',
+  rb: 'ruby',
+  gemspec: 'ruby',
+  rake: 'ruby',
+  podspec: 'ruby',
+  ru: 'ruby',
+  rs: 'rust',
+  kt: 'kotlin',
   kts: 'kotlin',
+  sc: 'scala',
+  sbt: 'scala',
+  gvy: 'groovy',
+  gy: 'groovy',
+  gsh: 'groovy',
+  gradle: 'gradle',
+  phtml: 'php',
+  pm: 'perl',
+  pl: 'perl',
+  luau: 'lua',
+  jl: 'julia',
+  ex: 'elixir',
+  exs: 'elixir',
+  eex: 'elixir',
+  heex: 'elixir',
+  erl: 'erlang',
+  hrl: 'erlang',
+  hs: 'haskell',
+  lhs: 'haskell',
+  ml: 'ocaml',
+  mli: 'ocaml',
+  clj: 'clojure',
+  cljs: 'clojure',
+  cljc: 'clojure',
+  edn: 'clojure',
+  lsp: 'lisp',
+  el: 'lisp',
+  scm: 'scheme',
+  rkt: 'scheme',
+  nims: 'nim',
+  cr: 'crystal',
   mdx: 'markdown',
   markdown: 'markdown',
+  mkd: 'markdown',
+  mdown: 'markdown',
+  adoc: 'asciidoc',
   gql: 'graphql',
+  proto: 'protobuf',
+  capnp: 'capnproto',
+  toml: 'ini',
   cfg: 'ini',
   conf: 'ini',
-  env: 'bash',
-  gradle: 'kotlin',
-  mk: 'makefile'
+  inf: 'ini',
+  reg: 'ini',
+  desktop: 'ini',
+  service: 'ini',
+  socket: 'ini',
+  timer: 'ini',
+  editorconfig: 'ini',
+  gitconfig: 'ini',
+  yml: 'yaml',
+  mk: 'makefile',
+  mak: 'makefile',
+  dockerfile: 'dockerfile',
+  patch: 'diff',
+  tex: 'latex',
+  sty: 'latex',
+  cls: 'latex',
+  ltx: 'latex',
+  bib: 'latex',
+  vimrc: 'vim',
+  gawk: 'awk',
+  nawk: 'awk',
+  tk: 'tcl',
+  vert: 'glsl',
+  frag: 'glsl',
+  geom: 'glsl',
+  tesc: 'glsl',
+  tese: 'glsl',
+  comp: 'glsl',
+  hlsl: 'glsl',
+  wgsl: 'glsl',
+  v: 'verilog',
+  vh: 'verilog',
+  sv: 'verilog',
+  svh: 'verilog',
+  vhd: 'vhdl',
+  asm: 'x86asm',
+  nasm: 'x86asm',
+  s: 'x86asm',
+  ll: 'llvm',
+  wat: 'wasm',
+  wast: 'wasm',
+  vb: 'vbnet',
+  vbs: 'vbscript',
+  vba: 'vbscript',
+  pas: 'delphi',
+  dpr: 'delphi',
+  f: 'fortran',
+  for: 'fortran',
+  f90: 'fortran',
+  f95: 'fortran',
+  f03: 'fortran',
+  f08: 'fortran',
+  adb: 'ada',
+  ads: 'ada',
+  hx: 'haxe',
+  coffee: 'coffeescript',
+  cson: 'coffeescript',
+  hbs: 'handlebars',
+  mustache: 'handlebars',
+  rhtml: 'erb',
+  njk: 'django',
+  jinja: 'django',
+  jinja2: 'django',
+  j2: 'django',
+  ahk: 'autohotkey',
+  au3: 'autoit',
+  nsi: 'nsis',
+  nsh: 'nsis',
+  scpt: 'applescript',
+  feature: 'gherkin',
+  rest: 'http',
+  dtsi: 'dts',
+  pp: 'puppet',
+  vapi: 'vala',
+  ino: 'arduino',
+  scad: 'openscad',
+  pro: 'prolog',
+  psql: 'pgsql',
+  ddl: 'sql',
+  dml: 'sql',
+  htaccess: 'apache'
 }
 
 const FILENAME_LANGUAGE: Record<string, string> = {
   makefile: 'makefile',
-  dockerfile: 'bash',
+  gnumakefile: 'makefile',
+  bsdmakefile: 'makefile',
+  justfile: 'makefile',
+  dockerfile: 'dockerfile',
+  containerfile: 'dockerfile',
+  'cmakelists.txt': 'cmake',
+  jenkinsfile: 'groovy',
+  rakefile: 'ruby',
+  gemfile: 'ruby',
+  podfile: 'ruby',
+  fastfile: 'ruby',
+  vagrantfile: 'ruby',
+  guardfile: 'ruby',
+  brewfile: 'ruby',
+  procfile: 'bash',
   '.gitignore': 'bash',
+  '.dockerignore': 'bash',
+  '.npmignore': 'bash',
+  '.eslintignore': 'bash',
+  '.prettierignore': 'bash',
+  '.gitattributes': 'bash',
+  '.bashrc': 'bash',
+  '.bash_profile': 'bash',
+  '.bash_logout': 'bash',
+  '.zshrc': 'bash',
+  '.zprofile': 'bash',
+  '.zshenv': 'bash',
+  '.profile': 'bash',
   '.env': 'bash',
   '.npmrc': 'ini',
-  '.editorconfig': 'ini'
+  '.yarnrc': 'ini',
+  '.editorconfig': 'ini',
+  '.gitconfig': 'ini',
+  '.gitmodules': 'ini',
+  '.babelrc': 'json',
+  '.eslintrc': 'json',
+  '.prettierrc': 'json',
+  '.swcrc': 'json',
+  '.jshintrc': 'json',
+  'cargo.lock': 'ini',
+  'flake.lock': 'json',
+  'composer.lock': 'json',
+  'yarn.lock': 'yaml',
+  'go.mod': 'go',
+  'nginx.conf': 'nginx',
+  '.htaccess': 'apache'
 }
 
-export function languageCandidates(name: string): string[] {
-  const lower = name.toLowerCase()
+const SHEBANG_LANGUAGE: Record<string, string> = {
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  dash: 'bash',
+  ash: 'bash',
+  ksh: 'bash',
+  fish: 'bash',
+  python: 'python',
+  python2: 'python',
+  python3: 'python',
+  node: 'javascript',
+  nodejs: 'javascript',
+  deno: 'typescript',
+  bun: 'typescript',
+  ruby: 'ruby',
+  perl: 'perl',
+  php: 'php',
+  lua: 'lua',
+  luajit: 'lua',
+  awk: 'awk',
+  gawk: 'awk',
+  pwsh: 'powershell',
+  powershell: 'powershell',
+  tclsh: 'tcl',
+  wish: 'tcl',
+  rscript: 'r',
+  julia: 'julia',
+  elixir: 'elixir',
+  escript: 'erlang'
+}
+
+function fileNameOf(pathOrName: string): string {
+  const slash = Math.max(pathOrName.lastIndexOf('/'), pathOrName.lastIndexOf('\\'))
+  return (slash >= 0 ? pathOrName.slice(slash + 1) : pathOrName).toLowerCase()
+}
+
+function prefixLanguage(lower: string): string | null {
+  if (lower.startsWith('dockerfile.') || lower.startsWith('containerfile.')) return 'dockerfile'
+  if (lower.startsWith('makefile.')) return 'makefile'
+  if (lower.startsWith('.env.')) return 'bash'
+  return null
+}
+
+function shebangLanguage(source: string | undefined): string | null {
+  if (!source || !source.startsWith('#!')) return null
+  const nl = source.indexOf('\n')
+  const line = (nl >= 0 ? source.slice(2, nl) : source.slice(2)).trim()
+  if (!line) return null
+  const parts = line.split(/\s+/)
+  const bin = fileNameOf(parts[0])
+  if (bin === 'env') {
+    for (let i = 1; i < parts.length; i += 1) {
+      const arg = parts[i]
+      if (!arg || arg.startsWith('-') || arg.includes('=')) continue
+      const target = fileNameOf(arg).replace(/\d+(?:\.\d+)*$/, '')
+      return SHEBANG_LANGUAGE[fileNameOf(arg)] ?? SHEBANG_LANGUAGE[target] ?? null
+    }
+    return null
+  }
+  const base = bin.replace(/\d+(?:\.\d+)*$/, '')
+  return SHEBANG_LANGUAGE[bin] ?? SHEBANG_LANGUAGE[base] ?? null
+}
+
+export function languageCandidates(name: string, source?: string): string[] {
+  const lower = fileNameOf(name)
   const out: string[] = []
   const byName = FILENAME_LANGUAGE[lower]
   if (byName) out.push(byName)
+  const byPrefix = prefixLanguage(lower)
+  if (byPrefix) out.push(byPrefix)
   const dot = lower.lastIndexOf('.')
   if (dot > 0 && dot < lower.length - 1) {
     const ext = lower.slice(dot + 1)
@@ -51,9 +331,11 @@ export function languageCandidates(name: string): string[] {
     if (mapped) out.push(mapped)
     out.push(ext)
   }
+  const byShebang = shebangLanguage(source)
+  if (byShebang) out.push(byShebang)
   return [...new Set(out)]
 }
 
-export function pickLanguage(name: string, registered: (language: string) => boolean): string | null {
-  return languageCandidates(name).find((language) => registered(language)) ?? null
+export function pickLanguage(name: string, registered: (language: string) => boolean, source?: string): string | null {
+  return languageCandidates(name, source).find((language) => registered(language)) ?? null
 }

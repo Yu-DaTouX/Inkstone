@@ -60,6 +60,7 @@ import { filesSplitLayout, searchTreeWidth, shouldHandOffTreeFocus, useFilesSpli
 import { canOpenTerminal, openFolderInTerminal } from './files-terminal'
 import type { FilesMenuTarget } from './files-menu'
 import type { FilesPaneProps } from '../workbench/types'
+import { usePreviewBindings } from '../workbench/preview-bindings'
 import type { PreviewOpenOptions } from '../workbench/preview-state'
 import {
   PaneChromeContext,
@@ -191,17 +192,23 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
       setQuery('')
       showTreeNow()
       if (rel === '') {
-        focus('')
-        if (scrollRef.current) scrollRef.current.scrollTop = 0
+        const first = rows.find((item) => item.focusable)?.path ?? ''
+        focus(first)
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = 0
+          if (!first) return
+          const node = [...(scrollRef.current?.querySelectorAll<HTMLElement>('[data-tree-path]') ?? [])].find((item) => item.dataset.treePath === first)
+          node?.focus({ preventScroll: true })
+        })
         return
       }
-      reveal(rel, { focus: false })
+      reveal(rel, { focus: true, expand: true })
     },
-    [focus, reveal, showTreeNow]
+    [focus, reveal, rows, scrollRef, showTreeNow]
   )
 
   const revealInTree = useCallback(
-    (abs: string): void => {
+    (abs: string, options?: { directory?: boolean }): void => {
       const rel = toRelativePath(owner.cwd, abs)
       if (rel === null) return
       if (rel === '') {
@@ -210,10 +217,17 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
       }
       setQuery('')
       showTreeNow()
-      reveal(rel)
+      reveal(rel, { expand: options?.directory === true })
     },
     [owner.cwd, reveal, showTreeNow, goToDirectory]
   )
+
+  const revealRequest = usePreviewBindings((store) => (store.revealRequest?.ownerKey === owner.key ? store.revealRequest : null))
+  useEffect(() => {
+    if (!revealRequest) return
+    usePreviewBindings.getState().consumeReveal(revealRequest.nonce)
+    revealInTree(revealRequest.path, { directory: revealRequest.directory })
+  }, [revealRequest, revealInTree])
 
   useEffect(() => {
     return window.yan.onHotkey((action) => {

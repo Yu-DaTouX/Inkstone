@@ -35,6 +35,7 @@ export interface FileBreadcrumbsProps {
   entries?: (path: string) => readonly DirEntry[] | null | undefined
   onBrowse?: (path: string) => void
   onNavigate?: (path: string) => void
+  onNavigateTail?: () => void
   className?: string
 }
 
@@ -54,6 +55,7 @@ export function FileBreadcrumbs({
   entries,
   onBrowse,
   onNavigate,
+  onNavigateTail,
   className
 }: FileBreadcrumbsProps): ReactElement {
   const trail = useMemo(() => breadcrumbCrumbs(rootLabel, path), [rootLabel, path])
@@ -146,7 +148,7 @@ export function FileBreadcrumbs({
       data-crumb-path={crumb.path}
       data-testid={`v3-files-crumb-${crumb.path || 'root'}`}
     >
-      {crumb.label}
+      <span className="v3-files-crumb-label">{crumb.label}</span>
     </span>
   ) : (
     <button
@@ -158,7 +160,7 @@ export function FileBreadcrumbs({
       data-testid={`v3-files-crumb-${crumb.path || 'root'}`}
       onClick={() => navigate(crumb.path)}
     >
-      {crumb.label}
+      <span className="v3-files-crumb-label">{crumb.label}</span>
     </button>
   )
 
@@ -204,9 +206,22 @@ export function FileBreadcrumbs({
   if (tail) {
     pushItem(
       'tail',
-      <span className="v3-files-crumb v3-files-crumb--tail" aria-current="page" title={tail}>
-        {tail}
-      </span>
+      onNavigateTail ? (
+        <button
+          type="button"
+          className="v3-files-crumb v3-files-crumb--tail"
+          aria-current="page"
+          title={tail}
+          data-testid="v3-files-crumb-tail"
+          onClick={onNavigateTail}
+        >
+          <span className="v3-files-crumb-label">{tail}</span>
+        </button>
+      ) : (
+        <span className="v3-files-crumb v3-files-crumb--tail" aria-current="page" title={tail} data-testid="v3-files-crumb-tail">
+          <span className="v3-files-crumb-label">{tail}</span>
+        </span>
+      )
     )
   }
 

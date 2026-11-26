@@ -20,7 +20,7 @@ import { previewText, type PreviewText } from './preview-text'
 import { filesText } from '../files/files-text'
 import { FileBreadcrumbs } from '../files/FileBreadcrumbs'
 import { breadcrumbParent } from '../files/breadcrumb-model'
-import { rootLabel, toAbsolutePath } from '../files/files-model'
+import { rootLabel, toAbsolutePath, toRelativePath } from '../files/files-model'
 import { usePreviewFreshness } from './use-preview-freshness'
 import { prefersRenderedHtml, useLiveHtml } from './live-html'
 import { createPreviewManifestSelector, livePreviewTarget, samePreviewPath } from './preview-stream'
@@ -349,10 +349,9 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
 
   const crumbs = useMemo(() => {
     if (!activeAbs || artifactName) return []
-    const cwd = owner.cwd.replace(/\\/g, '/').replace(/\/+$/, '')
-    const abs = activeAbs.replace(/\\/g, '/')
-    if (!cwd || !abs.startsWith(`${cwd}/`)) return []
-    return abs.slice(cwd.length + 1).split('/').filter(Boolean)
+    const rel = toRelativePath(owner.cwd, activeAbs)
+    if (!rel) return []
+    return rel.split('/').filter(Boolean)
   }, [activeAbs, artifactName, owner.cwd])
 
   const beginEdit = useCallback(async (): Promise<void> => {
@@ -563,13 +562,14 @@ export function PreviewPane({ owner, visible = true, path, onRevealInTree, stand
         label={text.crumbsLabel}
         tail={mergedHead && !singleTab ? undefined : name}
         className="v3-preview-breadcrumbs"
-        onNavigate={onRevealInTree ? (dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir)) : undefined}
+        onNavigate={onRevealInTree ? (dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir), { directory: true }) : undefined}
+        onNavigateTail={onRevealInTree && activeAbs ? () => onRevealInTree(activeAbs) : undefined}
       />
     ) : null
   const chromePathLabel = ((): { dir: string; name: string } => {
     if (crumbs.length > 1) return { dir: crumbs.slice(0, -1).join('/'), name }
     if (!activeAbs || artifactName) return { dir: '', name }
-    const rel = owner.cwd && activeAbs.startsWith(owner.cwd) ? activeAbs.slice(owner.cwd.length).replace(/^[\\/]/, '') : activeAbs
+    const rel = toRelativePath(owner.cwd, activeAbs) ?? activeAbs
     const dir = rel.replace(/[\\/][^\\/]*$/, '')
     if (dir !== rel) return { dir, name }
     const root = owner.cwd ? (owner.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? '') : ''

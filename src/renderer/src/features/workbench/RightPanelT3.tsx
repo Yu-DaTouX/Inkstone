@@ -6,7 +6,7 @@ import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Spinner, Splitter, SubmenuTrigger, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { DOCK_BOTTOM_DEFAULT, DOCK_BOTTOM_MIN, DOCK_LEFT_DEFAULT, DOCK_LEFT_MIN, PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, rightGroupCount, useRightPanel, useRightPanelEntry, type PanelEdgeDock, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
+import { DOCK_BOTTOM_DEFAULT, DOCK_BOTTOM_MIN, DOCK_LEFT_DEFAULT, DOCK_LEFT_MIN, PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, rightGroupCount, toolSurface, useRightPanel, useRightPanelEntry, type PanelEdgeDock, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
 import { SubagentTranscriptPane } from '../session/SubagentTranscriptPane'
 import { WatchPane } from '../watch/WatchPane'
 import { PullRequestDetail } from '../github/PullRequestDetail'
@@ -640,7 +640,19 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
     body = Terminal ? <Terminal owner={owner} visible={shown && live} only={surface.terminalId} /> : null
   } else if (surface.kind === 'file') {
     const Preview = panes.preview
-    body = Preview ? <Preview owner={owner} path={surface.path} visible={shown && live} treeShown={false} standalone /> : null
+    body = Preview ? (
+      <Preview
+        owner={owner}
+        path={surface.path}
+        visible={shown && live}
+        treeShown={false}
+        standalone
+        onRevealInTree={(abs, options) => {
+          usePreviewBindings.getState().requestReveal(owner.key, abs, options?.directory)
+          useRightPanel.getState().open(toolSurface('files'))
+        }}
+      />
+    ) : null
   } else if (tool) {
     const Body = panes[tool] as ComponentType<LeafProps> | undefined
     body = Body ? (

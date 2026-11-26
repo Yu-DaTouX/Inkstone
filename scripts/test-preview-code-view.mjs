@@ -91,10 +91,24 @@ check('真实 CSS 高亮后行数与原文一致，文本无损', () => {
   assert.ok(out[0].some((token) => token.classes.length > 0))
 })
 
-check('文件高亮上限独立于消息上限', () => {
+check('文件高亮上限独立于消息上限，允许常见长行并截断超大单行', () => {
   const big = 'a\n'.repeat(1500)
   assert.equal(highlight.exceedsHighlightLimits(big), true)
   assert.equal(highlight.exceedsHighlightLimits(big, highlight.FILE_HIGHLIGHT_LIMITS), false)
+  const normalLong = `const s = "${'x'.repeat(1500)}";\n`
+  assert.equal(highlight.exceedsHighlightLimits(normalLong, highlight.FILE_HIGHLIGHT_LIMITS), false)
+  const minified = `${'x'.repeat(5000)}\n`
+  assert.equal(highlight.exceedsHighlightLimits(minified, highlight.FILE_HIGHLIGHT_LIMITS), true)
+})
+
+check('扩展语言全量注册：cmd/bat、dockerfile、cmake、dart、nix、protobuf 等可着色', () => {
+  for (const lang of ['cmd', 'bat', 'dos', 'ps1', 'dockerfile', 'cmake', 'gradle', 'dart', 'nix', 'proto', 'glsl', 'latex', 'vim', 'nginx', 'properties', 'vbs']) {
+    assert.ok(highlight.highlightLanguage(lang), `语言 ${lang} 应已注册`)
+  }
+  const cmdTree = highlight.highlightTree('@echo off\nrem note\necho 1\n', 'cmd', highlight.FILE_HIGHLIGHT_LIMITS)
+  assert.ok(cmdTree)
+  const cmdLines = lines.splitHighlightedLines(cmdTree, '@echo off\nrem note\necho 1\n')
+  assert.ok(cmdLines.some((line) => line.some((token) => token.classes.length > 0)), 'cmd 脚本应产出高亮 token')
 })
 
 check('行号栏宽度至少 3 位，随末行号增长，窗口起点计入', () => {

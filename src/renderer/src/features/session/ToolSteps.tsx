@@ -12,6 +12,8 @@ import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, groupTal
 import { estimateCallLines } from './turn-process'
 import { argEntries, isCodemodeTool, isTestCommand, isYanJsonCommand, lastOutputLine, parseTestSummary, parseYanSummaries, previewOutput, readLineRange, relativePath, toolOutputView, writeArgContent, type OutputNotice, type ToolOutputView, type YanSummary } from './tool-output'
 import { HighlightedCode } from '../../patterns/HighlightedCode'
+import { highlightLanguage } from '../../lib/code-highlight'
+import { pickLanguage } from '../preview/preview-language'
 import { useStore } from '../../state/store'
 import { AskPill } from './AskDock'
 import { QuestionReceipt } from './QuestionReceipt'
@@ -390,7 +392,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
             <section className="v3-step-sec" data-sec="output">
               {argsShown ? <div className="v3-step-sec-head">{tt('detailOutput')}</div> : null}
               {yan ? <YanSummaryList summaries={yan.summaries} /> : null}
-              {body ? <StepOutput text={body} error={failed || !!call.cancelled} tail={kind !== 'result' || failed} lang={readPath && !failed ? languageOf(readPath) : null} /> : null}
+              {body ? <StepOutput text={body} error={failed || !!call.cancelled} tail={kind !== 'result' || failed} lang={readPath && !failed ? languageOf(readPath, body) : null} /> : null}
               <OutputNotes view={view} />
             </section>
           ) : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
@@ -523,9 +525,8 @@ function DiffLines({ lines }: { lines: readonly CallDiffLine[] }): JSX.Element {
   )
 }
 
-function languageOf(path: string): string | null {
-  const ext = /\.([A-Za-z0-9]+)$/.exec(path)?.[1]
-  return ext ? ext.toLowerCase() : null
+function languageOf(path: string, source?: string): string | null {
+  return pickLanguage(path, (value) => highlightLanguage(value) !== null, source)
 }
 
 function FileContentPreview({ path, content }: { path: string; content: string }): JSX.Element {
@@ -543,7 +544,7 @@ function FileContentPreview({ path, content }: { path: string; content: string }
           {all ? tt('contentLess') : tt('contentMore', { n: preview.total })}
         </Button>
       ) : null}
-      <pre className="v3-step-patch v3-step-file" data-nowrap={nowrap} data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
+      <pre className="v3-step-patch v3-step-file" data-nowrap={nowrap} data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path, shown)} /></pre>
     </>
   )
 }

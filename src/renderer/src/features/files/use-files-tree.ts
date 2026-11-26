@@ -23,7 +23,7 @@ export interface FilesTreeController {
   rows: FileTreeRow[]
   status: FilesRootStatus
   highlight: string | null
-  reveal: (path: string, options?: { focus?: boolean }) => void
+  reveal: (path: string, options?: { focus?: boolean; expand?: boolean }) => void
   ensureDir: (path: string) => void
   viewWindow: FilesWindow
   scrollRef: RefObject<HTMLDivElement | null>
@@ -133,6 +133,7 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
   }, [highlight])
   const revealTarget = useRef<string | null>(null)
   const revealFocus = useRef(true)
+  const [revealSeq, setRevealSeq] = useState(0)
   const rowIndexOf = useCallback(
     (path: string): number => rows.findIndex((row) => row.focusable && row.path === path),
     [rows]
@@ -216,12 +217,13 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     dispatch({ type: 'collapseAll' })
   }, [])
 
-  const reveal = useCallback((path: string, options?: { focus?: boolean }): void => {
+  const reveal = useCallback((path: string, options?: { focus?: boolean; expand?: boolean }): void => {
     revealTarget.current = path
     revealFocus.current = options?.focus !== false
     pendingFocusRef.current = options?.focus !== false
-    dispatch({ type: 'reveal', path })
+    dispatch({ type: 'reveal', path, expand: options?.expand })
     setHighlight(path)
+    setRevealSeq((value) => value + 1)
   }, [])
 
   const ensureDir = useCallback(
@@ -235,11 +237,11 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
   useEffect(() => {
     const target = revealTarget.current
     if (!target) return
+    const el = scrollRef.current
+    if (!el || el.clientHeight <= 0) return
     const index = rowIndexOf(target)
     if (index < 0) return
     revealTarget.current = null
-    const el = scrollRef.current
-    if (!el) return
     const top = index * rowHeight
     if (top < el.scrollTop || top + rowHeight > el.scrollTop + el.clientHeight) {
       el.scrollTop = Math.max(0, top - el.clientHeight / 2 + rowHeight / 2)
@@ -249,7 +251,7 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
       const node = [...el.querySelectorAll<HTMLElement>('[data-tree-path]')].find((item) => item.dataset.treePath === target)
       node?.focus({ preventScroll: true })
     })
-  }, [rowIndexOf, rowHeight])
+  }, [rowIndexOf, rowHeight, revealSeq, viewportHeight])
 
   return { state, rows, status, highlight, reveal, ensureDir, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh }
 }

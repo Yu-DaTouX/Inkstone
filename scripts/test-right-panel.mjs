@@ -246,6 +246,17 @@ export async function runRightPanelTests(ok) {
     ok(rp.insertSurfaceNear(inserted, rp.terminalTabSurface('t1', 'bash'), 'terminal') === inserted, 'insertSurfaceNear：已存在时不变')
     const fallback = rp.insertSurfaceNear(nearBase, rp.terminalTabSurface('t2', 'zsh'), 'missing')
     ok(rp.terminalTabIds(fallback).join() === 't2' && fallback.active === 'terminal', 'insertSurfaceNear：找不到邻近项时回退追加且不抢活动项', fallback)
+
+    const compactFile = join(dir, 'tab-strip-compact.mjs')
+    await build({ entryPoints: ['src/renderer/src/t3/components/right-panel/tab-strip-compact.ts'], outfile: compactFile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+    const compact = await import(pathToFileURL(compactFile).href)
+    const room = compact.availableTabStripRoom({ stripClientWidth: 420, stripPaddingInline: 0, gap: 4, addWidth: 28, scrollChrome: 0 })
+    ok(room === 388, '标签条可用宽度扣除新建按钮与间距', room)
+    ok(compact.shouldEnterCompact({ on: false, need: 0 }, { stripWidth: 260, viewportWidth: 220, scrollWidth: 320, availableRoom: 220 }), '溢出时进入紧凑图标模式')
+    ok(!compact.shouldEnterCompact({ on: false, need: 0 }, { stripWidth: 0, viewportWidth: 0, scrollWidth: 320, availableRoom: 0 }), '隐藏状态零宽不误判进入紧凑模式')
+    ok(!compact.shouldExitCompact({ on: true, need: 320 }, { stripWidth: 350, viewportWidth: 140, scrollWidth: 140, availableRoom: 320 }), '变宽未超滞回缓冲时保持紧凑，避免边界抖动')
+    ok(compact.shouldExitCompact({ on: true, need: 320 }, { stripWidth: 360, viewportWidth: 140, scrollWidth: 140, availableRoom: 324 }), '即使滚动视口仍缩在紧凑宽，只要标签条可用宽足够即自动展开')
+    ok(!compact.shouldExitCompact({ on: true, need: 320 }, { stripWidth: 0, viewportWidth: 0, scrollWidth: 0, availableRoom: 400 }), '零宽隐藏时不误展开')
   } finally {
     if (hadStorage) globalThis.localStorage = previousStorage
     else delete globalThis.localStorage

@@ -47,7 +47,7 @@ export interface PreviewPaneProps {
   visible?: boolean
   path?: string
   treeShown?: boolean
-  onRevealInTree?: (abs: string) => void
+  onRevealInTree?: (abs: string, options?: { directory?: boolean }) => void
   standalone?: boolean
 }
 

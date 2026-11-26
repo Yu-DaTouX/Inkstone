@@ -36,7 +36,7 @@
   .v3-files-crumbs {
     flex: none;
     min-width: 0;
-    height: var(--s-24);
+    min-height: var(--s-24);
     display: flex;
     align-items: center;
     gap: var(--s-2);
@@ -85,6 +85,8 @@
     max-width: 140px;
     min-width: 0;
     flex: 0 1 auto;
+    display: inline-flex;
+    align-items: center;
     height: var(--size-btn-sm);
     padding: 0 var(--s-4);
     border: 0;
@@ -92,9 +94,16 @@
     text-align: left;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     user-select: none;
     cursor: default;
+  }
+
+  .v3-files-crumb-label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   button.v3-files-crumb {
@@ -103,13 +112,8 @@
 
   .v3-files-crumb--fold {
     max-width: none;
+    justify-content: center;
     font-family: var(--font-mono);
-  }
-
-  .v3-files-crumb--tail {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .v3-files-crumb-sep {
@@ -118,12 +122,6 @@
 
   .v3-files-crumb-browse {
     flex: none;
-  }
-
-  .v3-files-crumb--fold {
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
   .v3-preview-pathbar > .v3-files-crumbs {

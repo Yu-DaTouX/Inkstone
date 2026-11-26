@@ -60,7 +60,7 @@ export type FilesTreeAction =
   | { type: 'loadError'; path: string; generation: number }
   | { type: 'toggle'; path: string }
   | { type: 'focus'; path: string }
-  | { type: 'reveal'; path: string }
+  | { type: 'reveal'; path: string; expand?: boolean }
   | { type: 'collapseAll' }
 
 export function freshTreeState(
@@ -177,6 +177,7 @@ export function filesTreeReducer(state: FilesTreeState, action: FilesTreeAction)
     case 'reveal': {
       const open = { ...state.open }
       for (const dir of ancestorPaths(action.path)) open[dir] = true
+      if (action.expand && action.path) open[action.path] = true
       return { ...state, open, focusPath: action.path }
     }
     case 'collapseAll':
@@ -420,12 +421,14 @@ export function toAbsolutePath(cwd: string, rel: string): string {
 
 export function toRelativePath(cwd: string, abs: string): string | null {
   const root = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
-  const target = abs.replace(/\\/g, '/')
+  const target = abs.replace(/\\/g, '/').replace(/\/+$/, '')
   if (!root) return null
   const windows = /^[A-Za-z]:/.test(root)
-  const same = windows ? target.toLowerCase().startsWith(`${root.toLowerCase()}/`) : target.startsWith(`${root}/`)
-  if (!same) return null
-  return target.slice(root.length + 1).replace(/\/+$/, '')
+  const rootKey = windows ? root.toLowerCase() : root
+  const targetKey = windows ? target.toLowerCase() : target
+  if (targetKey === rootKey) return ''
+  if (!targetKey.startsWith(`${rootKey}/`)) return null
+  return target.slice(root.length + 1)
 }
 
 export function canAttachToContext(owner: FilesOwner, activeSessionId: string | null | undefined): boolean {

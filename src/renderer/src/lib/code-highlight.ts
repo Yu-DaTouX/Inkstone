@@ -1,5 +1,5 @@
-import { common, createLowlight } from 'lowlight'
-import powershell from 'highlight.js/lib/languages/powershell'
+import { all, createLowlight } from 'lowlight'
+import type { LanguageFn } from 'highlight.js'
 import rehypeHighlight from 'rehype-highlight'
 import { visit } from 'unist-util-visit'
 import type { Element, ElementContent, Root, Text } from 'hast'
@@ -9,25 +9,33 @@ export const HIGHLIGHT_MAX_LINES = 1_000
 export const HIGHLIGHT_MAX_LINE_CHARS = 2_000
 
 const LANGUAGE_ALIASES: Record<string, string[]> = {
-  bash: ['sh', 'shell', 'zsh', 'console'],
-  powershell: ['ps', 'ps1', 'pwsh'],
+  bash: ['sh', 'shell', 'zsh', 'fish', 'ksh', 'ash', 'dash', 'console'],
+  dos: ['cmd', 'bat', 'batch', 'btm'],
+  powershell: ['ps', 'ps1', 'psm1', 'psd1', 'pwsh'],
   typescript: ['ts', 'mts', 'cts', 'tsx'],
   javascript: ['js', 'mjs', 'cjs', 'jsx'],
-  xml: ['html', 'htm', 'svg', 'vue'],
+  json: ['jsonc', 'json5', 'jsonl', 'ndjson'],
+  xml: ['html', 'htm', 'xhtml', 'svg', 'vue', 'svelte', 'astro', 'xaml', 'plist'],
+  scss: ['sass'],
   markdown: ['md', 'mdx'],
   yaml: ['yml'],
-  ini: ['toml', 'conf'],
-  python: ['py'],
+  ini: ['toml', 'conf', 'cfg', 'env'],
+  dockerfile: ['docker'],
+  protobuf: ['proto'],
+  latex: ['tex'],
+  glsl: ['hlsl', 'wgsl'],
+  python: ['py', 'pyi', 'pyw'],
   rust: ['rs'],
   csharp: ['cs', 'c#'],
-  cpp: ['c++', 'hpp', 'cc', 'hh'],
+  fsharp: ['fs', 'fsx', 'f#'],
+  cpp: ['c++', 'hpp', 'hh', 'hxx', 'cc', 'cxx'],
   go: ['golang'],
   kotlin: ['kt', 'kts'],
   ruby: ['rb'],
   plaintext: ['text', 'txt', 'plain', 'log']
 }
 
-const HIGHLIGHT_LANGUAGES = { ...common, powershell }
+const HIGHLIGHT_LANGUAGES: Readonly<Record<string, LanguageFn>> = all
 const engine = createLowlight(HIGHLIGHT_LANGUAGES)
 engine.registerAlias(LANGUAGE_ALIASES)
 
@@ -43,7 +51,7 @@ export const MESSAGE_HIGHLIGHT_LIMITS: HighlightLimits = {
   maxLineChars: HIGHLIGHT_MAX_LINE_CHARS
 }
 
-export const FILE_HIGHLIGHT_LIMITS: HighlightLimits = { maxChars: 1_000_000, maxLines: 20_000, maxLineChars: 1_000 }
+export const FILE_HIGHLIGHT_LIMITS: HighlightLimits = { maxChars: 1_000_000, maxLines: 20_000, maxLineChars: 4_000 }
 
 export function exceedsHighlightLimits(code: string, limits: HighlightLimits = MESSAGE_HIGHLIGHT_LIMITS): boolean {
   if (code.length > limits.maxChars) return true

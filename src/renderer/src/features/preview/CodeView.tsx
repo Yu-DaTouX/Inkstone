@@ -362,9 +362,9 @@ const EMPTY_FIND_RESULT: FindResult = { matches: [], invalid: false, capped: fal
 export function CodeView({ text, name, settings, firstNumber = 1, target, labels, truncatedNote, onComment }: CodeViewProps) {
   const listRef = useRef<VListHandle>(null)
   const hostRef = useRef<HTMLDivElement>(null)
-  const language = useMemo(() => pickLanguage(name, (value) => highlightLanguage(value) !== null), [name])
   const limited = useMemo(() => capCodeText(text.replace(/\r\n/g, '\n')), [text])
   const source = limited.text
+  const language = useMemo(() => pickLanguage(name, (value) => highlightLanguage(value) !== null, source), [name, source])
   const tree = useMemo(() => (language ? highlightTree(source, language, FILE_HIGHLIGHT_LIMITS) : null), [source, language])
   const tooSlow = useMemo(
     () => !!language && !PLAIN_LANGUAGES.has(language) && highlightLanguage(language) !== null && !tree && exceedsHighlightLimits(source, FILE_HIGHLIGHT_LIMITS),
