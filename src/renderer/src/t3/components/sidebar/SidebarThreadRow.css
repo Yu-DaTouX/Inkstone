@@ -140,6 +140,22 @@
     align-items: center;
     color: var(--ask-t);
   }
+  .t3-thread-row__surface--nested .t3-thread-row__draft-mark {
+    position: absolute;
+    left: 0.1875rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .t3-thread-row__surface--nested .t3-thread-row__draft-mark .t3-icon--xs {
+    width: 0.6875rem;
+    height: 0.6875rem;
+  }
+  .t3-thread-row__surface--multiline.t3-thread-row__surface--nested .t3-thread-row__line {
+    position: relative;
+  }
+  .t3-thread-row__surface--multiline.t3-thread-row__surface--nested .t3-thread-row__draft-mark {
+    left: calc(0.1875rem - var(--sidebar-row-content-inset) - var(--sidebar-thread-indent));
+  }
   .t3-thread-row__pinned {
     color: color-mix(in oklab, var(--root-fg2) 65%, transparent);
   }
