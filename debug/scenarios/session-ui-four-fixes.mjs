@@ -21,8 +21,9 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
   await sleep(600)
   await shot('command-expanded-dark')
   const sampleGap = async (action) => ev(`new Promise(resolve=>{
-    const rows=[];const start=performance.now();
-    const measure=()=>{const body=document.querySelector('[data-testid="v3-process-body"]');const r=body.getBoundingClientRect();let bottom=r.top;for(const c of body.children)bottom=Math.max(bottom,c.getBoundingClientRect().bottom);rows.push({ms:Math.round(performance.now()-start),gap:r.bottom-bottom,height:r.height,reserved:body.parentElement.getBoundingClientRect().height-r.height,min:body.parentElement.style.minHeight});if(performance.now()-start<1600)requestAnimationFrame(measure);else resolve(rows)};
+    const rows=[];const start=performance.now();const process=document.querySelector('[data-testid="v3-process-body"]').closest('.v3-process');const initial=process.getBoundingClientRect().height;
+    const stream=document.querySelector('.v3-stream-inner');const tailHeight=()=>stream.getBoundingClientRect().height;const initialTail=tailHeight();
+    const measure=()=>{const body=document.querySelector('[data-testid="v3-process-body"]');const r=body.getBoundingClientRect();let bottom=r.top;for(const c of body.children)bottom=Math.max(bottom,c.getBoundingClientRect().bottom);rows.push({ms:Math.round(performance.now()-start),gap:r.bottom-bottom,height:r.height,drop:initial-process.getBoundingClientRect().height,tailDrop:initialTail-tailHeight(),reserved:body.parentElement.getBoundingClientRect().height-r.height,min:body.parentElement.style.minHeight});if(performance.now()-start<1600)requestAnimationFrame(measure);else resolve(rows)};
     ${action};requestAnimationFrame(measure);
   })`)
   const manual = await sampleGap(`document.querySelector('[data-testid="v3-step"]').click()`)
@@ -42,7 +43,10 @@ export default async function run({ cdp, box, newSession, sleep, check, shot, re
   await shot('nested-collapsing-dark')
   const nestedDone = await collapsing
   check('嵌套命令自动收起后竖线不超出内容', nestedDone.filter((row)=>row.ms>350).every((row)=>row.gap<2), nestedDone.filter((row)=>row.ms>350&&row.gap>=2).slice(0,4))
-  check('防跳动占位仍保留，但不撑长竖线', nestedDone.some((row)=>row.ms>350&&row.reserved>20&&row.gap<2))
+  const totalDrop = nestedDone.at(-1).drop
+  const moving = nestedDone.find(row => row.drop > 1 && row.drop < totalDrop - 1 && row.tailDrop > 1)
+  const settled = nestedDone.find(row => row.drop >= totalDrop - 2 && row.tailDrop >= totalDrop - 2)
+  check('贴底时工具行与整行同步平滑收起，不等 600ms', totalDrop > 20 && moving?.ms < 120 && settled?.ms < 350, { totalDrop, startMs: moving?.ms, endMs: settled?.ms })
   report.border = { manual, automatic, nestedDone }
 
   await inject([], false)
