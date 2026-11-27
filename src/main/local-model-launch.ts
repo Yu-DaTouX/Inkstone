@@ -763,14 +763,13 @@ async function readyAtEndpoint(key: string, target: Target, config: ModelConfig,
     readyTarget(key, target)
     return finish({ ok: true })
   }
-  const port = await portState(target.baseUrl)
-  const probe = port === 'open' ? await probeTarget(target) : undefined
-  const state = probe?.state === 'listed' ? servesModel(probe, target.modelId!) : port === 'closed' ? 'down' : 'unknown'
+  const probe = await probeTarget(target)
+  const state = probe.state === 'listed' ? servesModel(probe, target.modelId!) : probe.state
   if (state === 'match') {
     readyTarget(key, target)
     return finish({ ok: true })
   }
-  if (port !== 'closed' && state !== 'other') {
+  if (state !== 'down' && state !== 'other') {
     return { ok: false, error: pick('无法确认本地服务正在提供目标模型；请检查地址、模型列表和凭据。未启动或停止服务，消息未发送，草稿已保留。', 'Could not verify that the local service is serving the requested model. Check the address, model list and credentials. No service was started or stopped; message not sent, draft kept.') }
   }
   if (!target.command) {
@@ -806,14 +805,16 @@ async function coordinateTarget<T>(provider: string, modelId: string | undefined
     const target = targetOf(config, provider, modelId)
     if (!target) return absent()
     const key = endpointKey(target.baseUrl)
+    const contended = endpointTasks.has(key)
     const result = await atEndpoint(key, async () => {
-      config = await modelConfig()
-      const current = targetOf(config, provider, modelId)
+      if (contended) config = await modelConfig()
+      const current = contended ? targetOf(config, provider, modelId) : target
       if (!current) return { value: await absent() }
       if (endpointKey(current.baseUrl) !== key) return null
       return { value: await work(key, current, config) }
     })
     if (result) return result.value
+    config = await modelConfig()
   }
 }
 

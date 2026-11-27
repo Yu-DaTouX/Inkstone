@@ -22,6 +22,7 @@ import {
 } from '../shared/custom-provider'
 import { readPiModelCatalog } from './pi-model-catalog'
 import { resolveNativeConfigValue } from './quota-credentials'
+import { isLocalBaseUrl } from '../shared/model-capabilities'
 
 export const MODELS_FILE = join(PI_AGENT_DIR, 'models.json')
 const AUTO_BACKUP_PREFIX = 'models.json.bak-yan-auto-'
@@ -199,7 +200,16 @@ export async function addProviderModel(provider: string, input: LocalModelInput,
     if (input.reasoning === true) {
       next.reasoning = true
       const template = models.find((m): m is Json => !!m && typeof m === 'object' && !!((m as Json).thinkingLevelMap && typeof (m as Json).thinkingLevelMap === 'object'))
-      if (template) next.thinkingLevelMap = { ...(template.thinkingLevelMap as Json) }
+      if (/inkling/i.test(id)) {
+        next.thinkingLevelMap = { off: 'none', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'xhigh' }
+      } else if (template) {
+        next.thinkingLevelMap = { ...(template.thinkingLevelMap as Json) }
+      }
+    }
+    const providerApi = typeof (entry as Json).api === 'string' ? String((entry as Json).api) : 'openai-completions'
+    const providerUrl = typeof (entry as Json).baseUrl === 'string' ? String((entry as Json).baseUrl) : ''
+    if (providerApi === 'openai-completions' && isLocalBaseUrl(providerUrl)) {
+      next.compat = { promptCacheKeyMode: 'enabled' }
     }
     if (Array.isArray(input.input)) {
       const kinds = [...new Set(input.input.filter((kind): kind is 'text' | 'image' => kind === 'text' || kind === 'image'))]

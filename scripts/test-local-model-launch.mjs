@@ -251,6 +251,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(ninferAfterAdd?.models.length === 2, '添加第二个本地模型后返回两个模型')
     const scarletView = ninferAfterAdd?.models.find((m) => m.id === 'scarletkc-2.0')
     ok(scarletView?.name === 'ScarletKc2' && scarletView?.command === scarletBat && scarletView?.contextWindow === 49152 && scarletView?.reasoning === true, '新模型的名称、上下文、思考能力与独立启动命令均保存')
+    const modelsAfterAdd = JSON.parse(await readFile(modelFile, 'utf8'))
+    const scarletEntry = modelsAfterAdd.providers.ninfer.models.find((m) => m.id === 'scarletkc-2.0')
+    ok(scarletEntry?.compat?.promptCacheKeyMode === 'enabled', '本地 OpenAI Completions 模型自动启用 promptCacheKeyMode 以命中 NInfer 长锚点缓存')
 
     await api.saveLocalLauncher('ninfer', { modelId: 'qwen', modelCommand: startBat })
     await api.saveLocalLauncher('ninfer', { command: '', stopCommand: stopBat })
