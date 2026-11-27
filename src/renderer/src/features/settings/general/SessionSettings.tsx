@@ -49,7 +49,7 @@ export function SessionSettings(): ReactElement {
   const [prefs, setPrefs] = useState<PiRuntimePrefs | null>(null)
   const [compression, setCompression] = useState<{ supported: boolean; files: number; savedBytes: number } | null>(null)
   const [compressing, setCompressing] = useState(false)
-  const compressEnabled = settings?.compressArchivedSessions === true
+  const compressEnabled = settings?.compressArchivedSessions !== false
   const translateService = settings?.translateService ?? 'bing'
   const runCompression = (run: boolean): void => {
     setCompressing(run)

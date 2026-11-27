@@ -69,13 +69,13 @@ const DEFAULTS: AppSettings = {
   checkpointsEnabled: true,
   sendKey: 'auto',
   responseDetail: 'standard',
-  density: 'standard',
+  density: 'comfortable',
   sound: defaultSound()
 }
 
 function defaultSound(): SoundSettings {
   return {
-    enabled: false,
+    enabled: true,
     volume: 0.4,
     notifications: true,
     events: { done: true, question: true, error: true }
@@ -96,7 +96,7 @@ function sanitizeSound(v: unknown): SoundSettings {
     question: ev.question === undefined ? d.events.question : ev.question === true,
     error: ev.error === undefined ? d.events.error : ev.error === true
   }
-  return { enabled: o.enabled === true, volume, notifications: o.notifications !== false, events }
+  return { enabled: o.enabled === undefined ? d.enabled : o.enabled === true, volume, notifications: o.notifications !== false, events }
 }
 
 function defaultProfile(): UserProfile {
@@ -237,9 +237,11 @@ function normalizeCodemode(value: unknown): NonNullable<AppSettings['codemode']>
   return value === 'auto' || value === 'on' || value === 'off' ? value : 'auto'
 }
 
+const RETIRED_SETTINGS_KEYS = new Set<string>(['railWidth', 'panelWidth', 'browserHeight', 'toolOrder', 'toolHidden', 'toolHeights', 'toolDetail', 'toolDetailV2', 'toolDetailExplicit', 'toolLayout', 'autonomous', 'defaultWorkMode', 'questionFrequency', 'capabilityStrategy', 'memoryOrder', 'projectKnowledge', 'workspaceMode', 'activityModels', 'backgroundCustom', 'backgroundCustomLight', 'liveThinking', 'processLayout', 'temperatureByModel', 'fontSizeBody', 'projectScripts', 'projectGroups', 'projectOrder'])
+
 function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   const { contextTrim: _contextTrim, contextTrimTokens: _contextTrimTokens, codemodeEnabled: _codemodeEnabled, ...remaining } = parsed as Partial<AppSettings> & { contextTrim?: unknown; contextTrimTokens?: unknown; codemodeEnabled?: unknown }
-  const current = Object.fromEntries(Object.entries(remaining).filter(([key]) => !/^(desktopPet|comfy)/i.test(key)))
+  const current = Object.fromEntries(Object.entries(remaining).filter(([key]) => !/^(desktopPet|comfy)/i.test(key) && !RETIRED_SETTINGS_KEYS.has(key)))
   const settings = { ...DEFAULTS, ...current } as AppSettings
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark'
   if (!Array.isArray(settings.recentCwds)) settings.recentCwds = []
@@ -266,7 +268,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.browserSearchEngine = normalizeSearchEngine(settings.browserSearchEngine)
   settings.nativeWebSearch = settings.nativeWebSearch === true ? true : undefined
   settings.fastMode = settings.fastMode === true ? true : undefined
-  settings.compressArchivedSessions = settings.compressArchivedSessions === true ? true : undefined
+  settings.compressArchivedSessions = settings.compressArchivedSessions === false ? false : undefined
   settings.thinkingDisplay = settings.thinkingDisplay === 'updates' ? 'updates' : undefined
   settings.translateService = settings.translateService === 'google' || settings.translateService === 'model' ? settings.translateService : undefined
   settings.translateTarget = settings.translateTarget !== 'auto' && isTranslateTarget(settings.translateTarget) ? settings.translateTarget : undefined
@@ -483,7 +485,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.browserSearchEngine = normalizeSearchEngine(next.browserSearchEngine)
   next.nativeWebSearch = next.nativeWebSearch === true ? true : undefined
   next.fastMode = next.fastMode === true ? true : undefined
-  next.compressArchivedSessions = next.compressArchivedSessions === true ? true : undefined
+  next.compressArchivedSessions = next.compressArchivedSessions === false ? false : undefined
   next.thinkingDisplay = next.thinkingDisplay === 'updates' ? 'updates' : undefined
   next.translateService = next.translateService === 'google' || next.translateService === 'model' ? next.translateService : undefined
   next.translateTarget = next.translateTarget !== 'auto' && isTranslateTarget(next.translateTarget) ? next.translateTarget : undefined

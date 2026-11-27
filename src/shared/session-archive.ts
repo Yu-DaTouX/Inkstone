@@ -11,6 +11,7 @@ export interface ArchiveCandidate {
 
 const DAY = 86_400_000
 export const MAX_AUTO_ARCHIVE_DAYS = 365
+export const DEFAULT_AUTO_ARCHIVE_DAYS = 7
 
 export function normalizeAutoArchiveDays(raw: unknown): number {
   const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : 0
@@ -18,7 +19,7 @@ export function normalizeAutoArchiveDays(raw: unknown): number {
 }
 
 export function effectiveAutoArchiveDays(settings: { autoArchiveDays?: number } | null | undefined): number {
-  return typeof settings?.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(settings.autoArchiveDays) : 0
+  return typeof settings?.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(settings.autoArchiveDays) : DEFAULT_AUTO_ARCHIVE_DAYS
 }
 
 export function selectAutoArchive(

@@ -42,11 +42,15 @@ export async function runSettingsStoreTests(ok) {
   const FILE = join(temp, 'data', 'desktop.json')
 
   await mkdir(join(temp, 'data'), { recursive: true })
-  const legacy = JSON.stringify({ cwd: temp, desktopPet: { autoStart: true }, desktopPetModel: 'old/model', comfyui: { url: 'http://127.0.0.1:8188' }, comfyModel: 'old' })
+  const legacy = JSON.stringify({ cwd: temp, desktopPet: { autoStart: true }, desktopPetModel: 'old/model', comfyui: { url: 'http://127.0.0.1:8188' }, comfyModel: 'old', railWidth: 200, toolOrder: ['todo'], liveThinking: true, temperatureByModel: { 'a/b': 2 } })
   await writeFile(FILE, legacy)
   const loadedLegacy = await getSettings()
   ok(!Object.keys(loadedLegacy).some(key => /^(desktopPet|comfy)/i.test(key)), '旧桌宠和 ComfyUI 设置读入即丢弃')
   ok(await readFile(FILE, 'utf8') === legacy, '读取旧插件设置不改写或删除用户磁盘文件')
+  ok(!['railWidth', 'toolOrder', 'liveThinking', 'temperatureByModel'].some(key => key in loadedLegacy), '已废弃的旧键读入即丢弃')
+  ok(loadedLegacy.density === 'comfortable' && loadedLegacy.sound.enabled === true && loadedLegacy.compressArchivedSessions === undefined, '新用户默认：宽松密度、提示音开、压缩已归档会话开')
+  ok((await patchSettings({ compressArchivedSessions: false })).compressArchivedSessions === false && (await patchSettings({ compressArchivedSessions: true })).compressArchivedSessions === undefined, '压缩已归档会话：关闭会记住，重新打开回到默认')
+  ok((await patchSettings({ sound: { enabled: false } })).sound.enabled === false && (await patchSettings({ sound: { volume: 0.7 } })).sound.enabled === false, '提示音：用户关闭后不会被默认值改回')
 
   const first = await patchSettings({ theme: 'light' })
   ok(first.theme === 'light', '正常写入返回新值')

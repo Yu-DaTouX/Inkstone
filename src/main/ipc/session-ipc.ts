@@ -396,7 +396,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   function scheduleCompressionSweep(): void {
     const sweep = async (): Promise<void> => {
       try {
-        if ((await getSettings()).compressArchivedSessions !== true) return
+        if ((await getSettings()).compressArchivedSessions === false) return
         await compressArchivedSessions({ busyFiles: busySessionFiles() })
       } catch {
         return

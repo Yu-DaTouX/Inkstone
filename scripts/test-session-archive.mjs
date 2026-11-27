@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 
 export async function runSessionArchiveTests(ok) {
   await build({ entryPoints: ['src/shared/session-archive.ts'], outfile: 'out/test/session-archive.mjs', bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
-  const { selectAutoArchive, normalizeAutoArchiveDays } = await import(pathToFileURL('out/test/session-archive.mjs').href)
+  const { selectAutoArchive, normalizeAutoArchiveDays, effectiveAutoArchiveDays } = await import(pathToFileURL('out/test/session-archive.mjs').href)
   const DAY = 86_400_000
   const now = 100 * DAY
   const mk = (id, ageDays, extra = {}) => ({ id, path: `C:/s/${id}.jsonl`, updatedAt: now - ageDays * DAY, ...extra })
@@ -15,6 +15,7 @@ export async function runSessionArchiveTests(ok) {
   ok(normalizeAutoArchiveDays(7) === 7 && normalizeAutoArchiveDays(7.9) === 7, '天数：小数向下取整')
   ok(normalizeAutoArchiveDays(0) === 0 && normalizeAutoArchiveDays(-3) === 0 && normalizeAutoArchiveDays('7') === 0 && normalizeAutoArchiveDays(NaN) === 0, '天数：0、负数、非数字都当「从不」')
   ok(normalizeAutoArchiveDays(9999) === 365, '天数：封顶 365')
+  ok(effectiveAutoArchiveDays({}) === 7 && effectiveAutoArchiveDays(null) === 7 && effectiveAutoArchiveDays({ autoArchiveDays: 0 }) === 0 && effectiveAutoArchiveDays({ autoArchiveDays: 14 }) === 14, '自动归档：没设置时默认 7 天，用户选「从不」仍是 0')
 
   const items = [mk('old', 10), mk('fresh', 1), mk('edge', 7), mk('pinned', 30, { pinned: true }), mk('done', 30, { archivedAt: 5 }), mk('busy', 30), mk('active', 30, { lastActivityAt: now - DAY })]
   const pick = (days, busy = []) => selectAutoArchive(items, { days, now, busyFiles: busy }).sort().join()
