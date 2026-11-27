@@ -98,6 +98,7 @@ export function galleryBlocks() {
   for (const [name, source] of MERMAID) blocks.push({ id: `mermaid-${name}`, kind: 'mermaid', md: fence('mermaid', source) })
   widgetExamples().forEach((example, i) => blocks.push({ id: `widget-${i + 1}`, label: example.name, kind: 'widget', md: fence('yan-widget', example.html) }))
   blocks.push({ id: 'widget-grid', label: '点阵动画（主会话原例）', kind: 'widget', md: fence('yan-widget', GRID_WIDGET) })
+  blocks.push({ id: 'stats-yaml', label: '模型写成 YAML', kind: 'stats', md: ['```yan-stats', 'title: 墨尔本未来四天', 'items:', '  - label: 今天 11/27', '    value: 23.6° / 19.1°', '    hint: 中阵雨，98% 有雨', '  - label: 明天 11/28', '    value: 23.3° / 15.9°', '    hint: 雷雨，100% 有雨', '  - label: 11/29', '    value: 17.3° / 13.4°', '    hint: 毛毛雨，73%', '  - label: 11/30', '    value: 15.2° / 12.6°', '    hint: 小雨转凉，33%', '```'].join('\n') })
   blocks.push({ id: 'invalid-json', kind: 'invalid', md: fence('yan-chart', BROKEN) })
   return blocks
 }

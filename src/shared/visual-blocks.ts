@@ -1,4 +1,5 @@
 import { isNetworkPath } from './network-path'
+import { parseSimpleYaml } from './simple-yaml'
 
 export const VISUAL_DATA_LANGS = ['yan-chart', 'yan-stats', 'yan-cards', 'yan-record', 'yan-flow', 'yan-steps'] as const
 export type VisualDataLang = (typeof VISUAL_DATA_LANGS)[number]
@@ -238,7 +239,7 @@ function parseStats(data: Record<string, unknown>): StatsBlock {
     return {
       label: str(item.label, `items[${i}].label`, 40), value: str(item.value, `items[${i}].value`, 24),
       delta: optStr(item.delta, `items[${i}].delta`, 24), trend, good,
-      detail: optStr(item.detail, `items[${i}].detail`, 80), spark, meter
+      detail: optStr(item.detail ?? item.hint ?? item.note ?? item.description ?? item.sub, `items[${i}].detail`, 80), spark, meter
     }
   })
   return { kind: 'stats', title: optStr(data.title, 'title'), items, source: optStr(data.source, 'source'), sources: sources(data.sources) }
@@ -298,9 +299,16 @@ function parseSteps(data: Record<string, unknown>): StepsBlock {
   return { kind: 'steps', title: optStr(data.title, 'title'), loop: data.loop === true, steps }
 }
 
-export function parseVisualBlock(lang: VisualDataLang, text: string): VisualParse {
+export function parseVisualBlock(lang: VisualDataLang, text: string, { yaml = true }: { yaml?: boolean } = {}): VisualParse {
   let data: unknown
-  try { data = JSON.parse(text) } catch { return { ok: false, error: 'JSON 不完整或格式有误' } }
+  try { data = JSON.parse(text) } catch {
+    const head = text.trimStart()[0]
+    try {
+      if (!yaml || head === '{' || head === '[') throw new Error('json')
+      data = parseSimpleYaml(text)
+      if (!data || typeof data !== 'object') throw new Error('yaml')
+    } catch { return { ok: false, error: 'JSON 不完整或格式有误' } }
+  }
   try {
     const listKey = lang === 'yan-record' ? 'fields' : lang === 'yan-flow' || lang === 'yan-steps' ? 'steps' : lang === 'yan-chart' ? undefined : 'items'
     const root = Array.isArray(data) && listKey ? { [listKey]: data } : obj(data, '整体')

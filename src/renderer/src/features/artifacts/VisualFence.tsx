@@ -366,7 +366,7 @@ function DataBlock({
   pending: ReactNode
 }): JSX.Element {
   const t = useT()
-  const parsed = useMemo(() => (isVisualDataLang(lang) ? parseVisualBlock(lang, text) : null), [lang, text])
+  const parsed = useMemo(() => (isVisualDataLang(lang) ? parseVisualBlock(lang, text, { yaml: !live }) : null), [lang, text, live])
   if (!parsed) return <>{fallback}</>
   if (!parsed.ok) {
     if (live) return <>{pending}</>
