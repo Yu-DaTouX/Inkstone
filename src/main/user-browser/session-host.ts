@@ -3,7 +3,7 @@ import type { BrowserCommandHost, BrowserObservationResult } from '../agent'
 import type { BrowserActionOptions, BrowserActionReceipt, BrowserObserveOptions } from '../browser/receipt'
 import type { ScrollPosition } from '../browser/InputController'
 import { pressKey } from '../browser/driver/keyboard'
-import { CURSOR_MARKUP, CURSOR_STYLE } from '../browser/AgentCursor'
+import { CURSOR_KINDS, CURSOR_MARKUP, CURSOR_STYLE, type CursorKind } from '../browser/AgentCursor'
 import { BridgeCallError, type BridgeConnection } from './bridge-server'
 
 export const USER_TAB_PREFIX = 'user:'
@@ -313,16 +313,16 @@ export class UserBrowserSession implements BrowserCommandHost {
     return (method: string, params?: Record<string, unknown>) => this.call<Record<string, unknown>>('cdp', { tabId, method, params: params ?? {} })
   }
 
-  private async cursor(tabId: number, label: string, point?: { x: number; y: number } | null, tap = true): Promise<void> {
+  private async cursor(tabId: number, kind: CursorKind, point?: { x: number; y: number } | null): Promise<void> {
     try {
-      const ms = await this.call<number>('page.cursor', { tabId, label, point: point ?? null, tap, style: CURSOR_STYLE, markup: CURSOR_MARKUP }, 5_000)
+      const ms = await this.call<number>('page.cursor', { tabId, label: kind, point: point ?? null, tap: kind === 'click', kinds: CURSOR_KINDS, style: CURSOR_STYLE, markup: CURSOR_MARKUP }, 5_000)
       if (typeof ms === 'number' && ms > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 450)))
     } catch {}
   }
 
-  private async aim(tabId: number, ref: string, label: string): Promise<void> {
+  private async aim(tabId: number, ref: string, kind: CursorKind): Promise<void> {
     const point = await this.call<{ x: number; y: number } | null>('page.point', { tabId, ref }).catch(() => null)
-    await this.cursor(tabId, label, point)
+    await this.cursor(tabId, kind, point)
   }
 
   async click(ref: string, _options?: BrowserActionOptions): Promise<BrowserObservationResult> {
@@ -332,7 +332,7 @@ export class UserBrowserSession implements BrowserCommandHost {
       if (point.obscuredBy) {
         return { ok: false, code: 'ELEMENT_OBSCURED', error: `元素 ${ref} 被 ${point.obscuredBy} 挡住，没有点击。先处理遮挡层（点它的关闭 / 同意按钮或按 Escape），再 observe 后重试。` }
       }
-      await this.cursor(tabId, '点击', point)
+      await this.cursor(tabId, 'click', point)
       if (this.trustedInput) {
         const send = this.cdp(tabId)
         const at = { x: point.x, y: point.y }
@@ -352,7 +352,7 @@ export class UserBrowserSession implements BrowserCommandHost {
     try {
       const tabId = this.requireActive()
       let value: string | null = null
-      await this.aim(tabId, ref, '输入')
+      await this.aim(tabId, ref, 'type')
       if (this.trustedInput && text) {
         await this.call('page.focus', { tabId, ref })
         await this.cdp(tabId)('Input.insertText', { text })
@@ -371,7 +371,7 @@ export class UserBrowserSession implements BrowserCommandHost {
   async select(ref: string, value: string, _options?: BrowserActionOptions): Promise<BrowserObservationResult & { chosen?: { value: string; label: string } }> {
     try {
       const tabId = this.requireActive()
-      await this.aim(tabId, ref, '选择')
+      await this.aim(tabId, ref, 'click')
       const result = await this.call<{ ok?: boolean; error?: string; tag?: string; value?: string; label?: string; options?: string[] }>('page.select', { tabId, ref, value })
       if (result?.error === 'not_select') return { ok: false, code: 'NOT_SELECT', error: `元素 ${ref} 不是下拉框（<${result.tag ?? '?'}>）。下拉框才能用 select；文本框用 type，按钮用 click。` }
       if (result?.error === 'option_not_found') {
@@ -390,7 +390,7 @@ export class UserBrowserSession implements BrowserCommandHost {
       const tabId = this.requireActive()
       const chord = String(key ?? '').trim()
       if (!chord) return { ok: false, code: 'INVALID_KEY', error: '缺少按键' }
-      await this.cursor(tabId, '按键')
+      await this.cursor(tabId, 'type')
       if (this.trustedInput) {
         try {
           await pressKey({ cdp: this.cdp(tabId), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }, chord)
@@ -410,7 +410,7 @@ export class UserBrowserSession implements BrowserCommandHost {
   async scroll(deltaX: number, deltaY: number): Promise<BrowserObservationResult> {
     try {
       const tabId = this.requireActive()
-      await this.cursor(tabId, '滚动')
+      await this.cursor(tabId, 'scroll')
       const scroll = await this.call<ScrollPosition>('page.scroll', { tabId, dx: deltaX, dy: deltaY })
       return await this.settle(tabId, scroll ? { scroll } : {})
     } catch (error) {

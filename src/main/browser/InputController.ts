@@ -1,5 +1,5 @@
 import type { CdpChannel } from './CdpChannel'
-import { AgentCursor } from './AgentCursor'
+import { AgentCursor, type CursorKind } from './AgentCursor'
 import {
   NotSelectElementError,
   SelectOptionNotFoundError,
@@ -152,12 +152,12 @@ export class InputController {
 
   constructor(private readonly cdp: CdpChannel) { this.cursor = new AgentCursor(cdp) }
 
-  showActivity(label: string): Promise<void> { return this.cursor.show(label) }
+  showActivity(kind: CursorKind): Promise<void> { return this.cursor.show(kind) }
   hideActivity(): Promise<void> { return this.cursor.hide() }
 
   async select(element: RegisteredElement, wanted: string): Promise<SelectOutcome> {
     type Raw = { ok?: boolean; reason?: string; tag?: string; value?: string; label?: string; options?: string[] }
-    await this.pointAt(element, '选择')
+    await this.pointAt(element, 'click')
     const outcome = await this.callOn<Raw>(element, SELECT_VALUE_FN, [wanted])
     if (!outcome?.ok) {
       if (outcome?.reason === 'not_select') {
@@ -169,7 +169,7 @@ export class InputController {
   }
 
   async click(element: RegisteredElement): Promise<void> {
-    const { obscuredBy, ...point } = await this.pointAt(element, '点击')
+    const { obscuredBy, ...point } = await this.pointAt(element, 'click')
     if (obscuredBy) throw new ElementObscuredError(element.ref, obscuredBy)
     if (await this.pageHidden(element.sessionId)) {
       await this.callOn(element, DOM_CLICK_FN)
@@ -181,7 +181,7 @@ export class InputController {
   }
 
   async type(element: RegisteredElement, text: string): Promise<TypeOutcome> {
-    await this.pointAt(element, '填写')
+    await this.pointAt(element, 'type')
     const picker = await this.callOn<{ picker?: boolean; type?: string; value?: string }>(element, PICKER_VALUE_FN, [text])
     if (picker?.picker) return { value: String(picker.value ?? ''), picker: picker.type }
     try {
@@ -205,7 +205,7 @@ export class InputController {
   async press(chord: string): Promise<void> {
     const normalized = String(chord || '').trim()
     if (!normalized) throw new InvalidKeyError('缺少按键')
-    await this.cursor.show('按键')
+    await this.cursor.show('type')
     try {
       await pressKey({
         cdp: (method, params, sessionId) => this.cdp.send(method, params, sessionId),
@@ -221,7 +221,7 @@ export class InputController {
     const dx = Number.isFinite(deltaX) ? deltaX : 0
     const dy = Number.isFinite(deltaY) ? deltaY : 0
     if (await this.pageHidden()) {
-      await this.cursor.show('滚动')
+      await this.cursor.show('scroll')
       await this.cdp.send('Runtime.evaluate', { expression: `window.scrollBy(${dx}, ${dy})`, returnByValue: true })
     } else {
       const metrics = await this.cdp
@@ -231,10 +231,10 @@ export class InputController {
         }>('Page.getLayoutMetrics')
         .catch(() => null)
       const viewport = metrics?.cssLayoutViewport ?? metrics?.layoutViewport
-      await this.cursor.show('滚动', {
+      await this.cursor.show('scroll', {
         x: Math.max(1, Math.round((viewport?.clientWidth ?? 800) / 2)),
         y: Math.max(1, Math.round((viewport?.clientHeight ?? 600) / 2))
-      }, false)
+      })
       await dispatchWheelMotion({
         cdp: (method, params) => this.cdp.send(method, params),
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -288,10 +288,10 @@ export class InputController {
     }
   }
 
-  private async pointAt(element: RegisteredElement, label: string): Promise<AimPoint> {
+  private async pointAt(element: RegisteredElement, kind: CursorKind): Promise<AimPoint> {
     const point = await this.bringIntoView(element)
     const [offsetX, offsetY] = element.sessionId ? element.frameOffset ?? [0, 0] : [0, 0]
-    await this.cursor.show(label, { x: point.x + offsetX, y: point.y + offsetY })
+    await this.cursor.show(kind, { x: point.x + offsetX, y: point.y + offsetY })
     return point
   }
 

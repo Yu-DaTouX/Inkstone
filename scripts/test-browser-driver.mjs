@@ -249,18 +249,18 @@ await check('Agent 光标：在隔离世界绘制，不拦截鼠标且支持清�
     return {}
   } }
   const cursor = new AgentCursor(cdp)
-  await cursor.show('点击', { x: 40, y: 60 })
+  await cursor.show('click', { x: 40, y: 60 })
   const render = calls.find(call => call.method === 'Runtime.evaluate').params
   assert.equal(render.contextId, 17)
   assert.match(render.expression, /pointer-events:none/)
   assert.match(render.expression, /aria-hidden/)
   assert.match(render.expression, /mode: 'closed'/)
   assert.match(render.expression, /prefers-reduced-motion/)
-  assert.ok(render.expression.endsWith('(\"点击\",{\"x\":40,\"y\":60})'))
+  assert.ok(render.expression.endsWith('(\"click\",{\"x\":40,\"y\":60})'))
   new Function(render.expression)
   await cursor.hide()
   assert.ok(calls.at(-1).params.expression.endsWith('(\"\",null)'))
-  await new AgentCursor({ async send() { throw new Error('target closed') } }).show('点击')
+  await new AgentCursor({ async send() { throw new Error('target closed') } }).show('click')
 })
 
 await check('Agent 光标：跨进程 iframe 映射到主页面，不显示输入内容', async () => {
@@ -279,7 +279,7 @@ await check('Agent 光标：跨进程 iframe 映射到主页面，不显示输�
   const element = { ref: 'fixture', backendNodeId: 1, sessionId: 'child', frameOffset: [100, 200], box: [101, 202, 20, 20] }
   await input.click(element)
   const rendered = calls.find(call => call.method === 'Runtime.evaluate' && call.params.contextId === 17)
-  assert.ok(rendered.params.expression.endsWith('(\"点击\",{\"x\":111,\"y\":212})'))
+  assert.ok(rendered.params.expression.endsWith('(\"click\",{\"x\":111,\"y\":212})'))
   const pressed = calls.find(call => call.params?.type === 'mousePressed')
   assert.equal(pressed.params.x, 11)
   assert.equal(pressed.params.y, 12)

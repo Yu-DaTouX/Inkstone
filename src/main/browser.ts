@@ -945,10 +945,10 @@ export class BrowserController {
     if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
     try {
       const automated = Boolean(this.control.owner(this.focusSessionId))
-      if (automated) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
+      if (automated) await this.parts()?.input.showActivity('open')
       if (this.external && this.activeMode === 'external') await this.navigateExternal(url)
       else await this.open(url)
-      if (automated) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
+      if (automated) await this.parts()?.input.showActivity('open')
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -1556,13 +1556,13 @@ export class BrowserController {
   async observe(options: BrowserObserveOptions = {}): Promise<BrowserObservation> {
     const p = this.openParts()
     const scope = options.scope ? p.registry.resolve(options.scope) : undefined
-    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('读取页面', 'Reading page'))
+    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity('read')
     return this.observeTarget(p, { all: options.all === true, ...(scope ? { scope: { backendNodeId: scope.backendNodeId, sessionId: scope.sessionId } } : {}) })
   }
 
   async evaluate(expression: string): Promise<unknown> {
     const p = this.openParts()
-    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('在页面里运行脚本', 'Running script in page'))
+    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity('read')
     await this.readyTarget(p)
     const reply = await p.cdp.send<{ result?: { value?: unknown }; exceptionDetails?: { text?: string; exception?: { description?: string } } }>('Runtime.evaluate', {
       expression: localEvaluateExpression(expression),
@@ -1583,7 +1583,7 @@ export class BrowserController {
 
   async text(): Promise<{ text: string; url: string; title: string }> {
     const p = this.openParts()
-    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity(pick('读取页面', 'Reading page'))
+    if (!this.control.controlled(this.focusSessionId)) await p.input.showActivity('read')
     await this.readyTarget(p)
     return p.observer.readText()
   }

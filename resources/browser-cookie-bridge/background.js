@@ -2,7 +2,7 @@ if (typeof importScripts === 'function') importScripts('page.js')
 
 const api = globalThis.browser ?? globalThis.chrome
 const HOST_NAME = 'app.inkstone.browser_bridge'
-const BRIDGE_REVISION = 3
+const BRIDGE_REVISION = 4
 const REF_ATTR = 'data-yan-ref'
 const OBSERVE_LIMIT = 800
 const LOAD_TIMEOUT_MS = 30000
@@ -315,7 +315,7 @@ async function handle(cmd, args) {
     case 'page.scroll': return injectOne(tabId, 0, yanScroll, [Number(args.dx) || 0, Number(args.dy) || 0])
     case 'page.text': return injectOne(tabId, 0, yanText)
     case 'page.visibility': return injectOne(tabId, 0, yanVisibility)
-    case 'page.cursor': return injectOne(tabId, 0, yanCursor, [String(args.label ?? ''), args.point ?? null, args.tap !== false, String(args.style ?? ''), String(args.markup ?? '')])
+    case 'page.cursor': return injectOne(tabId, 0, yanCursor, [String(args.label ?? ''), args.point ?? null, args.tap !== false, String(args.style ?? ''), String(args.markup ?? ''), Array.isArray(args.kinds) ? args.kinds.map(String) : []])
     case 'page.screenshot': return screenshot(tabId)
     case 'cdp': return cdp(tabId, String(args.method), args.params)
     case 'cdp.detach': {

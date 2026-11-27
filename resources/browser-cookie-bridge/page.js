@@ -297,7 +297,7 @@ function yanVisibility() {
   return document.visibilityState
 }
 
-function yanCursor(label, point, tap, style, markup) {
+function yanCursor(label, point, tap, style, markup, kinds) {
   const key = '__inkstoneAgentCursor'
   let state = globalThis[key]
   const finish = (target) => {
@@ -320,7 +320,7 @@ function yanCursor(label, point, tap, style, markup) {
     root.innerHTML = '<style>' + style + '</style>' + markup
     document.documentElement.appendChild(host)
     try { host.setAttribute('popover', 'manual'); host.showPopover() } catch {}
-    state = { host, cursor: root.querySelector('.cursor'), label: root.querySelector('.label'), text: root.querySelector('.text'), ripple: root.querySelector('.ripple'), x: 24, y: 24 }
+    state = { host, cursor: root.querySelector('.cursor'), badge: root.querySelector('.badge'), ripple: root.querySelector('.ripple'), x: 24, y: 24 }
     globalThis[key] = state
     fresh = true
   }
@@ -336,10 +336,9 @@ function yanCursor(label, point, tap, style, markup) {
   const duration = fresh ? 0 : Math.round(Math.min(420, 160 + distance * 0.35))
   state.cursor.style.transitionDuration = duration + 'ms,180ms'
   state.cursor.style.transform = 'translate(' + state.x + 'px,' + state.y + 'px)'
-  state.cursor.classList.toggle('idle', !moved)
-  state.text.textContent = label
-  state.label.classList.toggle('left', state.x > innerWidth - 200)
-  state.label.classList.toggle('up', state.y > innerHeight - 60)
+  for (const name of kinds) state.cursor.classList.toggle('k-' + name, name === label)
+  state.badge.classList.toggle('left', state.x > innerWidth - 80)
+  state.badge.classList.toggle('up', state.y > innerHeight - 60)
   if (fresh) void state.cursor.offsetWidth
   state.cursor.classList.add('on')
   clearTimeout(state.pressTimer)

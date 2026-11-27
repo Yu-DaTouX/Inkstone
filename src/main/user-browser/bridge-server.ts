@@ -9,7 +9,7 @@ import type { BridgeBrowser } from './native-host'
 export const BRIDGE_PATH = '/browser-bridge'
 export const DEFAULT_CALL_TIMEOUT_MS = 45_000
 const HELLO_TIMEOUT_MS = 10_000
-export const BRIDGE_REVISION = 3
+export const BRIDGE_REVISION = 4
 
 export interface BridgeConnectionInfo {
   id: string
