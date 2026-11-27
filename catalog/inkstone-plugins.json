@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updatedAt": "2026-10-29",
+  "updatedAt": "2026-11-27",
   "plugins": [
     {
       "id": "hermes-inkstone",
@@ -76,6 +76,26 @@
           "desc": "Composer microphone, transcribed locally with whisper.cpp.",
           "target": "Installs from bundled integrations and runs in a separate process; on first use download the transcriber and a model (about 150–600 MB) in Settings → Local tools.",
           "hint": "Removing the plugin keeps downloaded programs and models (voice/ in the data directory)."
+        }
+      }
+    },
+    {
+      "id": "commandcode-proxy",
+      "kind": "bundled",
+      "name": "Command Code 代理",
+      "version": "1.0.0",
+      "url": "https://github.com/MAXeaglet/commandcode-proxy",
+      "text": {
+        "zh-CN": {
+          "desc": "在本机把 Command Code 转成 OpenAI / Anthropic 兼容接口。",
+          "target": "安装后自动添加自定义服务 yan-commandcode-proxy：到「设置 → 模型 → 自定义服务」编辑它，填入 Command Code 的 user_ 开头的 Key 并保存即可用。代理在独立进程运行，只监听 http://127.0.0.1:3050/v1，砚启动时自动运行。",
+          "hint": "社区项目 MAXeaglet/commandcode-proxy，许可 MIT。YAN_COMMANDCODE_PROXY_PORT 可换端口。卸载插件不删除该自定义服务。代理按官方 CLI 协议请求并模拟设备指纹，可能违反服务条款或触发风控，风险自担。不保存密钥；有系统代理时上游请求经系统代理。"
+        },
+        "en-US": {
+          "name": "Command Code proxy",
+          "desc": "Exposes Command Code locally as OpenAI / Anthropic compatible endpoints.",
+          "target": "Installing adds the custom service yan-commandcode-proxy: edit it in Settings → Models → Custom services, enter your Command Code key starting with user_ and save. The proxy runs in a separate process, listens only on http://127.0.0.1:3050/v1 and starts with Inkstone.",
+          "hint": "Community project MAXeaglet/commandcode-proxy, MIT licensed. Change the port with YAN_COMMANDCODE_PROXY_PORT. Removing the plugin keeps the custom service. The proxy replays the official CLI protocol with a simulated device fingerprint, which may break the terms of service or trigger risk controls; use at your own risk. Keys are not stored; upstream requests use the system proxy when one is set."
         }
       }
     },

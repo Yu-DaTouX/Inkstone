@@ -2,6 +2,8 @@ import builtinCatalog from '../../catalog/inkstone-plugins.json'
 
 export const PLUGIN_CATALOG_URL = 'https://raw.githubusercontent.com/Yu-DaTouX/Inkstone/main/catalog/inkstone-plugins.json'
 export const PLUGIN_CATALOG_SCHEMA = 1
+export const COMMANDCODE_PROXY_PLUGIN = 'commandcode-proxy'
+export const COMMANDCODE_PROXY_PROVIDER = 'yan-commandcode-proxy'
 
 export type PluginCatalogKind = 'export' | 'mcp' | 'pet' | 'bundled' | 'link'
 export type PluginCatalogLang = 'zh-CN' | 'en-US'
@@ -33,7 +35,7 @@ const CODE_BACKED: Record<Exclude<PluginCatalogKind, 'link'>, readonly string[]>
   export: ['hermes-inkstone'],
   mcp: ['inkstone-minecraft'],
   pet: ['desktop-pet'],
-  bundled: ['desktop-pet', 'comfyui', 'voice-input']
+  bundled: ['desktop-pet', 'comfyui', 'voice-input', 'commandcode-proxy']
 }
 const KINDS: readonly PluginCatalogKind[] = ['export', 'mcp', 'pet', 'bundled', 'link']
 const LANGS: readonly PluginCatalogLang[] = ['zh-CN', 'en-US']

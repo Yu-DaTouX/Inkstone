@@ -38,6 +38,8 @@ const EMPTY_ADD: AddDraft = {
   command: ''
 }
 
+const MODELS_FOLD_AFTER = 3
+
 function hasAutoStart(item: LocalLauncherView): boolean {
   return !!item.command || item.models.some((model) => !!model.command)
 }
@@ -49,6 +51,7 @@ export function LocalLaunchSettings(): ReactElement | null {
   const [modelCmds, setModelCmds] = useState<Record<string, string>>({})
   const [names, setNames] = useState<Record<string, string>>({})
   const [sharedOpen, setSharedOpen] = useState<Record<string, boolean>>({})
+  const [modelsOpen, setModelsOpen] = useState<Record<string, boolean>>({})
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [addDraft, setAddDraft] = useState<AddDraft>(EMPTY_ADD)
   const [pendingRemove, setPendingRemove] = useState<{ item: LocalLauncherView; model: LocalLauncherModelView } | null>(null)
@@ -358,6 +361,8 @@ export function LocalLaunchSettings(): ReactElement | null {
             const autoStart = hasAutoStart(item)
             const showSharedCmd = !!item.command || !!sharedOpen[item.provider] || drafts[draftKey(item.provider, 'command')] !== undefined
             const adding = addingFor === item.provider
+            const foldable = item.models.length > MODELS_FOLD_AFTER
+            const showModels = !foldable || !!modelsOpen[item.provider]
             return (
               <div className="ms-custom-row" key={item.provider} data-testid={`ms-local-launch-row-${item.provider}`}>
                 <div className="ms-custom-main ms-local-main">
@@ -386,7 +391,21 @@ export function LocalLaunchSettings(): ReactElement | null {
                     </Button>
                   </div>
 
-                  <div className="ms-local-models">
+                  {foldable ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ms-models-toggle"
+                      icon={<CollapsibleChevron expanded={showModels} />}
+                      aria-expanded={showModels}
+                      data-testid={`ms-local-models-toggle-${item.provider}`}
+                      onPress={() => setModelsOpen((current) => ({ ...current, [item.provider]: !showModels }))}
+                    >
+                      {showModels ? t('customApi.hideModels') : t('customApi.showModels', { n: item.models.length })}
+                    </Button>
+                  ) : null}
+
+                  {showModels ? <div className="ms-local-models">
                     {item.models.map((model) => {
                       const key = modelKey(item.provider, model.id)
                       const nameVal = nameOf(item.provider, model)
@@ -484,7 +503,7 @@ export function LocalLaunchSettings(): ReactElement | null {
                         </div>
                       )
                     })}
-                  </div>
+                  </div> : null}
 
                   {adding ? (
                     <div className={settingCardClass('form', 'ms-custom-form ms-local-add-form')} data-testid={`ms-local-add-form-${item.provider}`}>

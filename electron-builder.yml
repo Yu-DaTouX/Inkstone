@@ -84,6 +84,9 @@ extraResources:
   - from: integrations/voice-input
     to: integrations/voice-input
     filter: ['*.mjs', 'inkstone-plugin.json']
+  - from: integrations/commandcode-proxy
+    to: integrations/commandcode-proxy
+    filter: ['*.mjs', 'inkstone-plugin.json', 'LICENSE']
 
 asar: true
 beforePack: scripts/pi-runtime-before-pack.cjs

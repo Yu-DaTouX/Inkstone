@@ -105,6 +105,7 @@ import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
 import { BundledPlugins } from './bundled-plugins'
+import { COMMANDCODE_PROXY_PLUGIN, ensureCommandCodeProxyProvider } from './commandcode-proxy-provider'
 import { installServicesFor } from './install-services'
 import { loadPluginCatalog } from './plugin-catalog'
 import { appModelRuntime, completePluginText, setModelCallProviderExtensions } from './plugin-completion'
@@ -634,6 +635,22 @@ const bundledPlugins = new BundledPlugins({
   }
 })
 configurePluginCommands((command, params, context, signal) => bundledPlugins.command(command, params, context, signal))
+
+async function runBundledPluginAction(id: string, action: string): Promise<Awaited<ReturnType<BundledPlugins['action']>>> {
+  launchResourceCache = null
+  try {
+    const result = await bundledPlugins.action(id, action)
+    const url = (result.status as { url?: unknown } | undefined)?.url
+    if (action === 'install' && id === COMMANDCODE_PROXY_PLUGIN && result.ok && typeof url === 'string') {
+      const provider = await ensureCommandCodeProxyProvider(url).catch((error) => ({ created: false, error: String(error) }))
+      if (provider.error) console.warn('[plugins] commandcode-proxy provider not created:', provider.error)
+      if (provider.created) void restartAgent(pick('自定义服务已更新', 'Custom service updated')).catch((error) => console.error('[plugins] restart failed', error))
+    }
+    return result
+  } finally {
+    launchResourceCache = null
+  }
+}
 
 function bundledSkillPaths(): string[] {
   const roots = [
@@ -1939,10 +1956,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted,
           isKnownProject: isKnownPackageProject,
           catalog: () => loadPluginCatalog(false),
-          bundledAction: (pluginId, action) => {
-            launchResourceCache = null
-            return bundledPlugins.action(pluginId, action).finally(() => { launchResourceCache = null })
-          },
+          bundledAction: (pluginId, action) => runBundledPluginAction(pluginId, action),
           refresh: () => void restartAgent('install')
         }, agent),
         switchSpareAccount,
@@ -2598,8 +2612,7 @@ function registerIpc(): void {
   refreshMinecraftPluginOnStartup()
   ipc.handle('yan:plugins:action', async (id: unknown, action: unknown) => {
     if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: pick('无效插件操作', 'Invalid plugin action') }
-    launchResourceCache = null
-    return bundledPlugins.action(id, String(action)).finally(() => { launchResourceCache = null })
+    return runBundledPluginAction(id, String(action))
   })
   ipc.handle('yan:plugins:invoke', async (id: unknown, action: unknown, params: unknown) => {
     if (typeof id !== 'string' || typeof action !== 'string') throw new Error(pick('无效插件请求', 'Invalid plugin request'))

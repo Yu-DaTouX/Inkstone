@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { Plus, RefreshCw, Trash2 } from '../../../ui/icons'
 import type {
   CustomProviderInput,
@@ -12,10 +12,12 @@ import { useT } from '../../../i18n'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import { mergeDiscoveredModels } from './models-model'
 import { SettingsGroup, SettingsReveal } from '../root/controls'
+import { getSettingReveal, subscribeSettingReveal } from '../search/search-model'
 import {
   Badge,
   Button,
   Checkbox,
+  CollapsibleChevron,
   Dialog,
   ListBoxItem,
   Modal,
@@ -37,6 +39,10 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+export const CUSTOM_ROW_SETTING_PREFIX = 'models-custom-row-'
+const MODELS_FOLD_AFTER = 3
+let handledRevealRevision = 0
+
 export function CustomEndpointSettings(): ReactElement {
   const t = useT()
   const [list, setList] = useState<CustomProviderView[] | null>(null)
@@ -51,6 +57,8 @@ export function CustomEndpointSettings(): ReactElement {
   const [testId, setTestId] = useState<string | null>(null)
   const [testing, setTesting] = useState('')
   const [testResult, setTestResult] = useState<{ id: string; result: CustomProviderTestResult } | null>(null)
+  const [modelsOpen, setModelsOpen] = useState(false)
+  const reveal = useSyncExternalStore(subscribeSettingReveal, getSettingReveal, getSettingReveal)
   const alive = useRef(true)
   useEffect(() => {
     alive.current = true
@@ -81,9 +89,31 @@ export function CustomEndpointSettings(): ReactElement {
 
   const beginDraft = (next: CustomProviderInput): void => {
     setDraft(next)
+    setModelsOpen(next.models.length <= MODELS_FOLD_AFTER)
     setMsg(null)
     setTestId(null)
   }
+
+  const editProvider = (item: CustomProviderView): void =>
+    beginDraft({
+      id: item.id,
+      api: item.api || 'openai-completions',
+      baseUrl: item.baseUrl,
+      models: item.models.length ? item.models : [{ id: '' }]
+    })
+
+  useEffect(() => {
+    if (!reveal || !list || reveal.revision <= handledRevealRevision || !reveal.id.startsWith(CUSTOM_ROW_SETTING_PREFIX)) return
+    handledRevealRevision = reveal.revision
+    const item = list.find((entry) => CUSTOM_ROW_SETTING_PREFIX + entry.id === reveal.id)
+    if (!item || item.hasApiKey) return
+    editProvider(item)
+    window.setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>('[data-testid="ms-custom-form"] input[type="password"]')
+      input?.scrollIntoView({ block: 'center' })
+      input?.focus({ preventScroll: true })
+    }, 600)
+  })
 
   const cancelDraft = (): void => {
     setDraft(null)
@@ -239,7 +269,7 @@ export function CustomEndpointSettings(): ReactElement {
       testId="ms-custom"
       className="ms-custom"
       plain
-      fold={{ summary: list?.length ? list.map((item) => item.id).join('、') : undefined }}
+      fold={{ summary: list?.length ? list.map((item) => (item.hasApiKey ? item.id : t('customApi.foldKeyMissing', { id: item.id }))).join('、') : undefined }}
     >
 
       {list === null ? <p className="ms-note">{t('customApi.loading')}</p> : null}
@@ -247,7 +277,7 @@ export function CustomEndpointSettings(): ReactElement {
       {list?.length ? (
         <div className="settings-rows ms-rows">
           {list.map((item) => (
-            <div className="ms-custom-row" key={item.id} data-testid={`ms-custom-row-${item.id}`}>
+            <div className="ms-custom-row" key={item.id} data-testid={`ms-custom-row-${item.id}`} data-setting-id={CUSTOM_ROW_SETTING_PREFIX + item.id}>
               <div className="ms-custom-main">
                 <div className="ms-custom-name">
                   {item.id}
@@ -263,17 +293,10 @@ export function CustomEndpointSettings(): ReactElement {
               </div>
               <div className="ms-custom-actions">
                 <Button
-                  variant="secondary"
+                  variant={item.hasApiKey ? 'secondary' : 'primary'}
                   data-testid={`ms-custom-edit-${item.id}`}
                   isDisabled={busy}
-                  onPress={() =>
-                    beginDraft({
-                      id: item.id,
-                      api: item.api || 'openai-completions',
-                      baseUrl: item.baseUrl,
-                      models: item.models.length ? item.models : [{ id: '' }]
-                    })
-                  }
+                  onPress={() => editProvider(item)}
                 >
                   {t('customApi.edit')}
                 </Button>
@@ -298,6 +321,12 @@ export function CustomEndpointSettings(): ReactElement {
                   {t('customApi.remove')}
                 </Button>
               </div>
+
+              {item.hasApiKey ? null : (
+                <Notice tone="stall" compact className="ms-custom-key-missing" data-testid={`ms-custom-key-missing-${item.id}`}>
+                  {t('customApi.keyMissingHint')}
+                </Notice>
+              )}
 
               <SettingsReveal open={testId === item.id}>
                 <div className="ms-custom-test" data-testid={`ms-custom-test-panel-${item.id}`}>
@@ -375,7 +404,20 @@ export function CustomEndpointSettings(): ReactElement {
           />
 
           <p className="ms-note">{t('customApi.modelsHint')}</p>
-          {draft.models.map((model, index) => (
+          {draft.models.length > MODELS_FOLD_AFTER ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ms-models-toggle"
+              icon={<CollapsibleChevron expanded={modelsOpen} />}
+              aria-expanded={modelsOpen}
+              data-testid="ms-custom-models-toggle"
+              onPress={() => setModelsOpen((open) => !open)}
+            >
+              {modelsOpen ? t('customApi.hideModels') : t('customApi.showModels', { n: draft.models.length })}
+            </Button>
+          ) : null}
+          {(modelsOpen || draft.models.length <= MODELS_FOLD_AFTER ? draft.models : []).map((model, index) => (
             <div className="ms-custom-model" key={index}>
               <TextField
                 aria-label={t('customApi.modelId')}
@@ -417,9 +459,10 @@ export function CustomEndpointSettings(): ReactElement {
               variant="secondary"
               isDisabled={busy}
               icon={<Plus size={13} aria-hidden />}
-              onPress={() =>
+              onPress={() => {
                 setDraft({ ...draft, models: [...draft.models, { id: '' }] })
-              }
+                setModelsOpen(true)
+              }}
             >
               {t('customApi.addModel')}
             </Button>

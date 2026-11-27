@@ -1,0 +1,7 @@
+{
+  "id": "commandcode-proxy",
+  "version": "1.0.0",
+  "process": "plugin.mjs",
+  "capabilities": ["system.proxy"],
+  "environment": ["YAN_COMMANDCODE_PROXY_PORT", "CC_UPSTREAM_PROXY", "CMD_ZDR"]
+}

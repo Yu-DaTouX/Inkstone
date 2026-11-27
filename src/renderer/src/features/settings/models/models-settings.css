@@ -570,6 +570,15 @@
     margin-top: calc(var(--s-12) * -1);
   }
 
+  .ms-custom-row > .ms-custom-key-missing {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .ms-models-toggle {
+    align-self: flex-start;
+  }
+
   .ms-custom-row > .settings-reveal .ms-custom-test {
     padding-top: var(--s-12);
   }

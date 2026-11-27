@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { connect } from 'node:net'
 import { basename, dirname, extname } from 'node:path'
 import { pick } from '../shared/ui-lang'
+import { COMMANDCODE_PROXY_PROVIDER } from '../shared/plugin-catalog'
 import { isLocalBaseUrl, isLoopbackBaseUrl } from '../shared/model-capabilities'
 import {
   parseModelEntries,
@@ -149,7 +150,7 @@ function providerBaseUrl(item: LocalProvider): string {
 export async function listLocalLaunchers(): Promise<LocalLauncherView[]> {
   const [models, config] = await Promise.all([readJson(MODELS_FILE), readJson(LOCAL_MODELS_CONFIG)])
   const launchers = launcherMap(config)
-  return localProvidersOf(models).map((item) => {
+  return localProvidersOf(models).filter((item) => item.provider !== COMMANDCODE_PROXY_PROVIDER).map((item) => {
     const launcher = launchers[item.provider]
     const list: LocalLauncherModelView[] = item.models.map((m) => ({
       id: m.id,

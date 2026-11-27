@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { useI18n } from '../../../i18n'
 import {
   BUILTIN_PLUGIN_CATALOG,
+  COMMANDCODE_PROXY_PLUGIN,
+  COMMANDCODE_PROXY_PROVIDER,
   pluginText,
   type PluginCatalogEntry,
   type PluginCatalogView
@@ -12,6 +14,21 @@ import { MinecraftPluginRow } from './MinecraftPluginRow'
 import { Entry, Group, StatusBadge } from './parts'
 import { useConfirm } from './confirm'
 import { useInstalledPlugins } from '../../../state/installed-plugins'
+import { useStore } from '../../../state/store'
+import { requestSettingReveal } from '../search/search-model'
+import { CUSTOM_ROW_SETTING_PREFIX } from '../models/CustomEndpointSettings'
+
+type ProxyService = 'missing' | 'no-key' | 'ready'
+
+async function proxyService(): Promise<ProxyService> {
+  const item = (await window.yan.customProviders().catch(() => [])).find((provider) => provider.id === COMMANDCODE_PROXY_PROVIDER)
+  return !item ? 'missing' : item.hasApiKey ? 'ready' : 'no-key'
+}
+
+function openProxyService(): void {
+  useStore.getState().openSettings('models')
+  requestSettingReveal({ section: 'models', id: CUSTOM_ROW_SETTING_PREFIX + COMMANDCODE_PROXY_PROVIDER })
+}
 
 function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElement {
   const { t, lang } = useI18n()
@@ -24,18 +41,24 @@ function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElemen
   }, [entry.id])
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  const [service, setService] = useState<ProxyService | null>(null)
+  const proxy = entry.id === COMMANDCODE_PROXY_PLUGIN
   useEffect(() => {
     let alive = true
-    void window.yan.plugins.action(entry.id, 'status').then(result => {
-      if (alive) { setInstalled(result.installed === true); if (!result.ok) setNote(result.error ?? t('pkg.failed')) }
+    void window.yan.plugins.action(entry.id, 'status').then(async result => {
+      if (!alive) return
+      setInstalled(result.installed === true)
+      if (!result.ok) setNote(result.error ?? t('pkg.failed'))
+      if (proxy && result.installed) { const next = await proxyService(); if (alive) setService(next) }
     }).catch(error => { if (alive) setNote(String(error)) })
     return () => { alive = false }
-  }, [entry.id, t, setInstalled])
+  }, [entry.id, t, setInstalled, proxy])
   const run = async (action: 'install' | 'remove'): Promise<void> => {
     setBusy(true)
     try {
       const result = await window.yan.plugins.action(entry.id, action)
       if (result.ok) setInstalled(result.installed === true)
+      setService(proxy && result.ok && result.installed ? await proxyService() : null)
       setNote(result.ok ? copy.target ?? '' : result.error ?? t('pkg.failed'))
     } catch (error) { setNote(String(error)) }
     finally { setBusy(false) }
@@ -48,8 +71,16 @@ function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElemen
     })
   }
   const statusLabel = installed ? t('pkg.installed') : t('ocp.statusMissing')
-  return <Entry name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`} badge={<StatusBadge tone={installed ? 'ok' : 'neutral'}>{statusLabel}</StatusBadge>} meta={[copy.desc, note]} metaTitle={[copy.desc, copy.target, copy.hint].filter(Boolean).join('\n')} testId={`caps-market-${entry.id}`}
+  const needsKey = installed && service === 'no-key'
+  const serviceNote = !installed ? '' : service === 'no-key' ? t('market.ccproxyKeyMissingNote') : service === 'ready' ? t('market.ccproxyReady') : ''
+  return <Entry name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`}
+    badge={<>
+      <StatusBadge tone={installed ? 'ok' : 'neutral'}>{statusLabel}</StatusBadge>
+      {needsKey ? <StatusBadge tone="stall">{t('market.ccproxyKeyMissing')}</StatusBadge> : null}
+    </>}
+    meta={[copy.desc, serviceNote || note]} metaTitle={[copy.desc, copy.target, copy.hint].filter(Boolean).join('\n')} testId={`caps-market-${entry.id}`}
     actions={<>
+      {needsKey ? <Button variant="primary" isDisabled={busy} data-testid="caps-market-ccproxy-fill-key" onPress={openProxyService}>{t('market.ccproxyFillKey')}</Button> : null}
       <Button variant="secondary" isDisabled={busy} onPress={() => choose('install')}>{busy ? t('pkg.working') : t(installed ? 'pet.reinstall' : 'pet.install')}</Button>
       {installed ? <Button variant="danger" isDisabled={busy} onPress={() => choose('remove')}>{t('pet.uninstall')}</Button> : null}
       <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(entry.url)}>{t('market.source')}</Button>

@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { readAuthEntry } from './credentials'
 import { isYanProviderId } from '../shared/custom-provider'
+import { isLoopbackBaseUrl } from '../shared/model-capabilities'
+import { COMMANDCODE_PROXY_PROVIDER } from '../shared/plugin-catalog'
 
 type EnvLike = Record<string, string | undefined>
 
@@ -107,6 +109,12 @@ function officialLiteralBaseUrlAllowed(provider: string, value: unknown): boolea
   return official.hosts.includes(url.hostname.toLowerCase())
 }
 
+function commandCodeProxyEntry(id: string, entry: unknown): boolean {
+  if (id !== COMMANDCODE_PROXY_PROVIDER || !plainObject(entry) || !isLoopbackBaseUrl(entry.baseUrl)) return false
+  const models = entry.models
+  return models === undefined || (Array.isArray(models) && models.every((model) => plainObject(model) && (model.baseUrl === undefined || model.baseUrl === null)))
+}
+
 function entryEndpointAllowed(provider: string, entry: unknown): boolean {
   const official = OFFICIAL_ENDPOINTS[provider]
   if (!official) return false
@@ -160,7 +168,7 @@ export async function customCommandCodeQuotaProviders(agentDir = PI_AGENT_DIR): 
     const parsed = parseModelsJson(await readFile(join(agentDir, 'models.json'), 'utf8'))
     if (!plainObject(parsed) || !plainObject(parsed.providers)) return []
     return Object.entries(parsed.providers)
-      .filter(([id, entry]) => isYanProviderId(id) && entryEndpointAllowed('commandcode', entry))
+      .filter(([id, entry]) => isYanProviderId(id) && (entryEndpointAllowed('commandcode', entry) || commandCodeProxyEntry(id, entry)))
       .map(([id]) => id)
   } catch {
     return []
@@ -238,7 +246,7 @@ export async function resolveQuotaProviderCredential(
     : {}
   let entry: Record<string, unknown> | undefined
   if (lookup.kind === 'entry') {
-    if (!entryEndpointAllowed(quotaProvider, lookup.entry)) return { error: pick('模型配置中的服务地址无法确认为官方地址，未发送额度凭据。请在模型设置中检查服务地址。', 'The service URL in the model config cannot be confirmed as official. Quota credentials were not sent. Check the URL in model settings.') }
+    if (!entryEndpointAllowed(quotaProvider, lookup.entry) && !(quotaProvider === 'commandcode' && commandCodeProxyEntry(provider, lookup.entry))) return { error: pick('模型配置中的服务地址无法确认为官方地址，未发送额度凭据。请在模型设置中检查服务地址。', 'The service URL in the model config cannot be confirmed as official. Quota credentials were not sent. Check the URL in model settings.') }
     entry = lookup.entry as Record<string, unknown>
   }
 
