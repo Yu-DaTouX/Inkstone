@@ -1029,6 +1029,20 @@ await runSuite(import.meta.url, async (ok, compile) => {
     } finally {
       await missingResume.session.close()
     }
+    const flakyNew = start('--new-failures=1')
+    try {
+      await flakyNew.session.start(cwd)
+      ok(!!flakyNew.session.acpSessionId, 'session/new 一次内部错误（-32603）后自动重试并建立会话')
+    } finally {
+      await flakyNew.session.close()
+    }
+    const brokenNew = start('--new-failures=2')
+    try {
+      const error = await brokenNew.session.start(cwd).then(() => null, (err) => err)
+      ok(error?.rpcCode === -32603 && /session\/new/.test(error.message) && /initialized by another opener/.test(error.message), '重试仍失败时报错附上 CLI 原始原因', String(error?.message))
+    } finally {
+      await brokenNew.session.close()
+    }
     const authResume = start('auth')
     try {
       await assert.rejects(authResume.session.start(cwd, undefined, { resumeSessionId: savedAcpId }), /agy acp --login/)

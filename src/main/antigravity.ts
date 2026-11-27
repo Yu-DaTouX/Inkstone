@@ -11,6 +11,7 @@ import { reportedFileDiff, type FileDiff } from './snapshots'
 const MAX_LINE = 16 * 1024 * 1024
 const MAX_PROMPT_BYTES = 4 * 1024 * 1024 - 1024
 const MAX_IMAGE_PROMPT_BYTES = 32 * 1024 * 1024
+const SESSION_NEW_RETRY_MS = 1_500
 export const ANTIGRAVITY_HANDOFF_SAFE_BYTES = 160 * 1024
 
 export class AntigravityHandoffLimitError extends Error {
@@ -439,10 +440,17 @@ export class AntigravitySession {
         if (!this.resumedSession) this.openingContext.clear()
       }
     }
-    if (!session) {
+    for (let attempt = 0; !session; attempt++) {
       this.openingSession = true
-      session = await this.request('session/new', { cwd, mcpServers })
-        .finally(() => { this.openingSession = false })
+      try {
+        session = await this.request('session/new', { cwd, mcpServers })
+      } catch (err) {
+        if (attempt > 0 || fatalError(err) || (err as { rpcCode?: number } | null)?.rpcCode !== -32603) throw err
+        await new Promise((resolve) => setTimeout(resolve, SESSION_NEW_RETRY_MS))
+        if (this.closed) throw err
+      } finally {
+        this.openingSession = false
+      }
     }
     this.sessionId = text(session.sessionId) || (this.resumedSession ? resumeId : '')
     if (!this.sessionId) throw new Error(pick('Antigravity 未建立会话。', 'Antigravity did not create a session.'))
@@ -770,7 +778,8 @@ export class AntigravitySession {
         ? pick('请先在终端运行 agy acp --login 完成 Google 登录，再重试。', 'Run agy acp --login to sign in to Google, then retry.')
         : /quota|rate.?limit|\b429\b|resource.exhausted/i.test(raw)
           ? pick('Antigravity 报告额度不足或请求受限。', 'Antigravity reported a quota or rate limit.')
-          : pick(`Antigravity 未能完成此操作（${pending.method}，${Number(error.code) || 'ACP'}）。`, `Antigravity could not complete this operation (${pending.method}, ${Number(error.code) || 'ACP'}).`)
+          : pick(`Antigravity 未能完成此操作（${pending.method}，${Number(error.code) || 'ACP'}）。`, `Antigravity could not complete this operation (${pending.method}, ${Number(error.code) || 'ACP'}).`) +
+            (raw.trim() ? ` ${raw.trim().slice(0, 200)}` : '')
       const diagnostic = !invalidThinkingSignature && !authError && error.code === -32602 ? parameterDiagnostic(error) : ''
       const err = new Error(diagnostic ? `${detail} ${diagnostic}` : detail) as Error & { authError?: boolean; rpcCode?: number }
       if (invalidThinkingSignature) err.name = 'INVALID_THINKING_SIGNATURE'

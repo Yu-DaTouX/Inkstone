@@ -25,6 +25,7 @@ const startDefault = process.argv.includes('start-default')
 const protocolVersion = Number(process.argv.find((arg) => arg.startsWith('--protocol='))?.split('=')[1] ?? 1)
 const agentVersion = process.argv.find((arg) => arg.startsWith('--version='))?.split('=')[1]
 const httpMcp = process.argv.includes('http-mcp')
+let newFailures = Number(process.argv.find((arg) => arg.startsWith('--new-failures='))?.split('=')[1] ?? 0)
 const steerFixture = process.argv.includes('native-steer')
 const effortFailureFile = process.argv.find((arg) => arg.startsWith('--effort-failure='))?.slice('--effort-failure='.length)
 const storeDir = join(tmpdir(), 'inkstone-fake-acp-sessions')
@@ -139,7 +140,10 @@ for await (const line of input) {
     if (startDelay > 0) await delay(startDelay)
     const blocked = await readFile(join(params.cwd, '.acp-fixture-login'), 'utf8').catch(() => '')
     if (noAuth || blocked === 'deny') send({ id, error: { code: -32000, message: 'Authentication required' } })
-    else {
+    else if (newFailures > 0) {
+      newFailures -= 1
+      send({ id, error: { code: -32603, message: 'failed to create conversation: its database was initialized by another opener' } })
+    } else {
       sid = `fixture-${randomUUID().slice(0, 8)}`
       resumedHere = false
       knowsFixtureCode = false
