@@ -51,6 +51,7 @@ try {
   try {
     const calls = { admission: 0, rpc: 0, messages: 0, push: 0, target: 0, compaction: 0 }
     const agent = Object.create(AgentController.prototype)
+    agent.acp = {}
     agent.withExecutionAdmission = async () => { calls.admission++; return { ok: true } }
     agent.rpc = { command: async () => { calls.rpc++; return { success: true } } }
     agent.items = { appendMessage: () => { calls.messages++ } }

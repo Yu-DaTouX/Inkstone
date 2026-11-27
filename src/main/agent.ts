@@ -1,32 +1,13 @@
 import { pick } from '../shared/ui-lang'
-import { ANTIGRAVITY_DEFAULT_MODE, ANTIGRAVITY_PROVIDER, isAntigravityMode, type AntigravityEvent, type AntigravityModel, type AntigravityModels } from '../shared/antigravity'
-import { AntigravityHandoffLimitError, antigravityFileDiffs, antigravityPrompt, antigravityStopError, launchAntigravity, normalizeAntigravityImages, scheduleAntigravityToolIdleTimeout, type AntigravitySession, type AntigravitySteer } from './antigravity'
-import {
-  buildChunkCompactPrompt,
-  buildCompactAppendices,
-  buildLiveCompactPrompt,
-  detectCompactLanguage,
-  estimateAntigravityMessageTokens,
-  planAntigravityCompaction,
-  serializeCompactChunks,
-  sliceInContextMessages,
-  stripCompactAppendices
-} from './antigravity-compact'
-import { openAntigravityDelegation } from './antigravity-delegation'
-import { antigravityMcpFingerprint, antigravityMcpServices, warmAntigravityMcp, watchAntigravityMcpFiles } from './antigravity-mcp'
-import { loadMcpServers, mcpServersFile, mcpServersForProject } from './mcp/config'
-import { isInkstoneManaged } from './mcp/app-spec'
-import { readAntigravityPreference, saveAntigravityPreference } from './antigravity-preferences'
-import { buildElicitationUi } from './antigravity-elicitation'
-import { DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../shared/context-limits'
-import { estimateTextTokens } from '../shared/session-metrics'
+import { ANTIGRAVITY_PROVIDER } from '../shared/antigravity'
+import { AntigravityBackend, type AntigravityHost } from './antigravity-backend'
 import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
 import { EventEmitter } from 'node:events'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { runPluginCommand } from './plugin-commands'
 import { INSTALL_COMMANDS, runInstallCommand, runMcpAddFor, type InstallCommandHost, type InstallServices } from './agent-commands/install-command'
-import { lstat, readFile, realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
@@ -61,7 +42,6 @@ import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, typ
 import { apiKeyLooksUnusable, isOAuthRefreshFailure, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { accountLogId, logMainEvent, logModelEvent, modelErrorLogFields } from './main-log'
 import { isAuthBlip, providerUsesOAuth, waitAuthBlip } from './auth-blip'
-import { splitAntigravityErrorLine } from './antigravity-error-line'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
@@ -90,7 +70,7 @@ import {
 import { serverSearchCalls } from './server-search-calls'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { snapshotQueue } from './queue-items'
-import { planQueueEditOp, type QueueRewriteResult } from './queue-edit'
+import type { QueueRewriteResult } from './queue-edit'
 import { contextWindowAssumed } from './custom-providers'
 import { attributeCompaction, clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_ORIGIN, EMPTY_COMPACTION_STATE, measuredAfterCompaction, reduceCompaction, type CompactionOrigin, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -112,7 +92,8 @@ import { approvalLog } from './approval-log'
 import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, separateSecrets, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
 import { requestedTimeout } from '../shared/ui-timeout'
-import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
+import { createStreamLoopDetector, type LoopHit } from '../shared/stream-loop-detector'
+import { AutoContinueBudget, StreamLoopGuard, streamLoopGuardEnabled } from './stream-loop-guard'
 import { skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
@@ -194,7 +175,6 @@ const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
 const STOP_ABORT_TIMEOUT_MS = 5_000
 const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
 const STOP_TOTAL_BUDGET_MS = 12_000
-const ANTIGRAVITY_SILENT_STALL_MS = 20_000
 const STARTUP_STDERR_LINES = 200
 
 async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
@@ -606,10 +586,8 @@ export class AgentController extends EventEmitter {
     steer: (text) => this.steer(text),
     followUp: (text) => this.send(text, undefined, 'followUp'),
     submitHeld: async (text) => {
-      if (!this.acpConnection) return this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
-      if (this.acpTurn) return { success: this.enqueueAntigravity('steering', text).ok }
-      this.acpHeldNotices.push(text)
-      return { success: true }
+      if (!this.acp.connection) return this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
+      return this.acp.holdNotice(text)
     }
   })
 
@@ -688,38 +666,70 @@ export class AgentController extends EventEmitter {
   private set streaming(next: StreamingState | null) {
     this.stream.streaming = next
   }
-  private acpPreferenceSessionId?: string
-  private acpConnection?: { sessionId: string; model: ModelInfo; thinking?: AntigravityModels['thinking']; mode?: string; modes?: AntigravityModels['modes']; supportsImages?: boolean; bridgeConfigured?: boolean; mcpServers?: string[]; mcpFingerprint?: string; mcpStale?: boolean; mcpToolsStale?: boolean; session?: AntigravitySession; hasContext: boolean; acpSessionId?: string; acpCwd?: string; acpHeadEntryId?: string }
-  private acpNativeMcp?: McpConnectionManager
-  private acpMcpRefreshTimer?: ReturnType<typeof setTimeout>
-  private acpMcpRefreshTask?: Promise<void>
-  private acpMcpWatcher?: { close(): void }
-  private acpMcpWatchCwd?: string
-  private acpTurn?: { done: Promise<void>; session: AntigravitySession; stopped: boolean; interjected: boolean; steer?: { item: QueueItem; prompt: AntigravitySteer }; messages: UIMessage[]; delegation: AbortController; startedAt: number; runContext: RunObserverContext | null; cancel?: () => void }
-  private acpCompacting: { abort: AbortController; done: Promise<void>; sessionId: string } | null = null
-  private acpCompactHold?: { sessionId: string; untilTokens: number }
-  private acpQueue: QueueState = { steering: [], followUp: [] }
-  private acpHeldNotices: string[] = []
-  private acpTodos: SessionTodo[] = []
-  private acpDelegatedIds = new Map<string, Set<string>>()
+  private readonly acp: AntigravityBackend<RunObserverContext> = new AntigravityBackend(this.antigravityHost())
+
+  private antigravityHost(): AntigravityHost<RunObserverContext> {
+    const agent = this
+    return {
+      get state() { return agent.state },
+      set state(next) { agent.state = next },
+      get compactionState() { return agent.compactionState },
+      set compactionState(next) { agent.compactionState = next },
+      get contextFrom() { return agent.contextFrom },
+      set contextFrom(next) { agent.contextFrom = next },
+      get runFromUser() { return agent.runFromUser },
+      set runFromUser(next) { agent.runFromUser = next },
+      get cwd() { return agent.cwd },
+      get stopping() { return agent.stopping },
+      get rpc() { return agent.rpc },
+      get agentRunning() { return agent.agentRunning },
+      get messages() { return agent.messages },
+      get nativeRuntime() { return agent.nativeRuntime },
+      get nativeBranchView() { return agent.nativeBranchView },
+      get nativeSessionExtension() { return agent.nativeSessionExtension },
+      get capabilityOpts() { return agent.capabilityOpts },
+      get subagentHost() { return agent.subagentHost },
+      get operations() { return agent.operations },
+      get mcp() { return agent.mcp },
+      get ui() { return agent.ui },
+      get items() { return agent.items },
+      get terminalNotices() { return agent.terminalNotices },
+      get browserCommands() { return agent.browserCommands },
+      get commandHost() { return agent.commandHost },
+      push: (msg) => agent.push(msg),
+      asyncOwner: () => agent.asyncOwner(),
+      ownerCurrent: (owner) => agent.ownerCurrent(owner),
+      executionActive: () => agent.executionActive(),
+      piQueueEmpty: () => agent.queue.isEmpty(),
+      claimExecutionAdmission: () => agent.claimExecutionAdmission(),
+      confirmExecutionAdmission: () => agent.confirmExecutionAdmission(),
+      settleExecutionAdmission: () => agent.settleExecutionAdmission(),
+      withOperation: (op, expectGeneration, task) => agent.withOperation(op, expectGeneration, task),
+      withExecutionAdmission: (task) => agent.withExecutionAdmission(task),
+      enqueueCapabilityChange: (work) => agent.enqueueCapabilityChange(work),
+      readHistoryOf: (sessionFile, fullText) => agent.readHistoryOf(sessionFile, fullText),
+      hydrate: (expected) => agent.hydrate(expected),
+      refreshState: () => agent.refreshState(),
+      refreshStats: () => agent.refreshStats(),
+      maybeGenerateTitle: (opts) => agent.maybeGenerateTitle(opts),
+      readStreamLoopAutoContinue: () => agent.readStreamLoopAutoContinue(),
+      setAgentRunning: (value) => agent.setAgentRunning(value),
+      markStreaming: (value) => agent.markStreaming(value),
+      runObserverContext: () => agent.runObserverContext(),
+      observeRun: (ctx, signal) => agent.runObserver?.(ctx, signal),
+      releaseComputerControl: () => agent.releaseComputerControl(),
+      localizeHistoryImage: (mimeType, data) => agent.localizeHistoryImage(mimeType, data)
+    }
+  }
   private piModelLabel?: string
   private agentRunning = false
   private runFromUser = false
   private liveItemEdits = 0
   private hydrateDeferred: { sessionId?: string; sessionFile?: string } | null = null
   private pendingAborts = 0
-  private streamLoopDetector: StreamLoopDetector | null = null
-  private loopGuardTripped = false
-  private loopGuardAbortSent = false
-  private loopGuardStopping = false
-  private loopGuardStopTask?: Promise<void>
-  private loopGuardAbortedMessage = false
-  private loopGuardAutoContinueCount = 0
-  private loopGuardContinuationVersion = 0
+  private readonly loopGuard = new StreamLoopGuard()
+  private readonly autoContinue = new AutoContinueBudget()
   private sessionMoveFailureVersion = 0
-  private loopGuardResumeVersion = -1
-  private loopGuardContinueTask?: Promise<boolean>
-  private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
   private retrySeenThisRun = false
   private requestAccount?: { provider: string; key: Promise<string | undefined> }
   private pendingModelError?: { text: string; retried: boolean; failedAccount?: Promise<string | undefined> }
@@ -1015,7 +1025,7 @@ export class AgentController extends EventEmitter {
       if (this.suppressPush) this.afterScope.push(emit)
       else emit()
     },
-    loopStopping: () => this.loopGuardStopping || this.loopGuardAbortSent,
+    loopStopping: () => this.loopGuard.blocking,
     confirmAdmission: () => this.confirmExecutionAdmission()
   })
   private titleLifecycle = 0
@@ -1051,14 +1061,8 @@ export class AgentController extends EventEmitter {
 
     this.stopping = false
     this.queue.reset()
-    this.streamLoopDetector = null
-    this.loopGuardTripped = false
-    this.loopGuardAbortSent = false
-    this.loopGuardStopping = false
-    this.loopGuardAbortedMessage = false
-    this.loopGuardAutoContinueCount = 0
-    this.loopGuardContinuationVersion += 1
-    this.loopGuardHit = undefined
+    this.loopGuard.clear()
+    this.autoContinue.restart()
     const skipLaunch = this.pendingExtensionSkip
     this.pendingExtensionSkip = null
     this.extensionSkipState = null
@@ -1200,7 +1204,7 @@ export class AgentController extends EventEmitter {
       this.releaseExecutionAdmission()
       this.compactionState = EMPTY_COMPACTION_STATE
       this.contextFrom = undefined
-      void this.closeAntigravity()
+      void this.acp.close()
       this.nativeRuntime?.dispose()
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.discardPending()
@@ -1414,8 +1418,8 @@ export class AgentController extends EventEmitter {
     this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
     this.pushApprovalLog()
-    const stats = this.acpConnection ? null : await rpc.command('get_session_stats').catch(() => null)
-    if (this.acpConnection && stillOwned()) this.push({ ch: 'stats', payload: this.antigravityStats() })
+    const stats = this.acp.connection ? null : await rpc.command('get_session_stats').catch(() => null)
+    if (this.acp.connection && stillOwned()) this.push({ ch: 'stats', payload: this.acp.stats() })
     if (stats?.success && stillOwned()) {
       const counted = this.statsForCurrentModel(stats.data as SessionStats)
       const withOverhead = await this.withOverheadUsage(counted)
@@ -1493,8 +1497,8 @@ export class AgentController extends EventEmitter {
   }
 
   async refreshTodos(): Promise<SessionTodo[]> {
-    if (this.acpConnection && this.acpTodos.length > 0) {
-      const todos = [...this.acpTodos]
+    if (this.acp.connection && this.acp.todos.length > 0) {
+      const todos = [...this.acp.todos]
       this.push({ ch: 'todos', payload: todos })
       return todos
     }
@@ -2105,30 +2109,15 @@ export class AgentController extends EventEmitter {
 
   private setStateFrom(data: Record<string, unknown>): void {
     const sessionId = String(data.sessionId ?? '')
-    if (this.acpPreferenceSessionId !== sessionId) {
-      void this.closeAntigravity()
-      this.acpPreferenceSessionId = sessionId
-      const saved = sessionId ? readAntigravityPreference(sessionId) : undefined
-      if (saved) this.acpConnection = {
-        sessionId,
-        model: this.antigravityModel(saved.model, saved.thinking, saved.supportsImages),
-        thinking: saved.thinking,
-        modes: saved.modes,
-        supportsImages: saved.supportsImages,
-        ...(saved.acpSessionId ? { acpSessionId: saved.acpSessionId } : {}),
-        ...(saved.acpCwd ? { acpCwd: saved.acpCwd } : {}),
-        ...(saved.acpHeadEntryId ? { acpHeadEntryId: saved.acpHeadEntryId } : {}),
-        hasContext: false
-      }
-    }
-    const acp = this.acpConnection
+    this.acp.syncPreference(sessionId)
+    const acp = this.acp.connection
     const external = acp?.model
     const nativeModel = this.withAssumedWindow(normalizeModelInfo(data.model))
     if (nativeModel && nativeModel.provider !== ANTIGRAVITY_PROVIDER) {
       this.piModelLabel = `${nativeModel.provider}/${nativeModel.id}`
     }
     const model = external ?? nativeModel
-    const acpCompacting = this.acpCompacting?.sessionId === sessionId
+    const acpCompacting = this.acp.compacting?.sessionId === sessionId
     const compacting = !!data.isCompacting || acpCompacting
     this.compactionState = clearStaleRunning(this.compactionState, compacting)
     const previous = this.state
@@ -2161,7 +2150,7 @@ export class AgentController extends EventEmitter {
       sessionFile: data.sessionFile ? String(data.sessionFile) : undefined,
       sessionName: data.sessionName ? String(data.sessionName) : undefined,
       model: deferred?.model ?? model ?? undefined,
-      ...(acp ? { antigravity: { thinking: acp.thinking, mode: acp.mode ?? acp.modes?.current, modes: acp.modes, bridgeConfigured: acp.bridgeConfigured, mcpServers: acp.session ? acp.mcpServers : undefined } } : {}),
+      ...this.acp.stateFields(),
       thinkingLevel: deferred?.thinkingLevel ?? actualThinkingLevel,
       ...(deferred
         ? { pendingModelChange: { previousModel: model ?? undefined, previousThinkingLevel: actualThinkingLevel } }
@@ -2170,16 +2159,16 @@ export class AgentController extends EventEmitter {
       availableThinkingLevels,
       thinkingLevelsStatus,
       capabilities: capabilitySnapshot(model, availableThinkingLevels, thinkingLevelsStatus),
-      isStreaming: !!this.acpTurn || !!data.isStreaming || compacting,
+      isStreaming: !!this.acp.turn || !!data.isStreaming || compacting,
       isAgentRunning: this.agentRunning,
-      runStartedAt: this.agentRunning ? this.acpTurn?.startedAt ?? this.turn.startedAt : undefined,
+      runStartedAt: this.agentRunning ? this.acp.turn?.startedAt ?? this.turn.startedAt : undefined,
       isCompacting: compacting,
       compaction: this.compactionState.running ?? undefined,
       lastCompaction: this.compactionState.last ?? undefined,
       ...(this.retryRun ? { retry: this.retryRun } : {}),
       ...(this.contextFrom ? { contextFrom: this.contextFrom } : {}),
       messageCount: Number(data.messageCount ?? 0),
-      pendingMessageCount: acp ? this.acpQueue.steering.length + this.acpQueue.followUp.length : Number(data.pendingMessageCount ?? 0),
+      pendingMessageCount: acp ? this.acp.pendingCount : Number(data.pendingMessageCount ?? 0),
       cwd: this.cwd,
       autoCompactionEnabled:
         data.autoCompactionEnabled === undefined ? undefined : !!data.autoCompactionEnabled,
@@ -2230,12 +2219,12 @@ export class AgentController extends EventEmitter {
     if (msg.ch === 'ui-request') {
       const signal = runSignalFromUiRequest(msg.payload as unknown as Record<string, unknown>)
       if (!signal) return
-      const ctx = this.acpTurn?.runContext ?? this.runObserverContext()
+      const ctx = this.acp.turn?.runContext ?? this.runObserverContext()
       if (ctx) sink(ctx, signal)
       return
     }
     if (msg.ch === 'ui-resolved') {
-      const ctx = this.acpTurn?.runContext ?? this.runObserverContext()
+      const ctx = this.acp.turn?.runContext ?? this.runObserverContext()
       if (ctx) sink(ctx, runSignalFromUiResolved(msg.payload.id))
       return
     }
@@ -2283,7 +2272,7 @@ export class AgentController extends EventEmitter {
             pushedText: 0,
             pushedThinking: 0
           }
-          this.streamLoopDetector = createStreamLoopDetector()
+          this.loopGuard.detector = createStreamLoopDetector()
           this.push({
             ch: 'msg-add',
             payload: { ...started, responseDetail: this.turn.responseDetail }
@@ -2305,7 +2294,7 @@ export class AgentController extends EventEmitter {
         const id = s.id
         const endedMono = performance.now()
         this.stream.finishMessage()
-        this.streamLoopDetector = null
+        this.loopGuard.detector = null
 
         const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
@@ -2350,17 +2339,17 @@ export class AgentController extends EventEmitter {
           })
           this.turn.terminal = 'failed'
         } else if (m.stopReason === 'aborted' && this.turn.terminal === 'interrupted') {
-          this.loopGuardAbortedMessage = this.loopGuardAbortSent
+          this.loopGuard.abortedMessage = this.loopGuard.abortSent
           this.push({
             ch: 'notify',
             payload: {
               id: `loop-guard-${Date.now()}`,
               method: 'notify',
               notifyType: 'warning',
-              message: pick(`已按流式防护终止本次生成（${this.loopGuardHit?.rule ?? 'stream-loop'}）。会话可继续，本次任务尚未完成。`, `Generation stopped by stream guard (${this.loopGuardHit?.rule ?? 'stream-loop'}). The session can continue; this task is not finished.`)
+              message: pick(`已按流式防护终止本次生成（${this.loopGuard.hit?.rule ?? 'stream-loop'}）。会话可继续，本次任务尚未完成。`, `Generation stopped by stream guard (${this.loopGuard.hit?.rule ?? 'stream-loop'}). The session can continue; this task is not finished.`)
             }
           })
-          this.logStreamLoopGuard('settled', { rule: this.loopGuardHit?.rule, stream: this.loopGuardHit?.stream, outcome: 'aborted-stream' })
+          this.logStreamLoopGuard('settled', { rule: this.loopGuard.hit?.rule, stream: this.loopGuard.hit?.stream, outcome: 'aborted-stream' })
         } else if (m.stopReason === 'aborted' && this.turn.terminal !== 'stopped') {
           this.push({
             ch: 'agent-error',
@@ -2432,9 +2421,9 @@ export class AgentController extends EventEmitter {
       case 'agent_settled': {
         this.setRetryRun(null)
         this.cancelApprovals?.(this.approvalOwner())
-        const continuation = this.loopGuardAbortSent && this.loopGuardAbortedMessage && this.rpc && this.state?.sessionId
+        const continuation = this.loopGuard.abortSent && this.loopGuard.abortedMessage && this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
-            runId: this.turn.runId, version: this.loopGuardResumeVersion }
+            runId: this.turn.runId, version: this.loopGuard.resumeVersion }
           : null
         const modelError = this.pendingModelError
         const settledSessionId = this.state?.sessionId
@@ -2445,29 +2434,24 @@ export class AgentController extends EventEmitter {
         const errorContinuation = !continuation && modelError && !modelError.retried && isTransientModelError(modelError.text) &&
           this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
-            runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
+            runId: this.turn.runId, version: this.autoContinue.version, reason: 'model-error' as const }
           : null
         const failedProvider = this.state?.model?.provider
         const authBlip = !continuation && !errorContinuation && modelError && failedProvider &&
-          isAuthBlip(modelError.text, { retried: !!modelError.retried, continued: this.loopGuardAutoContinueCount >= 1 }) && this.rpc && this.state?.sessionId
+          isAuthBlip(modelError.text, { retried: !!modelError.retried, continued: this.autoContinue.spent }) && this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
-            runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
+            runId: this.turn.runId, version: this.autoContinue.version, reason: 'model-error' as const }
           : null
         const keyFailover = !continuation && !errorContinuation && modelError && failedProvider && apiKeyLooksUnusable(modelError.text) && this.rpc && this.state?.sessionId
           ? { provider: failedProvider, quota: isQuotaWaitError(modelError.text), scope: { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
-            runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'key-failover' as const } }
+            runId: this.turn.runId, version: this.autoContinue.version, reason: 'key-failover' as const } }
           : null
         this.pendingModelError = undefined
         this.pendingTruncated = false
         this.retrySeenThisRun = false
         this.requestAccount = undefined
-        if (this.loopGuardHit) this.logStreamLoopGuard('settled', { rule: this.loopGuardHit.rule, stream: this.loopGuardHit.stream, outcome: 'agent-settled' })
-        this.streamLoopDetector = null
-        this.loopGuardTripped = false
-        this.loopGuardAbortSent = false
-        this.loopGuardStopping = false
-        this.loopGuardAbortedMessage = false
-        this.loopGuardHit = undefined
+        if (this.loopGuard.hit) this.logStreamLoopGuard('settled', { rule: this.loopGuard.hit.rule, stream: this.loopGuard.hit.stream, outcome: 'agent-settled' })
+        this.loopGuard.clear()
         this.markStreaming(false)
         this.setAgentRunning(false)
         if (this.turn.terminal === 'stopped' && this.turn.startedMono !== undefined) {
@@ -2507,11 +2491,11 @@ export class AgentController extends EventEmitter {
             : authBlip && failedProvider ? this.continueAfterAuthBlip(authBlip, failedProvider, !!modelError && isOAuthRefreshFailure(modelError.text), modelError?.failedAccount).then((ok) => ok || !failover ? ok : failover())
               : failover ? failover() : undefined
         if (task) {
-          this.loopGuardContinueTask = task
+          this.loopGuard.continueTask = task
           void task.then((resumed) => {
             if (!resumed) this.push({ ch: 'turn-settled', payload: { sessionId: settledSessionId, outcome } })
           }).finally(() => {
-            if (this.loopGuardContinueTask === task) this.loopGuardContinueTask = undefined
+            if (this.loopGuard.continueTask === task) this.loopGuard.continueTask = undefined
           }).catch(() => undefined)
         } else {
           this.push({ ch: 'turn-settled', payload: { sessionId: settledSessionId, outcome } })
@@ -2527,7 +2511,7 @@ export class AgentController extends EventEmitter {
         this.pendingRequestMono = undefined
         if (evt.willRetry === true) this.timingContinues = true
         if (evt.willRetry !== true) {
-          this.streamLoopDetector = null
+          this.loopGuard.detector = null
           const terminal = this.turn.terminal
           if (terminal === 'stopped' && this.turn.startedMono !== undefined) {
             this.turn.elapsedMs = Math.max(this.turn.elapsedMs ?? 0, Math.max(1, Math.round(performance.now() - this.turn.startedMono)))
@@ -2638,7 +2622,7 @@ export class AgentController extends EventEmitter {
       }
 
       case 'auto_retry_start': {
-        if (this.loopGuardAbortSent) {
+        if (this.loopGuard.abortSent) {
           this.push({
             ch: 'notify',
             payload: {
@@ -2777,7 +2761,7 @@ export class AgentController extends EventEmitter {
     if (!v) this.runFromUser = false
     if (v) this.executionRunObserved = true
     if (!this.state) return
-    this.state = { ...this.state, isAgentRunning: v, runStartedAt: v ? this.acpTurn?.startedAt ?? this.turn.startedAt : undefined }
+    this.state = { ...this.state, isAgentRunning: v, runStartedAt: v ? this.acp.turn?.startedAt ?? this.turn.startedAt : undefined }
     this.push({ ch: 'state', payload: this.state })
     if (!v && this.pendingAborts === 0 && this.state.isStreaming !== true && this.state.isCompacting !== true &&
       this.queue.isEmpty()) {
@@ -2786,7 +2770,7 @@ export class AgentController extends EventEmitter {
   }
 
   private executionActive(): boolean {
-    return this.pendingAborts > 0 || this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null || !!this.acpCompacting
+    return this.pendingAborts > 0 || this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null || !!this.acp.compacting
   }
 
   private claimExecutionAdmission(): { ok: true } | { ok: false; error: string } {
@@ -2888,15 +2872,11 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'state', payload: this.state })
   }
 
-  private streamLoopGuardEnabled(): boolean {
-    return process.env.YAN_STREAM_LOOP_GUARD !== '0'
-  }
-
   private checkStreamLoop(kind: 'thinking' | 'text', delta: string): void {
-    const detector = this.streamLoopDetector
+    const detector = this.loopGuard.detector
     if (!detector || !delta) return
-    if (this.loopGuardTripped || this.loopGuardAbortSent) return
-    if (!this.streamLoopGuardEnabled()) return
+    if (this.loopGuard.engaged) return
+    if (!streamLoopGuardEnabled()) return
     const hit = kind === 'thinking' ? detector.onThinking(delta) : detector.onText(delta)
     if (!hit) return
     if (this.streaming?.toolOpen) {
@@ -2906,7 +2886,7 @@ export class AgentController extends EventEmitter {
       })
       return
     }
-    this.loopGuardStopTask = this.stopForLoopGuard(hit, kind)
+    this.loopGuard.stopTask = this.stopForLoopGuard(hit, kind)
   }
 
   private async stopForLoopGuard(hit: LoopHit, stream: 'thinking' | 'text'): Promise<void> {
@@ -2916,13 +2896,10 @@ export class AgentController extends EventEmitter {
     const generation = this.capabilityOpts?.runnerGeneration
     const runId = this.turn.runId
     const messageId = target?.id
-    if (!target || !rpc || !sessionId || this.loopGuardTripped || this.loopGuardAbortSent) return
+    if (!target || !rpc || !sessionId || this.loopGuard.engaged) return
     const record = (event: string, fields: Record<string, unknown>) =>
       this.logStreamLoopGuard(event, { sessionId, generation, runId, ...fields })
-    this.loopGuardTripped = true
-    this.loopGuardResumeVersion = this.loopGuardContinuationVersion
-    this.loopGuardAbortedMessage = false
-    this.loopGuardHit = { rule: hit.rule, stream }
+    this.loopGuard.trip(hit, stream, this.autoContinue.version)
     record('break-requested', {
       rule: hit.rule, stream, emittedChars: hit.emittedChars, repeatedChars: hit.repeatedChars,
       messageId, action: 'clear-queue-then-abort', outcome: 'pending'
@@ -2931,7 +2908,7 @@ export class AgentController extends EventEmitter {
     const ownsRun = () => this.rpc === rpc && this.state?.sessionId === sessionId &&
       this.capabilityOpts?.runnerGeneration === generation && this.turn.runId === runId
     const canStop = () => ownsRun() && this.streaming === target && this.turn.terminal !== 'stopped'
-    this.loopGuardStopping = true
+    this.loopGuard.stopping = true
     try {
       await this.queue.run(async () => {
         if (!canStop()) return
@@ -2961,7 +2938,7 @@ export class AgentController extends EventEmitter {
           record('stale-before-abort', { rule: hit.rule, stream, messageId, outcome: 'stale' })
           return
         }
-        this.loopGuardAbortSent = true
+        this.loopGuard.abortSent = true
         this.turn.terminal = 'interrupted'
         this.push({ ch: 'notify', payload: {
           id: `loop-guard-${Date.now()}`, method: 'notify', notifyType: 'warning',
@@ -2979,12 +2956,12 @@ export class AgentController extends EventEmitter {
           id: `loop-guard-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: pick(`检测到模型输出重复（${hit.rule}），但未能确认终止（${detail}）。请手动决定，不会自动续跑。`, `Repeated model output detected (${hit.rule}) but the stop was not confirmed (${detail}). Decide manually; it will not auto-continue.`)
         } })
-        this.loopGuardAbortSent = false
-        this.loopGuardContinuationVersion += 1
+        this.loopGuard.abortSent = false
+        this.autoContinue.invalidate()
         if (this.turn.terminal === 'interrupted') this.turn.terminal = 'failed'
       }
     } finally {
-      if (ownsRun()) this.loopGuardStopping = false
+      if (ownsRun()) this.loopGuard.stopping = false
     }
   }
 
@@ -2992,13 +2969,13 @@ export class AgentController extends EventEmitter {
     return (await getSettings()).streamLoopAutoContinue !== false
   }
 
-  private canContinueAfterLoopGuard(scope: {
+  private canAutoContinue(scope: {
     rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number
   }): boolean {
     return !this.stopping && this.rpc === scope.rpc && this.state?.sessionId === scope.sessionId &&
       this.capabilityOpts?.runnerGeneration === scope.generation && this.turn.runId === scope.runId &&
-      this.loopGuardContinuationVersion === scope.version && !this.agentRunning && !this.streaming &&
-      !this.state?.isCompacting && !this.loopGuardStopping && !this.loopGuardAbortSent &&
+      this.autoContinue.version === scope.version && !this.agentRunning && !this.streaming &&
+      !this.state?.isCompacting && !this.loopGuard.stopping && !this.loopGuard.abortSent &&
       this.queue.isEmpty()
   }
 
@@ -3006,10 +2983,10 @@ export class AgentController extends EventEmitter {
     rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number
   }): Promise<boolean> {
     try {
-      await this.loopGuardStopTask
-      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
-      if (!this.canContinueAfterLoopGuard(scope)) return false
-      if (this.loopGuardAutoContinueCount >= 1) {
+      await this.loopGuard.stopTask
+      if (!this.canAutoContinue(scope) || !(await this.readStreamLoopAutoContinue())) return false
+      if (!this.canAutoContinue(scope)) return false
+      if (this.autoContinue.spent) {
         this.logStreamLoopGuard('auto-continue-limit', { sessionId: scope.sessionId, runId: scope.runId, outcome: 'not-resumed' })
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'warning',
           message: pick('自动继续后再次检测到循环，已停止；同一任务最多自动续一次，请手动决定。', 'A loop was detected again after auto-continue and it stopped. A task auto-continues once at most; decide manually.') } })
@@ -3017,7 +2994,7 @@ export class AgentController extends EventEmitter {
       }
       const prompt = continuationPrompt('loop')
       const result = await this.send(prompt, undefined, undefined, scope)
-      if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
+      if (!result.ok && this.autoContinue.version === scope.version) {
         this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail: result.error, outcome: 'not-resumed' })
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: pick(`未能自动继续（${result.error ?? '发送失败'}），请手动决定。`, `Could not auto-continue (${result.error ?? 'send failed'}). Decide manually.`) } })
@@ -3026,7 +3003,7 @@ export class AgentController extends EventEmitter {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail, outcome: 'not-resumed' })
-      if (this.canContinueAfterLoopGuard(scope)) {
+      if (this.canAutoContinue(scope)) {
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: pick(`未能自动继续（${detail}），请手动决定。`, `Could not auto-continue (${detail}). Decide manually.`) } })
       }
@@ -3037,10 +3014,10 @@ export class AgentController extends EventEmitter {
   private async continueAfterKeyFailover(scope: AutoContinueScope, provider: string): Promise<boolean> {
     try {
       if ((await getSettings()).apiKeyFailover !== true) return false
-      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue()) || this.loopGuardAutoContinueCount >= 1) return false
+      if (!this.canAutoContinue(scope) || !(await this.readStreamLoopAutoContinue()) || this.autoContinue.spent) return false
       const moved = await failoverApiKey(provider)
       logModelEvent('key-failover', { provider, outcome: moved ? (moved.switched ? 'switched' : 'recent') : 'none', from: moved?.from, to: moved?.to, session: scope.sessionId })
-      if (!moved || !this.canContinueAfterLoopGuard(scope)) return false
+      if (!moved || !this.canAutoContinue(scope)) return false
       this.quotaExhausted = false
       this.push({ ch: 'quota-wait', payload: { cancel: true } } as unknown as MainPush)
       this.push({ ch: 'notify', payload: { id: `key-failover-${Date.now()}`, method: 'notify', notifyType: 'info',
@@ -3056,12 +3033,12 @@ export class AgentController extends EventEmitter {
   }
 
   private async continueAfterQuota(scope: AutoContinueScope, provider: string): Promise<boolean> {
-    if (!this.canContinueAfterLoopGuard(scope)) return false
+    if (!this.canAutoContinue(scope)) return false
     scope = { ...scope, reason: 'account-switch' }
-    const account = this.loopGuardAutoContinueCount < 1 ? await this.switchSpareAccount?.(provider).catch(() => null) : null
-    if (this.loopGuardAutoContinueCount < 1) logModelEvent('account-switch', { provider, reason: 'quota', outcome: account ? (account.switched ? 'switched' : 'recent') : 'none', to: accountLogId(account?.key), session: scope.sessionId })
-    if (!account || !this.canContinueAfterLoopGuard(scope)) {
-      if (this.canContinueAfterLoopGuard(scope)) this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
+    const account = !this.autoContinue.spent ? await this.switchSpareAccount?.(provider).catch(() => null) : null
+    if (!this.autoContinue.spent) logModelEvent('account-switch', { provider, reason: 'quota', outcome: account ? (account.switched ? 'switched' : 'recent') : 'none', to: accountLogId(account?.key), session: scope.sessionId })
+    if (!account || !this.canAutoContinue(scope)) {
+      if (this.canAutoContinue(scope)) this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
       return false
     }
     this.quotaExhausted = false
@@ -3096,7 +3073,7 @@ export class AgentController extends EventEmitter {
       const failedKey = await failedAccount
       const account = failedKey ? await this.switchSpareAccount?.(provider, { refreshFailed: true, failedKey }).catch(() => null) : null
       logModelEvent('account-switch', { provider, reason: 'oauth-refresh', outcome: account ? (account.switched ? 'switched' : 'recent') : 'none', to: accountLogId(account?.key), session: scope.sessionId })
-      if (account?.switched && this.canContinueAfterLoopGuard(scope)) {
+      if (account?.switched && this.canAutoContinue(scope)) {
         this.push({ ch: 'notify', payload: { id: `account-switch-${Date.now()}`, method: 'notify', notifyType: 'info',
           message: pick(`当前账号登录已失效，已换到 ${account.label} 继续`, `The current account's sign-in expired; continuing on ${account.label}`) } })
         return this.continueAfterModelError(scope)
@@ -3106,31 +3083,19 @@ export class AgentController extends EventEmitter {
     return this.continueAfterModelError(scope)
   }
 
-  private async continueAntigravityAfterAuthBlip(connection: NonNullable<AgentController['acpConnection']>, owner: ReturnType<AgentController['asyncOwner']>): Promise<void> {
-    const current = () => this.ownerCurrent(owner) && this.acpConnection === connection && this.state?.sessionId === connection.sessionId && !this.acpTurn && !this.executionActive()
-    if (!(await this.readStreamLoopAutoContinue())) return
-    await waitAuthBlip()
-    if (!current()) return
-    const result = await this.withOperation('send', owner.generation, () => this.withExecutionAdmission(() => this.sendAntigravity(continuationPrompt('model-error'))))
-    if (!result.ok && current()) {
-      this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
-        message: pick(`未能自动继续（${result.error ?? '发送失败'}），请手动决定。`, `Could not auto-continue (${result.error ?? 'send failed'}). Decide manually.`) } })
-    }
-  }
-
   private async continueAfterModelError(scope: AutoContinueScope): Promise<boolean> {
     try {
-      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
-      if (!this.canContinueAfterLoopGuard(scope) || this.loopGuardAutoContinueCount >= 1) return false
+      if (!this.canAutoContinue(scope) || !(await this.readStreamLoopAutoContinue())) return false
+      if (!this.canAutoContinue(scope) || this.autoContinue.spent) return false
       const prompt = continuationPrompt('model-error')
       const result = await this.send(prompt, undefined, undefined, scope)
-      if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
+      if (!result.ok && this.autoContinue.version === scope.version) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: pick(`未能自动继续（${result.error ?? '发送失败'}），请手动决定。`, `Could not auto-continue (${result.error ?? 'send failed'}). Decide manually.`) } })
       }
       return result.ok
     } catch (error) {
-      if (this.canContinueAfterLoopGuard(scope)) {
+      if (this.canAutoContinue(scope)) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: pick(`未能自动继续（${error instanceof Error ? error.message : String(error)}），请手动决定。`, `Could not auto-continue (${error instanceof Error ? error.message : String(error)}). Decide manually.`) } })
       }
@@ -3200,19 +3165,17 @@ export class AgentController extends EventEmitter {
     expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (!autoContinue) this.loopGuardContinuationVersion += 1
-    if (this.acpConnection) {
-      if (autoContinue) return { ok: false, error: pick('Antigravity 不支持流式自动续跑。', 'Antigravity does not support automatic stream continuation.') }
-      if (this.acpTurn) return this.enqueueAntigravity(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration)
-      if (this.acpMcpRefreshTask) await this.acpMcpRefreshTask.catch(() => undefined)
-      if (this.acpConnection) {
-        if (this.acpTurn) return this.enqueueAntigravity(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration)
-        return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
-      }
+    if (!autoContinue) this.autoContinue.invalidate()
+    const sendToPi = (): Promise<{ ok: boolean; error?: string }> => {
+      const sessionId = this.state?.sessionId
+      return this.withOperation('send', expectGeneration, () => this.withReadyLocalModel(sessionId, autoContinue,
+        () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue))))
     }
-    const sessionId = this.state?.sessionId
-    return this.withOperation('send', expectGeneration, () => this.withReadyLocalModel(sessionId, autoContinue,
-      () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue))))
+    if (this.acp.connection) {
+      if (autoContinue) return { ok: false, error: pick('Antigravity 不支持流式自动续跑。', 'Antigravity does not support automatic stream continuation.') }
+      return this.acp.route(mode === 'steer' ? 'steering' : 'followUp', text, images, expectGeneration, sendToPi)
+    }
+    return sendToPi()
   }
 
   private async withReadyLocalModel(
@@ -3225,7 +3188,7 @@ export class AgentController extends EventEmitter {
     const model = currentModel()
     const onReady = () => {
       if (isRestoredReadonly()) return Promise.resolve({ ok: false, error: restoredReadonlyMessage() })
-      if (this.acpConnection || this.state?.sessionId !== sessionId || modelKeyOf(currentModel()) !== modelKeyOf(model)) {
+      if (this.acp.connection || this.state?.sessionId !== sessionId || modelKeyOf(currentModel()) !== modelKeyOf(model)) {
         return Promise.resolve({ ok: false, error: pick('会话或模型已切换，消息未发送，草稿已保留', 'The session or model changed; message not sent, draft kept') })
       }
       return send()
@@ -3264,20 +3227,19 @@ export class AgentController extends EventEmitter {
     mode?: 'steer' | 'followUp',
     autoContinue?: AutoContinueScope
   ): Promise<{ ok: boolean; error?: string }> {
-    if (this.acpConnection) return { ok: false, error: pick('会话模型已切换，请重新发送。', 'The session model changed. Send the message again.') }
+    if (this.acp.connection) return { ok: false, error: pick('会话模型已切换，请重新发送。', 'The session model changed. Send the message again.') }
     if (!autoContinue) {
-      this.loopGuardContinuationVersion += 1
-      this.loopGuardAutoContinueCount = 0
+      this.autoContinue.restart()
     }
     if (text.trimStart().startsWith('/__inkstone_native')) return { ok: false, error: pick('原生内部命令只能通过桌面操作面板调用', 'Native internal commands can only be run from the desktop action panel') }
-    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再发送', 'Stream guard is stopping generation. Try sending again shortly') }
+    if (this.loopGuard.blocking) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再发送', 'Stream guard is stopping generation. Try sending again shortly') }
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
     }
 
     return this.queue.run(async () => {
-      if (autoContinue && ((autoContinue.reason !== 'account-switch' && !(await this.readStreamLoopAutoContinue())) || !this.canContinueAfterLoopGuard(autoContinue) || this.loopGuardAutoContinueCount >= 1)) {
+      if (autoContinue && ((autoContinue.reason !== 'account-switch' && !(await this.readStreamLoopAutoContinue())) || !this.canAutoContinue(autoContinue) || this.autoContinue.spent)) {
         return { ok: false, error: pick('自动继续已取消或运行归属改变', 'Auto-continue was cancelled or the run owner changed') }
       }
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后发送', 'The project is reverting code. Try sending again shortly') }
@@ -3298,7 +3260,7 @@ export class AgentController extends EventEmitter {
       if (!rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const titleOnSend = !autoContinue && !this.state?.sessionName && !this.messages.some((m) => m.role === 'user')
       if (autoContinue) {
-        this.loopGuardAutoContinueCount += 1
+        this.autoContinue.consume()
         if (autoContinue.reason === 'model-error') {
           this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
             message: pick('模型请求因暂时性错误中断且未自动重试，正在同一会话自动继续（1/1）。', 'The model request was interrupted by a temporary error without auto-retry; continuing in the same session (1/1).') } })
@@ -3345,7 +3307,7 @@ export class AgentController extends EventEmitter {
 
   async steerIntoUserRun(text: string): Promise<{ ok: boolean; idle?: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.loopGuardStopping || this.loopGuardAbortSent || !this.userRunActive()) return { ok: false, idle: true }
+    if (this.loopGuard.blocking || !this.userRunActive()) return { ok: false, idle: true }
     let entered = false
     try {
       return await this.steerIntoUserRunQueued(text, () => { entered = true })
@@ -3359,9 +3321,9 @@ export class AgentController extends EventEmitter {
     return this.queue.run(async () => {
       enter()
       if (!this.userRunActive()) return { ok: false, idle: true }
-      if (this.acpConnection) {
-        if (!this.acpTurn) return { ok: false, idle: true }
-        const res = this.enqueueAntigravity('steering', text)
+      if (this.acp.connection) {
+        if (!this.acp.turn) return { ok: false, idle: true }
+        const res = this.acp.enqueue('steering', text)
         return res.ok ? { ok: true } : { ok: false, error: res.error }
       }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
@@ -3375,21 +3337,14 @@ export class AgentController extends EventEmitter {
 
   async steer(text: string, images?: QueueItem['images'], expectGeneration?: number): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) {
-      if (this.acpTurn) return this.enqueueAntigravity('steering', text, images, expectGeneration)
-      if (this.acpMcpRefreshTask) await this.acpMcpRefreshTask.catch(() => undefined)
-      if (this.acpConnection) {
-        if (this.acpTurn) return this.enqueueAntigravity('steering', text, images, expectGeneration)
-        return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
-      }
-    }
-    return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.steerAdmitted(text, images)))
+    const steerPi = () => this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.steerAdmitted(text, images)))
+    if (this.acp.connection) return this.acp.route('steering', text, images, expectGeneration, steerPi)
+    return steerPi()
   }
 
   private async steerAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
-    this.loopGuardContinuationVersion += 1
-    this.loopGuardAutoContinueCount = 0
-    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再插话', 'Stream guard is stopping generation. Try interjecting again shortly') }
+    this.autoContinue.restart()
+    if (this.loopGuard.blocking) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再插话', 'Stream guard is stopping generation. Try interjecting again shortly') }
     return this.queue.run(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后插话', 'The project is reverting code. Try interjecting again shortly') }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
@@ -3404,17 +3359,13 @@ export class AgentController extends EventEmitter {
 
   async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) {
-      if (this.acpTurn) return this.enqueueAntigravity('followUp', text, images)
-      return this.withOperation('send', undefined, () => this.withExecutionAdmission(() => this.sendAntigravity(text, images)))
-    }
+    if (this.acp.connection) return this.acp.turn ? this.acp.enqueue('followUp', text, images) : this.acp.admitSend(text, images)
     return this.withOperation('send', undefined, () => this.withExecutionAdmission(() => this.followUpAdmitted(text, images)))
   }
 
   private async followUpAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
-    this.loopGuardContinuationVersion += 1
-    this.loopGuardAutoContinueCount = 0
-    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再排队', 'Stream guard is stopping generation. Try queueing again shortly') }
+    this.autoContinue.restart()
+    if (this.loopGuard.blocking) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再排队', 'Stream guard is stopping generation. Try queueing again shortly') }
     return this.queue.run(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后排队', 'The project is reverting code. Try queueing again shortly') }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
@@ -3436,90 +3387,54 @@ export class AgentController extends EventEmitter {
   }
 
   queueSnapshot(): QueueSnapshot {
-    if (this.acpConnection) return snapshotQueue(this.acpQueue)
+    if (this.acp.connection) return this.acp.queueSnapshot()
     return this.queue.snapshot()
   }
 
   queueItems(): QueueState {
-    if (this.acpConnection) return { steering: [...this.acpQueue.steering], followUp: [...this.acpQueue.followUp] }
+    if (this.acp.connection) return this.acp.queueItems()
     return { steering: [...this.queue.state.steering], followUp: [...this.queue.state.followUp] }
   }
 
   async restoreQueueSnapshot(snapshot: QueueSnapshot): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
+    if (this.acp.connection) return this.acp.restoreSnapshot(snapshot)
     return this.queue.restoreSnapshot(snapshot)
   }
 
   async steerQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) return this.editAntigravityQueueItem(queueId, true, guard)
+    if (this.acp.connection) return this.acp.editQueueItem(queueId, true, guard)
     return this.queue.editItem(queueId, true, guard)
   }
 
   async removeQueued(queueId: string, guard?: (state: QueueState) => string | null): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) return this.editAntigravityQueueItem(queueId, false, guard)
+    if (this.acp.connection) return this.acp.editQueueItem(queueId, false, guard)
     return this.queue.editItem(queueId, false, guard)
   }
 
   async planQueue(plan: (state: QueueState) => { next: QueueState } | { error: string }): Promise<QueueRewriteResult> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) {
-      const outcome = plan(this.queueItems())
-      if ('error' in outcome) return { ok: false, error: outcome.error }
-      return this.rewriteQueue(outcome.next)
-    }
+    if (this.acp.connection) return this.acp.planQueue(plan)
     return this.queue.rewriteWith(plan)
   }
 
   async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) {
-      this.acpQueue = {
-        steering: next.steering.map((item) => ({ ...item, ...(item.images?.length ? { images: item.images.map((img) => ({ ...img })) } : {}) })),
-        followUp: next.followUp.map((item) => ({ ...item, ...(item.images?.length ? { images: item.images.map((img) => ({ ...img })) } : {}) }))
-      }
-      this.publishAcpQueue()
-      if (this.acpQueue.steering.length) this.interjectAntigravity()
-      return { ok: true }
-    }
+    if (this.acp.connection) return this.acp.rewriteQueue(next)
     return this.queue.rewrite(next)
   }
 
   async editQueue(op: QueueEditOp): Promise<QueueRewriteResult> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) {
-      const plan = planQueueEditOp(this.queueItems(), op)
-      if ('error' in plan) return { ok: false, error: plan.error }
-      return this.rewriteQueue(plan.next)
-    }
+    if (this.acp.connection) return this.acp.editQueue(op)
     return this.queue.edit(op)
   }
 
   async abort(expectGeneration?: number): Promise<QueueSnapshot & { error?: string }> {
     if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { steering: [], followUp: [], error: GENERATION_MISMATCH_ERROR }
-    if (this.acpTurn) {
-      const turn = this.acpTurn
-      const reclaimed = snapshotQueue(this.acpQueue)
-      this.acpQueue = { steering: [], followUp: [] }
-      this.publishAcpQueue()
-      turn.interjected = false
-      turn.stopped = true
-      turn.delegation.abort()
-      turn.session.cancel()
-      turn.cancel?.()
-      await turn.done
-      if (turn.steer && this.acpTurn?.stopped && this.acpTurn.session === turn.session) await this.acpTurn.done
-      return reclaimed
-    }
-    if (this.acpCompacting) {
-      const reclaimed = snapshotQueue(this.acpQueue)
-      this.acpQueue = { steering: [], followUp: [] }
-      this.publishAcpQueue()
-      this.acpCompacting.abort.abort()
-      await this.acpCompacting.done
-      return reclaimed
-    }
+    if (this.acp.stopTarget) return this.acp.abort()
     this.pendingAborts += 1
     try {
       return await this.abortCurrent()
@@ -3530,10 +3445,10 @@ export class AgentController extends EventEmitter {
   }
 
   private async abortCurrent(): Promise<QueueSnapshot & { error?: string }> {
-    this.loopGuardContinuationVersion += 1
-    if (this.loopGuardStopping || this.loopGuardAbortSent) {
-      await this.loopGuardStopTask
-      if (this.loopGuardAbortSent || !this.agentRunning) return { steering: [], followUp: [] }
+    this.autoContinue.invalidate()
+    if (this.loopGuard.blocking) {
+      await this.loopGuard.stopTask
+      if (this.loopGuard.abortSent || !this.agentRunning) return { steering: [], followUp: [] }
     }
     this.cancelImages()
     this.cancelApprovals?.(this.approvalOwner())
@@ -3571,7 +3486,7 @@ export class AgentController extends EventEmitter {
         if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
         if (!result.success) return { ...cleared, error: result.error ?? pick('命令停止尚未确认', 'Command stop not confirmed yet') }
       }
-      if (!this.loopGuardAbortSent && rpc) {
+      if (!this.loopGuard.abortSent && rpc) {
         const result = await rpc.command('abort')
         if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
         if (!result.success) return { ...cleared, error: result.error ?? pick('会话停止尚未确认', 'Session stop not confirmed yet') }
@@ -3644,7 +3559,7 @@ export class AgentController extends EventEmitter {
 
   async runBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    if (this.acpConnection) return { ok: false, error: pick('请先切回 Pi 再使用输入框的终端模式。', 'Switch back to Pi to use the composer terminal mode.') }
+    if (this.acp.connection) return { ok: false, error: pick('请先切回 Pi 再使用输入框的终端模式。', 'Switch back to Pi to use the composer terminal mode.') }
     return this.withExecutionAdmission(() => this.runBashAdmitted(command, options))
   }
 
@@ -3772,6 +3687,10 @@ export class AgentController extends EventEmitter {
     return this.bash !== null
   }
 
+  private assertSessionIdle(): void {
+    if (this.executionActive() || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
+  }
+
   private releaseComputerControl(): void {
     void this.releaseComputerControlNow()
   }
@@ -3787,13 +3706,10 @@ export class AgentController extends EventEmitter {
   }
 
   private resetSessionScope(): void {
-    this.acpTurn?.delegation.abort()
-    void this.closeAntigravity()
-    this.acpPreferenceSessionId = undefined
+    this.acp.resetScope()
     this.releaseComputerControl()
     this.clearPendingModelChange()
-    this.loopGuardContinuationVersion += 1
-    this.loopGuardAutoContinueCount = 0
+    this.autoContinue.restart()
     if (this.bash) void endTreeSnapshot(this.bash.msgId).catch(() => null)
     this.bash = null
     this.streaming = null
@@ -4016,8 +3932,8 @@ export class AgentController extends EventEmitter {
   }
 
   async compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }> {
-    this.loopGuardContinuationVersion += 1
-    if (this.acpConnection) return this.compactAntigravity('manual', customInstructions)
+    this.autoContinue.invalidate()
+    if (this.acp.connection) return this.acp.compact('manual', customInstructions)
     if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const trimmed = typeof customInstructions === 'string' ? customInstructions.trim() : ''
     const payload: Record<string, unknown> = trimmed ? { customInstructions: trimmed } : {}
@@ -4053,27 +3969,14 @@ export class AgentController extends EventEmitter {
 
   async nativeNavigate(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
     if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
-    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
+    this.assertSessionIdle()
     const admission = this.operations.acquire('rewind', this.capabilityOpts?.runnerGeneration)
     if (!admission.ok) throw new Error(admission.error)
     try {
       const result = await this.nativeRuntime.navigateTree(entryId, options)
       if (!result.cancelled) {
         this.nativeBranchView = true
-        if (this.acpConnection) {
-          this.acpConnection.acpSessionId = undefined
-          this.acpConnection.acpCwd = undefined
-          this.acpConnection.acpHeadEntryId = undefined
-          this.acpConnection.hasContext = false
-          await this.persistAntigravityPreference(this.acpConnection).catch(() => undefined)
-          if (this.acpConnection.session) {
-            const session = this.acpConnection.session
-            this.acpConnection.session = undefined
-            this.acpConnection.bridgeConfigured = undefined
-            this.acpConnection.mode = undefined
-            await session.close()
-          }
-        }
+        if (this.acp.connection) await this.acp.forgetContext()
         this.queue.reset()
         this.ui.cancelPending()
         await this.hydrate()
@@ -4086,14 +3989,14 @@ export class AgentController extends EventEmitter {
 
   async nativeSetLabel(entryId: string, label: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
-    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
+    this.assertSessionIdle()
     await this.nativeRuntime.setLabel(entryId, label)
     return { ok: true }
   }
 
   async nativeReload(): Promise<void> {
     if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
-    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
+    this.assertSessionIdle()
     const admission = this.operations.acquire('reload', this.capabilityOpts?.runnerGeneration)
     if (!admission.ok) throw new Error(admission.error)
     const rpc = this.rpc
@@ -4141,7 +4044,7 @@ export class AgentController extends EventEmitter {
     if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
     const result = trusted ? await allowTrust(this.cwd) : await revokeTrust(this.cwd)
     if (!result.ok) throw new Error(result.error ?? pick('项目信任保存失败', 'Failed to save project trust'))
-    this.markAntigravityMcpChanged('config')
+    this.acp.markMcpChanged('config')
   }
 
   private enqueueCapabilityChange<T>(work: () => Promise<T>): Promise<T | { ok: false; error: string }> {
@@ -4204,1339 +4107,16 @@ export class AgentController extends EventEmitter {
   }
 
   async setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
-    this.loopGuardContinuationVersion += 1
+    this.autoContinue.invalidate()
     return this.enqueueCapabilityChange(async () => {
-      if (provider === ANTIGRAVITY_PROVIDER || this.acpConnection) {
+      if (provider === ANTIGRAVITY_PROVIDER || this.acp.connection) {
         if (this.shouldDeferModelSwitch() || this.state?.pendingMessageCount) return { ok: false, error: pick('等当前回复和队列结束后再切换运行后端。', 'Wait for the current reply and queue to finish before switching backends.') }
-        if (provider === ANTIGRAVITY_PROVIDER) return this.withOperation('reload', undefined, () => this.selectAntigravity(modelId))
-        return this.withOperation('reload', undefined, async () => {
-          const connection = this.acpConnection
-          const result = await this.applyModel(provider, modelId)
-          if (result.ok && connection && this.acpConnection === connection) {
-            try {
-              await saveAntigravityPreference(connection.sessionId, null)
-            } catch (error) {
-              return { ok: false, error: String(error) }
-            }
-            await this.closeAntigravity()
-            await this.refreshState()
-          }
-          return result
-        })
+        if (provider === ANTIGRAVITY_PROVIDER) return this.withOperation('reload', undefined, () => this.acp.select(modelId))
+        return this.withOperation('reload', undefined, () => this.acp.leaveFor(() => this.applyModel(provider, modelId)))
       }
       if (this.shouldDeferModelSwitch()) return this.deferModelSwitch({ provider, modelId })
       return this.applyModel(provider, modelId)
     })
-  }
-
-  private publishAcpQueue(): void {
-    this.push({ ch: 'queue', payload: { steering: [...this.acpQueue.steering], followUp: [...this.acpQueue.followUp] } })
-    if (this.state) {
-      const pendingMessageCount = this.acpQueue.steering.length + this.acpQueue.followUp.length
-      if (this.state.pendingMessageCount !== pendingMessageCount) {
-        this.state = { ...this.state, pendingMessageCount }
-        this.push({ ch: 'state', payload: this.state })
-      }
-    }
-  }
-
-  private enqueueAntigravity(
-    lane: 'steering' | 'followUp',
-    text: string,
-    images?: QueueItem['images'],
-    expectGeneration?: number
-  ): { ok: boolean; error?: string } {
-    if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-    let media
-    try { media = normalizeAntigravityImages(images) }
-    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-    if (!text.trim() && media.length === 0) return { ok: false, error: pick('消息为空，无法发送。', 'Cannot send an empty message.') }
-    if (media.length > 0 && this.acpConnection?.supportsImages === false) {
-      return { ok: false, error: pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.') }
-    }
-    const item: QueueItem = {
-      id: randomUUID(),
-      text,
-      ...(media.length ? { images: media.map((img) => ({ data: img.data, mimeType: img.mimeType })) } : {})
-    }
-    this.acpQueue = {
-      steering: lane === 'steering' ? [...this.acpQueue.steering, item] : this.acpQueue.steering,
-      followUp: lane === 'followUp' ? [...this.acpQueue.followUp, item] : this.acpQueue.followUp
-    }
-    this.publishAcpQueue()
-    if (lane === 'steering') this.interjectAntigravity()
-    return { ok: true }
-  }
-
-  private interjectAntigravity(): void {
-    const turn = this.acpTurn
-    const connection = this.acpConnection
-    const item = this.acpQueue.steering[0]
-    if (!turn || !connection || !item || turn.stopped || turn.interjected || turn.steer) return
-    if (turn.session.canStartSteer && connection.session === turn.session) {
-      const notices = this.acpHeldNotices
-      const text = notices.length ? `${notices.join('\n\n')}\n\n${item.text}` : item.text
-      let prompt: AntigravitySteer | undefined
-      try {
-        prompt = turn.session.steerPrompt(antigravityPrompt(text, []), connection.model.id, connection.thinking?.current, connection.mode, item.images)
-      } catch {
-        return
-      }
-      if (prompt) {
-        turn.steer = { item, prompt }
-        this.acpHeldNotices = []
-        this.acpQueue.steering.shift()
-        this.publishAcpQueue()
-      }
-      return
-    }
-    turn.interjected = true
-    turn.session.cancel()
-    turn.cancel?.()
-  }
-
-  private editAntigravityQueueItem(
-    queueId: string,
-    steer: boolean,
-    guard?: (state: QueueState) => string | null
-  ): { ok: boolean; text?: string; images?: QueueItem['images']; error?: string } {
-    const blocked = guard?.(this.queueItems())
-    if (blocked) return { ok: false, error: blocked }
-    const next: QueueState = { steering: [...this.acpQueue.steering], followUp: [...this.acpQueue.followUp] }
-    let target: QueueItem | undefined
-    for (const lane of ['steering', 'followUp'] as const) {
-      const idx = next[lane].findIndex((item) => item.id === queueId)
-      if (idx >= 0) {
-        target = next[lane].splice(idx, 1)[0]
-        break
-      }
-    }
-    if (!target) return { ok: false, error: pick('排队消息已不存在', 'Queued message no longer exists') }
-    if (steer) next.steering.push(target)
-    this.acpQueue = next
-    this.publishAcpQueue()
-    if (steer) this.interjectAntigravity()
-    return { ok: true, text: target.text, ...(target.images?.length ? { images: target.images } : {}) }
-  }
-
-  private async closeAntigravity(): Promise<void> {
-    const connection = this.acpConnection
-    this.acpConnection = undefined
-    if (this.acpMcpRefreshTimer) {
-      clearTimeout(this.acpMcpRefreshTimer)
-      this.acpMcpRefreshTimer = undefined
-    }
-    this.acpMcpWatcher?.close()
-    this.acpMcpWatcher = undefined
-    this.acpMcpWatchCwd = undefined
-    const nativeMcp = this.acpNativeMcp
-    this.acpNativeMcp = undefined
-    this.acpCompactHold = undefined
-    this.acpHeldNotices = []
-    this.acpTurn?.delegation.abort()
-    this.acpTurn?.cancel?.()
-    this.acpCompacting?.abort.abort()
-    if (this.acpQueue.steering.length || this.acpQueue.followUp.length) {
-      this.acpQueue = { steering: [], followUp: [] }
-      this.publishAcpQueue()
-    }
-    if (this.acpTodos.length) {
-      this.acpTodos = []
-      this.push({ ch: 'todos', payload: [] })
-    }
-    await Promise.allSettled([connection?.session?.close(), nativeMcp?.close()])
-  }
-
-  private async compactAntigravity(
-    reason: 'manual' | 'threshold',
-    customInstructions?: string
-  ): Promise<{ ok: boolean; error?: string; aborted?: boolean }> {
-    return this.runAntigravityCompaction(reason, customInstructions)
-  }
-
-  private async runAntigravityCompaction(
-    reason: 'manual' | 'threshold',
-    customInstructions?: string,
-    options?: { holdAdmission?: boolean }
-  ): Promise<{ ok: boolean; error?: string; aborted?: boolean }> {
-    const initial = this.acpConnection
-    const native = this.nativeRuntime
-    if (!this.rpc || !initial) return { ok: false, error: pick('Antigravity 尚未就绪', 'Antigravity is not ready') }
-    if (!native?.bridgeCapabilities.includes('append_antigravity_compaction')) {
-      return { ok: false, error: pick('当前 Pi 会话不支持写入 Antigravity 压缩记录。', 'This Pi session cannot save Antigravity compaction records.') }
-    }
-    if (this.executionActive()) return { ok: false, error: pick('请等当前操作结束后再压缩会话。', 'Wait for the current operation to finish before compacting.') }
-    let lease: ReturnType<AgentController['operations']['acquire']> | null = null
-    if (!options?.holdAdmission) {
-      lease = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
-      if (!lease.ok) return { ok: false, error: lease.error }
-      const execution = this.claimExecutionAdmission()
-      if (!execution.ok) {
-        this.operations.release(lease.lease)
-        return execution
-      }
-    }
-    const owner = this.asyncOwner()
-    const ownsCompact = () => this.ownerCurrent(owner) && this.state?.sessionId === initial.sessionId && this.acpConnection === initial
-    const startedAt = Date.now()
-    const abort = new AbortController()
-    const compacting = { abort, done: Promise.resolve(), sessionId: initial.sessionId }
-    this.acpCompacting = compacting
-    this.compactionState = { ...this.compactionState, running: { status: 'running', reason, startedAt } }
-    if (this.state) {
-      this.state = {
-        ...this.state,
-        isCompacting: true,
-        isStreaming: true,
-        compaction: this.compactionState.running ?? undefined
-      }
-      this.push({ ch: 'state', payload: this.state })
-    }
-    const summarizeOnSession = (proc: AntigravitySession, promptText: string, expectedMode: string): Promise<string> => {
-      if (abort.signal.aborted) return Promise.reject(new Error('Compaction cancelled'))
-      let out = ''
-      let abortedHere = false
-      const onAbort = () => {
-        abortedHere = true
-        proc.cancel()
-      }
-      abort.signal.addEventListener('abort', onAbort, { once: true })
-      proc.onEvent = (event) => {
-        if (event.type === 'text') out += event.text
-        else if (event.type === 'question') proc.reply(event.id, null)
-        else if (event.type === 'permission') {
-          const deny = event.options.find((option) => !option.allow)
-          proc.reply(event.id, deny?.id ?? null)
-        }
-      }
-      return proc.prompt(promptText, initial.model.id, initial.thinking?.current, expectedMode).then((stopReason) => {
-        if (abortedHere || abort.signal.aborted || stopReason === 'cancelled') throw new Error('Compaction cancelled')
-        if (stopReason !== 'end_turn') throw new Error(antigravityStopError(stopReason))
-        return out.trim()
-      }).finally(() => {
-        abort.signal.removeEventListener('abort', onAbort)
-      })
-    }
-    let result: { ok: boolean; error?: string; aborted?: boolean } = { ok: false }
-    const task = (async () => {
-      try {
-        const sessionFile = this.state?.sessionFile
-        const full = sessionFile ? await this.readHistoryOf(sessionFile, true) : null
-        if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
-        if (sessionFile && (!full || full.truncated || full.missing)) {
-          throw new Error(pick('未能读取完整的会话历史，已取消压缩以避免遗漏上下文。', 'Could not read the full session history; compaction cancelled to avoid losing context.'))
-        }
-        const rawMessages = this.nativeBranchView && full
-          ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...this.messages.filter((message) => !message.id.startsWith('history:'))]
-          : full?.messages ?? this.messages
-        const previousSummary = full?.compaction?.summary
-        const inContext = sliceInContextMessages(rawMessages, full?.compaction)
-        const plan = planAntigravityCompaction(inContext, { previousSummary })
-        if (!plan.ok) {
-          const message = plan.reason === 'already-compacted'
-            ? pick('Already compacted', 'Already compacted')
-            : pick('Nothing to compact', 'Nothing to compact')
-          this.compactionState = {
-            running: null,
-            last: { status: reason === 'threshold' ? 'declined' : 'failed', reason, startedAt, endedAt: Date.now(), error: message }
-          }
-          result = reason === 'threshold'
-            ? { ok: true }
-            : { ok: false, error: plan.reason === 'already-compacted' ? pick('当前会话刚刚压缩过，暂无新内容可压缩。', 'Already compacted; no new messages to compact.') : pick('当前没有可压缩的会话内容。', 'Nothing to compact in this session.') }
-          return
-        }
-        const modelKey = modelKeyOf(initial.model)
-        const lastAssistant = inContext.findLast((message) => message.role === 'assistant')
-        const reportedUsed = initial.session?.context?.used
-          ?? (lastAssistant?.model === modelKey ? lastAssistant?.antigravity?.context?.used : undefined)
-        const tokensBefore = typeof reportedUsed === 'number' && reportedUsed > 0 ? reportedUsed : plan.estimatedTokens
-        const language = detectCompactLanguage(inContext)
-        let summaryBody = ''
-        if (initial.hasContext && initial.session) {
-          const live = initial.session
-          try {
-            await live.confirmPromptMode('plan')
-            initial.acpSessionId = undefined
-            initial.acpCwd = undefined
-            initial.acpHeadEntryId = undefined
-            await this.persistAntigravityPreference(initial)
-            if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
-            summaryBody = await summarizeOnSession(
-              live,
-              buildLiveCompactPrompt({ customInstructions, language, keptCount: plan.kept.length }),
-              'plan'
-            )
-          } catch (error) {
-            if (abort.signal.aborted) throw error
-          } finally {
-            if (initial.session === live) {
-              initial.session = undefined
-              initial.hasContext = false
-              initial.bridgeConfigured = undefined
-              initial.mode = undefined
-            }
-            await live.close()
-          }
-        }
-        if (!summaryBody) {
-          if (abort.signal.aborted || !ownsCompact()) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
-          const chunks = serializeCompactChunks(plan.toSummarize)
-          if (!chunks.length) throw new Error('Nothing to compact')
-          const temp = launchAntigravity(this.cwd)
-          const onAbortTemp = () => { void temp.close() }
-          abort.signal.addEventListener('abort', onAbortTemp, { once: true })
-          try {
-            let models = await temp.start(this.cwd, undefined, { discoverOnly: true })
-            if (models.current !== initial.model.id) models = await temp.selectModel(initial.model.id)
-            const thinking = initial.thinking?.current
-            if (thinking && models.thinking?.options.some((option) => option.id === thinking) && models.thinking?.current !== thinking) {
-              models = await temp.selectThinking(thinking)
-            }
-            models = await temp.confirmPromptMode('plan')
-            if (models.current !== initial.model.id || (thinking && models.thinking?.current !== thinking)) {
-              throw new Error(pick('Antigravity 未确认压缩所需的模型或思考档。', 'Antigravity did not confirm the model or effort needed for compaction.'))
-            }
-            let rolling = stripCompactAppendices(previousSummary)
-            for (let index = 0; index < chunks.length; index++) {
-              if (abort.signal.aborted || !ownsCompact()) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
-              rolling = await summarizeOnSession(
-                temp,
-                buildChunkCompactPrompt(chunks[index], {
-                  previousSummary: rolling,
-                  customInstructions,
-                  language,
-                  chunkIndex: index,
-                  totalChunks: chunks.length
-                }),
-                'plan'
-              )
-            }
-            summaryBody = rolling
-          } finally {
-            abort.signal.removeEventListener('abort', onAbortTemp)
-            await temp.close()
-          }
-        }
-        if (!summaryBody.trim()) throw new Error('Compaction produced an empty summary')
-        if (!ownsCompact() || abort.signal.aborted) throw new Error(abort.signal.aborted ? 'Compaction cancelled' : GENERATION_MISMATCH_ERROR)
-        const finalSummary = summaryBody.trim() + buildCompactAppendices(plan.toSummarize, previousSummary)
-        const { entryId } = await native.appendAntigravityCompaction({
-          sessionId: initial.sessionId,
-          summary: finalSummary,
-          ...(plan.firstKeptEntryId ? { firstKeptEntryId: plan.firstKeptEntryId } : {}),
-          tokensBefore,
-          details: { antigravity: true, reason, keptCount: plan.kept.length, summarizedCount: plan.toSummarize.length }
-        })
-        initial.acpSessionId = undefined
-        initial.acpCwd = undefined
-        initial.acpHeadEntryId = undefined
-        await this.persistAntigravityPreference(initial).catch(() => undefined)
-        if (initial.session) {
-          const old = initial.session
-          initial.session = undefined
-          initial.hasContext = false
-          initial.bridgeConfigured = undefined
-          initial.mode = undefined
-          await old.close()
-        }
-        const endedAt = Date.now()
-        const afterTokens = estimateTextTokens(finalSummary) + plan.kept.reduce((sum, message) => sum + estimateAntigravityMessageTokens(message), 0)
-        this.compactionState = {
-          running: null,
-          last: {
-            status: 'completed',
-            reason,
-            startedAt,
-            endedAt,
-            entryId,
-            beforeTokens: tokensBefore,
-            afterTokens,
-            afterMeasured: false,
-            ...(plan.firstKeptEntryId ? { firstKeptEntryId: plan.firstKeptEntryId } : {})
-          }
-        }
-        this.contextFrom = { firstKeptEntryId: plan.firstKeptEntryId ?? entryId, compactedAt: endedAt }
-        this.acpCompactHold = undefined
-        if (this.acpCompacting === compacting) this.acpCompacting = null
-        await this.hydrate({ sessionId: initial.sessionId, sessionFile: this.state?.sessionFile })
-        await this.refreshStats()
-        result = { ok: true }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        const aborted = abort.signal.aborted || /cancel/i.test(message)
-        this.compactionState = {
-          running: null,
-          last: {
-            status: aborted ? 'cancelled' : 'failed',
-            reason,
-            startedAt,
-            endedAt: Date.now(),
-            ...(aborted ? {} : { error: message })
-          }
-        }
-        result = { ok: false, aborted, error: message }
-      } finally {
-        if (this.acpCompacting === compacting) this.acpCompacting = null
-        if (this.state && this.state.sessionId === initial.sessionId) {
-          this.state = {
-            ...this.state,
-            isCompacting: false,
-            isStreaming: !!this.acpTurn,
-            compaction: this.compactionState.running ?? undefined,
-            lastCompaction: this.compactionState.last ?? undefined,
-            ...(this.contextFrom ? { contextFrom: this.contextFrom } : {})
-          }
-          this.push({ ch: 'state', payload: this.state })
-        }
-        if (lease?.ok) {
-          this.operations.release(lease.lease)
-          this.settleExecutionAdmission()
-        }
-      }
-    })()
-    compacting.done = task
-    await task
-    return result
-  }
-
-  private antigravityModel(model: AntigravityModel, thinking?: AntigravityModels['thinking'], supportsImages?: boolean): ModelInfo {
-    return { ...model, provider: ANTIGRAVITY_PROVIDER, reasoning: !!thinking, input: supportsImages === false ? ['text'] : ['text', 'image'], contextWindow: 0 }
-  }
-
-  private bindAntigravity(connection: NonNullable<AgentController['acpConnection']>, session: AntigravitySession): void {
-    this.ensureAntigravityMcpWatcher()
-    session.onEvent = (event) => {
-      if (this.acpConnection !== connection || connection.session !== session) return
-      if (event.type === 'closed') {
-        connection.session = undefined
-        connection.bridgeConfigured = undefined
-        connection.mode = undefined
-        connection.hasContext = false
-        void this.refreshState()
-      } else if (event.type === 'context') {
-        if (!session.busy) void this.refreshStats()
-      } else if (event.type === 'models' && !session.busy && event.models.current === connection.model.id &&
-        (!connection.thinking || event.models.thinking?.current === connection.thinking.current) &&
-        (!connection.mode || event.models.mode === connection.mode)) {
-        connection.thinking = event.models.thinking
-        connection.mode = event.models.mode
-        connection.modes = event.models.modes
-        if (typeof event.models.supportsImages === 'boolean') connection.supportsImages = event.models.supportsImages
-        connection.model = this.antigravityModel(connection.model, connection.thinking, connection.supportsImages)
-        void this.refreshState()
-      } else if (
-        (event.type === 'tool' || event.type === 'plan' || event.type === 'permission' || event.type === 'question' || event.type === 'elicitation' || ((event.type === 'text' || event.type === 'thought') && !!event.text)) &&
-        connection.hasContext &&
-        !session.busy &&
-        !this.acpTurn &&
-        !this.acpCompacting &&
-        !this.executionActive() &&
-        this.nativeRuntime &&
-        this.state?.sessionId === connection.sessionId
-      ) {
-        this.startAntigravityTurn({ connection, session, native: this.nativeRuntime, owner: this.asyncOwner(), firstEvent: event })
-      } else if (event.type === 'question') session.reply(event.id, null)
-      else if (event.type === 'elicitation') session.replyElicitation(event.id, { action: 'cancel' })
-    }
-  }
-
-  private sameAcpCwd(a?: string, b?: string): boolean {
-    if (!a || !b) return false
-    const left = resolve(a)
-    const right = resolve(b)
-    return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
-  }
-
-  private persistAntigravityPreference(connection: NonNullable<AgentController['acpConnection']>): Promise<void> {
-    const model: AntigravityModel = { id: connection.model.id, name: connection.model.name }
-    return saveAntigravityPreference(connection.sessionId, {
-      model,
-      thinking: connection.thinking,
-      modes: connection.modes,
-      supportsImages: connection.supportsImages,
-      ...(connection.acpSessionId && connection.acpCwd
-        ? {
-            acpSessionId: connection.acpSessionId,
-            acpCwd: connection.acpCwd,
-            ...(connection.acpHeadEntryId ? { acpHeadEntryId: connection.acpHeadEntryId } : {})
-          }
-        : {})
-    })
-  }
-
-  private async resolveAntigravityResume(
-    connection: NonNullable<AgentController['acpConnection']> | undefined
-  ): Promise<{ sessionId: string; headEntryId: string } | undefined> {
-    if (!connection?.acpSessionId || !connection.acpHeadEntryId || this.nativeBranchView) return undefined
-    if (!this.sameAcpCwd(connection.acpCwd, this.cwd)) return undefined
-    if (this.state?.sessionFile) {
-      const full = await this.readHistoryOf(this.state.sessionFile, true)
-      if (!full || full.truncated || full.missing) return undefined
-      if (full.compaction && !full.compaction.firstPostEntryId) return undefined
-      const inContext = sliceInContextMessages(full.messages, full.compaction)
-      if (inContext.at(-1)?.entryId !== connection.acpHeadEntryId) return undefined
-      return { sessionId: connection.acpSessionId, headEntryId: connection.acpHeadEntryId }
-    }
-    if (this.messages.at(-1)?.entryId !== connection.acpHeadEntryId) return undefined
-    return { sessionId: connection.acpSessionId, headEntryId: connection.acpHeadEntryId }
-  }
-
-  private async selectAntigravity(modelId: string, restoreThinking?: string, restoreMode?: string, options?: { allowQueued?: boolean }): Promise<{ ok: boolean; error?: string }> {
-    const sessionId = this.state?.sessionId
-    const owner = this.asyncOwner()
-    if (!owner.rpc?.running || !sessionId || !this.nativeRuntime?.bridgeCapabilities.includes('append_antigravity_turn')) {
-      return { ok: false, error: pick('当前会话不能接入 Antigravity。', 'This session cannot use Antigravity.') }
-    }
-    let session: AntigravitySession | undefined
-    try {
-      const previous = this.acpConnection
-      const reuse = previous?.sessionId === sessionId && !previous.mcpStale && previous.session
-      const resumeTarget = !reuse && previous?.sessionId === sessionId ? await this.resolveAntigravityResume(previous) : undefined
-      if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
-      session = reuse || launchAntigravity(this.cwd)
-      const proc = session
-      const host = this.subagentHost
-      const script = this.nativeSessionExtension ? join(dirname(this.nativeSessionExtension), 'antigravity-pi-mcp.mjs') : undefined
-      const nativeMcp = !reuse && script ? (this.acpNativeMcp ??= new McpConnectionManager([])) : undefined
-      const mcp = !reuse && script ? await antigravityMcpServices({
-        agentDir: PI_AGENT_DIR,
-        cwd: this.cwd,
-        trusted: await trustStatus(this.cwd).then(({ trusted }) => trusted, () => false),
-        host: this.mcp.connectionManager(),
-        native: nativeMcp,
-        onToolsListChanged: () => this.markAntigravityMcpChanged('tools')
-      }) : undefined
-      if (mcp) proc.setCleanup(mcp.close)
-      if (mcp) {
-        const cold = await warmAntigravityMcp(mcp.services)
-        if (cold.length) console.warn(`[antigravity-mcp] not ready before session start: ${cold.join(', ')}`)
-        if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
-      }
-      let owned = this.acpDelegatedIds.get(sessionId)
-      if (!owned) {
-        owned = new Set<string>()
-        this.acpDelegatedIds.set(sessionId, owned)
-        if (this.acpDelegatedIds.size > 32) {
-          const oldest = this.acpDelegatedIds.keys().next().value
-          if (oldest) this.acpDelegatedIds.delete(oldest)
-        }
-      }
-      const bridge = mcp && script ? await openAntigravityDelegation(script, () => {
-        const turn = this.acpTurn
-        if (!turn || turn.session !== proc || !this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) return undefined
-        return { signal: turn.delegation.signal, mode: this.acpConnection?.mode, run: host ? (command, params) => host.run(command, params, {
-          cwd: this.cwd, parentSessionId: sessionId, parentSessionFile: this.state?.sessionFile,
-          parentRunId: this.capabilityOpts?.sessionId, parentGeneration: owner.generation,
-          parentMessageId: turn.messages.at(-1)?.id, projectId: this.capabilityOpts?.projectId, fromAntigravity: true
-        }, turn.delegation.signal) : undefined }
-      }, { delegate: !!host, browser: (action, params, signal) => this.browserCommands.runBrowserCommand(action, params, signal), services: mcp.services, commandHost: this.commandHost, owned }) : undefined
-      if (bridge && mcp) proc.setCleanup(async () => { await bridge.close(); await mcp.close() })
-      const explicitMode = restoreMode ?? (previous?.sessionId === sessionId ? previous.modes?.current : undefined)
-      let models = reuse
-        ? await proc.selectModel(modelId)
-        : await proc.start(this.cwd, bridge ? { stdio: bridge.configs, http: bridge.httpConfigs } : undefined, {
-            mode: explicitMode,
-            defaultMode: ANTIGRAVITY_DEFAULT_MODE,
-            ...(resumeTarget ? { resumeSessionId: resumeTarget.sessionId } : {})
-          })
-            .then((options) => options.current === modelId ? options : proc.selectModel(modelId))
-      const prior = previous?.sessionId === sessionId ? previous : undefined
-      const preferredThinking = restoreThinking ?? (prior?.thinking?.current &&
-        models.thinking?.options.some(({ id }) => id === prior.thinking?.current) ? prior.thinking.current : undefined)
-      if (preferredThinking && models.thinking?.current !== preferredThinking) {
-        if (!models.thinking?.options.some(({ id }) => id === preferredThinking)) {
-          throw new Error(pick('已保存的 Antigravity 思考档不可用。请重新选择模型或思考档。', 'The saved Antigravity effort is unavailable. Choose the model or effort again.'))
-        }
-        models = await proc.selectThinking(preferredThinking)
-      }
-      const desiredMode = explicitMode ?? (models.modes?.options.some(({ id }) => id === ANTIGRAVITY_DEFAULT_MODE) ? ANTIGRAVITY_DEFAULT_MODE : undefined)
-      models = await proc.confirmPromptMode(desiredMode)
-      if (preferredThinking && models.thinking?.current !== preferredThinking) {
-        throw new Error(pick('Antigravity 未确认最终设置，未切换会话。', 'Antigravity did not confirm the final settings; the session was not switched.'))
-      }
-      const chosen = models.available.find(({ id }) => id === modelId && id === models.current)
-      if (!chosen) throw new Error(pick('Antigravity 未切到选中的模型。', 'Antigravity did not switch to the selected model.'))
-      if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId || this.executionActive() || (!options?.allowQueued && this.state.pendingMessageCount)) throw new Error(pick('会话状态已变化，未切换模型。', 'The session changed; model not switched.'))
-      const resumed = !reuse && proc.resumed
-      const acpSessionId = proc.acpSessionId || (reuse ? previous?.acpSessionId : undefined)
-      const acpHeadEntryId = reuse ? previous?.acpHeadEntryId : resumed ? resumeTarget?.headEntryId : undefined
-      const selected: NonNullable<AgentController['acpConnection']> = {
-        sessionId,
-        model: this.antigravityModel(chosen, models.thinking, models.supportsImages),
-        thinking: models.thinking,
-        mode: models.mode,
-        modes: models.modes,
-        supportsImages: models.supportsImages,
-        bridgeConfigured: reuse ? previous?.bridgeConfigured : !!bridge && !!host,
-        mcpServers: reuse ? previous?.mcpServers : mcp?.services.map(({ name }) => name),
-        mcpFingerprint: reuse ? previous?.mcpFingerprint : mcp?.fingerprint,
-        session,
-        hasContext: (!!reuse && previous?.hasContext === true) || resumed,
-        ...(acpSessionId ? { acpSessionId, acpCwd: this.cwd } : {}),
-        ...(acpHeadEntryId ? { acpHeadEntryId } : {})
-      }
-      await this.persistAntigravityPreference(selected)
-      if (!this.ownerCurrent(owner) || this.state?.sessionId !== sessionId) throw new Error(GENERATION_MISMATCH_ERROR)
-      this.acpConnection = selected
-      this.bindAntigravity(selected, session)
-      if (!reuse) await previous?.session?.close()
-      await this.refreshState()
-      await this.refreshStats()
-      return { ok: true }
-    } catch (error) {
-      if (session) {
-        const previous = this.acpConnection
-        if (previous?.session === session) {
-          previous.session = undefined
-          previous.bridgeConfigured = undefined
-          previous.mode = undefined
-          previous.hasContext = false
-          void this.refreshState()
-        }
-        await session.close()
-      }
-      if (!this.acpConnection?.session && this.acpNativeMcp) {
-        const nativeMcp = this.acpNativeMcp
-        this.acpNativeMcp = undefined
-        await nativeMcp.close().catch(() => undefined)
-      }
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-
-  private async currentAntigravityMcpFingerprint(): Promise<string> {
-    const trusted = await trustStatus(this.cwd).then(({ trusted }) => trusted, () => false)
-    const hostConfigs = mcpServersForProject(loadMcpServers().servers, this.capabilityOpts?.projectId)
-      .filter((server) => !isInkstoneManaged(server))
-    return antigravityMcpFingerprint({ agentDir: PI_AGENT_DIR, cwd: this.cwd, trusted, hostConfigs })
-  }
-
-  private ensureAntigravityMcpWatcher(): void {
-    if (this.acpMcpWatcher && this.acpMcpWatchCwd === this.cwd) return
-    this.acpMcpWatcher?.close()
-    this.acpMcpWatchCwd = this.cwd
-    this.acpMcpWatcher = watchAntigravityMcpFiles(
-      [join(PI_AGENT_DIR, 'mcp.json'), join(this.cwd, '.pi', 'mcp.json'), mcpServersFile()],
-      () => this.markAntigravityMcpChanged('config')
-    )
-  }
-
-  private markAntigravityMcpChanged(kind: 'config' | 'tools'): void {
-    if (!this.acpConnection) return
-    this.acpConnection.mcpStale = true
-    if (kind === 'tools') this.acpConnection.mcpToolsStale = true
-    this.scheduleAntigravityMcpRefresh()
-  }
-
-  private scheduleAntigravityMcpRefresh(delayMs = 150): void {
-    if (this.acpMcpRefreshTimer) {
-      clearTimeout(this.acpMcpRefreshTimer)
-      this.acpMcpRefreshTimer = undefined
-    }
-    const conn = this.acpConnection
-    if (!conn?.mcpStale || !conn.session || this.stopping) return
-    this.acpMcpRefreshTimer = setTimeout(() => {
-      this.acpMcpRefreshTimer = undefined
-      void this.refreshStaleAntigravity()
-    }, delayMs)
-    this.acpMcpRefreshTimer.unref?.()
-  }
-
-  private async refreshStaleAntigravity(): Promise<void> {
-    if (this.acpMcpRefreshTask) return this.acpMcpRefreshTask
-    const conn = this.acpConnection
-    if (!conn?.mcpStale || !conn.session || this.stopping || this.acpTurn || this.acpCompacting ||
-      this.executionActive() || this.state?.pendingMessageCount || conn.session.busy || this.operations.busy().length) {
-      return
-    }
-    let task: Promise<void>
-    task = this.enqueueCapabilityChange(async () => {
-      const current = this.acpConnection
-      if (!current || current !== conn || !current.mcpStale || !current.session || this.stopping ||
-        this.acpTurn || this.acpCompacting || this.executionActive() || this.state?.pendingMessageCount || current.session.busy) {
-        return { ok: true }
-      }
-      if (!current.mcpToolsStale && current.mcpFingerprint !== undefined) {
-        const latestFingerprint = await this.currentAntigravityMcpFingerprint().catch(() => undefined)
-        if (this.acpConnection !== current || !current.session) return { ok: true }
-        if (latestFingerprint === current.mcpFingerprint) {
-          current.mcpStale = false
-          return { ok: true }
-        }
-      }
-      return this.withOperation('reload', undefined, async () => {
-        const active = this.acpConnection
-        if (!active || active !== conn || !active.mcpStale || !active.session || this.stopping ||
-          this.acpTurn || this.acpCompacting || this.executionActive() || this.state?.pendingMessageCount || active.session.busy) {
-          return { ok: true }
-        }
-        await this.mcp.syncChanged({ immediate: true })
-        return this.selectAntigravity(active.model.id, active.thinking?.current, active.mode ?? active.modes?.current, { allowQueued: true })
-      })
-    }).then(() => undefined, () => undefined).finally(() => {
-      if (this.acpMcpRefreshTask === task) this.acpMcpRefreshTask = undefined
-    })
-    this.acpMcpRefreshTask = task
-    return task
-  }
-
-  async reloadAntigravityMcp(): Promise<{ ok: boolean; error?: string }> {
-    if (!this.acpConnection) return { ok: true }
-    if (this.acpMcpRefreshTimer) {
-      clearTimeout(this.acpMcpRefreshTimer)
-      this.acpMcpRefreshTimer = undefined
-    }
-    this.acpConnection.mcpStale = true
-    this.acpConnection.mcpToolsStale = true
-    if (!this.acpConnection.session) return { ok: true }
-    if (this.acpMcpRefreshTask) await this.acpMcpRefreshTask.catch(() => undefined)
-    const conn = this.acpConnection
-    if (!conn || !conn.mcpStale || !conn.session) return { ok: true }
-    return this.enqueueCapabilityChange(() => this.withOperation('reload', undefined, async () => {
-      const active = this.acpConnection
-      if (!active || active !== conn) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-      if (!active.session) return { ok: true }
-      await this.mcp.syncChanged({ immediate: true })
-      return this.selectAntigravity(active.model.id, active.thinking?.current, active.mode ?? active.modes?.current, { allowQueued: true })
-    }))
-  }
-
-  private async sendAntigravity(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }> {
-    const initial = this.acpConnection
-    const native = this.nativeRuntime
-    if (!initial || !native || this.executionActive() || !this.queue.isEmpty() || (!text.trim() && !images?.length)) {
-      return { ok: false, error: pick('当前不能发送 Antigravity 消息。', 'Cannot send an Antigravity message right now.') }
-    }
-    if (this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-    let media
-    try { media = normalizeAntigravityImages(images) }
-    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-    if (initial.session && !initial.mcpStale && initial.mcpFingerprint !== undefined) {
-      const latestFingerprint = await this.currentAntigravityMcpFingerprint().catch(() => undefined)
-      if (this.acpConnection !== initial || this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-      if (latestFingerprint !== undefined && latestFingerprint !== initial.mcpFingerprint) initial.mcpStale = true
-    }
-    if (!initial.session || initial.mcpStale) {
-      if (initial.mcpStale) await this.mcp.syncChanged({ immediate: true })
-      const reconnected = await this.selectAntigravity(initial.model.id, initial.thinking?.current, undefined, { allowQueued: true })
-      if (!reconnected.ok) return reconnected
-    }
-    let connection = this.acpConnection
-    let session = connection?.session
-    if (!connection || !session || connection.sessionId !== initial.sessionId || this.executionActive()) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-    if (media.length > 0 && connection.supportsImages === false) {
-      return { ok: false, error: pick('当前 Antigravity CLI 未声明支持图片输入。', 'The current Antigravity CLI does not advertise image input support.') }
-    }
-    const owner = this.asyncOwner()
-    const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection?.sessionId && this.acpConnection === connection
-    const loadHandoff = async (): Promise<{ ok: true; history: UIMessage[]; compactionSummary?: string } | { ok: false; error: string }> => {
-      let list = connection!.hasContext ? [] : this.messages
-      let summary: string | undefined
-      if (!connection!.hasContext && this.state?.sessionFile) {
-        const sessionFile = this.state.sessionFile
-        const full = await this.readHistoryOf(sessionFile, true)
-        if (!ownsTurn() || connection!.session !== session) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-        if (!full && !list.length && !this.nativeBranchView) {
-          const notYetPersisted = await lstat(sessionFile).then(() => false, (error: NodeJS.ErrnoException) => error.code === 'ENOENT')
-          if (notYetPersisted) {
-            const snapshot = await owner.rpc?.command<{ entries: { type: string }[] }>('get_entries').catch(() => null)
-            if (!ownsTurn() || connection!.session !== session || this.state?.sessionFile !== sessionFile) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-            const entries = snapshot?.data?.entries
-            if (snapshot?.success && Array.isArray(entries) && entries.every((entry) => entry?.type === 'model_change' || entry?.type === 'thinking_level_change' || entry?.type === 'session_info')) {
-              return { ok: true, history: [] }
-            }
-          }
-        }
-        if (!full || full.truncated || full.missing) return { ok: false, error: pick('未能读取完整的 Antigravity 交接历史。消息未发送，原记录未改动。', 'Could not read the full Antigravity handoff history. Nothing was sent or changed.') }
-        const rawHistory = this.nativeBranchView
-          ? [...full.messages.filter((message) => message.id.startsWith('history:')), ...list.filter((message) => !message.id.startsWith('history:'))]
-          : full.messages
-        list = sliceInContextMessages(rawHistory, full.compaction)
-        summary = full.compaction?.summary
-      }
-      return { ok: true, history: list, compactionSummary: summary }
-    }
-    let handoff = await loadHandoff()
-    if (!handoff.ok) return handoff
-    await this.terminalNotices.flushHeld()
-    if (!ownsTurn() || connection.session !== session || this.acpTurn) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-    const heldNotices = this.acpHeldNotices.length ? [...this.acpHeldNotices] : []
-    const promptText = heldNotices.length ? `${heldNotices.join('\n\n')}\n\n${text}` : text
-    let prompt: string
-    try {
-      prompt = antigravityPrompt(promptText, handoff.history, handoff.compactionSummary)
-    } catch (error) {
-      if (error instanceof AntigravityHandoffLimitError && !connection.hasContext && handoff.history.length > 0 && this.state?.autoCompactionEnabled !== false) {
-        this.push({ ch: 'notify', payload: { id: `acp-handoff-compact-${Date.now()}`, method: 'notify', notifyType: 'info',
-          message: pick('冷交接历史超出 Antigravity 单条上限，正在自动压缩上下文后继续发送…', 'Handoff history exceeds Antigravity\'s single-prompt limit; compacting context before sending…') } })
-        const compacted = await this.runAntigravityCompaction('threshold', undefined, { holdAdmission: true })
-        if (!this.ownerCurrent(owner) || this.state?.sessionId !== initial.sessionId) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-        if (!compacted.ok) return { ok: false, error: compacted.error ?? error.message }
-        const reconnected = await this.selectAntigravity(connection.model.id, connection.thinking?.current, undefined, { allowQueued: true })
-        if (!reconnected.ok) return reconnected
-        connection = this.acpConnection
-        session = connection?.session
-        if (!connection || !session || connection.sessionId !== initial.sessionId || this.executionActive()) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-        handoff = await loadHandoff()
-        if (!handoff.ok) return handoff
-        try {
-          prompt = antigravityPrompt(promptText, handoff.history, handoff.compactionSummary)
-        } catch (retryError) {
-          return { ok: false, error: retryError instanceof Error ? retryError.message : String(retryError) }
-        }
-      } else {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) }
-      }
-    }
-    if (!this.confirmExecutionAdmission()) return { ok: false, error: pick('会话运行许可已失效，请重新发送。', 'Execution admission expired. Send the message again.') }
-    if (heldNotices.length) this.acpHeldNotices.splice(0, heldNotices.length)
-    const titleOnSend = !this.state?.sessionName && !this.messages.some((m) => m.role === 'user')
-    this.startAntigravityTurn({ connection, session, native, owner, userText: text, media, prompt })
-    if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images: media } })
-    return { ok: true }
-  }
-
-  private startAntigravityTurn(options: {
-    connection: NonNullable<AgentController['acpConnection']>
-    session: AntigravitySession
-    native: NativeSessionRuntime
-    owner: ReturnType<AgentController['asyncOwner']>
-    userText?: string
-    media?: { data: string; mimeType: string }[]
-    prompt?: string
-    steer?: AntigravitySteer
-    stopped?: boolean
-    delegation?: AbortController
-    firstEvent?: AntigravityEvent
-  }): void {
-    const { connection, session, native, owner } = options
-    const media = options.media ?? []
-    const prompted = options.prompt !== undefined || !!options.steer
-    const ownsTurn = () => this.ownerCurrent(owner) && this.state?.sessionId === connection.sessionId && this.acpConnection === connection
-    const startedAt = Date.now()
-    const startedMono = performance.now()
-    const modelId = `${ANTIGRAVITY_PROVIDER}/${connection.model.id}`
-    const userImages = media.length
-      ? media.map(({ data, mimeType }) => ({ mimeType, data: '', url: this.localizeHistoryImage(mimeType, data) }))
-      : undefined
-    const user: UIMessage | undefined = prompted
-      ? { id: `acp-${randomUUID()}`, role: 'user', text: options.userText ?? '', ...(userImages ? { images: userImages } : {}), timestamp: startedAt }
-      : undefined
-    const makeStep = (timestamp: number): UIMessage => ({ id: `acp-${randomUUID()}`, role: 'assistant', text: '', model: modelId, timestamp })
-    let currentStep = makeStep(startedAt)
-    const steps: UIMessage[] = [currentStep]
-    const stepCalls = new Map<string, Map<string, UIToolCall>>([[currentStep.id, new Map()]])
-    const toolStep = new Map<string, UIMessage>()
-    const approvals = new Map<number, AbortController>()
-    const runContext = this.runObserverContext()
-    const observe = (signal: RunSignal): void => {
-      if (runContext) this.runObserver?.(runContext, signal)
-    }
-    const turn: NonNullable<AgentController['acpTurn']> = this.acpTurn = {
-      session,
-      done: Promise.resolve(),
-      stopped: options.stopped === true,
-      interjected: false,
-      messages: user ? [user, currentStep] : [currentStep],
-      delegation: options.delegation ?? new AbortController(),
-      startedAt,
-      runContext
-    }
-    let stepStartMono = startedMono
-    let firstTokenMono: number | undefined
-    let lastTokenMono: number | undefined
-    let firstTextAt: number | undefined
-    let produced = false
-    let lastTextAt: number | undefined
-    let continuousOutput = true
-    let turnContext: NonNullable<UIMessage['antigravity']>['context']
-    let turnUsage: NonNullable<UIMessage['antigravity']>['usage']
-    const buildStepGenTiming = (): UIMessage['generationTiming'] | undefined => {
-      if (firstTokenMono === undefined || lastTokenMono === undefined) return undefined
-      const ttftMs = Math.max(0, Math.round(firstTokenMono - stepStartMono))
-      const decodeMs = Math.max(0, Math.round(lastTokenMono - firstTokenMono))
-      const outputDecodeMs = firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt
-        ? Math.max(0, Math.round(lastTextAt - firstTextAt))
-        : undefined
-      const durationMs = Math.max(ttftMs + decodeMs, Math.round(lastTokenMono - stepStartMono))
-      return {
-        startEvent: 'turn_start',
-        ttftMs,
-        decodeMs,
-        ...(outputDecodeMs !== undefined ? { outputDecodeMs } : {}),
-        durationMs
-      }
-    }
-    const settleStepThinking = (step: UIMessage, now: number): boolean => {
-      if (!step.thinkingLive) return false
-      step.thinkingLive = false
-      if (step.thinkingStartedAt !== undefined) {
-        step.thinkingMs = (step.thinkingMs ?? 0) + Math.max(0, now - step.thinkingStartedAt)
-      }
-      return true
-    }
-    const advanceStep = (now: number): UIMessage => {
-      if (!currentStep.toolCalls?.length) return currentStep
-      const prevTiming = buildStepGenTiming()
-      if (prevTiming) currentStep.generationTiming = prevTiming
-      const settled = settleStepThinking(currentStep, now)
-      if (settled || prevTiming) {
-        this.push({ ch: 'msg-update', payload: { id: currentStep.id, patch: { ...(settled ? { thinkingLive: false, thinkingMs: currentStep.thinkingMs } : {}), ...(prevTiming ? { generationTiming: prevTiming } : {}) } } })
-      }
-      currentStep = makeStep(now)
-      steps.push(currentStep)
-      stepCalls.set(currentStep.id, new Map())
-      turn.messages.push(currentStep)
-      stepStartMono = performance.now()
-      firstTokenMono = undefined
-      lastTokenMono = undefined
-      firstTextAt = undefined
-      lastTextAt = undefined
-      continuousOutput = true
-      this.push({ ch: 'msg-add', payload: { ...currentStep } })
-      return currentStep
-    }
-    let settleTimer: NodeJS.Timeout | null = null
-    let unsolicitedSettled = false
-    let finishUnsolicited: ((reason: string) => void) | undefined
-    let failUnsolicited: ((error: Error) => void) | undefined
-    const clearSettleTimer = (): void => {
-      if (settleTimer) clearTimeout(settleTimer)
-      settleTimer = null
-    }
-    const isWaitingSchedule = (call: UIToolCall): boolean => {
-      if (call.status !== 'running' || call.name !== 'Run schedule' || (call.details as { kind?: string } | undefined)?.kind !== 'other') return false
-      const duration = (call.args as { DurationSeconds?: unknown } | null)?.DurationSeconds
-      return typeof duration === 'number' && Number.isFinite(duration) && duration > 0
-    }
-    const hasActiveWork = (): boolean =>
-      approvals.size > 0 || steps.some((step) => step.toolCalls?.some((call) =>
-        (call.status === 'pending' || call.status === 'running') && !isWaitingSchedule(call) &&
-        !((call.details as { kind?: string } | undefined)?.kind === 'execute' && (call.args as { IsDaemon?: boolean } | undefined)?.IsDaemon === true)))
-    const rawIdle = Number(process.env.YAN_ACP_UNSOLICITED_IDLE_MS)
-    const customIdle = Number.isFinite(rawIdle) && rawIdle >= 50 && rawIdle <= 10_000 ? rawIdle : undefined
-    const textIdleMs = customIdle ?? 2_000
-    const usageIdleMs = Math.min(800, textIdleMs)
-    const thinkingIdleMs = customIdle ? customIdle * 3 : 30_000
-    const toolWaitIdleMs = customIdle ? customIdle * 4 : 60_000
-    const scheduleSettle = (overrideMs?: number): void => {
-      if (prompted || unsolicitedSettled) return
-      clearSettleTimer()
-      if (approvals.size > 0) return
-      if (hasActiveWork()) {
-        settleTimer = scheduleAntigravityToolIdleTimeout((error) => failUnsolicited?.(error), customIdle ? customIdle * 4 : undefined)
-        return
-      }
-      const delay = overrideMs ?? (
-        currentStep.text.trim().length > 0 && !currentStep.toolCalls?.length && !currentStep.thinkingLive
-          ? textIdleMs
-          : currentStep.thinkingLive
-            ? thinkingIdleMs
-            : toolWaitIdleMs
-      )
-      settleTimer = setTimeout(() => { finishUnsolicited?.('end_turn') }, delay)
-      settleTimer.unref?.()
-    }
-    currentStep.antigravity = {}
-    if (this.acpTodos.length) {
-      this.acpTodos = []
-      this.push({ ch: 'todos', payload: [] })
-    }
-    this.runFromUser = prompted && !isSubagentNotice(options.userText ?? '') && !isHostTextNotice(options.userText ?? '')
-    if (options.steer && this.agentRunning && this.state) {
-      this.state = { ...this.state, runStartedAt: startedAt }
-      this.push({ ch: 'state', payload: this.state })
-    }
-    this.setAgentRunning(true)
-    this.markStreaming(true)
-    observe({ type: 'agent-start' })
-    observe({ type: 'activity', activity: 'waiting-model' })
-    if (user) this.push({ ch: 'msg-add', payload: user })
-    this.push({ ch: 'msg-add', payload: { ...currentStep } })
-    const handleEvent = (event: AntigravityEvent): void => {
-      if (!ownsTurn()) return
-      if (event.type === 'text' || event.type === 'thought' || event.type === 'tool' || event.type === 'plan') produced = true
-      if (event.type === 'text' && !turn.stopped && !turn.interjected) {
-        if (!event.text) return
-        const now = Date.now()
-        const step = advanceStep(now)
-        const settled = settleStepThinking(step, now)
-        const mono = performance.now()
-        firstTokenMono ??= mono
-        lastTokenMono = mono
-        lastTextAt = mono
-        firstTextAt ??= mono
-        step.text += event.text
-        const gt = buildStepGenTiming()
-        if (gt) step.generationTiming = gt
-        this.push({ ch: 'msg-update', payload: { id: step.id, patch: { textDelta: event.text, thinkingLive: false, ...(settled ? { thinkingMs: step.thinkingMs } : {}), ...(gt ? { generationTiming: gt } : {}) } } })
-        observe({ type: 'activity', activity: 'streaming' })
-        scheduleSettle()
-      } else if (event.type === 'thought' && !turn.stopped && !turn.interjected && event.text) {
-        const now = Date.now()
-        const step = advanceStep(now)
-        if (firstTextAt !== undefined) continuousOutput = false
-        const mono = performance.now()
-        firstTokenMono ??= mono
-        lastTokenMono = mono
-        if (!step.thinkingLive) step.thinkingStartedAt = now
-        step.thinkingLive = true
-        step.thinking = (step.thinking ?? '') + event.text
-        const gt = buildStepGenTiming()
-        if (gt) step.generationTiming = gt
-        this.push({ ch: 'msg-update', payload: { id: step.id, patch: { thinkingDelta: event.text, thinkingStartedAt: step.thinkingStartedAt, thinkingLive: true, ...(gt ? { generationTiming: gt } : {}) } } })
-        observe({ type: 'activity', activity: 'thinking' })
-        scheduleSettle()
-      } else if (event.type === 'context' && !turn.stopped) {
-        turnContext = { used: event.used, size: event.size }
-        currentStep.antigravity = { ...currentStep.antigravity, context: turnContext }
-        this.push({ ch: 'msg-update', payload: { id: currentStep.id, patch: { antigravity: currentStep.antigravity } } })
-        observe({ type: 'context', used: event.used, window: event.size })
-        void this.refreshStats()
-        if (!prompted && !hasActiveWork() && currentStep.text.trim().length > 0 && !currentStep.toolCalls?.length && !currentStep.thinkingLive) {
-          scheduleSettle(usageIdleMs)
-        }
-      } else if (event.type === 'usage') {
-        turnUsage = event.usage
-      } else if (event.type === 'plan' && !turn.stopped) {
-        const todos: SessionTodo[] = event.entries.map((entry) => ({ text: entry.content, done: entry.status === 'done', status: entry.status }))
-        this.acpTodos = todos
-        this.push({ ch: 'todos', payload: todos })
-        scheduleSettle()
-      } else if (event.type === 'tool') {
-        continuousOutput = false
-        const now = Date.now()
-        const ownerStep = toolStep.get(event.id) ?? currentStep
-        toolStep.set(event.id, ownerStep)
-        const calls = stepCalls.get(ownerStep.id)!
-        const settled = settleStepThinking(ownerStep, now)
-        const id = `${ownerStep.id}:${event.id}`
-        const previous = calls.get(id)
-        const status = event.status === 'completed' ? 'ok' : event.status === 'failed' ? 'error' : event.status === 'in_progress' ? 'running' : previous?.status ?? 'pending'
-        const completed = status === 'ok' || status === 'error'
-        const name = event.title || previous?.name || 'Antigravity'
-        const diffs = status === 'ok' ? antigravityFileDiffs(this.cwd, event.diffs) : []
-        calls.set(id, { id, name, args: event.args ?? previous?.args ?? {}, status, output: event.output,
-          details: { antigravity: true, kind: event.kind ?? (previous?.details as { kind?: string } | undefined)?.kind, antigravityDiffs: diffs },
-          startedAt: previous?.startedAt ?? (status === 'running' || completed ? now : undefined),
-          endedAt: completed ? previous?.endedAt ?? now : undefined })
-        if (!previous) observe({ type: 'tool-start', tool: { name, callId: id } })
-        if (completed && !previous?.endedAt) observe({ type: 'tool-end', callId: id, isError: status === 'error' })
-        else if (!completed && previous) observe({ type: 'tool-update' })
-        ownerStep.toolCalls = [...calls.values()]
-        this.push({ ch: 'msg-update', payload: { id: ownerStep.id, patch: { toolCalls: ownerStep.toolCalls, thinkingLive: false, ...(settled ? { thinkingMs: ownerStep.thinkingMs } : {}) } } })
-        scheduleSettle()
-      } else if (event.type === 'permission') {
-        if (turn.stopped || turn.interjected) { session.reply(event.id, null); return }
-        continuousOutput = false
-        const allow = event.options.find((option) => option.allow)
-        const deny = event.options.find((option) => !option.allow)
-        if (!allow) {
-          session.reply(event.id, deny?.id ?? null)
-          if (event.blocked) this.push({ ch: 'notify', payload: { id: `acp-denied-${currentStep.id}-${event.id}`, method: 'notify', notifyType: 'warning', message: event.blocked } })
-          return
-        }
-        const controller = new AbortController()
-        approvals.set(event.id, controller)
-        clearSettleTimer()
-        void this.ui.requestHostUi({ method: 'select', purpose: 'approval', nativeConfirmation: 'inline', sensitive: true,
-          title: `Antigravity · ${event.title}`, message: event.detail, signal: controller.signal, timeout: 180_000,
-          options: [pick('仅允许这一次', 'Allow once'), pick('拒绝', 'Deny')] }).then(
-          (answer) => session.reply(event.id, answer.confirmed && !turn.stopped && !turn.interjected && ownsTurn() ? allow.id : deny?.id ?? null),
-          () => session.reply(event.id, deny?.id ?? null)
-        )
-      } else if (event.type === 'question') {
-        if (turn.stopped || turn.interjected) { session.reply(event.id, null); return }
-        continuousOutput = false
-        const controller = new AbortController()
-        approvals.set(event.id, controller)
-        clearSettleTimer()
-        const reserved = new Set(event.options.map(({ name }) => name))
-        const ids = new Map<string, string>()
-        const suffixes = new Map<string, number>()
-        for (const { id, name } of event.options) {
-          let label = name
-          let suffix = suffixes.get(name) ?? 2
-          while (ids.has(label) || (label !== name && reserved.has(label))) label = `${name} (${suffix++})`
-          suffixes.set(name, suffix)
-          ids.set(label, id)
-        }
-        void this.ui.requestHostUi({ method: 'select', title: pick('Antigravity 提问', 'Antigravity question'),
-          message: event.title, options: [...ids.keys()], signal: controller.signal, timeout: 180_000 }).then(
-          (answer) => session.reply(event.id, !answer.cancelled && !turn.stopped && !turn.interjected && ownsTurn() ? ids.get(answer.value ?? '') ?? null : null),
-          () => session.reply(event.id, null)
-        )
-      } else if (event.type === 'elicitation') {
-        if (turn.stopped || turn.interjected) { session.replyElicitation(event.id, { action: 'cancel' }); return }
-        continuousOutput = false
-        const controller = new AbortController()
-        approvals.set(event.id, controller)
-        clearSettleTimer()
-        const { request, parse } = buildElicitationUi(event.message, event.fields)
-        void this.ui.requestHostUi({ ...request, signal: controller.signal, timeout: 180_000 }).then(
-          (answer) => session.replyElicitation(event.id, !turn.stopped && !turn.interjected && ownsTurn() ? parse(answer) : { action: 'cancel' }),
-          () => session.replyElicitation(event.id, { action: 'cancel' })
-        )
-      } else if (event.type === 'permission-cleared' || event.type === 'elicitation-cleared') {
-        approvals.get(event.id)?.abort()
-        approvals.delete(event.id)
-        scheduleSettle()
-      } else if (event.type === 'closed') {
-        connection.session = undefined
-        connection.bridgeConfigured = undefined
-        connection.mode = undefined
-        connection.hasContext = false
-        if (!prompted) failUnsolicited?.(new Error(event.error || pick('Antigravity 已断开连接。', 'Antigravity disconnected.')))
-      }
-    }
-    session.onEvent = handleEvent
-    const running = options.steer ? options.steer.attach(handleEvent) : options.prompt !== undefined
-      ? session.prompt(options.prompt, connection.model.id, connection.thinking?.current, connection.mode, media)
-      : new Promise<string>((resolve, reject) => {
-          finishUnsolicited = (reason: string) => {
-            if (unsolicitedSettled) return
-            unsolicitedSettled = true
-            clearSettleTimer()
-            resolve(reason)
-          }
-          failUnsolicited = (error: Error) => {
-            if (unsolicitedSettled) return
-            unsolicitedSettled = true
-            clearSettleTimer()
-            reject(error)
-          }
-          turn.cancel = () => finishUnsolicited?.('cancelled')
-        })
-    if (options.firstEvent) handleEvent(options.firstEvent)
-    let nextQueued: QueueItem | undefined
-    let handingOff = false
-    let autoCompactNeeded: { used: number; size: number } | undefined
-    let settledOutcome: 'completed' | 'stopped' | 'failed' | null = null
-    let authBlipRetry = false
-    const retireAcp = async () => {
-      if (!ownsTurn()) return
-      connection.hasContext = false
-      connection.acpSessionId = undefined
-      connection.acpCwd = undefined
-      connection.acpHeadEntryId = undefined
-      if (connection.session === session) {
-        connection.session = undefined
-        connection.bridgeConfigured = undefined
-        connection.mode = undefined
-        await session.close()
-      }
-      if (ownsTurn()) await this.persistAntigravityPreference(connection).catch(() => undefined)
-    }
-    turn.done = (async () => {
-      let status = 'stop'
-      let turnError: string | undefined
-      let cleanCancel = false
-      try {
-        const reason = await running
-        handingOff = reason === 'end_turn' && !!turn.steer && connection.session === session
-        if (reason === 'cancelled' || turn.stopped || turn.interjected) {
-          status = 'aborted'
-          cleanCancel = reason === 'cancelled'
-        } else if (reason !== 'end_turn') {
-          status = 'error'
-          turnError = antigravityStopError(reason)
-        }
-        const silentStall = !produced && performance.now() - startedMono >= ANTIGRAVITY_SILENT_STALL_MS
-        connection.hasContext = connection.session === session && (handingOff || status === 'stop' || (status === 'aborted' && cleanCancel && !turn.steer && !silentStall))
-        const tail = status === 'stop' && !handingOff ? steps[steps.length - 1] : undefined
-        const reported = tail ? splitAntigravityErrorLine(tail.text) : null
-        if (tail && reported) {
-          tail.text = reported.text
-          status = 'error'
-          turnError = reported.error
-          connection.hasContext = false
-          authBlipRetry = isAuthBlip(reported.error, { retried: false, continued: options.userText === continuationPrompt('model-error') })
-        }
-      } catch (error) {
-        status = turn.stopped || turn.interjected ? 'aborted' : 'error'
-        if ((!turn.stopped && !turn.interjected) || (error instanceof Error && error.name === 'INVALID_THINKING_SIGNATURE')) {
-          turnError = error instanceof Error ? error.message : String(error)
-        }
-        connection.hasContext = false
-      } finally {
-        clearSettleTimer()
-        if (!handingOff) session.clearTools()
-        for (const approval of approvals.values()) approval.abort()
-        approvals.clear()
-      }
-      if (!handingOff) turn.delegation.abort()
-      if (!connection.hasContext) await retireAcp()
-      if (!ownsTurn()) {
-        observe({ type: 'stopped', by: 'host', reason: 'interrupted' })
-        return
-      }
-      const elapsedMs = Math.max(0, Math.round(performance.now() - startedMono))
-      const endedAt = startedAt + elapsedMs
-      const lastStep = steps[steps.length - 1]
-      const finalGenTiming = buildStepGenTiming()
-      if (finalGenTiming) lastStep.generationTiming = finalGenTiming
-      if (turnError) lastStep.error = turnError
-      for (const step of steps) {
-        step.toolCalls = step.toolCalls?.map((call) => {
-          if (status === 'stop' && isWaitingSchedule(call)) {
-            observe({ type: 'tool-end', callId: call.id, isError: false })
-            return { ...call, status: 'ok', endedAt, output: call.output || pick('已安排定时任务，等待触发。', 'Scheduled; waiting to trigger.') }
-          }
-          return call.status === 'pending' || call.status === 'running' ? { ...call, status: 'error', cancelled: true, endedAt } : call
-        })
-        settleStepThinking(step, endedAt)
-        if (step !== lastStep) delete step.antigravity
-      }
-      lastStep.antigravity = {
-        ...(turnContext ? { context: turnContext } : {}),
-        ...(turnUsage ? { usage: turnUsage } : {})
-      }
-      const usage = lastStep.antigravity.usage
-      if (status === 'stop' && steps.length === 1 && continuousOutput && !lastStep.toolCalls?.length && usage && firstTextAt !== undefined && lastTextAt !== undefined && lastTextAt > firstTextAt) {
-        const visible = usage.visibleOutput ?? (!lastStep.thinking && usage.thought === undefined ? usage.output : undefined)
-        if (visible !== undefined && (usage.output === undefined || visible <= usage.output)) {
-          lastStep.antigravity = { ...lastStep.antigravity, usage: { ...usage, visibleOutput: visible }, outputSpanMs: lastTextAt - firstTextAt }
-        }
-      }
-      lastStep.turnTiming = { logicalTurnId: user?.id ?? steps[0].id, startedAt, endedAt, elapsedMs, terminalReason: status === 'aborted' ? 'stopped' : status === 'error' ? 'failed' : 'completed' }
-      try {
-        const ids = await native.appendAntigravityTurn({
-          sessionId: connection.sessionId,
-          ...(user ? { user: options.userText ?? '' } : { continuation: true }),
-          ...(media.length ? { userImages: media } : {}),
-          steps: steps.map((step) => ({
-            text: step.text,
-            ...(step.toolCalls?.length ? { tools: step.toolCalls } : {}),
-            ...(step.thinking ? { thinking: step.thinking } : {}),
-            ...(step.thinkingMs ? { thinkingMs: step.thinkingMs } : {}),
-            ...(step.generationTiming ? { genTiming: step.generationTiming } : {}),
-            timestamp: step.timestamp
-          })),
-          model: connection.model.id,
-          startedAt,
-          endedAt,
-          status,
-          ...(lastStep.error ? { error: lastStep.error } : {}),
-          timing: lastStep.turnTiming,
-          antigravity: lastStep.antigravity
-        })
-        if (user && ids.userId) user.entryId = ids.userId
-        const stepIds = ids.assistantIds
-        if (stepIds && stepIds.length === steps.length) {
-          steps.forEach((step, index) => { step.entryId = stepIds[index] })
-        } else {
-          lastStep.entryId = ids.assistantId
-        }
-        if (connection.hasContext && session.acpSessionId && ids.assistantId) {
-          connection.acpSessionId = session.acpSessionId
-          connection.acpCwd = this.cwd
-          connection.acpHeadEntryId = ids.assistantId
-          if (ownsTurn()) await this.persistAntigravityPreference(connection).catch(() => undefined)
-        }
-      } catch (error) {
-        lastStep.error = pick(`回复未能保存到会话：${error instanceof Error ? error.message : String(error)}`, `Could not save the Antigravity turn: ${error instanceof Error ? error.message : String(error)}`)
-        if (connection.hasContext) await retireAcp()
-        if (status !== 'aborted') {
-          status = 'error'
-          lastStep.turnTiming.terminalReason = 'failed'
-        }
-      }
-      if (!ownsTurn()) {
-        observe({ type: 'stopped', by: 'host', reason: 'interrupted' })
-        return
-      }
-      if (!connection.hasContext && connection.session === session) {
-        connection.session = undefined
-        connection.bridgeConfigured = undefined
-        connection.mode = undefined
-        await session.close()
-      }
-      if (!ownsTurn()) {
-        observe({ type: 'stopped', by: 'host', reason: 'interrupted' })
-        return
-      }
-      turn.messages = []
-      if (user) this.items.appendMessage(user)
-      for (const step of steps) this.items.appendMessage(step)
-      if (user) this.push({ ch: 'msg-update', payload: { id: user.id, patch: { entryId: user.entryId } } })
-      for (const step of steps) this.push({ ch: 'msg-update', payload: { id: step.id, patch: step } })
-      const outcome = status === 'error' ? 'failed' as const : status === 'aborted' ? 'stopped' as const : 'completed' as const
-      if (status === 'error') observe({ type: 'host-fail', message: lastStep.error ?? 'Antigravity' })
-      else if (status === 'aborted') observe({ type: 'stopped', by: 'user' })
-      else {
-        observe({ type: 'agent-end' })
-        observe({ type: 'agent-settled', aborted: false })
-        if (user) void this.maybeGenerateTitle()
-      }
-      settledOutcome = outcome
-      if (!handingOff && status === 'stop' && !turn.stopped && !turn.interjected && this.state?.autoCompactionEnabled !== false && turnContext?.used && turnContext.size > 0) {
-        const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
-        const line = autoCompactAt(cap, turnContext.size)
-        if (turnContext.used <= line) {
-          if (this.acpCompactHold?.sessionId === connection.sessionId) this.acpCompactHold = undefined
-        } else if (this.acpCompactHold?.sessionId !== connection.sessionId || turnContext.used >= this.acpCompactHold.untilTokens) {
-          autoCompactNeeded = turnContext
-        }
-      }
-      if (!handingOff && !turn.stopped && (this.acpQueue.steering.length || this.acpQueue.followUp.length)) {
-        nextQueued = this.acpQueue.steering.shift() ?? this.acpQueue.followUp.shift()
-        this.publishAcpQueue()
-      }
-    })().finally(() => {
-      clearSettleTimer()
-      for (const approval of approvals.values()) approval.abort()
-      if (this.acpTurn === turn) {
-        this.acpTurn = undefined
-        if (handingOff && turn.steer && ownsTurn() && connection.session === session && connection.hasContext) {
-          if (settledOutcome) this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome: settledOutcome } })
-          const { item, prompt } = turn.steer
-          this.startAntigravityTurn({ connection, session, native, owner, userText: item.text, media: item.images, steer: prompt,
-            stopped: turn.stopped, delegation: turn.delegation })
-          return
-        }
-        turn.delegation.abort()
-        this.releaseComputerControl()
-        if (ownsTurn()) {
-          if (connection.session === session) this.bindAntigravity(connection, session)
-          this.setAgentRunning(false)
-          this.markStreaming(false)
-          this.settleExecutionAdmission()
-          if (settledOutcome) this.push({ ch: 'turn-settled', payload: { sessionId: connection.sessionId, outcome: settledOutcome } })
-          if (autoCompactNeeded) {
-            const triggerUsed = autoCompactNeeded.used
-            void this.compactAntigravity('threshold').then((compacted) => {
-              if (!compacted.ok) this.acpCompactHold = { sessionId: connection.sessionId, untilTokens: triggerUsed * 1.2 }
-              if (nextQueued && !compacted.aborted && ownsTurn()) {
-                const queued = nextQueued
-                void this.withOperation('send', owner.generation, () => this.withExecutionAdmission(() => this.sendAntigravity(queued.text, queued.images)))
-                  .then((res) => {
-                    if (!res.ok && res.error) {
-                      this.push({ ch: 'notify', payload: { id: `acp-queue-fail-${Date.now()}`, method: 'notify', notifyType: 'error', message: res.error } })
-                    }
-                  })
-              }
-            })
-            return
-          }
-          void this.refreshState()
-          void this.refreshStats()
-          if (nextQueued) {
-            const queued = nextQueued
-            void this.withOperation('send', owner.generation, () => this.withExecutionAdmission(() => this.sendAntigravity(queued.text, queued.images)))
-              .then((res) => {
-                if (!res.ok && res.error) {
-                  this.push({ ch: 'notify', payload: { id: `acp-queue-fail-${Date.now()}`, method: 'notify', notifyType: 'error', message: res.error } })
-                }
-              })
-          } else if (authBlipRetry && !turn.stopped) {
-            void this.continueAntigravityAfterAuthBlip(connection, owner)
-          } else if (connection.mcpStale && connection.session === session) {
-            this.scheduleAntigravityMcpRefresh(0)
-          }
-        }
-      }
-    })
-    void turn.done.catch((error) => console.error('[antigravity]', error instanceof Error ? error.message : String(error)))
   }
 
   private shouldDeferModelSwitch(): boolean {
@@ -5621,11 +4201,11 @@ export class AgentController extends EventEmitter {
   }
 
   async setThinking(level: string): Promise<{ ok: boolean; error?: string }> {
-    const antigravity = this.acpConnection
+    const antigravity = this.acp.connection
     return this.enqueueCapabilityChange(async () => {
       if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-      if (antigravity !== this.acpConnection) return { ok: false, error: GENERATION_MISMATCH_ERROR }
-      if (this.acpConnection) return this.withOperation('reload', undefined, () => this.updateAntigravityConfig('thinking', level))
+      if (antigravity !== this.acp.connection) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+      if (this.acp.connection) return this.withOperation('reload', undefined, () => this.acp.updateConfig('thinking', level))
       if (this.shouldDeferModelSwitch()) return this.deferModelSwitch({ thinkingLevel: level })
       const res = await this.rpc.command('set_thinking_level', { level })
       if (res.success) await this.refreshState()
@@ -5633,51 +4213,16 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  async setAntigravityMode(mode: string): Promise<{ ok: boolean; error?: string }> {
-    const connection = this.acpConnection
-    if (!connection || !isAntigravityMode(mode)) return { ok: false, error: pick('这不是可用的 Antigravity 权限档。', 'This is not an available Antigravity permission mode.') }
-    return this.enqueueCapabilityChange(() => this.withOperation('reload', undefined, () => {
-      if (connection !== this.acpConnection) return Promise.resolve({ ok: false, error: GENERATION_MISMATCH_ERROR })
-      return this.updateAntigravityConfig('mode', mode)
-    }))
+  setAntigravityMode(mode: string): Promise<{ ok: boolean; error?: string }> {
+    return this.acp.setMode(mode)
   }
 
-  private async updateAntigravityConfig(kind: 'thinking' | 'mode', value: string): Promise<{ ok: boolean; error?: string }> {
-    const previous = this.acpConnection
-    if (!previous || this.executionActive() || this.state?.pendingMessageCount) return { ok: false, error: pick('请等 Antigravity 当前回合结束。', 'Wait for the current Antigravity turn to finish.') }
-    const choice = kind === 'mode' ? previous.modes : previous.thinking
-    if (!choice?.options.some(({ id }) => id === value)) return { ok: false, error: pick('当前会话不支持该档位。', 'This level is unavailable in the current session.') }
-    if (!previous.session) return this.selectAntigravity(previous.model.id, kind === 'thinking' ? value : previous.thinking?.current, kind === 'mode' ? value : undefined)
-    const owner = this.asyncOwner()
-    const session = previous.session
-    try {
-      const models = await (kind === 'thinking' ? session.selectThinking(value) : session.selectMode(value))
-      if (!this.ownerCurrent(owner) || this.acpConnection !== previous || models.current !== previous.model.id) throw new Error(GENERATION_MISMATCH_ERROR)
-      const nextPref = { ...previous, thinking: models.thinking, modes: models.modes }
-      await this.persistAntigravityPreference(nextPref)
-      if (!this.ownerCurrent(owner) || this.acpConnection !== previous) throw new Error(GENERATION_MISMATCH_ERROR)
-      previous.thinking = models.thinking
-      previous.model = this.antigravityModel(previous.model, models.thinking, previous.supportsImages)
-      previous.mode = models.mode
-      previous.modes = models.modes
-      await this.refreshState()
-      await this.refreshStats()
-      return { ok: true }
-    } catch (error) {
-      if (this.acpConnection === previous && previous.session === session) {
-        previous.session = undefined
-        previous.bridgeConfigured = undefined
-        previous.mode = undefined
-        previous.hasContext = false
-        await session.close()
-        void this.refreshState()
-      }
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
+  reloadAntigravityMcp(): Promise<{ ok: boolean; error?: string }> {
+    return this.acp.reloadMcp()
   }
 
   async setUltracode(on: boolean): Promise<{ ok: boolean; error?: string }> {
-    if (this.acpConnection) return { ok: false, error: pick('Antigravity 使用 CLI 提供的思考档。', 'Antigravity uses effort levels supplied by the CLI.') }
+    if (this.acp.connection) return { ok: false, error: pick('Antigravity 使用 CLI 提供的思考档。', 'Antigravity uses effort levels supplied by the CLI.') }
     const sessionId = this.state?.sessionId
     if (!sessionId) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     try {
@@ -5693,13 +4238,13 @@ export class AgentController extends EventEmitter {
   }
 
   async listThinkingLevels(): Promise<string[]> {
-    if (this.acpConnection) return this.acpConnection.thinking?.options.map(({ id }) => id) ?? []
+    if (this.acp.connection) return this.acp.connection.thinking?.options.map(({ id }) => id) ?? []
     const owner = this.asyncOwner()
     const rpc = owner.rpc
     const sessionId = this.state?.sessionId
     const modelKey = modelKeyOf(this.state?.model)
     if (!rpc || !sessionId || !modelKey) return []
-    const current = () => this.ownerCurrent(owner) && !this.acpConnection && this.state?.sessionId === sessionId && modelKeyOf(this.state.model) === modelKey
+    const current = () => this.ownerCurrent(owner) && !this.acp.connection && this.state?.sessionId === sessionId && modelKeyOf(this.state.model) === modelKey
     const res = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels').catch(() => undefined)
     if (!current()) return []
     const normalized = normalizeThinkingLevels(res?.data?.levels, res?.success === true)
@@ -5775,7 +4320,7 @@ export class AgentController extends EventEmitter {
     if (this.shouldDeferModelSwitch()) return this.deferCycleModel(dir)
     const steps = dir === 1 ? 1 : (await this.nativeCycleLength()) - 1
     if (steps < 1) return { ok: false, error: pick('只有一个可用模型', 'Only one model is available') }
-    this.loopGuardContinuationVersion += 1
+    this.autoContinue.invalidate()
     let landed: { name?: string; id?: string } | undefined
     for (let i = 0; i < steps; i += 1) {
       const res = await this.requireRpc().command<{ model?: { name?: string; id?: string } } | null>('cycle_model')
@@ -5801,7 +4346,7 @@ export class AgentController extends EventEmitter {
     const index = cycle.findIndex(item => modelKeyOf(item.model) === modelKeyOf(this.state?.model))
     if (!cycle.length || (index !== -1 && cycle.length === 1)) return { ok: false, error: pick('只有一个可用模型', 'Only one model is available') }
     const next = cycle[index === -1 ? (dir === 1 ? 0 : cycle.length - 1) : (index + dir + cycle.length) % cycle.length]!
-    this.loopGuardContinuationVersion += 1
+    this.autoContinue.invalidate()
     const res = await this.deferModelSwitch({ provider: next.model.provider, modelId: next.model.id, ...(next.thinkingLevel ? { thinkingLevel: next.thinkingLevel } : {}) })
     return res.ok ? { ok: true, to: next.model.name || next.model.id } : res
   }
@@ -5811,7 +4356,7 @@ export class AgentController extends EventEmitter {
     const levels = state?.availableThinkingLevels ?? []
     if (!state?.model?.reasoning || !levels.length) return { ok: false, error: pick('当前模型不支持思考', 'The current model does not support thinking') }
     const next = levels[(levels.indexOf(state.thinkingLevel) + 1) % levels.length]!
-    this.loopGuardContinuationVersion += 1
+    this.autoContinue.invalidate()
     const res = await this.deferModelSwitch({ thinkingLevel: next })
     return res.ok ? { ok: true, to: next } : res
   }
@@ -5824,7 +4369,7 @@ export class AgentController extends EventEmitter {
       if (!res.success) return { ok: false, error: res.error }
       const level = res.data?.level
       if (!level) return { ok: false, error: pick('当前模型不支持思考', 'The current model does not support thinking') }
-      this.loopGuardContinuationVersion += 1
+      this.autoContinue.invalidate()
       await this.refreshState()
       return { ok: true, to: level }
     })
@@ -5882,7 +4427,7 @@ export class AgentController extends EventEmitter {
   async getMessages(opts: { includeStreaming?: boolean } = {}): Promise<UIMessage[]> {
     const list = this.messages
     if (!opts.includeStreaming) return list
-    if (this.acpTurn) return [...list, ...this.acpTurn.messages]
+    if (this.acp.turn) return [...list, ...this.acp.turn.messages]
     const live = this.items.streamingMessage()
     return live ? [...list, live] : list
   }
@@ -5904,43 +4449,24 @@ export class AgentController extends EventEmitter {
       const generation = this.capabilityOpts?.runnerGeneration
       const ownerSession = this.state?.sessionId
       if (!generationMatches(opts.expectGeneration, generation)) return null
-      if (this.acpConnection) {
-        const stats = this.antigravityStats()
+      if (this.acp.connection) {
+        const stats = this.acp.stats()
         this.push({ ch: 'stats', payload: stats })
         return stats
       }
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
-        if (ownerSession !== this.state?.sessionId || this.acpConnection) return null
+        if (ownerSession !== this.state?.sessionId || this.acp.connection) return null
         if (opts.expectGeneration !== undefined && generation !== opts.expectGeneration) return null
         if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         const stats = await this.withOverheadUsage(this.statsForCurrentModel(res.data))
-        if (ownerSession !== this.state?.sessionId || this.acpConnection) return null
+        if (ownerSession !== this.state?.sessionId || this.acp.connection) return null
         if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         this.push({ ch: 'stats', payload: stats })
         return stats
       }
     } catch { }
     return null
-  }
-
-  private antigravityStats(): SessionStats {
-    const modelKey = modelKeyOf(this.acpConnection?.model)
-    const latest = this.acpTurn?.messages.at(-1) ?? this.messages.findLast((message) => message.role === 'assistant')
-    const compactedAt = this.compactionState.last?.status === 'completed'
-      ? (this.compactionState.last.endedAt ?? this.compactionState.last.startedAt)
-      : this.contextFrom?.compactedAt
-    const liveContext = this.acpConnection?.session?.context
-    const latestStale = compactedAt !== undefined && (latest?.timestamp ?? 0) <= compactedAt
-    const context = liveContext ?? (latest?.model === modelKey ? latest?.antigravity?.context : undefined)
-    const messages = this.acpTurn ? [...this.messages, ...this.acpTurn.messages] : this.messages
-    return {
-      toolCalls: messages.reduce((n, message) => n + (message.toolCalls?.length ?? 0), 0),
-      userMessages: messages.filter((message) => message.role === 'user').length,
-      assistantMessages: messages.filter((message) => message.role === 'assistant').length,
-      ...(context ? { contextUsage: { modelKey, tokens: !liveContext && latestStale ? null : context.used, contextWindow: context.size,
-        percent: !liveContext && latestStale ? null : context.used / context.size * 100, availability: 'known' } } : {})
-    }
   }
 
   private async maybeGenerateTitle(
@@ -6063,7 +4589,7 @@ export class AgentController extends EventEmitter {
       sessionId: this.state?.sessionId,
       sessionFile: this.state?.sessionFile,
       generation: this.capabilityOpts?.runnerGeneration,
-      version: this.loopGuardContinuationVersion,
+      version: this.autoContinue.version,
       failureVersion: this.sessionMoveFailureVersion,
       rpc: this.rpc,
       ready: this.conn === 'ready' && this.rpc?.running === true,
@@ -6149,7 +4675,7 @@ export class AgentController extends EventEmitter {
     this.nativeWitness = null
     this.nativeWitnessPending = null
     await this.mcp.syncChanged(options)
-    this.markAntigravityMcpChanged('config')
+    this.acp.markMcpChanged('config')
   }
 
   processId(): number | undefined {
@@ -6159,11 +4685,11 @@ export class AgentController extends EventEmitter {
   async stop(options: { keepDescendants?: boolean } = {}): Promise<void> {
     const stopDeadline = Date.now() + STOP_TOTAL_BUDGET_MS
     const stopRemaining = (): number => Math.max(0, stopDeadline - Date.now())
-    if (this.acpTurn || this.acpCompacting) await settleWithin(this.abort(), stopRemaining())
+    if (this.acp.turn || this.acp.compacting) await settleWithin(this.abort(), stopRemaining())
     this.stopping = true
-    await this.closeAntigravity()
+    await this.acp.close()
     this.releaseExecutionAdmission()
-    this.loopGuardContinuationVersion += 1
+    this.autoContinue.invalidate()
     this.cancelApprovals?.(this.approvalOwner())
     this.retireApprovals?.(this.approvalOwner())
     const liveRpc = this.rpc

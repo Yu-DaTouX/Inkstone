@@ -326,7 +326,7 @@ try {
       on: () => undefined
     }
     ctl.nativeRuntime = { getScopedModels: async () => ({ scopedModels: scoped, enabledModels: [], scopeIsAll: !scoped.length }) }
-    const version = () => ctl.loopGuardContinuationVersion
+    const version = () => ctl.autoContinue.version
 
     let v0 = version()
     const forward = await ctl.cycleModel()

@@ -179,6 +179,7 @@ function todoFixture() {
   reader.state = { sessionId: 'A', sessionFile: 'A.jsonl' }
   reader.rpc = { command: async () => ({ success: true, data: { entries: [{ source: 'rpc-A' }] } }) }
   reader.capabilityOpts = { runnerGeneration: 1 }
+  reader.acp = {}
   reader.entriesLite = { entries: async () => [{ source: 'A' }] }
   reader.push = message => pushed.push(message)
   globalThis.auditTaskLog = async sessionId => [{ source: `host-${sessionId}` }]

@@ -45,7 +45,7 @@ try {
   vm.runInNewContext(transpile('globalThis.Probe = class { ' + methods.join('\n') + ' }'), probeContext)
   const agent = (sessionId, sessionFile, cwd, generation) => Object.assign(new probeContext.Probe(), {
     state: { sessionId, sessionFile, cwd, isAgentRunning: false, isStreaming: false, isCompacting: false },
-    capabilityOpts: { runnerGeneration: generation }, loopGuardContinuationVersion: 0, sessionMoveFailureVersion: 0,
+    capabilityOpts: { runnerGeneration: generation }, autoContinue: { version: 0 }, sessionMoveFailureVersion: 0,
     rpc: { running: true }, conn: 'ready', stopping: false, agentRunning: false, streaming: null, bash: null,
     ui: { pending: new Map() }, queue: { state: { steering: [], followUp: [] }, isEmpty() { return !this.state.steering.length && !this.state.followUp.length } }
   })
@@ -53,15 +53,15 @@ try {
   const guard = original.captureSessionMoveContinuation()
   ok(guard(), 'normal idle origin eligible')
   original.agentRunning = true; ok(!guard(), 'active origin cannot continue yet'); original.agentRunning = false
-  original.loopGuardContinuationVersion++; ok(!guard(), 'manual stop or new input invalidates'); original.loopGuardContinuationVersion--
+  original.autoContinue.version++; ok(!guard(), 'manual stop or new input invalidates'); original.autoContinue.version--
   original.sessionMoveFailureVersion++; ok(!guard(), 'model failure invalidates after timing reset'); original.sessionMoveFailureVersion--
   original.capabilityOpts.runnerGeneration++; ok(!guard(), 'generation change invalidates'); original.capabilityOpts.runnerGeneration--
   original.state.sessionId = 'other'; ok(!guard(), 'session reuse invalidates'); original.state.sessionId = 'sid'
   original.ui.pending.set('question', {}); ok(!guard(), 'pending human input blocks'); original.ui.pending.clear()
   original.queue.state.followUp.push('queued'); ok(!guard(), 'pending follow-up blocks'); original.queue.state.followUp = []
-  original.stopping = true; original.rpc = null; original.loopGuardContinuationVersion++
+  original.stopping = true; original.rpc = null; original.autoContinue.version++
   ok(guard(true), 'exactly one host close allowed')
-  original.loopGuardContinuationVersion++; ok(!guard(true), 'additional stop after close cancels')
+  original.autoContinue.version++; ok(!guard(true), 'additional stop after close cancels')
 
   const main = await readFile('src/main/index.ts', 'utf8')
   const hostFunctions = functionTexts(main, ['requestSessionMove', 'moveSessionWhenIdle', 'continueMovedSession', 'pinSendTarget', 'pinnedTargetMatches', 'normalizeCwdForIdentity'])
@@ -83,7 +83,7 @@ try {
       async stopOne(id) {
         assert.equal(id, 'origin')
         if (hooks.closeFails) return false
-        origin.loopGuardContinuationVersion++; origin.stopping = true; origin.rpc = null; origin.conn = 'exited'
+        origin.autoContinue.version++; origin.stopping = true; origin.rpc = null; origin.conn = 'exited'
         agents.delete(id)
         await hooks.close?.(context)
         return true
@@ -92,7 +92,7 @@ try {
         if (hooks.selectFails) return { ok: false, error: 'fixture select failure' }
         if (request.sessionId) assert.equal(request.activate, false)
         const fresh = agent('sid', file, request.cwd, 2)
-        fresh.send = async text => { sent.push({ sessionId: fresh.state.sessionId, cwd: fresh.state.cwd, text }); fresh.loopGuardContinuationVersion++; return hooks.sendFails ? { ok: false, error: 'fixture send failure' } : { ok: true } }
+        fresh.send = async text => { sent.push({ sessionId: fresh.state.sessionId, cwd: fresh.state.cwd, text }); fresh.autoContinue.version++; return hooks.sendFails ? { ok: false, error: 'fixture send failure' } : { ok: true } }
         agents.set('restored', fresh)
         await hooks.select?.(context, fresh)
         return { ok: true, id: 'restored', runId: 'restored', generation: 2, sessionId: 'sid' }
@@ -147,7 +147,7 @@ try {
   const deniedWithReason = await f.request()
   ok(deniedWithReason.decision === 'denied' && deniedWithReason.feedback === 'stay here' && deniedWithReason.message.includes('stay here'), 'deny feedback reaches the move result message')
   for (const [name, hooks, didMove] of [
-    ['manual stop', { approval: (_, a) => { a.loopGuardContinuationVersion++ } }, true],
+    ['manual stop', { approval: (_, a) => { a.autoContinue.version++ } }, true],
     ['model failure', { approval: (_, a) => { a.sessionMoveFailureVersion++ } }, true],
     ['close failure', { closeFails: true }, false],
     ['wait timeout', { timeout: true, approval: (_, a) => { a.state.isAgentRunning = true; a.agentRunning = true } }, false],
@@ -156,7 +156,7 @@ try {
     ['runtime reuse', { remember: (_, a) => { a.capabilityOpts.runnerGeneration++ } }, true],
     ['registry replacement', { rewrite: context => { context.runners = {} } }, true],
     ['stale restored SID', { select: (_, a) => { a.state.sessionId = 'other' } }, true],
-    ['stop during restore', { remember: (_, a) => { a.loopGuardContinuationVersion++ } }, true],
+    ['stop during restore', { remember: (_, a) => { a.autoContinue.version++ } }, true],
     ['pending follow-up', { select: (_, a) => { a.queue.state.followUp.push('new input') } }, true],
     ['busy target cwd', { busy: true }, true],
     ['shutdown', { approval: context => { context.shuttingDown = true } }, false]

@@ -220,9 +220,9 @@ try {
   plans.push('normal')
   repeat(c)
   await wait(() => requests.length === autoRequests + 1, 'one automatic native model request')
-  await agent.loopGuardContinueTask
+  await agent.loopGuard.continueTask
   await settled('automatic recovery completes')
-  equal(agent.loopGuardAutoContinueCount, 1, 'automatic recovery consumes exactly one allowance')
+  equal(agent.autoContinue.used, 1, 'automatic recovery consumes exactly one allowance')
   equal(requests.length, autoRequests + 1, 'automatic recovery runs once only')
   const autoRequest = requests.at(-1)
   check(JSON.stringify(autoRequest.messages).includes('循环恢复 · 自动继续 1/1'), 'native request contains visible one-shot recovery instruction')
@@ -235,13 +235,13 @@ try {
   plans.push('hold')
   repeat(c)
   await wait(() => requests.length === limitRequests + 1, 'second scenario automatically resumes once')
-  await agent.loopGuardContinueTask
+  await agent.loopGuard.continueTask
   const resumedControl = controls.at(-1)
   repeat(resumedControl)
   await settled('resumed loop stops')
-  await agent.loopGuardContinueTask
+  await agent.loopGuard.continueTask
   equal(requests.length, limitRequests + 1, 'second detected loop produces no third model request')
-  equal(agent.loopGuardAutoContinueCount, 1, 'agent_start did not reset one-shot allowance')
+  equal(agent.autoContinue.used, 1, 'agent_start did not reset one-shot allowance')
   check(logs(limitOffset).some(e => e.event === 'auto-continue-limit'), 'second loop explains one-shot limit')
 
   c = await hold('AUTO-MANUAL-CANCEL')
@@ -258,7 +258,7 @@ try {
   const cancel = agent.abort()
   releaseAck()
   await cancel
-  await agent.loopGuardContinueTask
+  await agent.loopGuard.continueTask
   agent.rpc.command = countedCommand
   equal(requests.length, manualRequests, 'manual stop cancels pending automatic continuation')
   await settled('manual cancel settled')
@@ -278,12 +278,12 @@ try {
   const explicit = agent.send('USER-INPUT-WINS')
   releaseUserAck()
   check((await explicit).ok, 'new explicit input accepted after authoritative end')
-  await agent.loopGuardContinueTask
+  await agent.loopGuard.continueTask
   agent.rpc.command = countedCommand
   await settled('explicit priority round finishes')
   equal(requests.length, userRequests + 1, 'only explicit input causes a new request')
   check(!logs(userOffset).some(e => e.event === 'auto-continue-requested'), 'explicit input cancels pending auto prompt')
-  equal(agent.loopGuardAutoContinueCount, 0, 'explicit new task resets one-shot allowance')
+  equal(agent.autoContinue.used, 0, 'explicit new task resets one-shot allowance')
 
   c = await hold('AUTO-TOGGLE-OFF')
   let releaseToggle, toggleHeld = false
@@ -298,7 +298,7 @@ try {
   await wait(() => toggleHeld, 'toggle phase pending')
   autoContinueEnabled = false
   releaseToggle()
-  await agent.loopGuardContinueTask
+  await agent.loopGuard.continueTask
   agent.rpc.command = countedCommand
   equal(requests.length, toggleRequests, 'turning switch off before execution prevents resume')
   await settled('toggle off settled')
@@ -355,7 +355,7 @@ try {
   }
   repeat(c)
   await wait(() => pushes.slice(raceOffset).some(e => e.ch === 'queue-reclaimed'), 'race returns already cleared queue')
-  await agent.loopGuardStopTask
+  await agent.loopGuard.stopTask
   agent.rpc.command = countedCommand
   equal(abortCount, raceAbort, 'natural end avoids a stale abort')
   check(pushes.slice(raceOffset).find(e => e.ch === 'queue-reclaimed').payload.followUp.includes('RETURN-ON-RACE'), 'natural end does not lose recovered text')
@@ -364,11 +364,11 @@ try {
   const detectorBundle = join(compiled, 'detector.mjs')
   await build({ entryPoints: ['src/shared/stream-loop-detector.ts'], outfile: detectorBundle, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   const { createStreamLoopDetector } = await import(pathToFileURL(detectorBundle).href)
-  offline.streamLoopDetector = createStreamLoopDetector()
+  offline.loopGuard.detector = createStreamLoopDetector()
   offline.streaming = { toolOpen: true }
   offline.checkStreamLoop('text', '好。\n\n'.repeat(600))
-  check(!offline.loopGuardTripped && !offline.loopGuardStopTask, 'open tool block suppresses break')
-  check(!offline.loopGuardAbortSent, 'open tool block issues no abort')
+  check(!offline.loopGuard.tripped && !offline.loopGuard.stopTask, 'open tool block suppresses break')
+  check(!offline.loopGuard.abortSent, 'open tool block issues no abort')
 
   const hit = { rule: 'text-cycle', emittedChars: 288, repeatedChars: 256 }
   const scoped = new AgentController({ cwd: root, push: event => pushes.push(event) })
@@ -390,7 +390,7 @@ try {
   scoped.turn.runId = 'replacement-run'
   scoped.streaming = { id: 'replacement-message' }
   scoped.queue.state = { steering: [], followUp: [{ id: 'q-new', text: 'NEW-DRAFT' }] }
-  scoped.loopGuardStopping = false
+  scoped.loopGuard.stopping = false
   releaseScope()
   await oldStop
   equal(staleAborts, 0, 'late clear response does not abort replacement run')
@@ -399,8 +399,8 @@ try {
   equal(oldRecovery.payload.sessionId, 'original-session', 'late recovery still belongs to original session')
   check(logs(scopeOffset).every(e => e.sessionId === 'original-session' && e.runId === 'original-run'), 'async guard logs retain captured origin')
   const other = new AgentController({ cwd: root, push: () => {} })
-  other.streamLoopDetector = createStreamLoopDetector()
-  check(other.streamLoopDetector.onThinking('普通内容，不是循环。') === null && !other.loopGuardTripped, 'another controller has independent detector and stop state')
+  other.loopGuard.detector = createStreamLoopDetector()
+  check(other.loopGuard.detector.onThinking('普通内容，不是循环。') === null && !other.loopGuard.tripped, 'another controller has independent detector and stop state')
 
   for (const failure of ['missing-snapshot', 'abort-failure']) {
     const controller = new AgentController({ cwd: root, push: event => pushes.push(event) })
@@ -415,7 +415,7 @@ try {
     const start = pushes.length
     await controller.stopForLoopGuard(hit, 'text')
     equal(sent, failure === 'missing-snapshot' ? 0 : 1, failure + ': no unsafe or duplicate abort')
-    check(!controller.loopGuardStopping && !controller.loopGuardAbortSent, failure + ': manual intervention not permanently locked')
+    check(!controller.loopGuard.stopping && !controller.loopGuard.abortSent, failure + ': manual intervention not permanently locked')
     check(logs(start).some(e => e.event === 'stop-failed') && !logs(start).some(e => e.event === 'settled'), failure + ': failure not reported as confirmed stop')
   }
   console.log(`stream-loop-rpc: ${checks} checks passed (actual pi, loopback model, no external credentials)`)

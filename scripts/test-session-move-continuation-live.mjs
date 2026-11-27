@@ -186,7 +186,7 @@ try {
   }
 
   {
-    const { registry, context, created } = makeRegistry({ approval: ctx => { const live = ctx.runners.statuses()[0]; const agent = live && ctx.runners.agentOf(live.runId); if (agent) agent.loopGuardContinuationVersion += 1 } })
+    const { registry, context, created } = makeRegistry({ approval: ctx => { const live = ctx.runners.statuses()[0]; const agent = live && ctx.runners.agentOf(live.runId); if (agent) agent.autoContinue.version += 1 } })
     const started = await openSession(registry, srcDir, '第二轮：先说个计划')
     await waitFor(async () => !started.agent.getState()?.isAgentRunning, '第二轮结束')
     const beforePrompts = prompts.length

@@ -35,10 +35,11 @@ const entry = join(root, 'entry.ts')
 await writeFile(entry, `export { McpConnectionManager } from '${sourceOf('../src/main/mcp/connection-manager.ts')}'
 export { sharedResources, INTERACTIVE_RESOURCE } from '${sourceOf('../src/main/interactive-resources.ts')}'
 export { AgentController } from '${sourceOf('../src/main/agent.ts')}'
+export { StreamLoopGuard, AutoContinueBudget } from '${sourceOf('../src/main/stream-loop-guard.ts')}'
 export { runMcpCommand, COMPUTER_TOOL_TARGETS } from '${sourceOf('../src/main/agent-commands/mcp-command.ts')}'`)
 const outfile = fileURLToPath(new URL('../out/test/computer-release.mjs', import.meta.url))
 await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'warning', packages: 'external', plugins: [electronStub] })
-const { McpConnectionManager, sharedResources, INTERACTIVE_RESOURCE, AgentController, runMcpCommand, COMPUTER_TOOL_TARGETS } = await import(pathToFileURL(outfile).href)
+const { McpConnectionManager, sharedResources, INTERACTIVE_RESOURCE, AgentController, StreamLoopGuard, AutoContinueBudget, runMcpCommand, COMPUTER_TOOL_TARGETS } = await import(pathToFileURL(outfile).href)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const fixture = fileURLToPath(new URL('./fixtures/windows-mcp-control-server.mjs', import.meta.url))
@@ -389,9 +390,8 @@ try {
     const released = []
     const agent = Object.create(AgentController.prototype)
     agent.mcp = { current: () => ({ releaseComputerControl: async () => { released.push('release'); return 'released' } }) }
-    agent.loopGuardContinuationVersion = 0
-    agent.loopGuardStopping = false
-    agent.loopGuardAbortSent = false
+    agent.autoContinue = new AutoContinueBudget()
+    agent.loopGuard = new StreamLoopGuard()
     agent.cancelImages = () => {}
     agent.cancelApprovals = () => { released.push('cancel-approvals') }
     agent.approvalOwner = () => ({})
@@ -416,6 +416,8 @@ try {
     const agent = Object.create(AgentController.prototype)
     agent.mcp = { current: () => ({ releaseComputerControl: async () => { released.push('release'); return 'released' } }) }
     agent.liveItemEdits = 0
+    agent.loopGuard = new StreamLoopGuard()
+    agent.autoContinue = new AutoContinueBudget()
     agent.emitRunSignals = () => {}
     agent.persistTurnTiming = async () => {}
     agent.syncDeferredModelSwitch = () => {}
@@ -427,13 +429,11 @@ try {
     assert.equal(released.length, 1, '回合结束释放')
 
     agent.clearPendingModelChange = () => {}
-    agent.loopGuardContinuationVersion = 0
     agent.items = { discardStreaming: () => {} }
     agent.markStreaming = () => {}
     agent.setAgentRunning = () => {}
     agent.queue = { reset: () => {} }
-    agent.acpQueue = { steering: [], followUp: [] }
-    agent.acpTodos = []
+    agent.acp = { resetScope: () => {} }
     agent.stream = {}
     agent.resetSessionScope()
     assert.equal(released.length, 2, '会话切换/新建/分叉时释放')

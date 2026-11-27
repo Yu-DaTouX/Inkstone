@@ -750,7 +750,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ctl.maybeGenerateTitle = async () => {}
       ctl.confirmExecutionAdmission = () => true
       ctl.state = { sessionId: randomUUID(), cwd, isStreaming: false, autoCompactionEnabled: false }
-      const connection = ctl.acpConnection = { sessionId: ctl.state.sessionId, model: { id: 'flash', name: 'Flash', provider: 'antigravity' },
+      const connection = ctl.acp.connection = { sessionId: ctl.state.sessionId, model: { id: 'flash', name: 'Flash', provider: 'antigravity' },
         thinking: models.thinking, mode: models.mode, modes: models.modes, session, hasContext: false }
       let appendGate
       const native = ctl.nativeRuntime = {
@@ -763,10 +763,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
         },
         appendAntigravityCompaction: async ({ summary }) => { saved.push(summary); return { entryId: 'compact-fixture' } }
       }
-      ctl.bindAntigravity(connection, session)
+      ctl.acp.bind(connection, session)
       const prompt = (userText, text = userText) => {
-        ctl.startAntigravityTurn({ connection, session, native, owner: ctl.asyncOwner(), userText, prompt: text })
-        return ctl.acpTurn
+        ctl.acp.startTurn({ connection, session, native, owner: ctl.asyncOwner(), userText, prompt: text })
+        return ctl.acp.turn
       }
       const requests = () => pushed.filter((event) => event.ch === 'ui-request').map(({ payload }) => payload)
       return { ctl, session, events, saved, pushed, prompt, requests, connection, holdAppend: (gate) => { appendGate = gate } }
@@ -783,17 +783,17 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await wait(() => ag.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
       assert.equal((await ag.ctl.steer('原生插话提问')).ok, true)
       assert.equal((await ag.ctl.steer('插话之后继续排队')).ok, true)
-      assert.equal(ag.ctl.acpQueue.steering.length, 1)
+      assert.equal(ag.ctl.acp.queue.steering.length, 1)
       await wait(() => ag.saved.length && ag.session.context?.used === 567)
       assert.equal(ag.requests().length, 0)
       assert.equal(old.delegation.signal.aborted, false)
       assert.equal(ag.saved[0].steps[0].text, '旧轮首块旧轮收尾')
       assert.equal(ag.saved[0].status, 'stop')
       assert.equal(ag.connection.hasContext, true)
-      assert.equal(ag.ctl.acpQueue.steering[0].text, '插话之后继续排队')
+      assert.equal(ag.ctl.acp.queue.steering[0].text, '插话之后继续排队')
       gate.resolve()
       await old.done
-      const next = ag.ctl.acpTurn
+      const next = ag.ctl.acp.turn
       assert.equal(next.delegation, old.delegation)
       const ask = await wait(() => ag.requests().at(-1))
       assert.equal(ask.purpose, undefined)
@@ -802,13 +802,13 @@ await runSuite(import.meta.url, async (ok, compile) => {
       assert.deepEqual(ask.options.slice(0, 3), ['同名', '同名 (3)', '同名 (2)'])
       assert.deepEqual(await ag.ctl.answerUiRemotely(ask.id, { value: ask.options[1] }), { ok: true })
       await next.done
-      await wait(() => ag.saved.length === 3 && !ag.ctl.acpTurn)
+      await wait(() => ag.saved.length === 3 && !ag.ctl.acp.turn)
       assert.deepEqual(ag.saved.map(({ user }) => user), ['原生插话阻塞', '原生插话提问', '插话之后继续排队'])
       assert.deepEqual(ag.saved[1].steps.map(({ text }) => text), ['插话首块', '提问结果 · two · cancel=0'])
       assert.equal(ag.saved[1].antigravity.context.used, 567)
       assert.equal(readAntigravityPreference(ag.connection.sessionId).acpSessionId, ag.session.acpSessionId)
       ok(true, 'AgentController 在旧轮落盘等待期间缓冲新轮，原地接管不终止委派；远程选择重复展示名准确回填，后续插话继续排队')
-    } finally { gate.resolve(); await ag.ctl.closeAntigravity() }
+    } finally { gate.resolve(); await ag.ctl.acp.close() }
 
     const edit = await makeAgent('auto', '--version=1.5.0', 'native-steer')
     const stopGate = deferred()
@@ -817,20 +817,20 @@ await runSuite(import.meta.url, async (ok, compile) => {
       const old = edit.prompt('原生插话阻塞')
       await wait(() => edit.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
       await edit.ctl.followUp('原生插话提问')
-      const target = edit.ctl.acpQueue.followUp[0]
+      const target = edit.ctl.acp.queue.followUp[0]
       assert.equal((await edit.ctl.steerQueued(target.id)).ok, true)
       await wait(() => edit.session.context?.used === 567 && edit.saved.length === 1)
       const stop = edit.ctl.abort()
       stopGate.resolve()
       await stop
-      assert.equal(edit.ctl.acpTurn, undefined)
+      assert.equal(edit.ctl.acp.turn, undefined)
       assert.equal(edit.requests().length, 0)
       assert.equal(edit.saved.length, 2)
       assert.equal(edit.saved[1].user, target.text)
       assert.equal(edit.saved[1].status, 'aborted')
       assert.equal(old.delegation.signal.aborted, true)
       ok(true, '从队列提升消息使用原生插话；旧轮持久化期间停止会取消已发新轮并清理其提问')
-    } finally { stopGate.resolve(); await edit.ctl.closeAntigravity() }
+    } finally { stopGate.resolve(); await edit.ctl.acp.close() }
 
     const legacy = await makeAgent('default', '--version=1.4.9')
     try {
@@ -838,11 +838,11 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await wait(() => legacy.pushed.some((e) => e.payload?.patch?.textDelta === '正在等待'))
       assert.equal((await legacy.ctl.steer('旧版回退消息')).ok, true)
       await old.done
-      await wait(() => legacy.saved.length === 2 && !legacy.ctl.acpTurn)
+      await wait(() => legacy.saved.length === 2 && !legacy.ctl.acp.turn)
       assert.equal(legacy.saved[0].status, 'aborted')
       assert.equal(legacy.saved[1].user, '旧版回退消息')
       ok(true, '旧版 CLI 继续取消旧回合后再发送排队消息')
-    } finally { await legacy.ctl.closeAntigravity() }
+    } finally { await legacy.ctl.acp.close() }
 
     const healing = await makeAgent('default', '--version=1.5.0', 'native-steer', 'late-steer-error')
     let rebuilt
@@ -853,24 +853,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await wait(() => healing.pushed.some((e) => e.payload?.patch?.textDelta === '旧轮首块'))
       await healing.ctl.steer('原生插话结束')
       await old.done
-      await wait(() => healing.saved.length === 3 && !healing.ctl.acpTurn)
+      await wait(() => healing.saved.length === 3 && !healing.ctl.acp.turn)
       assert.match(healing.saved[2].error, /思考签名已失效/)
       assert.equal(healing.connection.session, undefined)
       assert.equal(readAntigravityPreference(healing.connection.sessionId).acpSessionId, undefined)
-      assert.equal(await healing.ctl.resolveAntigravityResume(healing.connection), undefined)
-      healing.ctl.selectAntigravity = async () => {
+      assert.equal(await healing.ctl.acp.resolveResume(healing.connection), undefined)
+      healing.ctl.acp.select = async () => {
         rebuilt = start().session
         await rebuilt.start(cwd)
         healing.connection.session = rebuilt
-        healing.ctl.bindAntigravity(healing.connection, rebuilt)
+        healing.ctl.acp.bind(healing.connection, rebuilt)
         return { ok: true }
       }
-      assert.equal((await healing.ctl.sendAntigravity('额度拒绝')).ok, true)
-      await healing.ctl.acpTurn?.done
+      assert.equal((await healing.ctl.acp.send('额度拒绝')).ok, true)
+      await healing.ctl.acp.turn?.done
       assert.notEqual(rebuilt.acpSessionId, healing.session.acpSessionId)
       assert.match(healing.saved[3].error, /Antigravity 模型额度可能已耗尽/)
       ok(true, '已在接管前失败的插话仍正确落盘；失效签名清除持久化 ACP ID，下一次发送进入重连且 refusal 明示额度')
-    } finally { await healing.ctl.closeAntigravity(); await rebuilt?.close() }
+    } finally { await healing.ctl.acp.close(); await rebuilt?.close() }
 
     const idle = await makeAgent('auto')
     const previousIdle = process.env.YAN_ACP_UNSOLICITED_IDLE_MS
@@ -879,10 +879,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
       await idle.prompt('后台交互提问').done
       const ask = await wait(() => idle.requests().at(-1))
       idle.ctl.ui.expireHostUi(ask.id)
-      await wait(() => idle.saved.length === 2 && !idle.ctl.acpTurn)
+      await wait(() => idle.saved.length === 2 && !idle.ctl.acp.turn)
       assert.match(idle.saved[1].steps[0].text, /提问结果 · cancelled/)
       await idle.prompt('后台常驻工具').done
-      await wait(() => idle.saved.length === 4 && !idle.ctl.acpTurn)
+      await wait(() => idle.saved.length === 4 && !idle.ctl.acp.turn)
       assert.equal(idle.saved[3].status, 'stop')
       assert.equal(idle.saved[3].steps.map(({ text }) => text).join(''), '常驻工具已启动')
       ok(true, '后台交互题唤醒会话，超时回取消；IsDaemon 常驻执行工具不阻塞后台回合正常收尾')
@@ -891,7 +891,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
         '主会话未观察到思考文本时也不会把已知含思考的无效输出用量当作可见输出')
 
       await idle.prompt('后台定时巡检').done
-      await wait(() => idle.saved.length === 7 && !idle.ctl.acpTurn)
+      await wait(() => idle.saved.length === 7 && !idle.ctl.acp.turn)
       const scheduled = idle.saved[6]
       assert.equal(scheduled.status, 'stop')
       assert.equal(scheduled.continuation, true)
@@ -899,21 +899,21 @@ await runSuite(import.meta.url, async (ok, compile) => {
       assert.equal(timer?.status, 'ok')
       assert.match(timer?.output, /等待触发/)
       assert.equal(idle.connection.session, idle.session)
-      await wait(() => idle.saved.length === 8 && !idle.ctl.acpTurn)
+      await wait(() => idle.saved.length === 8 && !idle.ctl.acp.turn)
       assert.equal(idle.saved[7].status, 'stop')
       assert.equal(idle.saved[7].continuation, true)
       assert.equal(idle.saved[7].steps.map(({ text }) => text).join(''), '已巡检进度')
       ok(true, 'Antigravity 原生定时任务不阻塞后台回合；等待超过旧超时后仍能唤醒原会话')
 
       await idle.prompt('后台工具无回执').done
-      await wait(() => idle.saved.length === 10 && !idle.ctl.acpTurn)
+      await wait(() => idle.saved.length === 10 && !idle.ctl.acp.turn)
       assert.equal(idle.saved[9].status, 'error')
       assert.match(idle.saved[9].error, /后台工具长时间没有更新/)
       ok(true, '没有终态的普通后台工具仍会超时')
     } finally {
       if (previousIdle === undefined) delete process.env.YAN_ACP_UNSOLICITED_IDLE_MS
       else process.env.YAN_ACP_UNSOLICITED_IDLE_MS = previousIdle
-      await idle.ctl.closeAntigravity()
+      await idle.ctl.acp.close()
     }
 
     const compact = await makeAgent('default', 'summary-question')
@@ -925,9 +925,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
         { id: 'u1', entryId: 'u1', role: 'user', text: '历史任务' },
         { id: 'a1', entryId: 'a1', role: 'assistant', text: '历史答案' }
       ]
-      const result = await compact.ctl.runAntigravityCompaction('manual', undefined, { holdAdmission: true })
+      const result = await compact.ctl.acp.runCompaction('manual', undefined, { holdAdmission: true })
       ok(result.ok && compact.requests().length === 0 && compact.saved[0]?.includes('提问结果 · cancelled'), '压缩回调直接取消交互题，不显示用户提问卡片', JSON.stringify(result))
-    } finally { await compact.ctl.closeAntigravity() }
+    } finally { await compact.ctl.acp.close() }
   }
 
   {
@@ -1778,16 +1778,16 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ctl.maybeGenerateTitle = async () => {}
     ctl.confirmExecutionAdmission = () => true
     ctl.state = { sessionId: randomUUID(), cwd, isStreaming: false, autoCompactionEnabled: false }
-    const connection = ctl.acpConnection = { sessionId: ctl.state.sessionId, model: { id: 'flash', name: 'Flash', provider: 'antigravity' }, thinking: models.thinking, mode: models.mode, modes: models.modes, session, hasContext: true }
+    const connection = ctl.acp.connection = { sessionId: ctl.state.sessionId, model: { id: 'flash', name: 'Flash', provider: 'antigravity' }, thinking: models.thinking, mode: models.mode, modes: models.modes, session, hasContext: true }
     const native = ctl.nativeRuntime = {
       bridgeCapabilities: ['append_antigravity_turn', 'append_antigravity_compaction'],
       appendAntigravityTurn: async (turn) => { saved.push(turn); return { userId: 'eu-' + saved.length, assistantId: 'ea-' + saved.length } }
     }
-    ctl.bindAntigravity(connection, session)
+    ctl.acp.bind(connection, session)
     const askReq = () => pushed.filter((event) => event.ch === 'ui-request').at(-1)?.payload
     const send = (text) => {
-      ctl.startAntigravityTurn({ connection, session, native, owner: ctl.asyncOwner(), userText: text, prompt: text })
-      return ctl.acpTurn
+      ctl.acp.startTurn({ connection, session, native, owner: ctl.asyncOwner(), userText: text, prompt: text })
+      return ctl.acp.turn
     }
     try {
       const t1 = send('ACP单选表单')
@@ -1796,14 +1796,14 @@ await runSuite(import.meta.url, async (ok, compile) => {
       assert.deepEqual(r1.options, ['选项 A', '选项 B', '选项 C', '选项 D'])
       await ctl.answerUiRemotely(r1.id, { value: '选项 C' })
       await t1.done
-      await wait(() => saved.length === 1 && !ctl.acpTurn)
+      await wait(() => saved.length === 1 && !ctl.acp.turn)
       assert.equal(saved[0].steps[0].text, '提问表单结果 · {"action":"accept","content":{"q0":"opt_c"}}')
 
       const t2 = send('ACP单选表单')
       const r2 = await wait(() => askReq()?.id !== r1.id ? askReq() : null)
       await ctl.answerUiRemotely(r2.id, { value: '自定义内容' })
       await t2.done
-      await wait(() => saved.length === 2 && !ctl.acpTurn)
+      await wait(() => saved.length === 2 && !ctl.acp.turn)
       assert.equal(saved[1].steps[0].text, '提问表单结果 · {"action":"accept","content":{"q0_other":"自定义内容"}}')
 
       const t3 = send('ACP多选表单')
@@ -1813,7 +1813,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       assert.deepEqual(r3.form.map((f) => f.kind), ['multi', 'choice', 'choice'])
       await ctl.answerUiRemotely(r3.id, { value: JSON.stringify({ q_0: ['标签 1', '手写补充'], q_1: '同名 (2)', q_2: '是' }) })
       await t3.done
-      await wait(() => saved.length === 3 && !ctl.acpTurn)
+      await wait(() => saved.length === 3 && !ctl.acp.turn)
       assert.deepEqual(
         JSON.parse(saved[2].steps[0].text.replace(/^提问表单结果 · /, '')),
         { action: 'accept', content: { q0: ['m1'], q0_other: '手写补充', q1: 's2', q2: true } }
@@ -1821,19 +1821,19 @@ await runSuite(import.meta.url, async (ok, compile) => {
 
       const t4 = send('ACP链接表单')
       await t4.done
-      await wait(() => saved.length === 4 && !ctl.acpTurn)
+      await wait(() => saved.length === 4 && !ctl.acp.turn)
       assert.equal(saved[3].steps[0].text, '提问表单结果 · {"action":"decline"}')
 
       const t5 = send('ACP单选表单')
       const r5 = await wait(() => askReq()?.id !== r3.id ? askReq() : null)
       await ctl.abort()
       await t5.done
-      await wait(() => saved.length === 5 && !ctl.acpTurn)
+      await wait(() => saved.length === 5 && !ctl.acp.turn)
       assert.equal(saved[4].status, 'aborted')
       assert.ok(pushed.some((event) => event.ch === 'ui-resolved' && event.payload?.id === r5.id))
       ok(true, 'ACP ask_question (elicitation/create) 适配单选、自定义写入、多选多题表单、不支持的 URL 拒绝及取消清理')
     } finally {
-      await ctl.closeAntigravity()
+      await ctl.acp.close()
     }
 
     const child = new AntigravitySubagentRpc(cwd, 'flash', async () => true, { launch: () => start().session })
@@ -2097,24 +2097,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
       let selects = 0
       const liveSession = start().session
       await liveSession.start(projectDir, undefined, { mode: 'auto' })
-      ctl.acpConnection = {
+      ctl.acp.connection = {
         sessionId: ctl.state.sessionId,
         model: { id: 'flash', name: 'Flash', provider: 'antigravity' },
         mode: 'auto',
-        mcpFingerprint: await ctl.currentAntigravityMcpFingerprint(),
+        mcpFingerprint: await ctl.acp.currentMcpFingerprint(),
         session: liveSession,
         hasContext: true
       }
-      ctl.selectAntigravity = async () => {
+      ctl.acp.select = async () => {
         selects++
-        ctl.acpConnection.mcpStale = false
-        ctl.acpConnection.mcpToolsStale = false
-        ctl.acpConnection.mcpFingerprint = await ctl.currentAntigravityMcpFingerprint()
+        ctl.acp.connection.mcpStale = false
+        ctl.acp.connection.mcpToolsStale = false
+        ctl.acp.connection.mcpFingerprint = await ctl.acp.currentMcpFingerprint()
         return { ok: true }
       }
       try {
         await ctl.reloadMcpServers()
-        await wait(() => ctl.acpConnection.mcpStale === false)
+        await wait(() => ctl.acp.connection.mcpStale === false)
         assert.equal(selects, 0, '配置未实质变化时不误重连')
 
         writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({
@@ -2124,16 +2124,16 @@ await runSuite(import.meta.url, async (ok, compile) => {
           }
         }), 'utf8')
         await ctl.reloadMcpServers()
-        assert.equal(ctl.acpConnection.mcpStale, true)
-        await wait(() => selects === 1 && ctl.acpConnection.mcpStale === false)
+        assert.equal(ctl.acp.connection.mcpStale, true)
+        await wait(() => selects === 1 && ctl.acp.connection.mcpStale === false)
 
         writeFileSync(mcpServersPath, JSON.stringify([{ id: 'windows-mcp', transport: 'stdio', command: 'uvx', args: [] }]), 'utf8')
-        assert.equal((await ctl.sendAntigravity('使用 windows-mcp')).ok, true)
-        await ctl.acpTurn?.done
+        assert.equal((await ctl.acp.send('使用 windows-mcp')).ok, true)
+        await ctl.acp.turn?.done
         assert.equal(selects, 2, 'sendAntigravity 在发送前检测配置指纹漂移并自动重连刷新 MCP')
 
-        ctl.markAntigravityMcpChanged('tools')
-        await wait(() => selects === 3 && ctl.acpConnection.mcpStale === false)
+        ctl.acp.markMcpChanged('tools')
+        await wait(() => selects === 3 && ctl.acp.connection.mcpStale === false)
         assert.equal((await ctl.reloadAntigravityMcp()).ok, true)
         assert.equal(selects, 4)
 
@@ -2205,7 +2205,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
         assert.equal(ipcAcpReloadCalls, 1)
         ok(true, 'AgentController 与 capabilities-ipc 支持空闲自动刷新、发送前指纹兜底刷新及应用到当前会话')
       } finally {
-        await ctl.closeAntigravity()
+        await ctl.acp.close()
       }
     } finally {
       for (const [k, v] of Object.entries(prevEnv)) {

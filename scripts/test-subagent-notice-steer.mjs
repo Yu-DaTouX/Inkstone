@@ -32,15 +32,17 @@ await runSuite(import.meta.url, async (ok) => {
     const entry = join(root, 'entry.ts')
     const outfile = join(process.cwd(), 'out', 'test', 'subagent-notice-steer.mjs')
     const source = fileURLToPath(new URL('../src/main/agent.ts', import.meta.url)).replace(/\\/g, '/')
-    await writeFile(entry, `export { AgentController } from '${source}'`)
+    await writeFile(entry, `export { AgentController } from '${source}'\nexport { StreamLoopGuard } from '${source.replace(/agent\.ts$/, 'stream-loop-guard.ts')}'`)
     await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'], plugins: [electronStub] })
-    const { AgentController } = await import(pathToFileURL(outfile).href)
+    const { AgentController, StreamLoopGuard } = await import(pathToFileURL(outfile).href)
 
     const make = ({ running = true, fromUser = true, beforeCommit } = {}) => {
       const agent = Object.create(AgentController.prototype)
       const submitted = []
       agent.agentRunning = running
       agent.runFromUser = fromUser
+      agent.loopGuard = new StreamLoopGuard()
+      agent.acp = {}
       agent.rpc = { running: true }
       agent.state = { sessionId: 's1' }
       agent.capabilityOpts = { runnerGeneration: 1 }
@@ -66,7 +68,7 @@ await runSuite(import.meta.url, async (ok) => {
     ok(!make({ running: false }).agent.userRunActive() && make().agent.userRunActive() && !make({ fromUser: false }).agent.userRunActive(), 'userRunActive 只在用户发起且正在运行时为真')
 
     const stopping = make()
-    stopping.agent.loopGuardStopping = true
+    stopping.agent.loopGuard.stopping = true
     const blocked = await stopping.agent.steerIntoUserRun('notice')
     ok(!blocked.ok && blocked.idle === true && stopping.submitted.length === 0, '流式防护正在停止：按空闲处理，不计投递失败')
     const expired = make()
