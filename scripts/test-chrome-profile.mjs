@@ -7,7 +7,32 @@ import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   await runChromeProfileTests(ok, await compile('src/main/chrome-profile.ts'))
+  await runClearProfileTests(ok, await compile('src/main/chrome.ts'))
 })
+
+async function runClearProfileTests(ok, { clearChromeProfile }) {
+  console.log('\n--- 断开后删除 Chrome 资料副本 ---')
+  const root = await mkdtemp(join(tmpdir(), 'yan-chrome-clear-'))
+  const profile = join(root, 'chrome-profile')
+  await mkdir(join(profile, 'Default', 'Network'), { recursive: true })
+  await writeFile(join(profile, 'Default', 'Network', 'Cookies'), 'c')
+  await writeFile(join(profile, 'Default', 'History'), 'h')
+  await writeFile(join(profile, 'Local State'), '{}')
+  await writeFile(join(profile, 'lockfile'), '')
+  const { EventEmitter } = await import('node:events')
+  const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null })
+  let exited = false
+  setTimeout(() => { exited = true; child.emit('exit', 0) }, 60)
+  const cleared = await clearChromeProfile(child, profile)
+  ok(cleared && exited && !existsSync(profile), '等 Chrome 退出后删除整个资料目录（含 Cookie、历史、Local State）')
+  ok(await clearChromeProfile(Object.assign(new EventEmitter(), { exitCode: 0, signalCode: null }), profile), '进程已退出或目录不存在时直接完成')
+  await mkdir(profile, { recursive: true })
+  const stuck = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null })
+  const started = Date.now()
+  await clearChromeProfile(stuck, profile, 50)
+  ok(Date.now() - started < 5000 && !existsSync(profile), '进程迟迟不退出时按上限等待后仍尝试删除')
+  await rm(root, { recursive: true, force: true })
+}
 
 export async function runChromeProfileTests(ok, {
   chromeUserDataRoot,

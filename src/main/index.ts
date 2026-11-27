@@ -858,7 +858,7 @@ async function askProfileSyncApproval(): Promise<boolean> {
     kind: 'permission',
     tool: 'chrome-profile-sync',
     title: '把本机 Chrome 的资料复制到砚的浏览器目录？',
-    detail: '连接本机 Chrome 需要一份独立的浏览器资料，同意后会从本机 Chrome 复制一份。',
+    detail: '连接本机 Chrome 需要一份独立的浏览器资料，同意后会从本机 Chrome 复制一份；断开连接或退出砚时自动删除。',
     reasons: ['复制会把本机 Chrome 的登录状态带进砚的浏览器资料目录'],
     cwd: settings.cwd,
     canRemember: false

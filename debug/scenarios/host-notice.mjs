@@ -8,7 +8,7 @@ export default async function run({ cdp, check, waitFor, turn, sleep, shot }) {
   await ev(`(() => {
     const store = window.__yanStore
     const now = Date.now()
-    const moved = '[砚宿主通知：用户批准的会话移动已完成]\\n当前工作目录（路径数据）：' + JSON.stringify('C:\\\\Users\\\\YuDaTou\\\\Desktop\\\\测试') + '\\n请核对新目录的 AGENTS.md 与项目设置……'
+    const moved = '[砚宿主通知：用户批准的会话移动已完成]\\n当前工作目录（路径数据）：' + JSON.stringify('C:\\\\Users\\\\demo\\\\Desktop\\\\测试') + '\\n请核对新目录的 AGENTS.md 与项目设置……'
     const extra = [
       { id: 'host-moved', role: 'user', text: moved, timestamp: now - 3000 },
       { id: 'host-moved-a', role: 'assistant', text: '会话已经切到新目录，原任务已完成。', timestamp: now - 2900 },
@@ -26,7 +26,7 @@ export default async function run({ cdp, check, waitFor, turn, sleep, shot }) {
     return { notices, leaked: bubbles.filter((t) => /砚宿主通知|自动继续|额度已恢复/.test(t)).length }
   })()`)
   check('三条宿主消息都显示为短提示', state?.notices?.length === 3, state)
-  check('短提示含新目录路径', !!state?.notices?.[0]?.includes('C:\\Users\\YuDaTou\\Desktop\\测试'), state?.notices?.[0])
+  check('短提示含新目录路径', !!state?.notices?.[0]?.includes('C:\\Users\\demo\\Desktop\\测试'), state?.notices?.[0])
   check('宿主消息不进用户气泡', state?.leaked === 0, state)
   await shot('host-notice-dark')
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'light' })`)

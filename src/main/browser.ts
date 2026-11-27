@@ -36,7 +36,7 @@ import {
   waitForCdp,
   type CdpTarget
 } from './browser/RawCdp'
-import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chrome'
+import { clearChromeProfile, defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chrome'
 import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { createCookieBridge, writeBridgeCookies, type BridgeCookie } from './browser/cookie-bridge'
@@ -238,6 +238,7 @@ export class BrowserController {
   private readonly stateFlush = createStateFlush(() => this.updateState())
   private external: ExternalTarget | null = null
   private externalOpening: Promise<BrowserActionResult> | null = null
+  private profileCleanup: Promise<void> | null = null
   private externalBoundaryCdp: RawCdp | null = null
   private externalPendingUrl = ''
   private activeMode: 'embedded' | 'external' = 'embedded'
@@ -1072,6 +1073,7 @@ export class BrowserController {
       return { ok: true }
     }
 
+    await this.profileCleanup
     const port = await pickFreePort()
     const profileDir = defaultProfileDir(YAN_DIR)
     let chrome: ChildProcess | null = null
@@ -1235,6 +1237,7 @@ export class BrowserController {
     ext.observer.dispose()
     await ext.cdp.detach().catch(() => undefined)
     stopChrome(ext.chrome)
+    this.profileCleanup = clearChromeProfile(ext.chrome, ext.profileDir).then(() => undefined)
     this.activeMode = 'embedded'
     const active = this.activeTab()
     this.showOnlyOwnedView(active?.id ?? null)
@@ -1537,6 +1540,8 @@ export class BrowserController {
     disposeScriptRuntimes()
     try {
       await this.close()
+      await this.profileCleanup
+      await clearChromeProfile(null, defaultProfileDir(YAN_DIR))
     } finally {
       await closeAllLocalFileServers()
     }

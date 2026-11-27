@@ -188,7 +188,7 @@ export function withContextUsage(message, first, searched) {
 }
 
 export function searchRecordText(record) {
-  const lines = ['[Inkstone note: server-side web search ran for this reply. The provider does not keep raw search results in history; this is the recorded summary.]']
+  const lines = ['[Inkstone note: server-side web search ran during the previous assistant reply. The provider does not keep raw search results in history; this is the summary Inkstone recorded.]']
   if (record.queries?.length) lines.push(`Queries: ${record.queries.join(' | ')}`)
   if (record.opened?.length) lines.push(`Opened pages: ${record.opened.join(' | ')}`)
   if (record.results?.length) lines.push('Results:', ...record.results.map((item) => `- ${item.title} — ${item.url}`))
@@ -197,16 +197,33 @@ export function searchRecordText(record) {
   return lines.join('\n')
 }
 
+const withNote = (message, note, first) => {
+  const content = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : Array.isArray(message.content) ? message.content : []
+  return { ...message, content: first ? [note, ...content] : [...content, note] }
+}
+
 export function withSearchRecords(messages) {
   if (!Array.isArray(messages) || !messages.some((message) => message?.role === 'assistant' && message[RECORD_FIELD])) return undefined
-  return messages.map((message) => {
+  const out = []
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]
+    out.push(message)
     const record = message?.role === 'assistant' ? message[RECORD_FIELD] : null
-    if (!record || !Array.isArray(message.content)) return message
+    if (!record) continue
     const note = { type: 'text', text: searchRecordText(record) }
-    const at = message.content.findIndex((block) => block?.type === 'toolCall')
-    const content = at < 0 ? [...message.content, note] : [...message.content.slice(0, at), note, ...message.content.slice(at)]
-    return { ...message, content }
-  })
+    let end = i + 1
+    while (messages[end]?.role === 'toolResult') end++
+    if (end > i + 1) {
+      out.push(...messages.slice(i + 1, end - 1), withNote(messages[end - 1], note, false))
+      i = end - 1
+    } else if (messages[i + 1]?.role === 'user') {
+      out.push(withNote(messages[i + 1], note, true))
+      i++
+    } else if (!Array.isArray(message.content) || !message.content.some((block) => block?.type === 'toolCall')) {
+      out.push({ role: 'user', content: [note], timestamp: message.timestamp })
+    }
+  }
+  return out
 }
 
 export default function nativeWebSearch(pi) {
