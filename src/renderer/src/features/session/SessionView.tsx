@@ -793,9 +793,9 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const tailId = renderTurns.at(-1)?.id
   useLayoutEffect(() => {
     const scroller = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
-    if (!tailRunning || !scroller) return undefined
+    if (!tailRunning || stick || !scroller) return undefined
     return holdStreamTail(scroller, () => scroller.querySelector<HTMLElement>(virtual ? '.v3-stream-row--tail' : '.v3-stream-inner'))
-  }, [tailRunning, virtual, identity, remountKey, tailId])
+  }, [tailRunning, stick, virtual, identity, remountKey, tailId])
 
   useEffect(() => {
     if (!virtual) return undefined
@@ -1165,7 +1165,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
             )}
           </VList>
         ) : (
-          <div className="v3-stream" ref={setStreamNode} onScroll={onScroll}>
+          <div className="v3-stream" data-align-end={turns.length > 0 ? '' : undefined} ref={setStreamNode} onScroll={onScroll}>
             <div className="v3-stream-inner">
               {turns.length === 0 ? (readOnly ? <PeerEmpty running={!!(session?.isAgentRunning || session?.isStreaming)} /> : switchLoading ? <SwitchSkeleton label={t('chat.switchLoading')} /> : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
