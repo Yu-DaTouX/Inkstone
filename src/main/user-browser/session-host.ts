@@ -4,7 +4,7 @@ import type { BrowserActionOptions, BrowserActionReceipt, BrowserObserveOptions 
 import type { ScrollPosition } from '../browser/InputController'
 import { pressKey } from '../browser/driver/keyboard'
 import { CURSOR_KINDS, CURSOR_MARKUP, CURSOR_STYLE, type CursorKind } from '../browser/AgentCursor'
-import { BridgeCallError, type BridgeConnection } from './bridge-server'
+import { BRIDGE_REVISION, BridgeCallError, type BridgeConnection } from './bridge-server'
 
 export const USER_TAB_PREFIX = 'user:'
 const SETTLE_MS = 250
@@ -314,6 +314,7 @@ export class UserBrowserSession implements BrowserCommandHost {
   }
 
   private async cursor(tabId: number, kind: CursorKind, point?: { x: number; y: number } | null): Promise<void> {
+    if (this.connection.info.revision < BRIDGE_REVISION) return
     try {
       const ms = await this.call<number>('page.cursor', { tabId, label: kind, point: point ?? null, tap: kind === 'click', kinds: CURSOR_KINDS, style: CURSOR_STYLE, markup: CURSOR_MARKUP }, 5_000)
       if (typeof ms === 'number' && ms > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 450)))

@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BRIDGE_REVISION, BrowserBridgeServer, type BridgeConnection, type BridgeConnectionInfo } from './bridge-server'
 import { installBridgeHost, type BridgeBrowser } from './native-host'
@@ -20,11 +20,17 @@ export interface UserBrowserStatus {
 
 const BROWSERS = new Set<BridgeBrowser>(['chrome', 'edge', 'firefox'])
 
-async function manifestVersion(dir: string): Promise<string> {
+const MIN_BRIDGE_REVISION = 3
+
+export async function sameExtensionFiles(source: string, target: string): Promise<boolean> {
   try {
-    return String(JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8')).version ?? '')
+    for (const name of await readdir(source)) {
+      const [a, b] = await Promise.all([readFile(join(source, name)), readFile(join(target, name))])
+      if (!a.equals(b)) return false
+    }
+    return true
   } catch {
-    return ''
+    return false
   }
 }
 
@@ -33,13 +39,20 @@ export class UserBrowserService {
   private readonly sessions = new Map<string, UserBrowserSession>()
   private running = false
   private extensionTarget = ''
+  private readonly reloadRequested = new Set<string>()
 
   constructor() {
     this.server.on('connection', (connection) => {
-      if (connection.info.revision >= 2 && connection.info.revision < BRIDGE_REVISION) {
-        void connection.call('runtime.reload', {}, 5_000).catch(() => undefined)
-        return
+      const info = connection.info
+      if (info.revision >= 2 && info.revision < BRIDGE_REVISION && info.browser !== 'firefox') {
+        const key = `${info.browser}\u0000${info.extensionId}\u0000${info.instanceId}`
+        if (!this.reloadRequested.has(key)) {
+          this.reloadRequested.add(key)
+          void connection.call('runtime.reload', {}, 5_000).catch(() => undefined)
+          return
+        }
       }
+      if (info.revision < MIN_BRIDGE_REVISION) return
       this.rebind(connection)
     })
     this.server.on('tabRemoved', (connection, tabId) => {
@@ -50,7 +63,7 @@ export class UserBrowserService {
   async start(options: UserBrowserStartOptions): Promise<void> {
     if (this.running) return
     this.extensionTarget = join(options.dataDir, 'browser-cookie-bridge')
-    if ((await manifestVersion(options.extensionSource)) !== (await manifestVersion(this.extensionTarget))) {
+    if (!(await sameExtensionFiles(options.extensionSource, this.extensionTarget))) {
       await cp(options.extensionSource, this.extensionTarget, { recursive: true, force: true })
     }
     const dir = join(options.dataDir, 'browser-bridge')

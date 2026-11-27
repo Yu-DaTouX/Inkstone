@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { runSuite } from './lib/test-suite.mjs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -8,7 +8,7 @@ import WebSocket from 'ws'
 
 const ENTRY = [
   "export { BrowserCommands } from './src/main/browser-commands.ts'",
-  "export { userBrowser } from './src/main/user-browser/service.ts'",
+  "export { userBrowser, UserBrowserService, sameExtensionFiles } from './src/main/user-browser/service.ts'",
   "export * from './src/main/user-browser/native-host.ts'",
   "export { BrowserBridgeServer, BridgeCallError, BRIDGE_REVISION } from './src/main/user-browser/bridge-server.ts'",
   "export { UserBrowserSession, parseUserTabId, userTabId } from './src/main/user-browser/session-host.ts'",
@@ -89,6 +89,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(background.includes(`'${mod.BRIDGE_HOST_NAME}'`), '扩展连接的宿主名与注册名一致')
     ok(background.includes(`const BRIDGE_REVISION = ${mod.BRIDGE_REVISION}\n`) && background.includes("case 'runtime.reload'"), '扩展脚本修订号与主进程一致，并支持自行重载')
 
+    const copySource = join(dir, 'ext-src'), copyTarget = join(dir, 'ext-dst')
+    await mkdir(copySource, { recursive: true })
+    await writeFile(join(copySource, 'manifest.json'), '{"version":"1.1.4"}')
+    await writeFile(join(copySource, 'background.js'), 'const BRIDGE_REVISION = 4')
+    ok(!(await mod.sameExtensionFiles(copySource, copyTarget)), '目标目录不存在时需要复制')
+    await cp(copySource, copyTarget, { recursive: true })
+    ok(await mod.sameExtensionFiles(copySource, copyTarget), '文件一致时不复制')
+    await writeFile(join(copyTarget, 'background.js'), 'const BRIDGE_REVISION = 3')
+    ok(!(await mod.sameExtensionFiles(copySource, copyTarget)), '清单版本未变但脚本内容不同也会重新复制（修订号升级导致的重载循环）')
+
+    const guard = new mod.UserBrowserService()
+    const reloads = []
+    const stale = (browser, revision, instanceId = 'inst-old') => ({ info: { id: `${browser}-${instanceId}`, browser, extensionId: 'ext', instanceId, revision }, open: true, call: async (cmd) => { reloads.push(`${browser}:${cmd}`) }, close() {} })
+    for (let i = 0; i < 5; i++) guard.server.emit('connection', stale('chrome', mod.BRIDGE_REVISION - 1))
+    ok(reloads.filter((x) => x === 'chrome:runtime.reload').length === 1, '旧修订号扩展反复重连时只请求重载一次，不再无限重载')
+    for (let i = 0; i < 3; i++) guard.server.emit('connection', stale('firefox', mod.BRIDGE_REVISION - 1))
+    ok(!reloads.some((x) => x.startsWith('firefox')), '火狐签名包重载不会更新代码，不请求重载')
+
     const writes = []
     const store = new Map()
     const registry = { read: async (key) => store.get(key) ?? null, write: async (key, value) => { writes.push(key); store.set(key, value) } }
@@ -159,11 +177,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(seen.summary.items.some((line) => line.startsWith('a1 button "Go"')), 'observe 返回统一格式的元素行')
     const clicked = await commands.runBrowserCommand('click', { ref: 'a1' })
     ok(clicked.summary.ok && ext.calls.some((c) => c.cmd === 'page.click' && c.args.ref === 'a1') && !state.cdp.length, '无调试权限时走页面点击')
-    const aimed = state.cursor.at(-1)
-    ok(aimed?.label === 'click' && aimed.point?.x === 30 && aimed.point?.y === 20 && aimed.markup.includes('<svg') && aimed.style.includes('.cursor'), '点击前在用户页面画出代理光标')
     await expectCode(commands.runBrowserCommand('click', { ref: 'zz1' }), 'STALE_ELEMENT', '未观察到的 ref 被拦下')
     const typed = await commands.runBrowserCommand('type', { ref: 'a2', text: 'hi' })
-    ok(typed.summary.value === 'hi' && state.cursor.at(-1)?.label === 'type', 'type 回执带写入后的值，光标先移到输入框')
+    ok(typed.summary.value === 'hi' && state.cursor.length === 0, '旧修订号扩展照常点击和输入，但不发它解析不了的新光标')
     await expectCode(commands.runBrowserCommand('select', { ref: 'a2', value: 'x' }), 'OPTION_NOT_FOUND', 'select 找不到选项时列出可选值')
     const scrolled = await commands.runBrowserCommand('scroll', { 'delta-y': 300 })
     ok(scrolled.summary.scroll?.y === 300, 'scroll 回执带滚动位置')
@@ -217,6 +233,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(again.summary.ok && answers.length === 4, 'instanceId 相同的同一浏览器重连后自动接回，不重复询问')
     await commands.runBrowserCommand('click', { ref: 'a1' })
     ok(state.cdp.filter((c) => c.method === 'Input.dispatchMouseEvent').length === 3, '有调试权限时点击走真实鼠标事件')
+    const aimed = state.cursor.at(-1)
+    ok(aimed?.label === 'click' && aimed.point?.x === 30 && aimed.point?.y === 20 && aimed.markup.includes('<svg') && aimed.style.includes('.cursor') && aimed.kinds?.includes('type'), '当前修订号扩展点击前在用户页面画出代理光标')
     await commands.runBrowserCommand('press', { key: 'Enter' })
     ok(state.cdp.some((c) => c.method === 'Input.dispatchKeyEvent' && c.params.key === 'Enter'), '有调试权限时按键走真实键盘事件')
     await commands.runBrowserCommand('observe', {})
