@@ -50,6 +50,7 @@ const ranked = search.matchSettings(fixture, '语言', 'zh-CN', (section) => (se
 ok(ids(ranked)[0] === 'language', '精确名排在分区名之前')
 ok(search.matchSettings(fixture, 'o', 'en-US', sectionLabel, 1).length === 1, 'limit 截断结果数')
 ok(search.matchSettings(SETTINGS_SEARCH_ENTRIES, '模型', 'zh-CN', sectionLabel, 60).length > 0, '真实条目表可被检索')
+ok(ids(search.matchSettings(SETTINGS_SEARCH_ENTRIES, '本地模型', 'zh-CN', sectionLabel, 60)).includes('session-prompt-suggestions-local'), '真实条目表能搜到本地模型预测开关')
 
 ok(search.settingSelector('session-compact-at') === '[data-setting-id="session-compact-at"]', '选择器按 id 生成属性选择器')
 ok(search.settingSelector('a"b') === '[data-setting-id="ab"]', '引号被剔除，不破坏选择器')

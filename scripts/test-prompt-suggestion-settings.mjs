@@ -45,6 +45,17 @@ try {
       check(disk.promptSuggestions === false && !('wrapUpCard' in disk), '写回磁盘时把关闭状态落到新键，旧键删除')
     }
   }
+  {
+    const root = await mkdtemp(join(tmpdir(), 'inkstone-suggestion-local-'))
+    roots.push(root)
+    await writeFile(join(root, 'desktop.json'), JSON.stringify({ promptSuggestionsLocal: 'yes' }))
+    const { getSettings, patchSettings } = await loadSettings(root, 'local')
+    check((await getSettings()).promptSuggestionsLocal === undefined, '本地模型预测开关只认 true，非布尔值退回默认关闭')
+    check((await patchSettings({ promptSuggestionsLocal: true })).promptSuggestionsLocal === true, '打开后读到开启')
+    check(JSON.parse(await readFile(join(root, 'desktop.json'), 'utf8')).promptSuggestionsLocal === true, '开关落盘，扩展读同一份桌面设置')
+    const off = await patchSettings({ promptSuggestionsLocal: false })
+    check(off.promptSuggestionsLocal === undefined && !('promptSuggestionsLocal' in JSON.parse(await readFile(join(root, 'desktop.json'), 'utf8'))), '关掉时回到默认关闭')
+  }
   console.log(`prompt-suggestion-settings: ${checks} checks passed`)
 } finally {
   await rm(compiled, { recursive: true, force: true })

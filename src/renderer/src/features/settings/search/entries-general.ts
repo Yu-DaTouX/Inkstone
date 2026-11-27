@@ -41,6 +41,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'session-subagent-model-force', section: 'session', zh: '强制使用默认模型', en: 'Always use the default model', keywords: ['子代理', '子 Agent', 'subagent', '模型', 'model'], more: true },
   { id: 'session-subagent-notify', section: 'session', zh: '子 Agent 结束时通知主会话', en: 'Notify parent when a subagent ends', keywords: ['子代理', '子 Agent', 'subagent', '父会话'], more: true },
   { id: 'session-prompt-suggestions', section: 'session', zh: '预测下一句', en: 'Suggest next message', keywords: ['预测', '下一句', '建议', '灰字', 'Tab', 'suggestion', 'next message', 'prompt'], more: true },
+  { id: 'session-prompt-suggestions-local', section: 'session', zh: '本地模型也预测', en: 'Local models too', keywords: ['本地模型', '本地', '预测', '显存', '显卡', 'local', 'gpu', 'suggestion'], more: true },
   { id: 'session-response-detail', section: 'session', zh: '回复详细程度', en: 'Response detail', keywords: ['详细', '简洁', '详略', '回复', 'brief', 'detailed', 'verbosity'], more: true },
   { id: 'session-loop-auto-continue', section: 'session', zh: '循环停止后自动继续', en: 'Auto-continue after a loop stop', keywords: ['循环', '续跑', '自动继续', 'loop', 'continue'], more: true },
   { id: 'session-idle-timeout', section: 'session', zh: '连接空闲超时', en: 'Connection idle timeout', keywords: ['超时', '本地模型', 'timeout', 'idle'], more: true },

@@ -1,6 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -44,7 +44,7 @@ ok(finalReply([reply('x', 'stop', [{ type: 'toolCall' }])]) === '', '\u5e26\u5de
 ok(suggestionInstruction('\u56de\u590d\u6b63\u6587').includes(SUGGESTION_MARKER) && suggestionInstruction('\u56de\u590d\u6b63\u6587').includes('<assistant-reply>\n\u56de\u590d\u6b63\u6587'), '\u6307\u4ee4\u5e26\u6807\u8bb0\u548c\u672c\u8f6e\u56de\u590d')
 ok(suggestionInstruction('a'.repeat(5000)).includes('a'.repeat(4000)) && !suggestionInstruction('a'.repeat(5000)).includes('a'.repeat(4001)), '\u56de\u590d\u53ea\u5e26\u6700\u540e 4000 \u5b57')
 
-function harness({ completeImpl, enabled = true, api = 'openai-responses' } = {}) {
+function harness({ completeImpl, enabled = true, api = 'openai-responses', localEnabled = false } = {}) {
   const statuses = []
   const calls = []
   let sessionId = 's1'
@@ -58,7 +58,7 @@ function harness({ completeImpl, enabled = true, api = 'openai-responses' } = {}
   }
   const model = { provider: 'p', id: 'm', api }
   const ctx = { model, modelRegistry: registry, ui, sessionManager: { getSessionId: () => sessionId } }
-  const suggestion = createPromptSuggestion({ enabled: () => enabled })
+  const suggestion = createPromptSuggestion({ enabled: () => enabled, localEnabled: () => localEnabled })
   const request = () => suggestion.onRequest({ payload: { input: [{ role: 'user', content: 'hi' }], tools: [{ name: 'read' }], reasoning: { effort: 'high' } } }, ctx)
   const end = (text = '\u6539\u597d\u4e86\u3002**\u8981\u4f60\u5b9a\uff1a\u63d0\u4e0d\u63d0\u4ea4\u3002**') => suggestion.onAgentEnd({ messages: [reply(text)] }, ctx)
   const start = (prompt) => suggestion.onAgentStart({ prompt }, ctx)
@@ -282,6 +282,43 @@ function harness({ completeImpl, enabled = true, api = 'openai-responses' } = {}
   errored.suggestion.onAgentEnd({ messages: [reply('x', 'error')] }, errored.ctx)
   await settle()
   ok(errored.calls.length === 0, '\u51fa\u9519\u7684\u4e00\u8f6e\u4e0d\u9884\u6d4b')
+  const local = harness({ api: 'openai-completions' })
+  local.ctx.model = { provider: 'ninfer', id: 'inkling-2-mini', api: 'openai-completions', baseUrl: 'http://127.0.0.1:8080/v1' }
+  local.request()
+  local.end()
+  await settle()
+  ok(local.calls.length === 0, '本地模型默认跳过回合末隐藏预测请求，避免抢占本机 GPU')
+  const forced = harness({ localEnabled: true })
+  forced.ctx.model = { provider: 'ninfer', id: 'inkling-2-mini', api: 'openai-responses', baseUrl: 'http://127.0.0.1:8080/v1' }
+  forced.request()
+  forced.end()
+  await settle()
+  ok(forced.calls.length === 1 && forced.calls[0].model.id === 'inkling-2-mini', '设置里打开「本地模型也预测」后照常发请求')
+}
+
+{
+  const dir = await mkdtemp(resolve('node_modules/.prompt-suggestion-json-'))
+  const previous = process.env.YAN_DATA_DIR
+  process.env.YAN_DATA_DIR = dir
+  try {
+    await writeFile(join(dir, 'desktop.json'), JSON.stringify({ promptSuggestionsLocal: true }))
+    const calls = []
+    const suggestion = createPromptSuggestion()
+    const ctx = {
+      model: { provider: 'ninfer', id: 'inkling-2-mini', api: 'openai-responses', baseUrl: 'http://127.0.0.1:8080/v1' },
+      modelRegistry: { complete: async (model, context, options) => { calls.push({ model, payload: options.onPayload() }); return { stopReason: 'stop', content: [{ type: 'text', text: '继续' }] } } },
+      ui: { setStatus: () => {} },
+      sessionManager: { getSessionId: () => 'local-1' }
+    }
+    suggestion.onRequest({ payload: { input: [{ role: 'user', content: 'hi' }], tools: [] } }, ctx)
+    suggestion.onAgentEnd({ messages: [reply('跑完了。')] }, ctx)
+    await settle()
+    ok(calls.length === 1 && calls[0].model.id === 'inkling-2-mini', '扩展按桌面设置读取开关，打开后本地模型照常请求')
+  } finally {
+    if (previous === undefined) delete process.env.YAN_DATA_DIR
+    else process.env.YAN_DATA_DIR = previous
+    await rm(dir, { recursive: true, force: true })
+  }
 }
 
 const dir = await mkdtemp(resolve('node_modules/.prompt-suggestion-'))

@@ -714,6 +714,7 @@ export interface AppSettings {
   accountFailover?: boolean
   subagentHistoryPrune?: boolean
   promptSuggestions?: boolean
+  promptSuggestionsLocal?: boolean
   workspaceTiles?: boolean
   smoothText?: boolean
   frictionRecorder?: boolean

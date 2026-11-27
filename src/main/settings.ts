@@ -299,6 +299,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.visualAnswers = settings.visualAnswers === false ? false : undefined
   const legacyWrapUpOff = (settings as { wrapUpCard?: unknown }).wrapUpCard === false
   settings.promptSuggestions = settings.promptSuggestions === false || (settings.promptSuggestions === undefined && legacyWrapUpOff) ? false : undefined
+  settings.promptSuggestionsLocal = settings.promptSuggestionsLocal === true ? true : undefined
   delete (settings as { wrapUpCard?: unknown }).wrapUpCard
   settings.asciiBackground = settings.asciiBackground === false ? false : undefined
   settings.autoCompactTokens = pickTokenStep(settings.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
@@ -445,7 +446,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','frictionRecorder','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','windowGlass','windowGlassOpacity','contrast','codeWrap','panelMotionMs','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','promptSuggestionsLocal','workspaceTiles','smoothText','frictionRecorder','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','windowGlass','windowGlassOpacity','contrast','codeWrap','panelMotionMs','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))
@@ -522,6 +523,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('keepAwakeOnBattery' in patch) next.keepAwakeOnBattery = next.keepAwakeOnBattery === false ? false : undefined
   if ('visualAnswers' in patch) next.visualAnswers = next.visualAnswers === false ? false : undefined
   if ('promptSuggestions' in patch) next.promptSuggestions = next.promptSuggestions === false ? false : undefined
+  if ('promptSuggestionsLocal' in patch) next.promptSuggestionsLocal = next.promptSuggestionsLocal === true ? true : undefined
   if ('autoCompactTokens' in patch) next.autoCompactTokens = pickTokenStep(next.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   if ('fontUi' in patch) next.fontUi = sanitizeFontUiPreset(next.fontUi)
   if ('fontUiCustom' in patch) next.fontUiCustom = sanitizeFontName(next.fontUiCustom)

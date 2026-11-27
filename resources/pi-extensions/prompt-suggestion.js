@@ -139,16 +139,40 @@ function branchOf(ctx) {
   }
 }
 
-function suggestionsEnabled() {
+function desktopSettings() {
   try {
     const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
-    return JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))?.promptSuggestions !== false
+    return JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8')) ?? {}
   } catch {
-    return true
+    return {}
   }
 }
 
-export function createPromptSuggestion({ enabled = suggestionsEnabled } = {}) {
+function suggestionsEnabled() {
+  return desktopSettings().promptSuggestions !== false
+}
+
+function localSuggestionsEnabled() {
+  return desktopSettings().promptSuggestionsLocal === true
+}
+
+function isLocalModel(model) {
+  const raw = typeof model?.baseUrl === 'string' ? model.baseUrl.trim() : ''
+  if (!raw) return false
+  try {
+    const host = new URL(raw).hostname.toLowerCase().replace(/^\[|\]$|\.$/g, '')
+    if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '::1' || host === '0.0.0.0') return true
+    if (/^(fc|fd)[0-9a-f]{2}:/.test(host) || host.startsWith('fe80:')) return true
+    const parts = host.split('.').map(Number)
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false
+    const [a, b] = parts
+    return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)
+  } catch {
+    return false
+  }
+}
+
+export function createPromptSuggestion({ enabled = suggestionsEnabled, localEnabled = localSuggestionsEnabled } = {}) {
   let lastRequest = null
   let controller = null
   let shown = null
@@ -250,7 +274,7 @@ export function createPromptSuggestion({ enabled = suggestionsEnabled } = {}) {
     const captured = lastRequest
     lastRequest = null
     const registry = ctx?.modelRegistry
-    if (!model || !registry) return
+    if (!model || !registry || (isLocalModel(model) && !localEnabled())) return
     const reply = finalReply(event?.messages)
     if (!reply) return
     if (ignored >= IGNORED_BEFORE_BACKOFF && (backoff++ % BACKOFF_EVERY) !== 0) return

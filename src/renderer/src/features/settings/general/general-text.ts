@@ -46,6 +46,9 @@ export interface GeneralText {
   sessionCheckpointsDesc: string
   sessionPromptSuggestions: string
   sessionPromptSuggestionsDesc: string
+  sessionPromptSuggestionsLocal: string
+  sessionPromptSuggestionsLocalDesc: string
+  sessionPromptSuggestionsLocalOff: string
   sessionResponseDetail: string
   sessionResponseDetailDesc: string
   responseDetailBrief: string
@@ -242,6 +245,9 @@ const ZH: GeneralText = {
   sessionCheckpointsDesc: '每轮存可回退快照；关闭后无法回退。',
   sessionPromptSuggestions: '预测下一句',
   sessionPromptSuggestionsDesc: '回复后多发一次短请求，给出灰字建议。',
+  sessionPromptSuggestionsLocal: '本地模型也预测',
+  sessionPromptSuggestionsLocalDesc: '本地模型默认不发这次请求，避免占用本机显卡；打开后照常每回合预测。',
+  sessionPromptSuggestionsLocalOff: '先打开上面的「预测下一句」',
   sessionResponseDetail: '回复详细程度',
   sessionUserAddress: '如何称呼你',
   sessionUserAddressDesc: '也用作侧栏名称；留空则不指定。',
@@ -441,6 +447,9 @@ const EN: GeneralText = {
   sessionCheckpointsDesc: 'Rewind snapshots; off disables rewind.',
   sessionPromptSuggestions: 'Suggest next message',
   sessionPromptSuggestionsDesc: 'One short extra request after each reply for a grey suggestion.',
+  sessionPromptSuggestionsLocal: 'Local models too',
+  sessionPromptSuggestionsLocalDesc: 'Local models skip this request to keep the GPU free; on predicts after every turn.',
+  sessionPromptSuggestionsLocalOff: 'Turn on the suggestion above first.',
   sessionResponseDetail: 'Response detail',
   sessionUserAddress: 'What should the model call you?',
   sessionUserAddressDesc: 'Also your sidebar name; blank for none.',

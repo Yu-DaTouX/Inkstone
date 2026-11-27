@@ -32,6 +32,7 @@ export function SessionSettings(): ReactElement {
   const subagentNotify = settings?.subagentNotify !== false
   const loopAutoContinue = settings?.streamLoopAutoContinue !== false
   const promptSuggestions = settings?.promptSuggestions !== false
+  const promptSuggestionsLocal = settings?.promptSuggestionsLocal === true
   const responseDetail: ResponseDetailChoice = settings?.responseDetail ?? 'standard'
   const responseDetailLabels: Record<ResponseDetailChoice, string> = {
     brief: text.responseDetailBrief,
@@ -102,6 +103,20 @@ export function SessionSettings(): ReactElement {
             isSelected={promptSuggestions}
             onChange={(on) => void patchSettings({ promptSuggestions: on })}
             data-testid="v3-session-prompt-suggestions"
+          />
+        </SettingsRow>
+        <SettingsRow
+          nested
+          settingId="session-prompt-suggestions-local"
+          label={text.sessionPromptSuggestionsLocal}
+          description={promptSuggestions ? text.sessionPromptSuggestionsLocalDesc : text.sessionPromptSuggestionsLocalOff}
+        >
+          <Switch
+            aria-label={text.sessionPromptSuggestionsLocal}
+            isSelected={promptSuggestionsLocal}
+            isDisabled={!promptSuggestions}
+            onChange={(on) => void patchSettings({ promptSuggestionsLocal: on })}
+            data-testid="v3-session-prompt-suggestions-local"
           />
         </SettingsRow>
 
