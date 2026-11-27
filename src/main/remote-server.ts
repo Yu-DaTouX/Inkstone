@@ -950,11 +950,11 @@ export class RemoteServer {
     }
 
     if (req.method === 'POST' && parts.length === 5 && parts[2] === 'questions' && parts[4] === 'approval') {
+      const body = await this.readJson(req)
       if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('人工批准需要单独配对的用户客户端', 'Manual approval requires a separately paired user client'), 'paired_user_required')
       const handler = this.options.handlers.humanApproval
       if (!handler) return writeError(res, 404, pick('电脑端尚不支持人工批准回传', 'This desktop does not support manual approval relay yet'))
       const questionId = decodeURIComponent(parts[3])
-      const body = await this.readJson(req)
       if (!validQuestionId(questionId) || !(body.sessionId === null || (typeof body.sessionId === 'string' && validSessionId(body.sessionId))) ||
           !(validRunId(body.runId) || (typeof body.runId === 'string' && /^approval:[0-9a-f-]{36}$/.test(body.runId))) ||
           typeof body.confirmed !== 'boolean' || typeof body.digest !== 'string' || !/^[0-9a-f]{64}$/.test(body.digest) ||
