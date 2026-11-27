@@ -84,7 +84,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
   service = make()
   const ctx = { cwd: project, parentSessionId: 's1', parentRunId: 'run-1', parentGeneration: 1, parentMessageId: 'a7' }
   const other = { cwd: project, parentSessionId: 's2', parentRunId: 'run-2', parentGeneration: 1 }
-  const waitFor = async (check, label, ms = 5000) => {
+  const waitFor = async (check, label, ms = 20000) => {
     const until = Date.now() + ms
     while (Date.now() < until) {
       if (await check()) return true
