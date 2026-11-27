@@ -12,11 +12,18 @@ export interface SessionUndoNotice {
   undo(): void
 }
 
+const UNDO_NOTICE_MS = 8_000
 let undoNotice: SessionUndoNotice | null = null
+let undoNoticeTimer: ReturnType<typeof setTimeout> | null = null
 const undoNoticeListeners = new Set<() => void>()
 
 function publishUndoNotice(next: SessionUndoNotice | null): void {
+  if (undoNoticeTimer !== null) {
+    clearTimeout(undoNoticeTimer)
+    undoNoticeTimer = null
+  }
   undoNotice = next
+  if (next) undoNoticeTimer = setTimeout(() => publishUndoNotice(null), UNDO_NOTICE_MS)
   for (const listener of undoNoticeListeners) listener()
 }
 
