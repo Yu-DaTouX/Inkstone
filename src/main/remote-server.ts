@@ -644,13 +644,9 @@ export class RemoteServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const origin = req.headers.origin
-    if (origin) {
-      let allowed = false
-      try { const incoming = new URL(origin); allowed = ['http:', 'https:'].includes(incoming.protocol) && incoming.host === req.headers.host } catch { }
-      if (!allowed) { writeError(res, 403, pick('网页来源不受允许', 'Web origin not allowed')); return }
-      res.setHeader('access-control-allow-origin', origin)
-      res.setHeader('vary', 'Origin')
+    if (req.headers.origin) {
+      writeError(res, 403, pick('网页来源不受允许', 'Web origin not allowed'))
+      return
     }
     const url = new URL(req.url ?? '/', `http://${this.options.host}:${this.boundPort}`)
     if (req.method === 'OPTIONS') {

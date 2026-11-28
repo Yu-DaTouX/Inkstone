@@ -202,6 +202,7 @@ export async function writeEditableFile(
     try {
       handle = await open(temp, 'wx', mode)
       await handle.writeFile(bytes)
+      await handle.sync()
       await handle.close()
       handle = null
       if (preserveMode) await chmod(temp, mode)

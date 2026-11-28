@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StatusBar, StyleSheet, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { RemoteClient, RemoteHttpError, secureConnection, type Connection } from './api/client'
+import { RelayTunnel } from './api/relay'
 import { readUiPrefs, writeUiPrefs, type PhotoDraft } from './device'
 import { pairingPrefillFor, parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
@@ -169,6 +170,7 @@ function AppRoot() {
         if (!confirmed) return
       }
     }
+    if (connection?.relay) RelayTunnel.for(connection.relay).close()
     await clearConnection()
     setConnection(null)
     setAlertsEnabled(false)

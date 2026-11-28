@@ -245,7 +245,10 @@ const resyncActiveView = createViewResync({
   log: (text) => logMainEvent('视图重同步', text)
 })
 
+let ownsDataRoot = false
+
 process.on('exit', (code) => {
+  if (!ownsDataRoot) return
   try {
     const record = JSON.stringify({
       at: Date.now(),
@@ -3019,7 +3022,7 @@ function isKnownPackageProject(cwd: string): boolean {
 
 app.whenReady().then(async () => {
   await storageMoveReady
-  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error)); app.exit(1); return }
+  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR); ownsDataRoot = true } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error)); app.exit(1); return }
   refreshPackageProjectRoots(await getSettings())
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()

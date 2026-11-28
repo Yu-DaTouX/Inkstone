@@ -2,10 +2,10 @@ import type { CodegraphStatus, MarketSearchResult, PluginExportResult } from '..
 import { buildNativeMcpDocument } from '../shared/mcp-native'
 import { execFile, spawn } from 'node:child_process'
 import { killProcessTree } from './git-service'
-import { randomBytes } from 'node:crypto'
-import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pick } from '../shared/ui-lang'
+import { atomicWrite, nativeMcpTextFingerprint } from './mcp/config-write'
 
 export const CODEGRAPH_MCP_NAME = 'codegraph'
 export const CODEGRAPH_MCP_SERVER = { command: 'codegraph', args: ['serve', '--mcp'] }
@@ -31,13 +31,9 @@ export async function addCodegraphMcp(agentDir: string, installed: (command: str
   }
   const merged = buildNativeMcpDocument({ existing, name: CODEGRAPH_MCP_NAME, server: { ...CODEGRAPH_MCP_SERVER, args: [...CODEGRAPH_MCP_SERVER.args] } })
   if (!merged.ok) return merged.code === 'name_conflict' ? { ok: true, path, existed: true } : { ok: false, error: merged.reason }
-  await mkdir(agentDir, { recursive: true })
-  const temp = `${path}.${randomBytes(6).toString('hex')}.tmp`
   try {
-    await writeFile(temp, `${JSON.stringify(merged.document, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
-    await rename(temp, path)
+    await atomicWrite(path, `${JSON.stringify(merged.document, null, 2)}\n`, nativeMcpTextFingerprint(text))
   } catch (error) {
-    await rm(temp, { force: true }).catch(() => undefined)
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
   return { ok: true, path }

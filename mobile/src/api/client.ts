@@ -204,6 +204,10 @@ export async function secureConnection(connection: Connection): Promise<Connecti
   let pairing: RelayPairing
   try {
     pairing = tunnelPairing(connection.baseUrl, invite, '')
+    const fingerprint = hostFingerprint(pairing.hostKey)
+    if (typeof invite.hostFingerprint === 'string' && invite.hostFingerprint && invite.hostFingerprint !== fingerprint) {
+      return null
+    }
   } catch {
     return null
   }

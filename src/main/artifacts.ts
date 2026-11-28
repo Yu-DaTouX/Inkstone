@@ -328,12 +328,29 @@ export class ArtifactStore {
     const pluginRoots = await Promise.all(PLUGIN_OUTPUT_DIRS.map((dir) => realpath(join(this.rootDir, dir)).catch(() => null)))
     const pluginRoot = pluginRoots.find((root): root is string => !!root && isWithin(root, source))
     if (!pluginRoot && !isWithin(projectRoot, source)) throw new Error('artifact_path_outside_project')
-    const info = await stat(source)
-    if (!info.isFile()) throw new Error('artifact_not_a_file')
-    if (info.size === 0) throw new Error('artifact_empty')
-    if (info.size > MAX_ARTIFACT_BYTES) throw new Error('artifact_too_large')
     const filename = safeFilename(source.slice(source.lastIndexOf(sep) + 1))
-    const raw = await readFile(source)
+    const handle = await open(source, 'r')
+    let raw: Buffer
+    try {
+      const info = await handle.stat()
+      if (!info.isFile()) throw new Error('artifact_not_a_file')
+      if (info.size === 0) throw new Error('artifact_empty')
+      if (info.size > MAX_ARTIFACT_BYTES) throw new Error('artifact_too_large')
+      const chunks: Buffer[] = []
+      let total = 0
+      const scratch = Buffer.alloc(Math.min(info.size + 1, 64 * 1024))
+      while (true) {
+        const { bytesRead } = await handle.read(scratch, 0, scratch.length, total)
+        if (!bytesRead) break
+        total += bytesRead
+        if (total > MAX_ARTIFACT_BYTES) throw new Error('artifact_too_large')
+        chunks.push(Buffer.from(scratch.subarray(0, bytesRead)))
+      }
+      if (total === 0) throw new Error('artifact_empty')
+      raw = Buffer.concat(chunks, total)
+    } finally {
+      await handle.close()
+    }
     const bytes = /\.html?$/i.test(filename) && usesArtifactLibs(raw.toString('utf8')) ? Buffer.from(withBundledLibs(raw.toString('utf8')), 'utf8') : raw
     return this.save({
       sessionFile: input.sessionFile,
