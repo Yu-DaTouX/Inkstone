@@ -200,7 +200,7 @@ export async function addProviderModel(provider: string, input: LocalModelInput,
     if (input.reasoning === true) {
       next.reasoning = true
       const template = models.find((m): m is Json => !!m && typeof m === 'object' && !!((m as Json).thinkingLevelMap && typeof (m as Json).thinkingLevelMap === 'object'))
-      if (/inkling/i.test(id)) {
+      if (/inkling|yuxiaotou/i.test(id)) {
         next.thinkingLevelMap = { off: 'none', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'xhigh' }
       } else if (template) {
         next.thinkingLevelMap = { ...(template.thinkingLevelMap as Json) }
