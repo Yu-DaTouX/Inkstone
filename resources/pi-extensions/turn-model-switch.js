@@ -76,7 +76,12 @@ export function createTurnModelSwitch(pi, root) {
   }
 }
 
+export function isPrimarySwitchRunner(env = process.env) {
+  return env.YAN_RUNNER_KIND !== 'fork' && env.YAN_RUNNER_KIND !== 'subagent' && env.YAN_SIDE_QUESTION !== '1'
+}
+
 export default function turnModelSwitch(pi) {
+  if (!isPrimarySwitchRunner()) return
   const handlers = createTurnModelSwitch(pi)
   pi.on('input', handlers.onInput)
   pi.on('agent_end', handlers.onAgentEnd)

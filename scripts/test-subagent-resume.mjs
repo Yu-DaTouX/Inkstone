@@ -43,8 +43,10 @@ export async function runSubagentResumeTests(ok, mods) {
     env: { YAN_PROJECT_ID: 'p', PI_CODING_AGENT_DIR: '/a', YAN_CLI_TOKEN: 'secret', YAN_CLI_URL: 'http://x', PATH: '/bin', OPENAI_API_KEY: 'k', PI_API_KEY: 'k2' }
   })
   ok(JSON.stringify(Object.keys(forkLaunch.env).sort()) === JSON.stringify(['PI_CODING_AGENT_DIR', 'YAN_PROJECT_ID']), 'fork 持久化：只保留非敏感的 YAN_/PI_ 变量', JSON.stringify(forkLaunch.env))
-  ok(!('sessionFile' in forkLaunch), 'fork 持久化：不保存来源会话文件路径')
-  ok(resume.restoreForkSource(forkLaunch, '/child.jsonl').sessionFile === '/child.jsonl', 'fork 恢复：换成自己的会话文件')
+  ok(!('sessionFile' in forkLaunch), 'fork 持久化：不保存子会话文件路径')
+  ok(forkLaunch.parentSessionFile === '/s.jsonl', 'fork 持久化：单独保存真正的父会话授权来源路径', forkLaunch.parentSessionFile)
+  const restoredFork = resume.restoreForkSource(forkLaunch, '/child.jsonl')
+  ok(restoredFork.sessionFile === '/child.jsonl' && restoredFork.parentSessionFile === '/s.jsonl', 'fork 恢复：运行记录换成子文件，同时保持父会话授权来源不变', JSON.stringify(restoredFork))
 
   const items = [
     { id: 'a', lastActiveAt: 100 * DAY, rank: 0, terminal: true, reviewed: true, live: false },

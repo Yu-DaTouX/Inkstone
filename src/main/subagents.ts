@@ -200,6 +200,8 @@ interface Run extends SubagentRun {
   brief: SubagentBrief
   stderrTail: string[]
   forkSource?: SubagentForkSource
+  parentSessionFile?: string
+  userMessages: string[]
   launch?: ResumeLaunch
   exitInfo?: { code: number | null; signal: string | null; spawnError?: string }
   awaitingBackground?: boolean
@@ -1054,6 +1056,8 @@ export class SubagentController {
       projectId: ctx.projectId,
       isolation: workspace.isolation,
       ...(fork ? { fork: true, forkSource: fork } : {}),
+      parentSessionFile: fork ? (fork.parentSessionFile ?? fork.sessionFile) : ctx.parentSessionFile,
+      userMessages: [],
       launch: { appendSystemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension },
       model,
       ...(ctx.modelPinned ? { modelPinned: true } : {}),
@@ -1198,7 +1202,21 @@ export class SubagentController {
     const args = forkPiArgs(fork.args, { sessionDir, sessionFile: file, model: fork.model, thinkingLevel: fork.thinkingLevel })
     const piBin = fork.piBin ?? ctx.piBin
     if (ctx.createRpc) return ctx.createRpc({ cwd: fork.cwd, piBin, args })
-    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, { ...fork.env, YAN_RUNNER_ID: id, YAN_RUNNER_KIND: 'fork' }, ctx.runReadOnlyCommand)
+    let parentSessionFile = fork.parentSessionFile ?? (sessionFile ? undefined : fork.sessionFile)
+    if (!parentSessionFile && sessionFile) {
+      try {
+        const firstLine = readFileSync(sessionFile, 'utf8').split('\n', 1)[0]
+        const header = JSON.parse(firstLine) as { type?: unknown; id?: unknown; parentSession?: unknown }
+        if (header?.type === 'session' && typeof header.parentSession === 'string' && header.parentSession && header.parentSession !== sessionFile && (!ctx.parentSessionId || header.id === ctx.parentSessionId)) {
+          parentSessionFile = header.parentSession
+        }
+      } catch {
+      }
+    }
+    const env: Record<string, string | undefined> = { ...fork.env, YAN_RUNNER_ID: id, YAN_RUNNER_KIND: 'fork' }
+    if (parentSessionFile) env.YAN_PARENT_SESSION_FILE = parentSessionFile
+    else delete env.YAN_PARENT_SESSION_FILE
+    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, env, ctx.runReadOnlyCommand)
   }
 
   private async spawnWithApproval(
@@ -1227,7 +1245,18 @@ export class SubagentController {
           if (command === 'shell.background') return background.run(params, signal)
           const handled = await host.handle(command, params, cwd, signal, id)
           if (handled) return handled
-          if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }) } }
+          if (command === 'danger.prefs') {
+            const liveRun = this.runs.get(id)
+            const userMessages = liveRun?.userMessages ?? []
+            return {
+              summary: {
+                kind: 'danger-prefs',
+                ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }),
+                subagentUserMessages: userMessages,
+                subagentUserTurn: userMessages.length
+              }
+            }
+          }
           const origin = approvalOriginFor(this.runs.get(id), ctx, id)
           if (command === 'danger.review') {
             const review = dangerReviewOf(params)
@@ -1396,6 +1425,10 @@ export class SubagentController {
       if ((model && model !== live.model) || (thinkingLevel && thinkingLevel !== live.thinkingLevel)) {
         return { ok: false, error: pick('子 Agent正在等待额度恢复，暂不能在排队时切换模型；请先停止后再换模型续派', 'Subagent is waiting for quota recovery and cannot switch models while queued; stop it first and resume with the new model') }
       }
+      if (from === 'user') {
+        recordDirectUserMessage(live, text)
+        await this.writeMetadata(live)
+      }
       const queued = live.queued ?? (live.queued = [])
       queued.push({ text, mode, from })
       if (mode === 'followUp') live.followUp = text
@@ -1409,6 +1442,10 @@ export class SubagentController {
       if (model || thinkingLevel) {
         const switched = await this.applyLiveModelChange(live, model, thinkingLevel, current)
         if (!switched.ok) return switched
+        await this.writeMetadata(live)
+      }
+      if (from === 'user') {
+        recordDirectUserMessage(live, text)
         await this.writeMetadata(live)
       }
       const res = await live.rpc.command('prompt', { message: forwardedMessage(text, mode, from), streamingBehavior: mode }, { timeoutMs: 10_000 })
@@ -1502,7 +1539,9 @@ export class SubagentController {
         existsSync
       )
       const stale = this.staleOwners.has(id)
-      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentRunId: stale ? undefined : snapshot.parentRunId, parentGeneration: stale ? undefined : snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: nextThinking }
+      const parentSessionFile = previous?.parentSessionFile ?? record?.resume?.parentSessionFile ?? (snapshot.parentSessionId && snapshot.parentSessionId === this.opts.parentSessionId ? this.opts.parentSessionFile : undefined)
+      const restoredUserMessages = previous?.userMessages ?? (Array.isArray(record?.resume?.userMessages) ? record.resume.userMessages.filter((item): item is string => typeof item === 'string' && !!item.trim()) : [])
+      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentSessionFile, parentRunId: stale ? undefined : snapshot.parentRunId, parentGeneration: stale ? undefined : snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: nextThinking }
       let brief: SubagentBrief
       let rpc: SubagentRpc
       try {
@@ -1535,8 +1574,12 @@ export class SubagentController {
         baseUsage: snapshot.usage,
         brief,
         stderrTail: [],
+        parentSessionFile,
+        userMessages: [...restoredUserMessages],
         ...(forkSource ? { forkSource } : {})
       }
+      if (parentSessionFile) run.parentSessionFile = parentSessionFile
+      if (from === 'user') recordDirectUserMessage(run, text)
       run.launch = resolvedLaunch.launch
       clearTimeout(run.timer)
       const resumedIn = from === 'parent' && this.opts.parentMessageId && this.opts.parentSessionId === run.parentSessionId ? this.opts.parentMessageId : undefined
@@ -2779,6 +2822,16 @@ function worktreeAlive(run: Run): boolean {
   return run.isolation === 'worktree' && !run.worktreeDone && (run.review === 'pending' || run.review === 'conflict')
 }
 
+const MAX_DIRECT_USER_MESSAGES = 50
+const MAX_DIRECT_USER_MESSAGE_CHARS = 3000
+
+function recordDirectUserMessage(run: Run, text: string): void {
+  const cleaned = text.trim()
+  if (!cleaned) return
+  run.userMessages.push(cleaned.length > MAX_DIRECT_USER_MESSAGE_CHARS ? cleaned.slice(0, MAX_DIRECT_USER_MESSAGE_CHARS) : cleaned)
+  if (run.userMessages.length > MAX_DIRECT_USER_MESSAGES) run.userMessages.splice(0, run.userMessages.length - MAX_DIRECT_USER_MESSAGES)
+}
+
 function resumeExtra(run: Run): { resume?: ResumeMeta } {
   const meta: ResumeMeta = {}
   if (run.launch) {
@@ -2786,6 +2839,8 @@ function resumeExtra(run: Run): { resume?: ResumeMeta } {
     meta.launchDigest = launchDigest(run.launch)
   }
   if (run.forkSource) meta.forkLaunch = persistableForkLaunch(run.forkSource)
+  if (run.parentSessionFile) meta.parentSessionFile = run.parentSessionFile
+  if (run.userMessages.length) meta.userMessages = [...run.userMessages]
   if (run.isolation === 'worktree' && run.workspace.worktreePath) meta.workspace = run.workspace
   const antigravitySessionId = antigravitySessionOf(run)
   if (antigravitySessionId) meta.antigravitySessionId = antigravitySessionId

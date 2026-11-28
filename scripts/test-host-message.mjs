@@ -25,7 +25,11 @@ const HOST_MESSAGES = [
   ['[额度换号 · 自动继续 1/1]\n上一轮因订阅账号额度用完中断。', 'continuation'],
   ['[Auto-continue 1/1] The previous model request failed with a temporary error.', 'continuation'],
   ['额度已恢复，请从上一轮中断的地方继续完成任务。', 'quota-resume'],
-  ['[砚宿主通知：后台终端命令]\n终端：bash', 'host-notice']
+  ['[砚宿主通知：后台终端命令]\n终端：bash', 'host-notice'],
+  ['【宿主提示】已到时间上限。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。', 'host-notice'],
+  ['【主会话追加】请在继续之前先考虑这条信息；仍在原任务范围内工作。\n\n继续排查', 'parent-followup'],
+  ['<fork-directive>\nYou are a forked worker.\n\n改 b.ts\n</fork-directive>', 'fork-directive'],
+  ['<side-question>\nThe user is asking a quick side question.\n\n为什么这样改？\n</side-question>', 'side-question']
 ]
 
 for (const [text, kind] of HOST_MESSAGES) {
@@ -72,7 +76,17 @@ ok(isHostContinuation('[额度换号 · 自动继续 1/1]\n…') && !isHostConti
   const slice = requestSlice(branch)
   ok(slice.prompt === '第一轮真实问题', 'ultracode 把续跑句排除在用户回合之外', slice.prompt)
   const turns = visibleTurns(branch)
-  ok(turns.length === 1 && turns[0].includes('第一轮真实问题'), '提示建议只按真实用户回合建模', JSON.stringify(turns))
+  ok(turns.length === 1 && turns[0].includes('第一轮真实问题') && turns[0].includes('继续'), '提示建议只按真实用户回合建模，续跑回答归入原回合', JSON.stringify(turns))
+  const forkBranch = [
+    { type: 'message', message: { role: 'user', content: [{ type: 'text', text: '父会话问题' }] } },
+    { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '父会话回答' }] } },
+    { type: 'message', message: { role: 'user', content: [{ type: 'text', text: '<fork-directive>\nYou are a forked worker.\n\n子任务\n</fork-directive>' }] } },
+    { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '子任务独立结果' }] } }
+  ]
+  const forkTurns = visibleTurns(forkBranch)
+  ok(forkTurns.length === 1 && !forkTurns[0].includes('子任务独立结果'), '非续跑的 fork 指令后，子任务回答不拼到父会话上一真人回合', JSON.stringify(forkTurns))
+  const { isPrimarySwitchRunner } = await import('../resources/pi-extensions/turn-model-switch.js')
+  ok(isPrimarySwitchRunner({}) && !isPrimarySwitchRunner({ YAN_RUNNER_KIND: 'fork' }) && !isPrimarySwitchRunner({ YAN_RUNNER_KIND: 'subagent' }) && !isPrimarySwitchRunner({ YAN_SIDE_QUESTION: '1' }), 'fork/子代理/旁路快问不消费父会话的待切换模型')
 }
 
 {
@@ -86,7 +100,7 @@ ok(isHostContinuation('[额度换号 · 自动继续 1/1]\n…') && !isHostConti
   ok(/The `yan` CLI is on PATH/.test(normal) && !/read-only/i.test(normal), '普通子代理指南不变', normal)
 
   const readOnlyEnv = environmentGuide(new Date(2026, 10, 10), 'win32', undefined, true, { readOnly: true })
-  ok(readOnlyEnv === 'Today: 2026-11-10 (local date).', '只读环境说明是一行字符串，只给日期，不提 shell 与 Git Bash', readOnlyEnv)
+  ok(readOnlyEnv === 'Today: 2026-11-10 (local date). OS: Windows.', '只读环境说明是一行字符串，只给日期与系统，不提 shell 与 Git Bash', readOnlyEnv)
   ok(/Git Bash/.test(environmentGuide(new Date(2026, 10, 10), 'win32', undefined, true)), '普通子代理环境说明不变')
 
   const readOnlyPrompt = runnerPrompt({ YAN_RUNNER_KIND: 'subagent', YAN_READ_ONLY_SUBAGENT: '1' })
@@ -105,7 +119,7 @@ ok(isHostContinuation('[额度换号 · 自动继续 1/1]\n…') && !isHostConti
     subagentGuideExtension({ on: (name, fn) => { handlers[name] = fn } })
     const sections = {}
     handlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: { sections } })
-    ok(/read-only/i.test(sections.inkstone_capabilities) && /^Today: \d{4}-\d{2}-\d{2} \(local date\)\.$/.test(sections.inkstone_environment), '只读子代理的段落注入只读指南与环境', sections.inkstone_environment)
+    ok(/read-only/i.test(sections.inkstone_capabilities) && /^Today: \d{4}-\d{2}-\d{2} \(local date\)\. OS: [^.]+\.$/.test(sections.inkstone_environment), '只读子代理的段落注入只读指南与环境', sections.inkstone_environment)
     ok(!/Git Bash/.test(`${sections.inkstone_capabilities}${sections.inkstone_environment}`), '只读子代理的段落里没有 Git Bash 指引')
   } finally {
     if (saved === undefined) delete process.env.YAN_READ_ONLY_SUBAGENT

@@ -112,6 +112,9 @@ export async function runSubagentForkTests(ok, fork, SubagentController) {
     const before = factory.created.length
     const resumed = await reopened.send(forkId, '接着改 c.ts', 'steer', { from: 'user' })
     ok(resumed.ok && resumed.delivery === 'resumed' && factory.created.length === before + 1, 'fork 控制器：重启后可续接', JSON.stringify(resumed))
+    const savedAfterUser = JSON.parse(await readFile(join(archive, `${forkId}.json`), 'utf8'))
+    ok(savedAfterUser.resume?.parentSessionFile === source && savedAfterUser.resume?.forkLaunch?.parentSessionFile === source, 'fork 控制器：重启续接后仍持久保留真正的父会话文件路径', JSON.stringify(savedAfterUser.resume))
+    ok(Array.isArray(savedAfterUser.resume?.userMessages) && savedAfterUser.resume.userMessages.includes('接着改 c.ts'), 'fork 控制器：面板真人追加消息持久化记录在 resume.userMessages 供审阅鉴权', JSON.stringify(savedAfterUser.resume?.userMessages))
     const again = factory.created.at(-1)
     const atAgain = (flag) => again.args[again.args.indexOf(flag) + 1]
     ok(atAgain('--model') === forkSource.model && again.args.includes('guide.js') && atAgain('--session').startsWith(childDir), 'fork 控制器：续接沿用来源参数与自己的会话文件', again.args.join(' '))

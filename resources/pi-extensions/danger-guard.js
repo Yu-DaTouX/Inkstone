@@ -4,7 +4,7 @@ import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { isHostAutomatedMessage } from './host-message.js'
-import { REVIEW_STREAK_LIMIT, REVIEW_STOP_NOTE, UNREVIEWED_REPEAT_LIMIT, parentUserMessages, reviewDeniedReason, reviewFailedReason, reviewPrompt, reviewTranscript, runReview, unreviewedRepeatReason } from './danger-review.js'
+import { PENDING_MAX, REVIEW_STREAK_LIMIT, REVIEW_STOP_NOTE, UNREVIEWED_REPEAT_LIMIT, parentUserMessages, reviewDeniedReason, reviewFailedReason, reviewPrompt, reviewTranscript, runReview, unreviewedRepeatReason } from './danger-review.js'
 
 const CONFIRM_TIMEOUT_MS = 35 * 60 * 1000
 const PREFS_TIMEOUT_MS = 5000
@@ -1627,7 +1627,7 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   return [...new Set(hits)]
 }
 
-const STRICT_PREFS = { mode: 'danger', outsideWrites: true, allowRoots: [] }
+const STRICT_PREFS = { mode: 'danger', outsideWrites: true, allowRoots: [], subagentUserMessages: [], subagentUserTurn: 0 }
 
 async function hostPrefs() {
   const url = process.env.YAN_CLI_URL
@@ -1644,10 +1644,18 @@ async function hostPrefs() {
     })
     const summary = (await response.json())?.summary
     if (!summary || (summary.mode !== 'danger' && summary.mode !== 'all')) return STRICT_PREFS
+    const subagentUserMessages = Array.isArray(summary.subagentUserMessages)
+      ? summary.subagentUserMessages.filter((item) => typeof item === 'string' && item.trim())
+      : []
+    const subagentUserTurn = typeof summary.subagentUserTurn === 'number' && Number.isInteger(summary.subagentUserTurn) && summary.subagentUserTurn >= 0
+      ? summary.subagentUserTurn
+      : subagentUserMessages.length
     return {
       mode: summary.mode,
       outsideWrites: summary.outsideWrites !== false,
-      allowRoots: Array.isArray(summary.allowRoots) ? summary.allowRoots.filter((p) => typeof p === 'string') : []
+      allowRoots: Array.isArray(summary.allowRoots) ? summary.allowRoots.filter((p) => typeof p === 'string') : [],
+      subagentUserMessages,
+      subagentUserTurn
     }
   } catch {
     return STRICT_PREFS
@@ -1744,15 +1752,30 @@ async function reportReview(review) {
   } catch {}
 }
 
-async function reviewAction(ctx, toolName, input, reasons) {
-  const subagent = process.env.YAN_RUNNER_KIND === 'subagent'
+async function reviewAction(ctx, toolName, input, reasons, prefs) {
+  const detail = approvalDetail(toolName, input)
+  if (detail.length > PENDING_MAX) {
+    return { decision: 'error', reason: `action detail exceeds automated review limit (${detail.length} > ${PENDING_MAX} chars)` }
+  }
+  const runnerKind = process.env.YAN_RUNNER_KIND
+  const subagent = runnerKind === 'subagent' || runnerKind === 'fork'
+  const fork = runnerKind === 'fork'
+  const baseParent = subagent ? parentUserMessages(process.env.YAN_PARENT_SESSION_FILE) : undefined
+  if (subagent && !baseParent?.earlier && !(baseParent?.users?.length)) {
+    return { decision: 'error', reason: 'parent user messages are unavailable for review' }
+  }
+  const directUserMessages = subagent && Array.isArray(prefs?.subagentUserMessages) ? prefs.subagentUserMessages : []
+  const parent = baseParent
+    ? { earlier: baseParent.earlier, users: [...baseParent.users, ...directUserMessages] }
+    : undefined
   const entries = typeof ctx?.sessionManager?.getBranch === 'function' ? ctx.sessionManager.getBranch() : []
   const prompt = reviewPrompt({
     transcript: reviewTranscript(entries),
-    parent: subagent ? parentUserMessages(process.env.YAN_PARENT_SESSION_FILE) : undefined,
+    parent,
     subagent,
+    fork,
     toolName,
-    detail: approvalDetail(toolName, input),
+    detail,
     reasons,
     cwd: ctx?.cwd
   })
@@ -1766,14 +1789,21 @@ function stopRun(ctx) {
 export default function dangerGuardExtension(pi) {
   let criticalTimeouts = 0
   let reviewStreak = 0
+  let seenSubagentUserTurn = 0
   const unreviewed = new Map()
 
-  pi.on('before_agent_start', (event) => {
-    if (event?.messageType === 'custom') return undefined
-    if (isHostAutomatedMessage(String(event?.prompt ?? ''))) return undefined
+  const resetCounters = () => {
     criticalTimeouts = 0
     reviewStreak = 0
     unreviewed.clear()
+  }
+
+  pi.on('before_agent_start', (event) => {
+    if (event?.messageType === 'custom') return undefined
+    const runnerKind = process.env.YAN_RUNNER_KIND
+    if (runnerKind === 'subagent' || runnerKind === 'fork') return undefined
+    if (isHostAutomatedMessage(String(event?.prompt ?? ''))) return undefined
+    resetCounters()
     return undefined
   })
 
@@ -1784,6 +1814,11 @@ export default function dangerGuardExtension(pi) {
     const input = event?.input ?? {}
     const toolCallId = typeof event?.toolCallId === 'string' ? event.toolCallId : ''
     const prefs = await hostPrefs()
+    const runnerKind = process.env.YAN_RUNNER_KIND
+    if ((runnerKind === 'subagent' || runnerKind === 'fork') && prefs.subagentUserTurn > seenSubagentUserTurn) {
+      seenSubagentUserTurn = prefs.subagentUserTurn
+      resetCounters()
+    }
     if (prefs.mode === 'all') {
       const critical = criticalDanger(name, input, ctx?.cwd)
       if (critical.length === 0) return undefined
@@ -1816,7 +1851,7 @@ export default function dangerGuardExtension(pi) {
       return inputDigest(input) === approvedDigest ? undefined : { block: true, reason: CHANGED_AFTER_APPROVAL }
     }
     if (!answer.timedOut) return { block: true, reason: `High-risk operation not confirmed by the user: ${unique.join('; ')}. ${answer.why}. Do not retry it and do not work around the refusal by another route; tell the user why this one is needed, or ask which alternative they want.` }
-    const verdict = await reviewAction(ctx, name, input, unique)
+    const verdict = await reviewAction(ctx, name, input, unique, prefs)
     const allowed = verdict.decision === 'allow'
     await reportReview({ toolCallId, tool: name, reasons: unique, allowed, reason: verdict.reason, askedAt })
     if (allowed) {

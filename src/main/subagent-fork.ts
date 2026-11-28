@@ -8,6 +8,7 @@ export interface SubagentForkSource {
   args: string[]
   env: Record<string, string | undefined>
   sessionFile: string
+  parentSessionFile?: string
   model: string
   thinkingLevel?: string
   contextTokens?: number
@@ -169,8 +170,8 @@ export function forkPrompt(task: string): string {
     '<fork-directive>',
     'You are a forked worker. Everything above is the parent conversation, inherited so you can act with its full context. The parent keeps working on its own and only sees your final message.',
     '- Do only the task below; do not pick up the parent\'s other plans or the placeholder tool result above.',
-    '- Do not start subagents, ask the user questions, or use the to-do panel.',
-    '- Finish with a concise report: what you found or changed, the files involved, and anything left open.',
+    '- Do not start subagents (directly or via `yan workflow`), ask the user questions, or use the to-do panel. Main-session `yan` groups (such as `workflow`, `office`, `browser`, `subagent`, `terminal`, `image`, `artifact attach`, `capabilities`) are not available in this worker; only search and artifact preview work here. Use the tools and methods the task names; if one is unavailable or deliberately blocked, say so rather than working around it.',
+    '- Finish with a concise report in the language of the task: outcome first, findings or changes with evidence (file:line, command and result, or source URL), assumptions made, what you could not verify or left out of scope, and the paths of files you changed or created. Never present an unchecked claim as checked.',
     '',
     task,
     '</fork-directive>'

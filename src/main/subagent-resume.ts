@@ -15,6 +15,7 @@ export interface PersistedForkLaunch {
   piBin?: string
   args: string[]
   env: Record<string, string>
+  parentSessionFile?: string
   model: string
   thinkingLevel?: string
   contextTokens?: number
@@ -26,6 +27,8 @@ export interface ResumeMeta {
   launch?: ResumeLaunch
   launchDigest?: string
   forkLaunch?: PersistedForkLaunch
+  parentSessionFile?: string
+  userMessages?: string[]
   workspace?: PreparedWorkspace
   antigravitySessionId?: string
 }
@@ -87,11 +90,13 @@ export function persistableForkLaunch(source: SubagentForkSource): PersistedFork
     if (typeof value !== 'string' || !PERSISTED_ENV.test(key) || SECRET_ENV.test(key) || key === 'YAN_CLI_URL') continue
     env[key] = value
   }
+  const parentSessionFile = source.parentSessionFile ?? source.sessionFile
   return {
     cwd: source.cwd,
     ...(source.piBin ? { piBin: source.piBin } : {}),
     args: [...source.args],
     env,
+    ...(parentSessionFile ? { parentSessionFile } : {}),
     model: source.model,
     ...(source.thinkingLevel ? { thinkingLevel: source.thinkingLevel } : {}),
     ...(source.contextTokens !== undefined ? { contextTokens: source.contextTokens } : {}),
