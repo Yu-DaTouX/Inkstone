@@ -1088,10 +1088,10 @@ export class AntigravityBackend<Ctx extends AntigravityRunContext = AntigravityR
     await this.host.terminalNotices.flushHeld()
     if (!ownsTurn() || connection.session !== session || this.turn) return { ok: false, error: GENERATION_MISMATCH_ERROR }
     const heldNotices = this.heldNotices.length ? [...this.heldNotices] : []
-    const promptText = heldNotices.length ? `${heldNotices.join('\n\n')}\n\n${text}` : text
+    const promptOptions = heldNotices.length ? { notices: heldNotices } : undefined
     let prompt: string
     try {
-      prompt = antigravityPrompt(promptText, handoff.history, handoff.compactionSummary)
+      prompt = antigravityPrompt(text, handoff.history, handoff.compactionSummary, promptOptions)
     } catch (error) {
       if (error instanceof AntigravityHandoffLimitError && !connection.hasContext && handoff.history.length > 0 && this.host.state?.autoCompactionEnabled !== false) {
         this.host.push({ ch: 'notify', payload: { id: `acp-handoff-compact-${Date.now()}`, method: 'notify', notifyType: 'info',
@@ -1107,7 +1107,7 @@ export class AntigravityBackend<Ctx extends AntigravityRunContext = AntigravityR
         handoff = await loadHandoff()
         if (!handoff.ok) return handoff
         try {
-          prompt = antigravityPrompt(promptText, handoff.history, handoff.compactionSummary)
+          prompt = antigravityPrompt(text, handoff.history, handoff.compactionSummary, promptOptions)
         } catch (retryError) {
           return { ok: false, error: retryError instanceof Error ? retryError.message : String(retryError) }
         }

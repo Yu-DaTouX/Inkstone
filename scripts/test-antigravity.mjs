@@ -1716,6 +1716,28 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ], { keepRecentTokens: 200_000 })
     ok(keptBytesPlan.ok && keptBytesPlan.kept.length === 1 && keptBytesPlan.firstKeptEntryId === 'e3', '压缩保留区间同时受序列化字节预算约束，确保压缩后冷交接不超限', JSON.stringify({ kept: keptBytesPlan.kept?.length, firstKept: keptBytesPlan.firstKeptEntryId }))
     ok(compactMod.detectCompactLanguage(msgs)?.includes('Chinese'), '根据用户消息识别中文压缩摘要语言')
+    const livePrompt = compactMod.buildLiveCompactPrompt({ keptCount: 1, language: 'Simplified Chinese (简体中文)' })
+    const chunkPrompt = compactMod.buildChunkCompactPrompt('[User]: hi', { chunkIndex: 0, totalChunks: 1, language: 'Simplified Chinese (简体中文)' })
+    ok(/\[observed\]/.test(livePrompt) && /Never estimate a line number/.test(livePrompt) && /\[external\]/.test(livePrompt), 'Antigravity 压缩提示包含事实来源标注、禁估行号与防注入规则')
+    ok(/\[observed\]/.test(chunkPrompt) && /Never estimate a line number/.test(chunkPrompt), 'Antigravity 分块压缩提示同样包含保真与防注入规则')
+    const withNotice = [
+      { id: 'u1', entryId: 'e1', role: 'user', text: 'Check this repo', timestamp: 1000 },
+      { id: 'n1', entryId: 'e2', role: 'user', text: '<subagent-notification id="sub-1" status="done">\n子代理已完成\n</subagent-notification>', timestamp: 1001 },
+      { id: 'n2', entryId: 'e3', role: 'user', text: '[砚宿主通知：后台终端命令]\n完成', timestamp: 1002 }
+    ]
+    const appendices = compactMod.buildCompactAppendices(withNotice)
+    ok(appendices.includes('[1] Check this repo') && !appendices.includes('subagent-notification') && !appendices.includes('砚宿主通知'), '压缩附录 <user-messages> 跳过宿主自动通知', appendices)
+    ok(!compactMod.detectCompactLanguage(withNotice)?.includes('Chinese'), '压缩语言检测跳过中文宿主通知，不被带偏成中文', String(compactMod.detectCompactLanguage(withNotice)))
+    const noticeChunks = compactMod.serializeCompactChunks(withNotice)
+    ok(noticeChunks.some((chunk) => chunk.includes('[Host notice]: <subagent-notification')) && !noticeChunks.some((chunk) => chunk.includes('[User]: <subagent-notification')), '压缩分块把宿主通知标成 [Host notice] 而非 [User]', noticeChunks.join('\n'))
+    const inherited = compactMod.buildCompactAppendices(
+      [{ id: 'u2', entryId: 'e4', role: 'user', text: 'Next step', timestamp: 1003 }],
+      '## Goal\nx\n\n<user-messages>\nThe user\'s own messages from compacted turns:\n[1] First user msg\n[2] <subagent-notification id="old" status="done">\n旧通知\n</subagent-notification>\n</user-messages>'
+    )
+    ok(inherited.includes('[1] First user msg') && inherited.includes('[2] Next step') && !inherited.includes('subagent-notification'), '旧压缩摘要中残留的宿主通知在再次压缩时被清除', inherited)
+    ok(compactMod.detectCompactLanguage([{ id: 'j1', entryId: 'ej1', role: 'user', text: 'この設定ファイルの処理を確認してください', timestamp: 1004 }]) === 'Japanese', '日文用户消息识别为 Japanese 而不误判中文')
+    const withHeldNotices = antigravityPrompt('继续', plan.kept, '## Goal\n修好压缩', { notices: ['[砚宿主通知：后台终端命令]\n完成'] })
+    ok(withHeldNotices.includes('<host-notices>') && withHeldNotices.includes('Current user message:\n继续\n\nContinue the same Inkstone conversation.'), '冷交接把待投递宿主通知放进独立 <host-notices> 块，不混入 Current user message', withHeldNotices.slice(0, 220))
 
     const withSummary = antigravityPrompt('继续', plan.kept, '## Goal\n修好压缩')
     ok(withSummary.includes('<prior-compaction-summary>\n## Goal\n修好压缩\n</prior-compaction-summary>') && withSummary.includes('继续修第二个问题') && !withSummary.includes('先读 README'), '交接提示词只携带压缩摘要与保留消息', withSummary.slice(0, 120))

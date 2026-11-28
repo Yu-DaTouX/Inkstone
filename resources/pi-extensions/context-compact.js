@@ -4,8 +4,8 @@
 // 并在压缩完成后把失败原因记成不进上下文的会话条目；连续失败 3 次后直接交给 pi。
 // 被压缩的原文按段加锚点，追加写进会话文件旁的 <会话>.jsonl.history.txt（常见密钥格式替换成占位符），
 // 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
-import { appendFile, open, readFile, stat } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { appendFile, open, readFile, realpath, stat } from 'node:fs/promises'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import { isHostAutomatedMessage } from './host-message.js'
 import { registerProviderRequestStage } from './provider-request.js'
 
@@ -252,21 +252,40 @@ export function appendixBudgets({ window, summaryTokens, keptTokens, fixedTokens
 }
 
 const FILE_TOOLS = new Set(['read', 'edit', 'write', 'multiedit'])
+const SENSITIVE_COMPACT_NAME = /^(?:\.env(?:\..+)?|auth\.json|\.npmrc|\.netrc|id_(?:rsa|dsa|ecdsa|ed25519)(?:\..+)?|credentials(?:\..+)?|secrets?(?:\..+)?)$/i
+const SENSITIVE_COMPACT_EXT = /\.(?:pem|key|p12|pfx|jks|keystore)$/i
 
-function toolPaths(message) {
+function isSensitiveCompactPath(relPath) {
+  const parts = String(relPath ?? '').split(/[\\/]/).filter(Boolean)
+  if (parts.some((segment) => /^(?:\.ssh|\.aws|\.gnupg|\.kube)$/i.test(segment))) return true
+  const name = basename(relPath)
+  return SENSITIVE_COMPACT_NAME.test(name) || SENSITIVE_COMPACT_EXT.test(name)
+}
+
+function successfulToolCallIds(messages) {
+  const ok = new Set()
+  for (const message of messages ?? []) {
+    if (message?.role !== 'toolResult' || message.isError === true) continue
+    if (typeof message.toolCallId === 'string' && message.toolCallId) ok.add(message.toolCallId)
+  }
+  return ok
+}
+
+function toolPaths(message, allowedIds) {
   if (message?.role !== 'assistant' || !Array.isArray(message.content)) return []
   return message.content
-    .filter((b) => b?.type === 'toolCall' && FILE_TOOLS.has(String(b.name ?? '').toLowerCase()))
+    .filter((b) => b?.type === 'toolCall' && FILE_TOOLS.has(String(b.name ?? '').toLowerCase()) && (!allowedIds || (typeof b.id === 'string' && allowedIds.has(b.id))))
     .map((b) => b.arguments?.path ?? b.arguments?.file_path)
     .filter((p) => typeof p === 'string' && p.trim())
 }
 
-// 被压缩部分里最近读过或改过的文件，新的在前；保留区里已经出现过的不算（模型手里还有）
 export function recentFiles(summarized, kept, max = REINJECT_MAX_FILES) {
-  const skip = new Set((kept ?? []).flatMap(toolPaths))
+  const succeeded = successfulToolCallIds(summarized)
+  const keptSucceeded = successfulToolCallIds(kept)
+  const skip = new Set((kept ?? []).flatMap((m) => toolPaths(m, keptSucceeded)))
   const out = []
   for (let i = summarized.length - 1; i >= 0 && out.length < max; i--) {
-    for (const p of toolPaths(summarized[i]).reverse()) {
+    for (const p of toolPaths(summarized[i], succeeded).reverse()) {
       if (!skip.has(p) && !out.includes(p) && out.length < max) out.push(p)
     }
   }
@@ -279,9 +298,14 @@ function numbered(text) {
   return lines.map((line, i) => `${String(i + 1).padStart(width)}\t${line}`).join('\n')
 }
 
-// 按磁盘上的当前内容补回文件，只补工作目录里的文本文件；放不下的只给路径
 export async function currentFilesBlock(paths, cwd, ratio, totalTokens = REINJECT_TOTAL_TOKENS) {
   if (!paths.length || !cwd || totalTokens < MIN_APPENDIX_TOKENS) return { block: '', files: [] }
+  let realCwd
+  try {
+    realCwd = await realpath(cwd)
+  } catch {
+    return { block: '', files: [] }
+  }
   let budget = Math.min(REINJECT_TOTAL_TOKENS, totalTokens)
   const sections = []
   const files = []
@@ -289,18 +313,32 @@ export async function currentFilesBlock(paths, cwd, ratio, totalTokens = REINJEC
     const full = resolve(cwd, p)
     const rel = relative(cwd, full)
     if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) continue
-    let text
+    if (isSensitiveCompactPath(rel)) continue
+    let realFull
     try {
-      const info = await stat(full)
+      realFull = await realpath(full)
+    } catch {
+      continue
+    }
+    const realRel = relative(realCwd, realFull)
+    if (!realRel || realRel === '..' || realRel.startsWith(`..${sep}`) || isAbsolute(realRel)) continue
+    if (isSensitiveCompactPath(realRel)) continue
+    let text
+    let handle
+    try {
+      handle = await open(realFull, 'r')
+      const info = await handle.stat()
       if (!info.isFile()) continue
       if (info.size > Math.ceil(Math.min(REINJECT_FILE_TOKENS, budget) / ratio) * 4) {
         sections.push(`=== ${p} (${info.size} bytes, too large to include here; read it if you need it) ===`)
         files.push({ path: p, included: false })
         continue
       }
-      text = await readFile(full, 'utf8')
+      text = await handle.readFile('utf8')
     } catch {
       continue
+    } finally {
+      await handle?.close().catch(() => {})
     }
     if (text.includes('\0')) continue
     const body = numbered(redactSecrets(text))
