@@ -2,7 +2,6 @@ import { pick } from '../../../src/shared/ui-lang'
 import { useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { RemoteAnswer, RemotePendingQuestion } from '../../../src/shared/remote-protocol'
-import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { approvalBindsCommand } from '../../../src/shared/approval'
 import { idempotencyKey, RemoteHttpError } from '../api/client'
 import { SpeechInputButton } from './SpeechInputButton'
@@ -36,14 +35,14 @@ export function QuestionCard({
   compact?: boolean
 }) {
   const p = usePalette()
-  const { client, info, refresh } = useRemote()
+  const { client, refresh } = useRemote()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [voiceBusy, setVoiceBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ value: string; key: string } | null>(null)
   const approval = approvalInfo(question)
-  const canApprove = !!approval && !!question.approvalDigest && capabilityAllowed(info, 'human-approval')
+  const canApprove = !!approval && !!question.approvalDigest
   const risky = approval?.kind === 'danger' || approval?.kind === 'outside' || approval?.kind === 'delete'
 
   const submit = async (value: string, run: (key: string) => Promise<unknown>): Promise<void> => {

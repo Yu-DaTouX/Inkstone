@@ -1,5 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
+import { VERSION_HEADERS, callPath } from './lib/remote-call.mjs'
 import { createServer, request as httpRequest } from 'node:http'
 import { connect } from 'node:net'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -74,7 +75,7 @@ await check('正常 apply 后 stop 仍会关闭服务', async () => {
 const server = new M.RemoteServer({ host: '127.0.0.1', port: 0, token: 'test-remote-token-1234567890', handlers })
 await server.start()
 const post = (path, body, headers = {}) => new Promise((resolve, reject) => {
-  const req = httpRequest({ host: '127.0.0.1', port: server.info.port, path, method: 'POST', headers: { authorization: 'Bearer test-remote-token-1234567890', ...headers } }, (res) => {
+  const req = httpRequest({ host: '127.0.0.1', port: server.info.port, path, method: 'POST', headers: { authorization: 'Bearer test-remote-token-1234567890', ...VERSION_HEADERS, ...headers } }, (res) => {
     let text = ''
     res.on('data', (c) => { text += c })
     res.on('end', () => resolve({ status: res.statusCode, text }))
@@ -84,20 +85,20 @@ const post = (path, body, headers = {}) => new Promise((resolve, reject) => {
 })
 
 await check('坏 JSON 返回 400，请求体超限返回 413，对象以外返回 400', async () => {
-  const bad = await post('/remote/v1/device', '{ 不是 json', { 'content-type': 'application/json' })
+  const bad = await post(callPath('session.rename'), '{ 不是 json', { 'content-type': 'application/json' })
   assert.equal(bad.status, 400, bad.text)
   assert.equal(JSON.parse(bad.text).ok, false)
-  const array = await post('/remote/v1/device', '[1,2]', { 'content-type': 'application/json' })
+  const array = await post(callPath('session.rename'), '[1,2]', { 'content-type': 'application/json' })
   assert.equal(array.status, 400, array.text)
-  const huge = await post('/remote/v1/device', JSON.stringify({ name: 'x'.repeat(200 * 1024) }), { 'content-type': 'application/json' })
+  const huge = await post(callPath('session.rename'), JSON.stringify({ name: 'x'.repeat(200 * 1024) }), { 'content-type': 'application/json' })
   assert.equal(huge.status, 413, huge.text)
-  const ok = await post('/remote/v1/device', JSON.stringify({ name: '手机' }), { 'content-type': 'application/json' })
-  assert.equal(ok.status, 403, '合法 JSON 仍按原逻辑处理（无设备令牌）')
+  const ok = await post(callPath('session.rename'), JSON.stringify({ name: '手机' }), { 'content-type': 'application/json' })
+  assert.equal(ok.status, 400, '合法 JSON 交给动作自己校验参数')
 })
 
 await check('分块上传无 content-length 的超限体同样返回 413', async () => {
   const status = await new Promise((resolve, reject) => {
-    const req = httpRequest({ host: '127.0.0.1', port: server.info.port, path: '/remote/v1/device', method: 'POST', headers: { authorization: 'Bearer test-remote-token-1234567890', 'transfer-encoding': 'chunked' } }, (res) => {
+    const req = httpRequest({ host: '127.0.0.1', port: server.info.port, path: callPath('session.rename'), method: 'POST', headers: { authorization: 'Bearer test-remote-token-1234567890', ...VERSION_HEADERS, 'transfer-encoding': 'chunked' } }, (res) => {
       res.resume()
       res.on('end', () => resolve(res.statusCode))
     })

@@ -8,7 +8,7 @@ import { exportKeyPair, generateKeyPair, importKeyPair, randomB64u, sha256, toB6
 export const RELAY_PAIR_TTL_MS = 10 * 60_000
 const MAX_CLIENTS = 16
 
-export type RelayClientKind = 'phone' | 'peer' | 'agent' | 'viewer'
+export type RelayClientKind = 'phone' | 'viewer'
 
 export interface RelayClient {
   id: string
@@ -23,7 +23,7 @@ export interface RelayClient {
   pendingUntil: number | null
 }
 
-const KINDS: RelayClientKind[] = ['phone', 'peer', 'agent']
+const KINDS: RelayClientKind[] = ['phone']
 const VIEWER_NAME_MAX = 60
 
 interface StoredState {

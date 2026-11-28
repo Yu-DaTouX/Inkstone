@@ -1,23 +1,4 @@
 export function edgeFlows({ boot, openSession, check, env }) {
-  async function flowOldDesktop() {
-    const tag = '[旧电脑端]'
-    const ctx = await boot({ desktop: { omit: ['insight', 'compact', 'branches', 'switchBranch', 'search', 'sessionFlags', 'deleteSession', 'models'] } })
-    const { desk, h } = ctx
-    await h.typeInto(h.inputs()[0], '关键词')
-    await h.settle(600)
-    check(!desk.calls.some((c) => c[0] === 'search'), `${tag} 没有 search 能力时不请求`)
-    await h.typeInto(h.inputs()[0], '')
-    await openSession(h, '第一个会话')
-    await h.pressLabel('打开会话详情')
-    await h.waitFor(() => h.has('环境'), `${tag} 详情可打开`)
-    await h.settle(200)
-    check(!h.has('用量') && !h.has('更改') && !h.has('操作'), `${tag} 不显示用量、更改、操作`)
-    check(!desk.calls.some((c) => c[0] === 'insight'), `${tag} 不请求 insight`)
-    await h.pressLabel(/^选择模型/)
-    check(env.alerts.at(-1)?.title === '请更新电脑端', `${tag} 没有模型能力时提示更新电脑端`)
-    await ctx.close()
-  }
-
   async function flowInsightShapes() {
     const tag = '[用量与更改形态]'
     const files = Array.from({ length: 40 }, (_, i) => ({ path: `src/dir/file${i}.ts`, status: ['A', 'M', 'D', 'R', 'U', '?'][i % 6], ...(i % 3 ? { added: i, removed: 1 } : {}) }))
@@ -192,7 +173,6 @@ export function edgeFlows({ boot, openSession, check, env }) {
   }
 
   return [
-    ['旧电脑端', flowOldDesktop],
     ['用量与更改形态', flowInsightShapes],
     ['分支面板形态', flowBranchStates],
     ['长文本 zh-CN', () => flowLongText('zh-CN')],

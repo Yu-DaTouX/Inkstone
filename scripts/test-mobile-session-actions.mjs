@@ -8,7 +8,7 @@ const nobleStub = { name: 'noble-stub', setup(b) {
 } }
 
 await runSuite(import.meta.url, async (ok) => {
-  const built = await build({ stdin: { contents: `export * from './mobile/src/sessionActions'; export { RemoteClient } from './mobile/src/api/client'`, resolveDir: '.', loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', plugins: [nobleStub] })
+  const built = await build({ stdin: { contents: `export * from './mobile/src/sessionActions'; export { RemoteClient } from './mobile/src/api/client'; export { RelayTunnel } from './mobile/src/api/relay'`, resolveDir: '.', loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', plugins: [nobleStub] })
   const M = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 
   const legacy = M.queuedRows({ steering: ['插一句'], followUp: ['之后做'] })
@@ -39,38 +39,36 @@ await runSuite(import.meta.url, async (ok) => {
   ok(M.composerSendPlan({ running: true, compacting: true, choice: 'steer' }).action === 'hold', '压缩中先暂存，压缩完再发')
   ok(M.composerSendPlan({ running: false, compacting: true, choice: 'steer' }).action === 'hold', '手动压缩时也暂存')
 
-  const caps = { review: true, send: true }
-  const pending = M.subagentActions({ status: 'done', review: 'pending', canMerge: true, canDiscard: true }, caps)
+  const pending = M.subagentActions({ status: 'done', review: 'pending', canMerge: true, canDiscard: true })
   ok(pending.merge && pending.discard && pending.send, '待处置的子代理可合并、放弃、发消息让它继续改')
-  const live = M.subagentActions({ status: 'running', review: 'pending', canMerge: true, canDiscard: true }, caps)
+  const live = M.subagentActions({ status: 'running', review: 'pending', canMerge: true, canDiscard: true })
   ok(!live.merge && !live.discard && live.send, '运行中的子代理不给合并放弃，可补充指令')
-  const blocked = M.subagentActions({ status: 'cancelled', endReason: 'interrupted', resumable: false }, caps)
+  const blocked = M.subagentActions({ status: 'cancelled', endReason: 'interrupted', resumable: false })
   ok(!blocked.send, '不能续接的中断子代理不给发消息')
-  const resumable = M.subagentActions({ status: 'cancelled', endReason: 'interrupted', resumable: true }, caps)
+  const resumable = M.subagentActions({ status: 'cancelled', endReason: 'interrupted', resumable: true })
   ok(resumable.send && !resumable.merge, '可续接的中断子代理能发消息续接')
-  const old = M.subagentActions({ status: 'done', review: 'pending', canMerge: true, canDiscard: true }, { review: false, send: false })
-  ok(!old.merge && !old.discard && !old.send, '旧版电脑不支持时不显示新按钮')
-  const merged = M.subagentActions({ status: 'done', review: 'merged' }, caps)
+  const merged = M.subagentActions({ status: 'done', review: 'merged' })
   ok(!merged.merge && !merged.discard && !merged.send, '已合并的不再给处置按钮')
 
   const realFetch = globalThis.fetch
+  M.RelayTunnel.for = () => ({ request: async (method, path, init) => { const response = await globalThis.fetch(`relay://pc${path}`, { method, headers: init.headers, body: init.body }); return { status: response.status, text: await response.text() } } })
   const seen = []
   globalThis.fetch = async (url, init) => {
     seen.push({ url, method: init.method, body: JSON.parse(init.body ?? 'null'), key: init.headers['idempotency-key'] })
     return new Response(JSON.stringify({ ok: true, data: { id: 'sub-1', review: 'merged' } }), { status: 200, headers: { 'content-type': 'application/json' } })
   }
   try {
-    const client = new M.RemoteClient({ baseUrl: 'http://127.0.0.1:1', token: 't', deviceId: 'd' })
+    const client = new M.RemoteClient({ baseUrl: 'relay://pc', relay: { join: 'wss://relay', hostKey: 'h', clientKey: 'c' }, token: 't', deviceId: 'd' })
     await client.editQueue('s 1', remove)
-    ok(seen[0].url.endsWith('/remote/v1/sessions/s%201/queue') && seen[0].body.op === 'remove' && /^m-/.test(seen[0].key), '排队操作发到会话的 queue 路径并带幂等键')
+    ok(seen[0].url.endsWith('/remote/v1/call/session.queue') && seen[0].body.sessionId === 's 1' && seen[0].body.op.op === 'remove' && /^m-/.test(seen[0].key), '排队操作发到 session.queue 并带幂等键')
     await client.reviewSubagent('s-1', 'sub-1', 'merge')
-    ok(seen[1].url.endsWith('/subagents/sub-1/merge') && seen[1].body.confirm === true, '合并请求带明确确认')
+    ok(seen[1].url.endsWith('/subagent.review') && seen[1].body.action === 'merge' && seen[1].body.confirm === true, '合并请求带明确确认')
     await client.sendSubagent('s-1', 'sub-1', '继续')
-    ok(seen[2].url.endsWith('/subagents/sub-1/send') && seen[2].body.text === '继续' && !!seen[2].key, '给子代理发消息带幂等键')
+    ok(seen[2].url.endsWith('/subagent.send') && seen[2].body.text === '继续' && !!seen[2].key, '给子代理发消息带幂等键')
     await client.newSession('p-1', 'k-new', true)
-    ok(seen[3].url.endsWith('/sessions/new') && seen[3].body.projectId === 'p-1' && seen[3].body.worktree === true && seen[3].key === 'k-new', '新建会话可带工作树')
+    ok(seen[3].url.endsWith('/session.new') && seen[3].body.projectId === 'p-1' && seen[3].body.worktree === true && seen[3].key === 'k-new', '新建会话可带工作树')
     await client.newSession(undefined, 'k-new2')
-    ok(!('worktree' in seen[4].body), '不选工作树时不带该字段，旧版电脑照常')
+    ok(!('worktree' in seen[4].body), '不选工作树时不带该字段')
   } finally {
     globalThis.fetch = realFetch
   }

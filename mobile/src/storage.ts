@@ -16,7 +16,8 @@ export async function loadConnection(): Promise<Connection | null> {
     const relay = saved && (join || direct.length) && typeof saved.hostKey === 'string' && typeof saved.clientKey === 'string'
       ? { ...(join ? { join } : {}), ...(direct.length ? { direct } : {}), hostKey: saved.hostKey, clientKey: saved.clientKey }
       : undefined
-    return { baseUrl: parsed.baseUrl, token: parsed.token, deviceId: parsed.deviceId, computerName: typeof parsed.computerName === 'string' ? parsed.computerName : undefined, deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : undefined, ...(typeof parsed.clientKey === 'string' ? { clientKey: parsed.clientKey } : {}), ...(relay ? { relay } : {}) }
+    if (!relay) return null
+    return { baseUrl: parsed.baseUrl, token: parsed.token, deviceId: parsed.deviceId, computerName: typeof parsed.computerName === 'string' ? parsed.computerName : undefined, deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : undefined, ...(typeof parsed.clientKey === 'string' ? { clientKey: parsed.clientKey } : {}), relay }
   } catch {
     return null
   }

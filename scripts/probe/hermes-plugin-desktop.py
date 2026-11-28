@@ -52,7 +52,7 @@ def check(condition, message):
 
 fixture = os.environ["INKSTONE_DESKTOP_FIXTURE_ID"]
 info = call("inkstone_read", action="info")
-check("send" in info["capabilities"], "desktop capability negotiation")
+check(info["data"]["apiVersion"] >= 3, "desktop protocol version matches")
 for attempt in range(100):
     status = call("inkstone_read", action="status")
     if status["data"].get("desktop", {}).get("ready"):
@@ -64,7 +64,7 @@ history = call("inkstone_read", action="history", session_id=fixture, limit=5)
 check(any(m.get("text") == "Hermes desktop fixture" for m in history["data"]["messages"]), "actual persisted history readable")
 selected = call("inkstone_control", action="select", session_id=fixture)
 check(selected["ok"], "select actual desktop/pi session")
-check('human-approval' in info['capabilities'], 'paired user receives human approval capability')
+check(info['data'].get('device', {}).get('kind') == 'phone', 'paired user is a paired phone device')
 until = time.time() + 12
 while True:
     questions = call('inkstone_read', action='questions')['data']['questions']

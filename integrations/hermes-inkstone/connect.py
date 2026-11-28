@@ -34,7 +34,7 @@ def main():
     try:
         if args.check:
             url, token = load_connection()
-            result = Client(url, token).request("GET", "/info")
+            result = Client(url, token).call("info")
             print("Connected to Inkstone." if result.get("ok") else "Connection failed; verify address and device token.")
             return 0 if result.get("ok") else 1
         url = normalize_url(args.url or os.environ.get("INKSTONE_URL") or "http://127.0.0.1:37892")

@@ -1,5 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
+import { VERSION_HEADERS } from './lib/remote-call.mjs'
 import { build } from 'esbuild'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -183,7 +184,7 @@ try {
     const call = async (port, method, path, { token: bearer, body, relay = true } = {}) => {
       const response = await fetch(`http://127.0.0.1:${port}${path}`, {
         method,
-        headers: { ...(relay ? { 'x-yan-relay': 'relay-token-for-test-0001' } : {}), ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}), 'idempotency-key': 'watch-scope-0001' },
+        headers: { ...VERSION_HEADERS, ...(relay ? { 'x-yan-relay': 'relay-token-for-test-0001' } : {}), ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}), 'idempotency-key': 'watch-scope-0001' },
         body: body ? JSON.stringify(body) : undefined
       })
       return { status: response.status, body: await response.json().catch(() => ({})) }
@@ -200,7 +201,8 @@ try {
       assert.equal(reply.body.code, 'viewer_scope', `${method} ${path}`)
     }
     const info = await call(scoped.port, 'GET', '/remote/v1/info', { token: paired.body.token })
-    assert.deepEqual(info.body.capabilities, ['watch'])
+    assert.equal(info.status, 200)
+    assert.equal(info.body.device.kind, 'viewer')
     assert.equal(commands.length, 0)
   } finally {
     await watchServer.stop()

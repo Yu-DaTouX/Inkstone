@@ -10,13 +10,11 @@ const BLANK = { uri: '' }
 
 export function RemoteImage({ client, source, ...rest }: Omit<ImageProps, 'source'> & { client: RemoteClient; source: { uri: string; headers: Record<string, string> } }) {
   const p = usePalette()
-  const relayed = !!client.connection.relay
-  const [resolved, setResolved] = useState<ResolvedImage | null>(() => (relayed ? relayImages.peek(source.uri) ?? null : null))
+  const [resolved, setResolved] = useState<ResolvedImage | null>(() => relayImages.peek(source.uri) ?? null)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     setFailed(false)
-    if (!relayed) return
     const hit = relayImages.peek(source.uri)
     if (hit) {
       setResolved(hit)
@@ -26,12 +24,12 @@ export function RemoteImage({ client, source, ...rest }: Omit<ImageProps, 'sourc
     let alive = true
     void relayImages.load(source.uri, () => client.resolveSource(source)).then((r) => { if (alive) setResolved(r) }).catch(() => { if (alive) setFailed(true) })
     return () => { alive = false }
-  }, [client, relayed, source.uri, attempt])
+  }, [client, source.uri, attempt])
   if (failed) return <Pressable
     accessibilityRole="button"
     accessibilityLabel={pick('图片加载失败，点按重试', 'Image failed to load. Tap to retry')}
     onPress={() => setAttempt((count) => count + 1)}
     style={[rest.style, { alignItems: 'center', justifyContent: 'center', backgroundColor: p.bg1, borderColor: p.borderSoft, borderWidth: 1 }]}
   ><Icon name="image" size={icon.md} color={p.fgMute} /></Pressable>
-  return <Image {...rest} key={attempt} onError={(event) => { rest.onError?.(event); if (!relayed) setFailed(true) }} source={relayed ? resolved ?? BLANK : source} />
+  return <Image {...rest} key={attempt} onError={rest.onError} source={resolved ?? BLANK} />
 }

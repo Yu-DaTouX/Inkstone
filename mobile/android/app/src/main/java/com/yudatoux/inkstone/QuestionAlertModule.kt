@@ -36,19 +36,17 @@ class QuestionAlertModule(private val context: ReactApplicationContext) : ReactC
   @ReactMethod
   fun start(baseUrl: String, token: String, relay: ReadableMap?, promise: Promise) {
     try {
-      if (baseUrl.isBlank() || token.isBlank() || !context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+      if (baseUrl.isBlank() || token.isBlank() || relay == null || !context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
         promise.resolve(false)
         return
       }
       val intent = Intent(context, QuestionAlertService::class.java).apply {
         putExtra(QuestionAlertService.EXTRA_BASE_URL, baseUrl)
         putExtra(QuestionAlertService.EXTRA_TOKEN, token)
-        if (relay != null) {
-          putExtra(QuestionAlertService.EXTRA_RELAY_JOIN, relay.getString("join"))
-          putExtra(QuestionAlertService.EXTRA_RELAY_HOST_KEY, relay.getString("hostKey"))
-          putExtra(QuestionAlertService.EXTRA_RELAY_CLIENT_KEY, relay.getString("clientKey"))
-          putExtra(QuestionAlertService.EXTRA_RELAY_CLIENT_PUB, relay.getString("clientPub"))
-        }
+        putExtra(QuestionAlertService.EXTRA_RELAY_JOIN, relay.getString("join"))
+        putExtra(QuestionAlertService.EXTRA_RELAY_HOST_KEY, relay.getString("hostKey"))
+        putExtra(QuestionAlertService.EXTRA_RELAY_CLIENT_KEY, relay.getString("clientKey"))
+        putExtra(QuestionAlertService.EXTRA_RELAY_CLIENT_PUB, relay.getString("clientPub"))
       }
       ContextCompat.startForegroundService(context, intent)
       context.getSharedPreferences("inkstone.question.alerts", 0).edit().putBoolean("wanted", true).apply()

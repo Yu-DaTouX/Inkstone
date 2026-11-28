@@ -11,7 +11,7 @@ export interface RelayBridgeSettings {
   url: string
 }
 
-export type RelayClientView = Omit<RelayClient, 'key' | 'kind'> & { kind: Exclude<RelayClientKind, 'viewer'>; online: boolean }
+export type RelayClientView = Omit<RelayClient, 'key' | 'kind'> & { kind: 'phone'; online: boolean }
 
 export interface RelayBridgeStatus {
   enabled: boolean
@@ -190,7 +190,7 @@ export class RelayBridge {
       url: this.settings.url,
       connected: !!this.link?.connected,
       detail: this.detail,
-      clients: (await this.store.list()).flatMap(({ key: _key, ...c }) => (c.kind === 'viewer' ? [] : [{ ...c, kind: c.kind, online: online.has(c.id) }]))
+      clients: (await this.store.list()).flatMap(({ key: _key, ...c }) => (c.kind === 'viewer' ? [] : [{ ...c, kind: 'phone' as const, online: online.has(c.id) }]))
     }
   }
 

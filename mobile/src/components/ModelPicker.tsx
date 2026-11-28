@@ -29,7 +29,7 @@ function Choice({ label, selected, disabled, onPress }: { label: string; selecte
 export function ModelPicker({ sessionId, visible, running = false, onClose, onChanged }: { sessionId: string; visible: boolean; running?: boolean; onClose(): void; onChanged(model: RemoteModel): void }) {
   const p = usePalette()
   const { height } = useWindowDimensions()
-  const { client, refresh, info } = useRemote()
+  const { client, refresh } = useRemote()
   const [models, setModels] = useState<RemoteModel[]>([])
   const [current, setCurrent] = useState<RemoteModel | null>(null)
   const [thinking, setThinking] = useState<{ level: string; levels: string[] } | null>(null)
@@ -65,7 +65,7 @@ export function ModelPicker({ sessionId, visible, running = false, onClose, onCh
     catch (err) { setError(err instanceof Error ? err.message : pick('切换失败', 'Switch failed')) }
     finally { setBusy(false) }
   }
-  const canThinking = !!info?.capabilities.includes('thinking') && !!thinking
+  const canThinking = !!thinking
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={() => { if (!busy) onClose() }} statusBarTranslucent navigationBarTranslucent>
     <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end', alignItems: 'center' }}>
       <Pressable accessibilityLabel={pick('关闭模型选择', 'Close model picker')} onPress={() => { if (!busy) onClose() }} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />

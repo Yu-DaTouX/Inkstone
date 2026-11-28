@@ -2,7 +2,6 @@ import { pick } from '../../../src/shared/ui-lang'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { RemoteJob, RemoteWorkflow } from '../../../src/shared/remote-protocol'
-import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { idempotencyKey } from '../api/client'
 import { jobStateText, jobStoppable, workflowActions, workflowProgressText, workflowStatusText } from '../activity'
 import { costText } from '../format'
@@ -12,17 +11,15 @@ import { font, mono, radius, space, usePalette } from '../theme'
 import { Button } from '../ui'
 import { Section } from './Section'
 
-function useSessionList<T>(sessionId: string, capability: string, kind: 'jobs' | 'workflows', load: (sessionId: string) => Promise<T[]>): { items: T[]; reload: () => void } {
-  const { info, onSessionEvent } = useRemote()
-  const allowed = capabilityAllowed(info, capability)
+function useSessionList<T>(sessionId: string, kind: 'jobs' | 'workflows', load: (sessionId: string) => Promise<T[]>): { items: T[]; reload: () => void } {
+  const { onSessionEvent } = useRemote()
   const [items, setItems] = useState<T[]>([])
   const alive = useRef(true)
   const loadRef = useRef(load)
   loadRef.current = load
   const reload = useCallback(() => {
-    if (!allowed) return
     void loadRef.current(sessionId).then((next) => { if (alive.current) setItems((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next) }).catch(() => undefined)
-  }, [allowed, sessionId])
+  }, [sessionId])
   useEffect(() => {
     alive.current = true
     setItems([])
@@ -35,13 +32,12 @@ function useSessionList<T>(sessionId: string, capability: string, kind: 'jobs' |
 
 export function JobsSection({ sessionId }: { sessionId: string }) {
   const p = usePalette()
-  const { client, info } = useRemote()
-  const { items, reload } = useSessionList<RemoteJob>(sessionId, 'jobs', 'jobs', (id) => client.jobs(id))
+  const { client } = useRemote()
+  const { items, reload } = useSessionList<RemoteJob>(sessionId, 'jobs', (id) => client.jobs(id))
   const [open, setOpen] = useState<string | null>(null)
   const [stopping, setStopping] = useState<string | null>(null)
   const [stopError, setStopError] = useState<{ id: string; text: string } | null>(null)
   if (!items.length) return null
-  const canStop = capabilityAllowed(info, 'job-stop')
   const stop = (job: RemoteJob) => Alert.alert(pick('停止这个后台任务？', 'Stop this background task?'), job.command, [
     { text: pick('取消', 'Cancel'), style: 'cancel' },
     { text: pick('停止', 'Stop'), style: 'destructive', onPress: () => void (async () => {
@@ -61,7 +57,7 @@ export function JobsSection({ sessionId }: { sessionId: string }) {
           <Text numberOfLines={expanded ? 4 : 1} style={[styles.command, { color: p.fg }]}>{job.command}</Text>
           <Text style={[styles.meta, { color: job.exitCode ? p.err : p.fgMute }]}>{jobStateText(job)}</Text>
         </Pressable>
-        {expanded && jobStoppable(job, canStop) ? <View style={[styles.actions, { paddingLeft: space[5] }]}><Button compact label={pick('停止', 'Stop')} variant="danger" busy={stopping === job.id} disabled={stopping !== null} onPress={() => stop(job)} /></View> : null}
+        {expanded && jobStoppable(job) ? <View style={[styles.actions, { paddingLeft: space[5] }]}><Button compact label={pick('停止', 'Stop')} variant="danger" busy={stopping === job.id} disabled={stopping !== null} onPress={() => stop(job)} /></View> : null}
         {expanded && stopError?.id === job.id ? <Text accessibilityLiveRegion="polite" style={{ color: p.err, fontSize: font.xs, paddingLeft: space[5] }}>{stopError.text}</Text> : null}
         {expanded ? job.output ? <ScrollView nestedScrollEnabled style={[styles.output, { backgroundColor: p.sunken }]}>
           {job.outputTruncated ? <Text style={{ color: p.fgMute, fontSize: font.xs }}>{pick('（只显示最后一段输出）', '(showing the last part of the output)')}</Text> : null}
@@ -76,12 +72,11 @@ const ACTION_LABEL = { pause: () => pick('暂停', 'Pause'), resume: () => pick(
 
 export function WorkflowsSection({ sessionId }: { sessionId: string }) {
   const p = usePalette()
-  const { client, info } = useRemote()
-  const { items, reload } = useSessionList<RemoteWorkflow>(sessionId, 'workflows', 'workflows', (id) => client.workflows(id))
+  const { client } = useRemote()
+  const { items, reload } = useSessionList<RemoteWorkflow>(sessionId, 'workflows', (id) => client.workflows(id))
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<{ id: string; text: string } | null>(null)
   if (!items.length) return null
-  const canControl = capabilityAllowed(info, 'workflow-control')
   const act = async (run: RemoteWorkflow, action: 'pause' | 'resume' | 'stop') => {
     setBusy(run.id); setError(null)
     try { await client.workflowControl(sessionId, run.id, action, idempotencyKey()); reload() }
@@ -107,7 +102,7 @@ export function WorkflowsSection({ sessionId }: { sessionId: string }) {
         <Text style={[styles.meta, { color: p.fgMute }]}>{[workflowProgressText(run), cost].filter(Boolean).join(' · ')}</Text>
         {run.error ? <Text selectable style={{ color: p.err, fontSize: font.xs }}>{run.error}</Text> : null}
         {run.logs.length && run.status === 'running' ? <Text numberOfLines={2} style={{ color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{run.logs[run.logs.length - 1]}</Text> : null}
-        {workflowActions(run, canControl).length ? <View style={styles.actions}>{workflowActions(run, canControl).map((action) => <Button key={action} compact label={ACTION_LABEL[action]()} variant={action === 'stop' ? 'danger' : 'secondary'} busy={busy === run.id} disabled={busy !== null} onPress={() => confirm(run, action)} />)}</View> : null}
+        {workflowActions(run).length ? <View style={styles.actions}>{workflowActions(run).map((action) => <Button key={action} compact label={ACTION_LABEL[action]()} variant={action === 'stop' ? 'danger' : 'secondary'} busy={busy === run.id} disabled={busy !== null} onPress={() => confirm(run, action)} />)}</View> : null}
         {error?.id === run.id ? <Text accessibilityLiveRegion="polite" style={{ color: p.err, fontSize: font.xs }}>{error.text}</Text> : null}
       </View>
     })}

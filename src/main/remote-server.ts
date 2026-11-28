@@ -1,18 +1,18 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
 import type { Duplex, Readable } from 'node:stream'
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
-import { negotiateCapabilities } from '../shared/capability-negotiation'
 import type { MainPush } from '../shared/ipc'
 import { pick } from '../shared/ui-lang'
 import {
   REMOTE_EVENT_BUFFER,
   REMOTE_IDEMPOTENCY_HEADER,
-  REMOTE_MESSAGE_MAX_BYTES,
   REMOTE_IDEMPOTENCY_KEY_RE,
   REMOTE_IDEMPOTENCY_TTL_MS,
   REMOTE_PROTOCOL_VERSION,
+  REMOTE_CALL_PREFIX,
+  REMOTE_VERSION_HEADER,
   type RemoteAnswer,
   type RemoteDeviceSummary,
   type RemoteEventEnvelope,
@@ -22,6 +22,7 @@ import {
 import type { RemoteHumanApproval } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
+import { isRecord, remoteAction, validSessionId, type ActionContext } from './remote-actions'
 import { WATCH_EVENT_BUFFER, WATCH_HISTORY_LIMIT, WATCH_MAX_VIEWERS, watchMessage, watchSessionState, type WatchEventChannel } from '../shared/session-watch'
 import type { UIMessage } from '../shared/ui-message'
 
@@ -83,7 +84,6 @@ export interface RemoteServerHandlers {
   transcribe?(wav: Uint8Array): Promise<RemoteOperationResult>
 }
 
-const VOICE_MAX_BODY_BYTES = 6 * 1024 * 1024
 
 export interface RemoteServerOptions {
   host: string
@@ -121,9 +121,6 @@ const DEVICE_STREAM_LIMIT = 4
 const VIEWER_STREAM_LIMIT = 2
 const WATCH_STREAMS_MAX = 64
 const WATCH_BUFFER_BYTES = 8 * 1024 * 1024
-const MAX_MESSAGE_CHARS = 20_000
-const MAX_NAME_CHARS = 200
-const SESSION_ID_MAX = 200
 const PAIR_RATE_WINDOW_MS = 60_000
 const MAX_INVITE_ISSUES = 5
 const PAIR_RATE_LIMIT = 10
@@ -159,76 +156,10 @@ const REMOTE_CHANNELS = new Set([
   'workflow'
 ])
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function clampHistoryLimit(value: string | null): number {
-  const parsed = Number(value ?? 200)
-  if (!Number.isFinite(parsed)) return 200
-  return Math.min(500, Math.max(1, Math.floor(parsed)))
-}
-
-function validSessionId(value: string): boolean {
-  return value.length > 0 && value.length <= SESSION_ID_MAX && !/[\r\n]/.test(value)
-}
-
-function validRunId(value: unknown): value is string {
-  return typeof value === 'string' && /^r[1-9]\d{0,8}$/.test(value)
-}
-
-function validText(value: unknown, max: number): value is string {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= max
-}
-
-export function validateRemoteImages(value: unknown): RemoteImageInput[] | null {
-  if (!Array.isArray(value) || value.length > 4) return null
-  const images: RemoteImageInput[] = []
-  for (const item of value) {
-    if (!isRecord(item) || !['image/jpeg', 'image/png', 'image/webp'].includes(String(item.mimeType)) || typeof item.data !== 'string') return null
-    if (!item.data || item.data.length > 2_796_204 || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.data) || item.data.length % 4 !== 0) return null
-    const bytes = Buffer.from(item.data, 'base64')
-    if (bytes.length > 2 * 1024 * 1024) return null
-    const valid = item.mimeType === 'image/jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-      : item.mimeType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-      : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
-    if (!valid) return null
-    images.push({ mimeType: item.mimeType as RemoteImageInput['mimeType'], data: item.data })
-  }
-  return images
-}
-
 const PATH_LEAK_RE = /(?:(?<![A-Za-z0-9_])[A-Za-z]:[\\/]|\\\\[^\s\\/]+[\\/]|(?<![\w.:/-])\/(?:home|Users|root|tmp|var|etc|opt|mnt|usr|private|Volumes|srv)\/)[^\r\n"'<>|*?，。；！？]*/g
 
 export function scrubRemoteError(text: string): string {
   return text.replace(PATH_LEAK_RE, '…')
-}
-
-function fingerprintOf(...parts: unknown[]): string {
-  return createHash('sha256').update(JSON.stringify(parts)).digest('hex')
-}
-
-export function parseRemoteQueueOp(body: Record<string, unknown>): RemoteQueueOp | null {
-  const target = (value: unknown): { id: string; expect: string } | null => {
-    if (!isRecord(value) || typeof value.id !== 'string' || !/^q-[a-z0-9]{1,16}$/.test(value.id)) return null
-    if (typeof value.expect !== 'string' || !/^[0-9a-f]{64}$/.test(value.expect)) return null
-    return { id: value.id, expect: value.expect }
-  }
-  if (body.op === 'clear') {
-    if (!Array.isArray(body.items) || !body.items.length || body.items.length > 40) return null
-    const items = body.items.map(target)
-    return items.every((item) => item !== null) ? { op: 'clear', items: items as Array<{ id: string; expect: string }> } : null
-  }
-  if (body.op !== 'remove' && body.op !== 'steer' && body.op !== 'edit') return null
-  if (!target(body)) return null
-  if (typeof body.id !== 'string' || typeof body.expect !== 'string') return null
-  if (body.op !== 'edit') return { op: body.op, id: body.id, expect: body.expect }
-  if (!validText(body.text, MAX_MESSAGE_CHARS)) return null
-  return { op: 'edit', id: body.id, expect: body.expect, text: body.text }
-}
-
-function validQuestionId(value: string): boolean {
-  return /^[A-Za-z0-9._:-]{1,200}$/.test(value)
 }
 
 export class RemoteRequestError extends Error {
@@ -665,6 +596,19 @@ export class RemoteServer {
       return
     }
 
+    const clientVersion = Number(req.headers[REMOTE_VERSION_HEADER] ?? 0)
+    if (clientVersion !== REMOTE_API_VERSION) {
+      writeJson(res, 426, {
+        ok: false,
+        code: 'version_mismatch',
+        apiVersion: REMOTE_API_VERSION,
+        error: clientVersion > REMOTE_API_VERSION
+          ? pick('电脑上的砚版本较旧，请先在电脑上更新砚', 'Inkstone on the computer is out of date. Update it on the computer first')
+          : pick('这台设备上的砚版本较旧，请更新到最新版再连接', 'Inkstone on this device is out of date. Update it and connect again')
+      })
+      return
+    }
+
     const plaintext = !!this.options.tunnel && !this.options.relayToken && !fromLoopback(req)
 
     if (req.method === 'POST' && url.pathname === '/remote/v1/pair') {
@@ -694,105 +638,10 @@ export class RemoteServer {
       return
     }
 
-    if (plaintext && caller.device && (caller.device.kind ?? 'phone') === 'phone') {
-      if (caller.device.encrypted) return writeError(res, 403, pick('这台手机只能经加密通道连接', 'This phone can only connect through the encrypted tunnel'), 'tunnel_required')
-      if (req.method === 'POST' && url.pathname === '/remote/v1/tunnel/enroll') {
-        writeJson(res, 200, { ok: true, ...(await this.options.tunnel!.invite()), path: REMOTE_TUNNEL_PATH, computer: { name: hostname() } })
-        return
-      }
-    }
-    if (this.options.relayToken && caller.device && !caller.device.encrypted && (caller.device.kind ?? 'phone') === 'phone') {
-      const client = req.headers[RELAY_HANDOFF_HEADER]
-      await this.options.devices?.markEncrypted(caller.device.id, typeof client === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(client) ? client : undefined)
-    }
+    if (plaintext) return writeError(res, 403, pick('只能经加密通道连接，请在手机上重新配对', 'Only encrypted tunnel connections are accepted. Pair this phone again'), 'tunnel_required')
 
     if (caller.device?.kind === 'viewer') {
       await this.viewerRoute(req, res, url, caller.device)
-      return
-    }
-
-    if (req.method === 'POST' && url.pathname === '/remote/v1/devices/self/revoke') {
-      const kind = caller.device?.kind ?? 'phone'
-      if (!caller.device || (kind !== 'phone' && kind !== 'peer') || !this.options.devices) {
-        return writeError(res, 403, pick('需要配对令牌', 'A pairing token is required'))
-      }
-      await this.readJson(req)
-      const tunnelClientId = caller.device.tunnelClientId
-      const revoked = await this.options.devices.revoke(caller.device.id)
-      writeJson(res, revoked ? 200 : 404, revoked ? { ok: true } : { ok: false, error: pick('设备已撤销', 'Device revoked') })
-      if (revoked) {
-        this.disconnectDevice(caller.device.id)
-        if (tunnelClientId) await this.options.relayClientRevoked?.(tunnelClientId)
-      }
-      return
-    }
-
-    const isAgent = caller.device?.kind === 'agent'
-    if (isAgent && !(req.method === 'GET' && url.pathname === '/remote/v1/info')) {
-      return writeError(res, 403, pick('Agent Hub 已退役，礁石令牌不能再操作这台电脑', 'Agent Hub is retired. Reef tokens can no longer control this computer'), 'agent_scope')
-    }
-
-    const isPeer = caller.device?.kind === 'peer'
-    if (isPeer && url.pathname !== '/remote/v1/info') {
-      writeError(res, 403, pick('砚对砚互通已移除，这台设备不能再操作这台电脑', 'Inkstone-to-Inkstone links were removed; this device can no longer control this computer'), 'peer_scope')
-      return
-    }
-
-    if (req.method === 'GET' && url.pathname === '/remote/v1/info') {
-      const configured = [
-        'status', 'sessions', 'history', 'select', 'new', 'send', 'abort', 'rename', 'events-resume', 'idempotency',
-        ...(this.options.handlers.questions ? ['questions'] : []),
-        ...(this.options.handlers.answer ? ['answer'] : []),
-        ...(this.options.handlers.humanApproval && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['human-approval'] : []),
-        ...(this.options.handlers.artifact ? ['artifacts'] : []),
-        ...(this.options.devices ? ['device-name', 'device-revoke'] : []),
-        ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
-        ...(this.options.handlers.transcribe ? ['voice-transcribe'] : []),
-        ...(this.options.handlers.subagents ? ['subagents'] : []),
-        ...(this.options.handlers.insight ? ['insight'] : []),
-        ...(this.options.handlers.stopSubagent ? ['subagent-stop'] : []),
-        ...(this.options.handlers.reviewSubagent && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['subagent-review'] : []),
-        ...(this.options.handlers.sendSubagent ? ['subagent-send'] : []),
-        ...(this.options.handlers.queue ? ['queue-edit'] : []),
-        'notices',
-        ...(this.options.handlers.jobs ? ['jobs'] : []),
-        ...(this.options.handlers.stopJob ? ['job-stop'] : []),
-        ...(this.options.handlers.subagentPatch ? ['subagent-patch'] : []),
-        'new-worktree',
-        ...(this.options.handlers.workflows ? ['workflows'] : []),
-        ...(this.options.handlers.workflowControl ? ['workflow-control'] : []),
-        ...(this.options.handlers.quota ? ['quota'] : []),
-        ...(this.options.handlers.usage ? ['usage'] : []),
-        ...(this.options.handlers.sessionFlags ? ['session-flags'] : []),
-        ...(this.options.handlers.deleteSession ? ['session-delete'] : []),
-        ...(this.options.handlers.compact ? ['compact'] : []),
-        ...(this.options.handlers.branches && this.options.handlers.switchBranch ? ['branches'] : []),
-        ...(this.options.handlers.search ? ['search'] : [])
-      ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop', 'subagent-review', 'subagent-send', 'queue-edit', 'notices', 'jobs', 'job-stop', 'subagent-patch', 'new-worktree', 'workflows', 'workflow-control', 'quota', 'usage', 'session-flags', 'session-delete', 'compact', 'branches', 'search'])]
-      const allowed = isPeer || isAgent ? [] : configured
-      const negotiation = negotiateCapabilities(implemented, configured, allowed)
-      writeJson(res, 200, {
-        ok: true,
-        apiVersion: REMOTE_API_VERSION,
-        transport: ['http', 'sse'],
-        tokenRequired: true,
-        ...negotiation,
-        device: caller.device,
-        computer: { name: hostname() }
-      })
-      return
-    }
-
-    if (req.method === 'GET' && url.pathname === '/remote/v1/status') {
-      writeJson(res, 200, { ok: true, data: await this.options.handlers.snapshot() })
-      return
-    }
-
-    if (req.method === 'GET' && url.pathname === '/remote/v1/sessions') {
-      const snapshot = await this.options.handlers.snapshot()
-      const sessions = isRecord(snapshot) && Array.isArray(snapshot.sessions) ? snapshot.sessions : []
-      writeJson(res, 200, { ok: true, data: { sessions } })
       return
     }
 
@@ -801,133 +650,12 @@ export class RemoteServer {
       return
     }
 
-    if (req.method === 'GET' && url.pathname === '/remote/v1/questions') {
-      const questions = this.options.handlers.questions ? await this.options.handlers.questions() : []
-      writeJson(res, 200, { ok: true, data: { questions } })
+    if (req.method === 'POST' && url.pathname.startsWith(REMOTE_CALL_PREFIX)) {
+      await this.call(req, res, caller, url.pathname.slice(REMOTE_CALL_PREFIX.length))
       return
     }
 
     const parts = url.pathname.split('/').filter(Boolean)
-    if (parts[0] !== 'remote' || parts[1] !== 'v1') {
-      writeError(res, 404, pick('远程 API 路径不存在', 'Remote API path not found'))
-      return
-    }
-
-    if (req.method === 'POST' && url.pathname === '/remote/v1/voice/transcribe') {
-      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('语音转写需要配对的手机', 'Voice transcription requires a paired phone'), 'paired_user_required')
-      const handler = this.options.handlers.transcribe
-      if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      let body: Record<string, unknown>
-      try { body = await this.readJson(req, VOICE_MAX_BODY_BYTES) }
-      catch { writeError(res, 413, pick('录音太长，请分段说', 'Recording too long. Speak in shorter parts')); return }
-      if (typeof body.wav !== 'string' || !body.wav) return writeError(res, 400, pick('录音为空', 'Recording is empty'))
-      this.writeOperation(res, await handler(new Uint8Array(Buffer.from(body.wav, 'base64'))))
-      return
-    }
-
-    if (req.method === 'POST' && url.pathname === '/remote/v1/device') {
-      const body = await this.readJson(req)
-      if (!caller.device || !this.options.devices) return writeError(res, 403, pick('需要配对设备令牌', 'A paired device token is required'))
-      if (!validText(body.name, 60)) return writeError(res, 400, pick('设备名称需要 1–60 个字符', 'Device name must be 1–60 characters'))
-      const device = await this.options.devices.renameDevice(caller.device.id, body.name)
-      writeJson(res, device ? 200 : 404, device ? { ok: true, data: device } : { ok: false, error: pick('设备已撤销', 'Device revoked') })
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'subagents') {
-      const sessionId = decodeURIComponent(parts[3])
-      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-      if (!this.options.handlers.subagents) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await this.options.handlers.subagents(sessionId))
-      return
-    }
-
-    if (req.method === 'GET' && url.pathname === '/remote/v1/search') {
-      if (!this.options.handlers.search) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      const query = (url.searchParams.get('q') ?? '').slice(0, 200)
-      this.writeOperation(res, await this.options.handlers.search(query, 30))
-      return
-    }
-
-    if (req.method === 'GET' && url.pathname === '/remote/v1/quota') {
-      if (!this.options.handlers.quota) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await this.options.handlers.quota())
-      return
-    }
-
-    if (req.method === 'GET' && url.pathname === '/remote/v1/usage') {
-      if (!this.options.handlers.usage) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      const range = url.searchParams.get('range') ?? '7d'
-      if (range !== '7d' && range !== '30d' && range !== 'all') return writeError(res, 400, pick('统计范围无效', 'Invalid usage range'))
-      this.writeOperation(res, await this.options.handlers.usage(range))
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && (parts[4] === 'jobs' || parts[4] === 'workflows')) {
-      const sessionId = decodeURIComponent(parts[3])
-      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-      const handler = parts[4] === 'jobs' ? this.options.handlers.jobs : this.options.handlers.workflows
-      if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await handler(sessionId))
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'jobs' && parts[6] === 'stop') {
-      const sessionId = decodeURIComponent(parts[3])
-      const jobId = decodeURIComponent(parts[5])
-      if (!validSessionId(sessionId) || !/^term-job-[a-z0-9]{1,16}-\d{1,9}$/.test(jobId)) return writeError(res, 400, pick('后台任务标识无效', 'Invalid background task id'))
-      const stopJob = this.options.handlers.stopJob
-      if (!stopJob) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      await this.readJson(req)
-      await this.idempotent(req, res, caller, true, () => stopJob(sessionId, jobId), `job-stop:${sessionId}:${jobId}`)
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && parts[6] === 'patch') {
-      const sessionId = decodeURIComponent(parts[3])
-      const runId = decodeURIComponent(parts[5])
-      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子 Agent标识无效', 'Invalid subagent id'))
-      if (!this.options.handlers.subagentPatch) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await this.options.handlers.subagentPatch(sessionId, runId))
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'workflows' && (parts[6] === 'pause' || parts[6] === 'resume' || parts[6] === 'stop')) {
-      const sessionId = decodeURIComponent(parts[3])
-      const workflowId = decodeURIComponent(parts[5])
-      if (!validSessionId(sessionId) || !/^wf-[0-9a-f]{8}$/.test(workflowId)) return writeError(res, 400, pick('工作流标识无效', 'Invalid workflow id'))
-      const control = this.options.handlers.workflowControl
-      if (!control) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      await this.readJson(req)
-      const action = parts[6]
-      await this.idempotent(req, res, caller, true, () => control(sessionId, workflowId, action), `workflow-${action}:${sessionId}:${workflowId}`)
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'branches') {
-      const sessionId = decodeURIComponent(parts[3])
-      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-      if (!this.options.handlers.branches) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await this.options.handlers.branches(sessionId))
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'insight') {
-      const sessionId = decodeURIComponent(parts[3])
-      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-      if (!this.options.handlers.insight) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await this.options.handlers.insight(sessionId))
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'models') {
-      const sessionId = decodeURIComponent(parts[3])
-      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-      if (!this.options.handlers.models) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      this.writeOperation(res, await this.options.handlers.models(sessionId))
-      return
-    }
-
     if (req.method === 'GET' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'images') {
       const [sessionId, messageId] = [decodeURIComponent(parts[3]), decodeURIComponent(parts[5])]
       const index = Number(parts[6])
@@ -940,189 +668,8 @@ export class RemoteServer {
       return
     }
 
-    if (req.method === 'POST' && parts.length === 5 && parts[2] === 'questions' && parts[4] === 'answer') {
-      await this.answer(req, res, caller, decodeURIComponent(parts[3]))
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 5 && parts[2] === 'questions' && parts[4] === 'approval') {
-      const body = await this.readJson(req)
-      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('人工批准需要单独配对的用户客户端', 'Manual approval requires a separately paired user client'), 'paired_user_required')
-      const handler = this.options.handlers.humanApproval
-      if (!handler) return writeError(res, 404, pick('电脑端尚不支持人工批准回传', 'This desktop does not support manual approval relay yet'))
-      const questionId = decodeURIComponent(parts[3])
-      if (!validQuestionId(questionId) || !(body.sessionId === null || (typeof body.sessionId === 'string' && validSessionId(body.sessionId))) ||
-          !(validRunId(body.runId) || (typeof body.runId === 'string' && /^approval:[0-9a-f-]{36}$/.test(body.runId))) ||
-          typeof body.confirmed !== 'boolean' || typeof body.digest !== 'string' || !/^[0-9a-f]{64}$/.test(body.digest) ||
-          !(body.scope === undefined || ((body.scope === 'once' || body.scope === 'session') && body.confirmed === true))) return writeError(res, 400, pick('人工批准必须绑定有效的问题、会话、运行和操作摘要', 'Manual approval must be bound to a valid question, session, run and action digest'))
-      const answer: RemoteHumanApproval = { sessionId: body.sessionId, runId: body.runId, digest: body.digest, confirmed: body.confirmed, ...(body.scope === 'session' ? { scope: 'session' as const } : {}) }
-      await this.idempotent(req, res, caller, true, () => handler(questionId, answer))
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 4 && parts[2] === 'sessions') {
-      const sessionId = decodeURIComponent(parts[3])
-      if (!validSessionId(sessionId)) {
-        writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-        return
-      }
-      const before = url.searchParams.get('before') ?? undefined
-      if (before !== undefined && (!before || before.length > 2000 || /[\r\n]/.test(before))) {
-        writeError(res, 400, pick('历史游标无效', 'Invalid history cursor'))
-        return
-      }
-      const result = await this.options.handlers.history(sessionId, clampHistoryLimit(url.searchParams.get('limit')), before)
-      this.writeOperation(res, result)
-      return
-    }
-
     if (req.method === 'GET' && parts.length === 6 && parts[2] === 'sessions' && parts[4] === 'artifacts') {
       await this.artifact(res, decodeURIComponent(parts[3]), decodeURIComponent(parts[5]))
-      return
-    }
-
-    if (parts[2] === 'sessions' && parts.length === 4 && parts[3] === 'new' && req.method === 'POST') {
-      const body = await this.readJson(req)
-      if (body.projectId !== undefined && !validText(body.projectId, 200)) return writeError(res, 400, pick('项目 id 无效', 'Invalid project id'))
-      const projectId = typeof body.projectId === 'string' ? body.projectId : undefined
-      const worktree = body.worktree === true
-      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}), ...(worktree ? { worktree } : {}) }), `project:${projectId ?? ''}${worktree ? ':worktree' : ''}`)
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && parts[6] === 'stop') {
-      const sessionId = decodeURIComponent(parts[3])
-      const runId = decodeURIComponent(parts[5])
-      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子 Agent标识无效', 'Invalid subagent id'))
-      const stop = this.options.handlers.stopSubagent
-      if (!stop) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      await this.idempotent(req, res, caller, false, () => stop(sessionId, runId), `subagent-stop:${sessionId}:${runId}`)
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && (parts[6] === 'merge' || parts[6] === 'discard' || parts[6] === 'send')) {
-      const sessionId = decodeURIComponent(parts[3])
-      const runId = decodeURIComponent(parts[5])
-      const action = parts[6]
-      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子 Agent标识无效', 'Invalid subagent id'))
-      const body = await this.readJson(req)
-      if (action === 'send') {
-        const send = this.options.handlers.sendSubagent
-        if (!send) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, pick('消息不能为空且不得超过 20,000 个字符', 'Message must not be empty or exceed 20,000 characters'))
-        const text = body.text
-        await this.idempotent(req, res, caller, true, () => send(sessionId, runId, text), fingerprintOf('subagent-send', sessionId, runId, text))
-        return
-      }
-      const review = this.options.handlers.reviewSubagent
-      if (!review) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('处置子 Agent 的改动需要配对的手机', 'Reviewing subagent changes requires a paired phone'), 'paired_user_required')
-      if (body.confirm !== true) return writeError(res, 400, pick('合并或放弃需要明确确认', 'Merging or discarding requires explicit confirmation'))
-      await this.idempotent(req, res, caller, true, () => review(sessionId, runId, action), `subagent-${action}:${sessionId}:${runId}`)
-      return
-    }
-
-    if (parts[2] === 'sessions' && parts.length === 5 && req.method === 'POST') {
-      const sessionId = decodeURIComponent(parts[3])
-      const operation = parts[4]
-      if (!validSessionId(sessionId)) {
-        writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-        return
-      }
-      let body: Record<string, unknown>
-      try { body = await this.readJson(req, operation === 'messages' ? REMOTE_MESSAGE_MAX_BYTES : MAX_BODY_BYTES) }
-      catch { writeError(res, 413, pick('消息超过大小限制或格式无效', 'Message is too large or malformed')); return }
-      if (operation === 'select') {
-        this.writeOperation(res, await this.options.handlers.command({ action: 'select', sessionId }))
-        return
-      }
-      if (operation === 'messages') {
-        let images: RemoteImageInput[] | undefined
-        if (body.images !== undefined) {
-          images = validateRemoteImages(body.images) ?? undefined
-          if (!images) { writeError(res, 400, pick('最多 4 张图片，每张不超过 2MB，仅支持 JPEG、PNG、WebP', 'Up to 4 images, 2MB each, JPEG, PNG or WebP only')); return }
-        }
-        if (typeof body.text !== 'string' || body.text.length > MAX_MESSAGE_CHARS || (!body.text.trim() && !images?.length)) {
-          writeError(res, 400, pick('消息不能为空且不得超过 20,000 个字符', 'Message must not be empty or exceed 20,000 characters'))
-          return
-        }
-        const text = body.text
-        const mode = body.mode === 'steer' || body.mode === 'followUp' ? body.mode : undefined
-        await this.idempotent(req, res, caller, !!images?.length, () => this.options.handlers.command({ action: 'send', sessionId, text, images, mode }), fingerprintOf('send', text, mode ?? null, images?.map((image) => [image.mimeType, image.data.length, createHash('sha256').update(image.data).digest('hex')]) ?? []))
-        return
-      }
-      if (operation === 'model') {
-        if (!this.options.handlers.models) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        if (!validText(body.provider, 200) || !validText(body.modelId, 300)) return writeError(res, 400, pick('模型标识无效', 'Invalid model id'))
-        const { provider, modelId } = body
-        await this.idempotent(req, res, caller, true, () => this.options.handlers.command({ action: 'model', sessionId, provider, modelId }), fingerprintOf('model', provider, modelId))
-        return
-      }
-      if (operation === 'thinking') {
-        if (!this.options.handlers.models) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        if (!validText(body.level, 40)) return writeError(res, 400, pick('思考档位无效', 'Invalid thinking level'))
-        const level = body.level
-        await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'thinking', sessionId, level }), fingerprintOf('thinking', level))
-        return
-      }
-      if (operation === 'flags') {
-        const handler = this.options.handlers.sessionFlags
-        if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        const flags: { pinned?: boolean; archived?: boolean } = {}
-        if (typeof body.pinned === 'boolean') flags.pinned = body.pinned
-        if (typeof body.archived === 'boolean') flags.archived = body.archived
-        if (!Object.keys(flags).length) return writeError(res, 400, pick('需要 pinned 或 archived', 'pinned or archived is required'))
-        await this.idempotent(req, res, caller, false, () => handler(sessionId, flags), `flags:${sessionId}:${JSON.stringify(flags)}`)
-        return
-      }
-      if (operation === 'delete') {
-        const handler = this.options.handlers.deleteSession
-        if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, pick('删除会话需要配对的手机', 'Deleting a session requires a paired phone'), 'paired_user_required')
-        if (body.confirm !== true) return writeError(res, 400, pick('删除需要明确确认', 'Deletion requires explicit confirmation'))
-        await this.idempotent(req, res, caller, false, () => handler(sessionId), `delete:${sessionId}`)
-        return
-      }
-      if (operation === 'queue') {
-        const handler = this.options.handlers.queue
-        if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        const op = parseRemoteQueueOp(body)
-        if (!op) return writeError(res, 400, pick('排队操作无效', 'Invalid queue operation'))
-        await this.idempotent(req, res, caller, true, () => handler(sessionId, op), fingerprintOf('queue', op))
-        return
-      }
-      if (operation === 'compact') {
-        const handler = this.options.handlers.compact
-        if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        await this.idempotent(req, res, caller, false, () => handler(sessionId), `compact:${sessionId}`)
-        return
-      }
-      if (operation === 'branch') {
-        const handler = this.options.handlers.switchBranch
-        if (!handler) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
-        if (!validText(body.branch, 250)) return writeError(res, 400, pick('分支名无效', 'Invalid branch name'))
-        const branch = body.branch
-        await this.idempotent(req, res, caller, false, () => handler(sessionId, branch), `branch:${sessionId}:${branch}`)
-        return
-      }
-      if (operation === 'rename') {
-        if (!validText(body.name, MAX_NAME_CHARS)) {
-          writeError(res, 400, pick('名称不能为空且不得超过 200 个字符', 'Name must not be empty or exceed 200 characters'))
-          return
-        }
-        this.writeOperation(res, await this.options.handlers.command({ action: 'rename', sessionId, name: body.name.trim() }))
-        return
-      }
-    }
-
-    if (req.method === 'POST' && url.pathname === '/remote/v1/runs/abort') {
-      const body = await this.readJson(req)
-      if (!validRunId(body.runId)) {
-        writeError(res, 400, pick('中止操作必须提供有效的目标 runId', 'Abort requires a valid target runId'))
-        return
-      }
-      const runId = body.runId
-      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'abort', runId }), fingerprintOf('abort', runId))
       return
     }
 
@@ -1166,20 +713,12 @@ export class RemoteServer {
       writeJson(res, 200, { ok: true, deviceId: viewer.device.id, token: viewer.token, apiVersion: REMOTE_API_VERSION, device: viewer.device, computer: { name: hostname() } })
       return
     }
-    if (body.kind === 'agent') {
-      writeError(res, 403, pick('Agent Hub 已退役，不再接受礁石配对', 'Agent Hub is retired and no longer accepts reef pairing'), 'agent_retired')
-      return
-    }
-    if (body.kind === 'peer') {
-      writeError(res, 403, pick('砚对砚互通已移除，不再接受另一台砚配对', 'Inkstone-to-Inkstone links were removed; another Inkstone can no longer pair'), 'peer_retired')
-      return
-    }
     if (plaintext) {
       writeError(res, 426, pick('请把手机上的砚更新到最新版再配对：新版经加密通道连接电脑', 'Update Inkstone on your phone and pair again: the new version connects through an encrypted tunnel'), 'tunnel_required')
       return
     }
     const tunnelClientId = source.startsWith('relay:') ? source.slice(6) : undefined
-    const result = await this.options.devices.pair(body.code, body.deviceName, body.kind, !!this.options.relayToken, tunnelClientId)
+    const result = await this.options.devices.pair(body.code, body.deviceName, tunnelClientId)
     if (!result.ok) {
       const message = {
         no_pairing: pick('电脑上没有正在进行的配对，请先在砚的设置里生成配对码', 'No pairing in progress on the computer. Generate a pairing code in Inkstone settings first'),
@@ -1196,26 +735,34 @@ export class RemoteServer {
     writeJson(res, 200, { ok: true, deviceId: result.device.id, token: result.token, apiVersion: REMOTE_API_VERSION, device: result.device, computer: { name: hostname() } })
   }
 
-  private async answer(req: IncomingMessage, res: ServerResponse, caller: Caller, questionId: string): Promise<void> {
-    if (!this.options.handlers.answer) {
-      writeError(res, 404, pick('这台电脑不支持远程回答问题', 'This computer does not support answering questions remotely'))
-      return
+  private async call(req: IncomingMessage, res: ServerResponse, caller: Caller, name: string): Promise<void> {
+    const spec = remoteAction(name)
+    if (!spec) return writeError(res, 404, pick('远程操作不存在', 'Unknown remote action'), 'unknown_action')
+    if (spec.paired && (!caller.device || !this.options.devices)) return writeError(res, 403, pick('这个操作需要配对的手机', 'This action requires a paired phone'), 'paired_user_required')
+    const args = spec.parse(await this.readJson(req, spec.maxBytes ?? MAX_BODY_BYTES))
+    if (typeof args === 'string') return writeError(res, 400, args)
+    const ctx: ActionContext = {
+      handlers: this.options.handlers,
+      device: caller.device,
+      info: () => ({ ok: true, data: { apiVersion: REMOTE_API_VERSION, device: caller.device, computer: { name: hostname() } } }),
+      renameDevice: async (deviceName) => {
+        const device = caller.device && await this.options.devices?.renameDevice(caller.device.id, deviceName)
+        return device ? { ok: true, data: device } : { ok: false, status: 404, error: pick('设备已撤销', 'Device revoked') }
+      },
+      revokeSelf: async () => {
+        const device = caller.device
+        if (!device || !this.options.devices || !(await this.options.devices.revoke(device.id))) return { ok: false, status: 404, error: pick('设备已撤销', 'Device revoked') }
+        setImmediate(() => {
+          this.disconnectDevice(device.id)
+          if (device.tunnelClientId) void Promise.resolve(this.options.relayClientRevoked?.(device.tunnelClientId)).catch(() => undefined)
+        })
+        return { ok: true, data: {} }
+      }
     }
-    if (!validQuestionId(questionId)) {
-      writeError(res, 400, pick('问题 id 无效', 'Invalid question id'))
-      return
-    }
-    const body = await this.readJson(req)
-    let answer: RemoteAnswer
-    if (body.cancelled === true) answer = { cancelled: true }
-    else if (typeof body.confirmed === 'boolean') answer = { confirmed: body.confirmed }
-    else if (typeof body.value === 'string' && body.value.length <= MAX_MESSAGE_CHARS) answer = { value: body.value }
-    else {
-      writeError(res, 400, pick('回答需要 value、confirmed 或 cancelled 之一', 'The answer needs one of value, confirmed or cancelled'))
-      return
-    }
-    const handler = this.options.handlers.answer
-    await this.idempotent(req, res, caller, true, () => handler(questionId, answer))
+    const run = async () => spec.run(ctx, args)
+    if (!spec.idempotency) return this.writeOperation(res, await run())
+    const required = typeof spec.idempotency.required === 'function' ? spec.idempotency.required(args) : spec.idempotency.required
+    await this.idempotent(req, res, caller, required, run, spec.idempotency.fingerprint?.(args))
   }
 
   private async artifact(res: ServerResponse, sessionId: string, artifactId: string): Promise<void> {
@@ -1256,13 +803,14 @@ export class RemoteServer {
     const sessionId = device.watchSessionId
     if (!sessionId || !this.options.relayToken) return writeError(res, 403, pick('旁观只能读取被共享的会话', 'A viewer can only read the shared session'), 'viewer_scope')
     if (req.method === 'GET' && url.pathname === '/remote/v1/info') {
-      writeJson(res, 200, { ok: true, apiVersion: REMOTE_API_VERSION, transport: ['http', 'sse'], tokenRequired: true, capabilities: ['watch'], device, computer: { name: hostname() } })
+      writeJson(res, 200, { ok: true, apiVersion: REMOTE_API_VERSION, device, computer: { name: hostname() } })
       return
     }
     if (req.method === 'GET' && url.pathname === '/remote/v1/watch') {
       const before = url.searchParams.get('before') ?? undefined
       if (before !== undefined && (!before || before.length > 2000 || /[\r\n]/.test(before))) return writeError(res, 400, pick('历史游标无效', 'Invalid history cursor'))
-      const limit = Math.min(WATCH_HISTORY_LIMIT, clampHistoryLimit(url.searchParams.get('limit')))
+      const requested = Number(url.searchParams.get('limit') ?? WATCH_HISTORY_LIMIT)
+      const limit = Number.isFinite(requested) ? Math.min(WATCH_HISTORY_LIMIT, Math.max(1, Math.floor(requested))) : WATCH_HISTORY_LIMIT
       const result = await this.options.handlers.history(sessionId, limit, before)
       const seq = this.watchSeq
       if (!result.ok) return this.writeOperation(res, result)

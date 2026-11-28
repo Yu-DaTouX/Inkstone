@@ -1,5 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
+import { VERSION_HEADERS, callPath } from './lib/remote-call.mjs'
 import { createServer } from 'node:http'
 import { mkdtemp } from 'node:fs/promises'
 import { networkInterfaces, tmpdir } from 'node:os'
@@ -95,7 +96,7 @@ const base = `http://${lan}:${started.port}`
 const tunnelUrl = `ws://${lan}:${started.port}/remote/v1/tunnel`
 
 async function inviteNow() {
-  const response = await fetch(`${base}/remote/v1/tunnel/invite`)
+  const response = await fetch(`${base}/remote/v1/tunnel/invite`, { headers: VERSION_HEADERS })
   return response.json()
 }
 
@@ -112,7 +113,7 @@ try {
     assert.ok(seen, '必须要求确认电脑身份')
     assert.equal(seen.fingerprint, identity)
     const info = await new Mobile.Client.RemoteClient(connection).info()
-    assert.ok(info.capabilities.includes('sessions'))
+    assert.ok(info.apiVersion > 0 && info.device)
   })
 
   await check('手输配对不传身份确认回调会直接拒绝', async () => {

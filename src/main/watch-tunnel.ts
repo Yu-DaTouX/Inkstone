@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws'
 import { clientSession, fromB64u, generateKeyPair, toB64u, type KeyPair, type SecureChannel } from './relay-bridge/crypto'
 import { pick } from '../shared/ui-lang'
+import { REMOTE_PROTOCOL_VERSION, REMOTE_VERSION_HEADER } from '../shared/remote-protocol'
 
 const PROTOCOL_VERSION = 1
 const TEXT_PROTOCOL = 2
@@ -256,6 +257,7 @@ export class WatchTunnel {
       method,
       path,
       headers: {
+        [REMOTE_VERSION_HEADER]: String(REMOTE_PROTOCOL_VERSION),
         ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
         ...(options.body === undefined ? {} : { 'content-type': 'application/json' })
       },
@@ -310,7 +312,7 @@ export class WatchTunnel {
           }
         }
       })
-      this.send({ t: 'req', id, method: 'GET', path, headers: { authorization: `Bearer ${token}`, accept: 'text/event-stream' } })
+      this.send({ t: 'req', id, method: 'GET', path, headers: { [REMOTE_VERSION_HEADER]: String(REMOTE_PROTOCOL_VERSION), authorization: `Bearer ${token}`, accept: 'text/event-stream' } })
     })
   }
 }

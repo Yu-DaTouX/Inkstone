@@ -5,7 +5,6 @@ import { idempotencyKey } from '../api/client'
 import { subagentActions } from '../sessionActions'
 import { PatchSheet } from './PatchSheet'
 import type { SubagentInfo } from '../api/client'
-import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { useRemote } from '../state'
 import { Icon } from '../icons'
 import { MessageBody } from './MessageBody'
@@ -86,12 +85,10 @@ function SubagentReply({ sessionId, run }: { sessionId: string; run: SubagentInf
 
 export function SubagentCard({ runs, plain = false, sessionId }: { runs: SubagentInfo[]; plain?: boolean; sessionId?: string }) {
   const p = usePalette()
-  const { client, info } = useRemote()
+  const { client } = useRemote()
   const [stopping, setStopping] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
-  const canStop = !!sessionId && capabilityAllowed(info, 'subagent-stop')
-  const caps = { review: !!sessionId && capabilityAllowed(info, 'subagent-review'), send: !!sessionId && capabilityAllowed(info, 'subagent-send') }
-  const canPatch = !!sessionId && capabilityAllowed(info, 'subagent-patch')
+  const canAct = !!sessionId
   const [patchRun, setPatchRun] = useState<SubagentInfo | null>(null)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [reviewNote, setReviewNote] = useState<{ id: string; error: boolean; text: string } | null>(null)
@@ -142,7 +139,7 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
       {runs.map((run) => {
         const open = openRun === run.id
         const tone = run.status === 'error' ? p.err : isLive(run) ? p.fg : p.fgDim
-        const actions = subagentActions(run, caps)
+        const actions = canAct ? subagentActions(run) : { merge: false, discard: false, send: false }
         const meta = [statusText(run), reviewText(run), shortModel(run.model), typeof run.toolCalls === 'number' ? pick(`${run.toolCalls} 次工具`, `${run.toolCalls} tool calls`) : '', duration(run, now)].filter(Boolean).join(' · ')
         const detail = run.status === 'error' ? (run.error || run.summary) : (run.summary || (isLive(run) ? run.latestActivity : ''))
         return <View key={run.id}>
@@ -157,14 +154,14 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
           {open ? <View style={styles.expanded}>
             {detail && run.status === 'error' ? <Text selectable style={[styles.detail, { color: p.err, backgroundColor: p.sunken }]}>{detail}</Text> : null}
             {detail && run.status !== 'error' ? <View style={[styles.summary, { backgroundColor: p.sunken }]}><MessageBody text={detail} /></View> : null}
-            {canStop && isLive(run) ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`停止子代理 ${run.title}`, `Stop subagent ${run.title}`)} disabled={stopping !== null} onPress={() => void stop(run.id)} style={[styles.stop, { borderColor: p.err, opacity: stopping === run.id ? 0.5 : 1 }]}><Icon name="stop" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>{pick('停止', 'Stop')}</Text></Pressable> : null}
+            {canAct && isLive(run) ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`停止子代理 ${run.title}`, `Stop subagent ${run.title}`)} disabled={stopping !== null} onPress={() => void stop(run.id)} style={[styles.stop, { borderColor: p.err, opacity: stopping === run.id ? 0.5 : 1 }]}><Icon name="stop" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>{pick('停止', 'Stop')}</Text></Pressable> : null}
             {stopError ? <Text style={{ color: p.err, fontSize: font.xs }}>{stopError}</Text> : null}
             {run.diff ? <View style={[styles.summary, { backgroundColor: p.sunken, gap: 2 }]}>
               <Text style={{ color: p.fgDim, fontSize: font.xs, fontFamily: mono }}>{pick(`${run.diff.files} 个文件`, `${run.diff.files} files`)} <Text style={{ color: p.add }}>+{run.diff.additions}</Text> <Text style={{ color: p.del }}>−{run.diff.deletions}</Text></Text>
               {run.diff.paths.map((path) => <Text key={path} numberOfLines={1} ellipsizeMode="head" style={{ color: p.fg, fontSize: font.xs, fontFamily: mono }}>{path}</Text>)}
               {run.diff.truncated ? <Text style={{ color: p.fgMute, fontSize: font.xs }}>{pick('更多文件在电脑上查看', 'More files on the desktop')}</Text> : null}
             </View> : null}
-            {canPatch && run.diff?.files ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`查看子代理 ${run.title} 的补丁`, `View the patch from subagent ${run.title}`)} onPress={() => setPatchRun(run)} style={[styles.stop, { borderColor: p.borderSoft }]}><Icon name="file" size={icon.sm} color={p.fgDim} /><Text style={{ color: p.fg, fontSize: font.sm }}>{pick('查看补丁', 'View patch')}</Text></Pressable> : null}
+            {canAct && run.diff?.files ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`查看子代理 ${run.title} 的补丁`, `View the patch from subagent ${run.title}`)} onPress={() => setPatchRun(run)} style={[styles.stop, { borderColor: p.borderSoft }]}><Icon name="file" size={icon.sm} color={p.fgDim} /><Text style={{ color: p.fg, fontSize: font.sm }}>{pick('查看补丁', 'View patch')}</Text></Pressable> : null}
             {(actions.merge || actions.discard) ? <View style={styles.reviewRow}>
               {actions.merge ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`合并子代理 ${run.title} 的改动`, `Merge changes from subagent ${run.title}`)} disabled={reviewing !== null} onPress={() => review(run, 'merge')} style={[styles.stop, { borderColor: p.accent, opacity: reviewing === run.id ? 0.5 : 1 }]}><Icon name="check" size={icon.sm} color={p.accent} /><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('合并', 'Merge')}</Text></Pressable> : null}
               {actions.discard ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`放弃子代理 ${run.title} 的改动`, `Discard changes from subagent ${run.title}`)} disabled={reviewing !== null} onPress={() => review(run, 'discard')} style={[styles.stop, { borderColor: p.err, opacity: reviewing === run.id ? 0.5 : 1 }]}><Icon name="close" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>{pick('放弃', 'Discard')}</Text></Pressable> : null}

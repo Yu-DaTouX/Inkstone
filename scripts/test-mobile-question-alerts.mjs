@@ -42,7 +42,7 @@ await runSuite(import.meta.url, async (ok) => {
   }
   const built = await build({ entryPoints: ['mobile/src/questionAlerts.ts'], bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', plugins: [rnStub] })
   const { startQuestionAlerts } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
-  const connection = { baseUrl: 'http://pc:1', token: 't', deviceId: 'd' }
+  const connection = { baseUrl: 'relay://pc', relay: { direct: ['ws://pc:1/remote/v1/tunnel'], hostKey: 'h', clientKey: 'AAAA' }, token: 't', deviceId: 'd' }
 
   ok(await startQuestionAlerts(connection, true) === false, 'Android 12 及以下通知被关时不报开启成功')
   ok(!calls.some(([name]) => name === 'start'), 'Android 12 及以下通知被关时不启动前台服务', JSON.stringify(calls))

@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runSuite } from './lib/test-suite.mjs'
+import { remoteCall } from './lib/remote-call.mjs'
 
 const electronStub = {
   name: 'electron-stub',
@@ -160,32 +161,29 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const info = await server.start()
   const base = `http://127.0.0.1:${info.port}`
   const auth = { authorization: `Bearer ${info.token}` }
-  const get = async (path) => { const response = await fetch(base + path, { headers: auth }); return { status: response.status, body: await response.json() } }
-  const post = async (path, key = 'k-12345678') => { const response = await fetch(base + path, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', ...(key ? { 'idempotency-key': key } : {}) }, body: '{}' }); return { status: response.status, body: await response.json() } }
+  const act = (action, body = {}, key) => remoteCall(base, action, body, { token: info.token, key })
   try {
-    const caps = (await get('/remote/v1/info')).body.capabilities
-    ok(['notices', 'jobs', 'job-stop', 'subagent-patch', 'new-worktree', 'workflows', 'workflow-control', 'quota', 'usage'].every((cap) => caps.includes(cap)), '电脑声明新能力', JSON.stringify(caps))
-    ok((await get('/remote/v1/sessions/s-1/jobs')).status === 200 && calls.at(-1)[0] === 'jobs', '后台任务路由')
-    ok((await get('/remote/v1/sessions/s-1/workflows')).status === 200 && calls.at(-1)[0] === 'workflows', '工作流路由')
-    ok((await get('/remote/v1/quota')).status === 200 && calls.at(-1)[0] === 'quota', '额度路由')
-    ok((await get('/remote/v1/usage?range=30d')).status === 200 && calls.at(-1)[1] === '30d', '用量路由带范围')
-    ok((await get('/remote/v1/usage?range=1y')).status === 400, '非法范围拒绝')
-    const stop = await post('/remote/v1/sessions/s-1/workflows/wf-0000000a/stop')
+    ok((await act('session.jobs', { sessionId: 's-1' })).status === 200 && calls.at(-1)[0] === 'jobs', '后台任务路由')
+    ok((await act('session.workflows', { sessionId: 's-1' })).status === 200 && calls.at(-1)[0] === 'workflows', '工作流路由')
+    ok((await act('quota')).status === 200 && calls.at(-1)[0] === 'quota', '额度路由')
+    ok((await act('usage', { range: '30d' })).status === 200 && calls.at(-1)[1] === '30d', '用量路由带范围')
+    ok((await act('usage', { range: '1y' })).status === 400, '非法范围拒绝')
+    const stop = await act('workflow.control', { sessionId: 's-1', workflowId: 'wf-0000000a', action: 'stop' }, 'k-12345678')
     ok(stop.status === 200 && calls.at(-1)[3] === 'stop', '工作流停止路由')
-    ok((await post('/remote/v1/sessions/s-1/workflows/wf-0000000a/pause', '')).status === 400, '工作流控制必须带幂等键')
-    ok((await post('/remote/v1/sessions/s-1/workflows/..%2Fx/stop', 'k-abcdefgh')).status === 400, '非法工作流 id 拒绝')
-    const jobStop = await post('/remote/v1/sessions/s-1/jobs/term-job-abc123-7/stop')
+    ok((await act('workflow.control', { sessionId: 's-1', workflowId: 'wf-0000000a', action: 'pause' })).status === 400, '工作流控制必须带幂等键')
+    ok((await act('workflow.control', { sessionId: 's-1', workflowId: '../x', action: 'stop' }, 'k-abcdefgh')).status === 400, '非法工作流 id 拒绝')
+    const jobStop = await act('job.stop', { sessionId: 's-1', jobId: 'term-job-abc123-7' }, 'k-12345679')
     ok(jobStop.status === 200 && calls.at(-1).join() === 'stopJob,s-1,term-job-abc123-7', '后台任务停止路由')
-    ok((await post('/remote/v1/sessions/s-1/jobs/term-job-abc123-8/stop', '')).status === 400, '停止后台任务必须带幂等键')
-    ok((await post('/remote/v1/sessions/s-1/jobs/..%2Fx/stop', 'k-abcdefgh')).status === 400, '非法任务 id 拒绝')
-    ok((await get('/remote/v1/sessions/s-1/subagents/sub-abc/patch')).status === 200 && calls.at(-1).join() === 'patch,s-1,sub-abc', '子代理补丁路由')
-    ok((await get('/remote/v1/sessions/s-1/subagents/..%2Fx/patch')).status === 400, '非法子代理 id 拒绝')
-    ok((await fetch(`${base}/remote/v1/sessions/s-1/subagents/sub-abc/patch`)).status === 401, '补丁需要令牌')
-    const created = await fetch(`${base}/remote/v1/sessions/new`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', 'idempotency-key': 'k-newtree1' }, body: JSON.stringify({ worktree: true }) })
+    ok((await act('job.stop', { sessionId: 's-1', jobId: 'term-job-abc123-8' })).status === 400, '停止后台任务必须带幂等键')
+    ok((await act('job.stop', { sessionId: 's-1', jobId: '../x' }, 'k-abcdefgi')).status === 400, '非法任务 id 拒绝')
+    ok((await act('subagent.patch', { sessionId: 's-1', runId: 'sub-abc' })).status === 200 && calls.at(-1).join() === 'patch,s-1,sub-abc', '子代理补丁路由')
+    ok((await act('subagent.patch', { sessionId: 's-1', runId: '../x' })).status === 400, '非法子代理 id 拒绝')
+    ok((await remoteCall(base, 'subagent.patch', { sessionId: 's-1', runId: 'sub-abc' })).status === 401, '补丁需要令牌')
+    const created = await act('session.new', { worktree: true }, 'k-newtree1')
     ok(created.status === 200 && calls.at(-1)[1].action === 'new' && calls.at(-1)[1].worktree === true, '新建会话可带工作树选项')
-    await fetch(`${base}/remote/v1/sessions/new`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', 'idempotency-key': 'k-newtree2' }, body: JSON.stringify({ worktree: 'yes' }) })
+    await act('session.new', { worktree: 'yes' }, 'k-newtree2')
     ok(!('worktree' in calls.at(-1)[1]), '工作树选项只认 true')
-    const unauth = await fetch(`${base}/remote/v1/quota`)
+    const unauth = await remoteCall(base, 'quota')
     ok(unauth.status === 401, '额度需要令牌')
   } finally {
     await server.stop()

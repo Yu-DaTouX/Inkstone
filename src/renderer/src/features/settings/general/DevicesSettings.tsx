@@ -33,8 +33,6 @@ interface PairedEntry {
   key: string
   name: string
   via: 'direct' | 'relay'
-  peer: boolean
-  plaintext: boolean
   online: boolean
   pairedAt: number
   lastSeenAt: number | null
@@ -76,8 +74,6 @@ export function DeviceList({
         key: `direct:${device.id}`,
         name: device.name,
         via: tunnel ? ('relay' as const) : ('direct' as const),
-        peer: device.kind === 'peer',
-        plaintext: (device.kind ?? 'phone') === 'phone' && !device.encrypted,
         online: !!tunnel?.online,
         pairedAt: device.createdAt,
         lastSeenAt: Math.max(device.lastSeenAt ?? 0, tunnel?.lastSeenAt ?? 0) || null,
@@ -96,8 +92,6 @@ export function DeviceList({
       key: `relay:${client.id}`,
       name: client.name,
       via: 'relay' as const,
-      peer: client.kind === 'agent' || client.kind === 'peer',
-      plaintext: false,
       online: client.online,
       pairedAt: client.addedAt,
       lastSeenAt: client.lastSeenAt,
@@ -123,8 +117,6 @@ export function DeviceList({
           <div className="settings-device__main">
             <span className="settings-device__name">
               {entry.name} {viaBadge(entry)}
-              {entry.peer ? <> <Badge tone="accent">peer</Badge></> : null}
-              {entry.plaintext ? <> <Badge tone="stall">{local.plaintext}</Badge></> : null}
               {entry.online ? <> <Badge tone="ok">{local.online}</Badge></> : null}
             </span>
             <span className="settings-row__desc">
@@ -448,7 +440,7 @@ function DevicesSettingsInner(): ReactElement {
               variant="secondary"
               isDisabled={busy || !canPair}
               data-testid="v3-devices-pair"
-              onPress={() => run(() => window.yan.remote.relayPair('phone'))}
+              onPress={() => run(() => window.yan.remote.relayPair())}
             >
               {text.devicesPairStart}
             </Button>

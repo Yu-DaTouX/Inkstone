@@ -25,8 +25,6 @@ class QuestionAlertService : Service() {
   @Volatile private var link: RemoteLink? = null
   private var worker: Thread? = null
   private var known = emptySet<String>()
-  private var knownHub = emptySet<String>()
-  private var lastHubAt = 0L
   private var questionSession: String? = null
   private var ongoingKey = ""
   private var lastStatusAt = 0L
@@ -37,7 +35,7 @@ class QuestionAlertService : Service() {
     super.onCreate()
     manager.createNotificationChannel(NotificationChannel(SERVICE_CHANNEL, "电脑连接", NotificationManager.IMPORTANCE_LOW))
     manager.createNotificationChannel(NotificationChannel(QUESTION_CHANNEL, "待回答问题", NotificationManager.IMPORTANCE_HIGH).apply { enableVibration(true) })
-    manager.createNotificationChannel(NotificationChannel(HUB_CHANNEL, "多 Agent 待处理", NotificationManager.IMPORTANCE_HIGH))
+    manager.deleteNotificationChannel(HUB_CHANNEL)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -49,7 +47,7 @@ class QuestionAlertService : Service() {
     val baseUrl = intent?.getStringExtra(EXTRA_BASE_URL)?.trimEnd('/')
     val token = intent?.getStringExtra(EXTRA_TOKEN)
     val relay = intent?.let { relayConfig(it) }
-    if (baseUrl.isNullOrBlank() || token.isNullOrBlank() || !manager.areNotificationsEnabled()) {
+    if (baseUrl.isNullOrBlank() || token.isNullOrBlank() || relay == null || !manager.areNotificationsEnabled()) {
       promoteToForeground(ongoingNotification("砚", "已停止"))
       stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
@@ -57,16 +55,13 @@ class QuestionAlertService : Service() {
     }
     stopWorker()
     val identity = MessageDigest.getInstance("SHA-256")
-      .digest("$baseUrl:$token:${relay?.fingerprint ?: ""}".toByteArray(Charsets.UTF_8))
+      .digest("$baseUrl:$token:${relay.fingerprint}".toByteArray(Charsets.UTF_8))
       .joinToString("") { "%02x".format(it) }
     if (preferences.getString("identity", null) != identity) {
-      preferences.edit().putString("identity", identity).remove("known").remove("knownHub").apply()
+      preferences.edit().putString("identity", identity).remove("known").apply()
       manager.cancel(QUESTION_ID)
-      manager.cancel(HUB_ID)
     }
     known = preferences.getStringSet("known", emptySet())?.toSet() ?: emptySet()
-    knownHub = preferences.getStringSet("knownHub", emptySet())?.toSet() ?: emptySet()
-    lastHubAt = 0L
 
     ongoingKey = ""
     if (!promoteToForeground(ongoingNotification("砚", "连接中"))) {
@@ -77,7 +72,7 @@ class QuestionAlertService : Service() {
     running = true
     active = true
     val current = generation
-    worker = Thread({ monitor(baseUrl, token, relay, current) }, "InkstoneQuestionAlerts").also { it.start() }
+    worker = Thread({ monitor(token, relay, current) }, "InkstoneQuestionAlerts").also { it.start() }
     return START_REDELIVER_INTENT
   }
 
@@ -102,17 +97,16 @@ class QuestionAlertService : Service() {
     return RelayConfig(join, hostKey, clientKey, clientPub)
   }
 
-  private fun monitor(baseUrl: String, token: String, relay: RelayConfig?, current: Int) {
+  private fun monitor(token: String, relay: RelayConfig, current: Int) {
     var retryMs = 1_000L
     while (running && generation == current) {
       var currentLink: RemoteLink? = null
       try {
-        currentLink = if (relay != null) connectRelay(relay, token) else DirectLink(baseUrl, token)
+        currentLink = connectRelay(relay, token)
         link = currentLink
         if (!running || generation != current) break
         syncQuestions(currentLink, current)
         syncTask(currentLink, current)
-        syncHub(currentLink, current)
         if (!running || generation != current) break
         val status = currentLink.events("/remote/v1/events?since=0") { line ->
           if (line.startsWith("event:")) {
@@ -122,14 +116,10 @@ class QuestionAlertService : Service() {
                 syncTask(currentLink, current)
               }
               "runners", "proc", "session-title" -> syncTask(currentLink, current)
-              "state" -> {
-                if (System.currentTimeMillis() - lastStatusAt >= 1000) syncTask(currentLink, current)
-                syncHub(currentLink, current)
-              }
+              "state" -> if (System.currentTimeMillis() - lastStatusAt >= 1000) syncTask(currentLink, current)
             }
           } else if (line.startsWith(":")) {
             syncTask(currentLink, current)
-            syncHub(currentLink, current)
           }
           running && generation == current
         }
@@ -140,7 +130,7 @@ class QuestionAlertService : Service() {
         stopSelf()
         return
       } catch (error: Exception) {
-        if (running && generation == current) Log.w(TAG, "${if (relay != null) "relay" else "direct"}: ${error.message}")
+        if (running && generation == current) Log.w(TAG, "relay: ${error.message}")
         updateOngoing("砚", "重新连接中", current)
       } finally {
         currentLink?.close()
@@ -152,41 +142,8 @@ class QuestionAlertService : Service() {
     }
   }
 
-  private fun syncHub(link: RemoteLink, currentGeneration: Int) {
-    if (System.currentTimeMillis() - lastHubAt < 3000) return
-    lastHubAt = System.currentTimeMillis()
-    try {
-      val reply = link.get("/remote/v1/hub/attention")
-      if (reply.status == 401) throw RemoteDenied("hub: 401")
-      if (reply.status == 403 || reply.status == 404) { manager.cancel(HUB_ID); return }
-      if (reply.status != 200) return
-      val items = JSONObject(reply.body).getJSONObject("data").getJSONArray("items")
-      val pending = buildSet { for (index in 0 until items.length()) add(items.getJSONObject(index).getString("id")) }
-      if (!running || generation != currentGeneration) return
-      val hasNew = pending.any { it !in knownHub }
-      knownHub = pending
-      preferences.edit().putStringSet("knownHub", pending).apply()
-      if (pending.isEmpty()) { manager.cancel(HUB_ID); return }
-      val intent = Intent(this, MainActivity::class.java).apply {
-        action = Intent.ACTION_VIEW
-        data = android.net.Uri.parse("inkstone://hub")
-        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-      }
-      val openHub = PendingIntent.getActivity(this, HUB_ID, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-      manager.notify(HUB_ID, Notification.Builder(this, HUB_CHANNEL)
-        .setSmallIcon(R.drawable.ic_stat_inkstone).setColor(ACCENT)
-        .setContentTitle("砚有待处理事项").setContentText("${pending.size} 项多 Agent 任务需要查看")
-        .setContentIntent(openHub).setVisibility(Notification.VISIBILITY_PRIVATE)
-        .setPublicVersion(Notification.Builder(this, HUB_CHANNEL).setSmallIcon(R.drawable.ic_stat_inkstone).setContentTitle("砚").setContentText("${pending.size} 项待处理").build())
-        .setOnlyAlertOnce(!hasNew).setAutoCancel(false).build())
-    } catch (error: RemoteDenied) {
-      throw error
-    } catch (_: Exception) {
-    }
-  }
-
   private fun syncQuestions(link: RemoteLink, currentGeneration: Int) {
-    val reply = link.get("/remote/v1/questions")
+    val reply = link.call("questions")
     run {
       if (reply.status == 401) throw RemoteDenied("questions: 401")
       if (reply.status != 200) return
@@ -219,7 +176,7 @@ class QuestionAlertService : Service() {
   }
 
   private fun syncTask(link: RemoteLink, current: Int) {
-    val reply = link.get("/remote/v1/status")
+    val reply = link.call("status")
     run {
       if (reply.status == 401) throw RemoteDenied("status: 401")
       if (reply.status != 200) return
@@ -294,7 +251,6 @@ class QuestionAlertService : Service() {
   private fun stopMonitoring(clear: Boolean) {
     stopWorker()
     manager.cancel(QUESTION_ID)
-    manager.cancel(HUB_ID)
     if (clear) preferences.edit().clear().apply()
   }
 
@@ -318,7 +274,6 @@ class QuestionAlertService : Service() {
     private const val HUB_CHANNEL = "inkstone.hub"
     private const val SERVICE_ID = 37921
     private const val QUESTION_ID = 37922
-    private const val HUB_ID = 37923
     /** 浅色主题强调色（tokens.css --accent），通知标题与小图标的着色 */
     private val ACCENT = 0xFF5264C8.toInt()
   }

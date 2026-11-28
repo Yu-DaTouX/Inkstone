@@ -4,7 +4,7 @@ import type { Connection } from './api/client'
 import { relayClientPublicKey } from './api/relay'
 
 interface QuestionAlertsNative {
-  start(baseUrl: string, token: string, relay: { join: string; hostKey: string; clientKey: string; clientPub: string } | null): Promise<boolean>
+  start(baseUrl: string, token: string, relay: { join: string; hostKey: string; clientKey: string; clientPub: string }): Promise<boolean>
   stop(): Promise<boolean>
   status(): Promise<{ enabled: boolean; wanted: boolean; active: boolean }>
   openSettings(): Promise<boolean>
@@ -35,7 +35,7 @@ export async function startQuestionAlerts(connection: Connection, requestPermiss
     return false
   }
   const config = connection.relay
-  const relay = config ? { join: [...(config.direct ?? []), ...(config.join ? [config.join] : [])].join('\n'), hostKey: config.hostKey, clientKey: config.clientKey, clientPub: relayClientPublicKey(config.clientKey) } : null
+  const relay = { join: [...(config.direct ?? []), ...(config.join ? [config.join] : [])].join('\n'), hostKey: config.hostKey, clientKey: config.clientKey, clientPub: relayClientPublicKey(config.clientKey) }
   return alerts.start(connection.baseUrl, connection.token, relay)
 }
 

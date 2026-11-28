@@ -59,13 +59,12 @@ export function workflowProgressText(run: Pick<RemoteWorkflow, 'progress'>): str
   return [pick(`${done}/${total} 完成`, `${done}/${total} done`), running ? pick(`${running} 进行中`, `${running} running`) : '', failed ? pick(`${failed} 失败`, `${failed} failed`) : ''].filter(Boolean).join(' · ')
 }
 
-export function workflowActions(run: Pick<RemoteWorkflow, 'canPause' | 'canResume' | 'canStop'>, allowed: boolean): Array<'pause' | 'resume' | 'stop'> {
-  if (!allowed) return []
+export function workflowActions(run: Pick<RemoteWorkflow, 'canPause' | 'canResume' | 'canStop'>): Array<'pause' | 'resume' | 'stop'> {
   return [run.canPause ? 'pause' : null, run.canResume ? 'resume' : null, run.canStop ? 'stop' : null].filter((item): item is 'pause' | 'resume' | 'stop' => item !== null)
 }
 
-export function jobStoppable(job: Pick<RemoteJob, 'live' | 'state'>, allowed: boolean): boolean {
-  return allowed && job.live && job.state !== 'stopping'
+export function jobStoppable(job: Pick<RemoteJob, 'live' | 'state'>): boolean {
+  return job.live && job.state !== 'stopping'
 }
 
 export type PatchLineKind = 'file' | 'hunk' | 'add' | 'del' | 'ctx'

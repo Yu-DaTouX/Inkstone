@@ -151,7 +151,7 @@ export function RemoteProvider({
   const refreshInfo = useCallback(() => guard('info', async (current) => {
     const next = await client.info()
     if (!current()) return
-    if (next.capabilities.includes('device-name') && next.device && ['我的手机', '未命名设备'].includes(next.device.name)) {
+    if (next.device && ['我的手机', '未命名设备'].includes(next.device.name)) {
       const device = await deviceInfo()
       if (!current()) return
       next.device = await client.renameDevice(device.name)

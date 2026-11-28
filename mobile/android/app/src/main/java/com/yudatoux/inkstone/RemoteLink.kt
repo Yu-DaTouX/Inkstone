@@ -10,8 +10,6 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.math.BigInteger
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.ByteBuffer
 import java.security.AlgorithmParameters
 import java.security.KeyFactory
@@ -41,56 +39,9 @@ class RemoteReply(val status: Int, val body: String)
 class RemoteDenied(message: String) : Exception(message)
 
 interface RemoteLink {
-  fun get(path: String): RemoteReply
+  fun call(action: String): RemoteReply
   fun events(path: String, onLine: (String) -> Boolean): Int
   fun close()
-}
-
-class DirectLink(private val baseUrl: String, private val token: String) : RemoteLink {
-  @Volatile private var stream: HttpURLConnection? = null
-
-  private fun open(path: String, accept: String, readTimeout: Int) =
-    (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
-      requestMethod = "GET"
-      setRequestProperty("Authorization", "Bearer $token")
-      setRequestProperty("Accept", accept)
-      connectTimeout = 12_000
-      this.readTimeout = readTimeout
-      useCaches = false
-    }
-
-  override fun get(path: String): RemoteReply {
-    val connection = open(path, "application/json", 12_000)
-    try {
-      val status = connection.responseCode
-      return RemoteReply(status, if (status == 200) connection.inputStream.bufferedReader().use { it.readText() } else "")
-    } finally {
-      connection.disconnect()
-    }
-  }
-
-  override fun events(path: String, onLine: (String) -> Boolean): Int {
-    val connection = open(path, "text/event-stream", 65_000)
-    stream = connection
-    try {
-      val status = connection.responseCode
-      if (status != 200) return status
-      connection.inputStream.bufferedReader().use { reader ->
-        while (true) {
-          val line = reader.readLine() ?: break
-          if (!onLine(line)) break
-        }
-      }
-      return status
-    } finally {
-      connection.disconnect()
-      if (stream === connection) stream = null
-    }
-  }
-
-  override fun close() {
-    stream?.disconnect()
-  }
 }
 
 class RelayConfig(val join: String, val hostKey: String, val clientKey: String, val clientPub: String) {
@@ -213,14 +164,19 @@ class RelayLink(private val config: RelayConfig, private val token: String, priv
     }
   }
 
-  private fun begin(prefix: String, path: String, accept: String): Pair<String, LinkedBlockingQueue<Item>> {
+  private fun begin(prefix: String, method: String, path: String, accept: String): Pair<String, LinkedBlockingQueue<Item>> {
     failure?.let { throw it }
     val id = prefix + seq.incrementAndGet()
     val queue = LinkedBlockingQueue<Item>()
     pending[id] = queue
-    val headers = JSONObject().put("authorization", "Bearer $token").put("accept", accept)
+    val headers = JSONObject().put("authorization", "Bearer $token").put("accept", accept).put("x-yan-remote-version", REMOTE_API_VERSION.toString())
+    val req = JSONObject().put("t", "req").put("id", id).put("method", method).put("path", path).put("headers", headers)
+    if (method == "POST") {
+      headers.put("content-type", "application/json")
+      req.put("body", Base64.encodeToString("{}".toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+    }
     try {
-      send(JSONObject().put("t", "req").put("id", id).put("method", "GET").put("path", path).put("headers", headers))
+      send(req)
     } catch (error: Exception) {
       pending.remove(id)
       throw error
@@ -242,8 +198,8 @@ class RelayLink(private val config: RelayConfig, private val token: String, priv
     return item
   }
 
-  override fun get(path: String): RemoteReply {
-    val (id, queue) = begin("n", path, "application/json")
+  override fun call(action: String): RemoteReply {
+    val (id, queue) = begin("n", "POST", "/remote/v1/call/$action", "application/json")
     try {
       val head = next(id, queue, REQUEST_MS) as? Item.Res ?: throw IOException("电脑的回应不对")
       if (!head.stream) return RemoteReply(head.status, String(head.body, Charsets.UTF_8))
@@ -261,7 +217,7 @@ class RelayLink(private val config: RelayConfig, private val token: String, priv
   }
 
   override fun events(path: String, onLine: (String) -> Boolean): Int {
-    val (id, queue) = begin("e", path, "text/event-stream")
+    val (id, queue) = begin("e", "GET", path, "text/event-stream")
     try {
       val head = next(id, queue, REQUEST_MS) as? Item.Res ?: throw IOException("电脑的回应不对")
       if (head.status != 200 || !head.stream) return head.status
@@ -321,6 +277,7 @@ class RelayLink(private val config: RelayConfig, private val token: String, priv
 
   companion object {
     private const val PROTOCOL_VERSION = 1
+    const val REMOTE_API_VERSION = 3
     private const val HANDSHAKE_MS = 15_000L
     private const val REQUEST_MS = 20_000L
     private const val STREAM_IDLE_MS = 65_000L

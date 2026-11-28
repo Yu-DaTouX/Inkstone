@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { deflateSync, crc32 } from 'node:zlib'
+import { VERSION_HEADERS, callPath } from './lib/remote-call.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-relay-'))
 await build({
@@ -88,7 +89,7 @@ async function connect(relay, link, { pair = true, name = '测试手机', key } 
   const request = (method, path, { body, headers = {}, onChunk, onStart } = {}) => new Promise((resolve) => {
     const id = `r${++seq}`
     pending.set(id, { resolve, chunks: [], onChunk, onStart })
-    void channel.seal({ t: 'req', id, method, path, headers, ...(body !== undefined ? { body: Buffer.from(JSON.stringify(body)).toString('base64') } : {}) }).then((f) => conn.send(f))
+    void channel.seal({ t: 'req', id, method, path, headers: { ...VERSION_HEADERS, ...headers }, ...(body !== undefined ? { body: Buffer.from(JSON.stringify(body)).toString('base64') } : {}) }).then((f) => conn.send(f))
   }).then((p) => ({ status: p.res.status, json: () => JSON.parse(Buffer.from(p.res.body ?? Buffer.concat(p.chunks).toString('base64'), 'base64').toString('utf8')), text: () => Buffer.concat(p.chunks).toString('utf8') }))
   return { welcome, payload, request, conn, channel, abort: (id) => channel.seal({ t: 'abort', id }).then((f) => conn.send(f)) }
 }
@@ -132,8 +133,8 @@ try {
     const { token, device } = paired.json()
     assert.equal(device.kind, 'phone')
     const auth = { authorization: `Bearer ${token}` }
-    assert.equal((await phone.request('GET', '/remote/v1/sessions', { headers: auth })).status, 200)
-    assert.notEqual((await phone.request('GET', '/remote/v1/hub', { headers: auth })).status, 200, 'Hub 路由已移除')
+    assert.equal((await phone.request('POST', callPath('sessions'), { headers: auth, body: {} })).status, 200)
+    assert.notEqual((await phone.request('POST', callPath('hub'), { headers: auth, body: {} })).status, 200, 'Hub 动作不存在')
     assert.equal((await bridge.status()).clients.filter((c) => c.kind === 'phone').length, 1)
   })
 
@@ -159,43 +160,16 @@ try {
       const data = image(bytes)
       assert.equal(data.length, bytes)
       headers['idempotency-key'] += 'x'
-      const result = await phone.request('POST', '/remote/v1/sessions/fixture/messages', { headers, body: { text: 'fixture', images: Array.from({ length: count }, () => ({ mimeType: 'image/png', data: data.toString('base64') })) } })
+      const result = await phone.request('POST', callPath('session.send'), { headers, body: { sessionId: 'fixture', text: 'fixture', images: Array.from({ length: count }, () => ({ mimeType: 'image/png', data: data.toString('base64') })) } })
       assert.equal(result.status, 200)
       assert.deepEqual(result.json().data.imageBytes, Array(count).fill(bytes))
     }
-    assert.equal((await phone.request('POST', '/remote/v1/sessions/fixture/messages', { headers, body: { text: 'x', pad: 'x'.repeat(12 * 1024 * 1024) } })).status, 413)
+    assert.equal((await phone.request('POST', callPath('session.send'), { headers, body: { sessionId: 'fixture', text: 'x', pad: 'x'.repeat(12 * 1024 * 1024) } })).status, 413)
     assert.equal((await phone.request('POST', '/remote/v1/pair', { body: { pad: 'x'.repeat(1_000_000) } })).status, 413)
-    assert.equal((await phone.request('GET', '/remote/v1/sessions/fixture/messages', { body: { pad: 'x'.repeat(1_000_000) } })).status, 413)
+    assert.equal((await phone.request('POST', callPath('session.rename'), { body: { pad: 'x'.repeat(1_000_000) } })).status, 413)
   })
 
-  await check('礁石：Agent Hub 已退役，中继配对被拒绝，隧道只放行 info', async () => {
-    const { link } = await bridge.pairLink('agent')
-    const reef = await connect(relay, link, { name: '礁石' })
-    assert.equal(reef.welcome.kind, 'agent')
-    const paired = await reef.request('POST', '/remote/v1/pair', { body: { code: reef.payload.y, deviceName: '礁石', kind: 'phone' } })
-    assert.equal(paired.status, 403)
-    assert.equal(paired.json().code, 'agent_retired')
-    assert.equal((await reef.request('GET', '/remote/v1/sessions')).status, 403, '隧道层拦住会话接口')
-    assert.equal((await reef.request('GET', '/remote/v1/hub')).status, 403, '隧道层不再放行 Hub 路径')
-  })
-
-  await check('旧礁石令牌除 /info 外一律 403，且不再获得任何能力', async () => {
-    devices.startPairing()
-    const legacy = await devices.pair(devices.currentPairing().code, '旧礁石', 'agent')
-    assert.equal(legacy.ok, true)
-    assert.equal(legacy.device.kind, 'agent')
-    const call = (method, path, body) => fetch(`http://127.0.0.1:${server.info.port}${path}`, { method, headers: { authorization: `Bearer ${legacy.token}`, 'content-type': 'application/json', 'idempotency-key': 'legacy-reef-0001', 'x-yan-relay': relayToken }, body: body ? JSON.stringify(body) : undefined })
-    const direct = await fetch(`http://127.0.0.1:${server.info.port}/remote/v1/info`, { headers: { authorization: `Bearer ${legacy.token}` } })
-    assert.equal(direct.status, 403, '中继服务不接受没带中继令牌的直连')
-    const info = await call('GET', '/remote/v1/info')
-    assert.equal(info.status, 200)
-    assert.deepEqual((await info.json()).capabilities, [])
-    for (const [method, path, body] of [['GET', '/remote/v1/hub'], ['POST', '/remote/v1/hub', { action: 'answer', approvalId: 'a1', decision: 'accept' }], ['GET', '/remote/v1/hub/attention'], ['GET', '/remote/v1/sessions'], ['GET', '/remote/v1/status']]) {
-      assert.equal((await call(method, path, body)).status, 403, `${method} ${path}`)
-    }
-  })
-
-  await check('直连请求不能配对出 agent，带不带中继标记都一样', async () => {
+  await check('中继服务不接受没带中继令牌的直连配对', async () => {
     devices.startPairing()
     const code = devices.currentPairing().code
     const direct = (headers) => fetch(`http://127.0.0.1:${server.info.port}/remote/v1/pair`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ code, deviceName: 'x', kind: 'agent' }) })
@@ -236,7 +210,7 @@ try {
   await check('中继来源各用各的配对限流桶', async () => {
     const attempt = async (client) => (await fetch(new URL('/remote/v1/pair', relayUrl), {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-yan-relay': relayToken, ...(client ? { 'x-yan-relay-client': client } : {}) },
+      headers: { ...VERSION_HEADERS, 'content-type': 'application/json', 'x-yan-relay': relayToken, ...(client ? { 'x-yan-relay-client': client } : {}) },
       body: JSON.stringify({ code: '000000', deviceName: '限流测试' })
     })).status
     for (let index = 0; index < 10; index++) assert.equal(await attempt('client-a'), 403)
@@ -276,5 +250,5 @@ if (failures) {
   console.log(`\n${failures} 项失败`)
   process.exit(1)
 }
-console.log('\n中继接入检查全部通过：两层配对、类型绑定、agent 范围、路径与头白名单、撤销、防篡改、SSE 转发。')
+console.log('\n中继接入检查全部通过：两层配对、类型绑定、路径与头白名单、撤销、防篡改、SSE 转发。')
 process.exit(0)

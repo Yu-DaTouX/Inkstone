@@ -5,6 +5,7 @@ import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync,
 import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
+import { VERSION_HEADERS, callPath } from './lib/remote-call.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const unpacked = process.env.YAN_PACKAGED_DIR
@@ -412,8 +413,11 @@ if (!exeFromArg) {
   })
   const hit = async (path, token) => {
     try {
+      const call = path.startsWith(callPath(''))
       const res = await fetch(`http://127.0.0.1:${remotePort}${path}`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {},
+        method: call ? 'POST' : 'GET',
+        headers: { ...VERSION_HEADERS, ...(call ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        ...(call ? { body: '{}' } : {}),
         signal: AbortSignal.timeout(2500)
       })
       return res.status
@@ -427,9 +431,9 @@ if (!exeFromArg) {
     health = await hit('/remote/v1/health')
   }
   runChecks.push([health === 200, `显式开启后远程服务起得来（/health → ${health || '连不上'}）`])
-  const noToken = await hit('/remote/v1/status')
+  const noToken = await hit(callPath('status'))
   runChecks.push([noToken === 401, `不带 token 打 /status 被拒（${noToken}）`])
-  const withToken = await hit('/remote/v1/status', remoteToken)
+  const withToken = await hit(callPath('status'), remoteToken)
   runChecks.push([withToken === 200, `带 token 打 /status 通过（${withToken}）`])
   remoteChild.kill()
   terminatePackagedProcesses(sandbox)

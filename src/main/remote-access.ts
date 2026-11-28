@@ -85,7 +85,7 @@ export class RemoteAccess {
   readonly relay: RelayBridge
   private relayServer: RemoteServer | null = null
   private relayToken = ''
-  private relayPairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null = null
+  private relayPairing: { link: string; expiresAt: number } | null = null
   private readonly outgoing: RemotePushCoalescer
   private readonly direct: DirectTunnelEndpoint
   private readonly shares = new Map<string, { title: string; invite: string; startedAt: number }>()
@@ -206,11 +206,11 @@ export class RemoteAccess {
     await this.relay.apply(relay)
   }
 
-  async relayPair(kind: 'phone' | 'agent'): Promise<void> {
+  async relayPair(): Promise<void> {
     const info = this.server?.running ? this.server.info : null
     const direct = info && !['127.0.0.1', 'localhost', '::1'].includes(info.host) ? [`ws://${info.host.includes(':') ? `[${info.host}]` : info.host}:${info.port}${REMOTE_TUNNEL_PATH}`] : []
-    const { link, expiresAt } = await this.relay.pairLink(kind, direct)
-    this.relayPairing = { kind, link, expiresAt }
+    const { link, expiresAt } = await this.relay.pairLink('phone', direct)
+    this.relayPairing = { link, expiresAt }
   }
 
   cancelRelayPairing(): void {

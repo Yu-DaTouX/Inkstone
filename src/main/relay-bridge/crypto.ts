@@ -1,142 +1,106 @@
-import { webcrypto } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createECDH, createHash, hkdfSync, randomBytes, type JsonWebKey } from 'node:crypto'
 import { decodeBase64Url as fromB64u, encodeBase64Url as toB64u } from '../../shared/base64url'
+import { RELAY_PROTOCOL_VERSION, RelayChannel, relayClientKeys, relayFrameCodec, relayServerKeys, type RelayPrimitives } from '../../shared/relay-crypto'
 
-const subtle = webcrypto.subtle
-const encoder = new TextEncoder()
-const decoder = new TextDecoder()
-const CURVE = { name: 'ECDH', namedCurve: 'P-256' } as const
-const LABEL = encoder.encode('reef-v1')
-const INFO = encoder.encode('reef-v1 keys')
-
-export const RELAY_PROTOCOL_VERSION = 1
+export { RELAY_PROTOCOL_VERSION, fromB64u, toB64u }
 
 export interface KeyPair {
-  privateKey: webcrypto.CryptoKey
-  publicKey: webcrypto.CryptoKey
+  secret: Uint8Array
   raw: Uint8Array
 }
 
-export { fromB64u, toB64u }
+const encoder = new TextEncoder()
+const decoder = new TextDecoder('utf-8', { fatal: false })
 
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
-  let off = 0
-  for (const p of parts) {
-    out.set(p, off)
-    off += p.length
-  }
-  return out
+function curve(secret: Uint8Array) {
+  const ecdh = createECDH('prime256v1')
+  ecdh.setPrivateKey(secret)
+  return ecdh
 }
 
+export const nodeRelayPrimitives: RelayPrimitives = {
+  publicKey: (secret) => new Uint8Array(curve(secret).getPublicKey(null, 'uncompressed')),
+  ecdh: (secret, publicRaw) => new Uint8Array(curve(secret).computeSecret(publicRaw)),
+  sha256: (bytes) => new Uint8Array(createHash('sha256').update(bytes).digest()),
+  hkdf: (ikm, salt, info, length) => new Uint8Array(hkdfSync('sha256', ikm, salt, info, length)),
+  encrypt(key, iv, plain) {
+    const cipher = createCipheriv('aes-256-gcm', key, iv)
+    const body = Buffer.concat([cipher.update(plain), cipher.final(), cipher.getAuthTag()])
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+  },
+  decrypt(key, iv, sealed) {
+    if (sealed.length < 16) throw new Error('加密帧太短')
+    const decipher = createDecipheriv('aes-256-gcm', key, iv)
+    decipher.setAuthTag(sealed.subarray(sealed.length - 16))
+    const body = Buffer.concat([decipher.update(sealed.subarray(0, sealed.length - 16)), decipher.final()])
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+  },
+  utf8: (text) => encoder.encode(text),
+  text: (bytes) => decoder.decode(bytes),
+  toB64u,
+  fromB64u
+}
+
+const codec = relayFrameCodec(nodeRelayPrimitives)
+
 export async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await subtle.digest('SHA-256', bytes))
+  return nodeRelayPrimitives.sha256(bytes)
 }
 
 export function randomB64u(size: number): string {
-  return toB64u(webcrypto.getRandomValues(new Uint8Array(size)))
+  return toB64u(randomBytes(size))
+}
+
+function fromSecret(secret: Uint8Array): KeyPair {
+  return { secret, raw: nodeRelayPrimitives.publicKey(secret) }
 }
 
 export async function generateKeyPair(): Promise<KeyPair> {
-  const pair = (await subtle.generateKey(CURVE, true, ['deriveBits'])) as webcrypto.CryptoKeyPair
-  const raw = new Uint8Array(await subtle.exportKey('raw', pair.publicKey))
-  return { privateKey: pair.privateKey, publicKey: pair.publicKey, raw }
+  const ecdh = createECDH('prime256v1')
+  ecdh.generateKeys()
+  const key = ecdh.getPrivateKey()
+  const secret = new Uint8Array(32)
+  secret.set(key, 32 - key.length)
+  return fromSecret(secret)
 }
 
-export async function exportKeyPair(pair: KeyPair): Promise<webcrypto.JsonWebKey> {
-  return subtle.exportKey('jwk', pair.privateKey)
+export async function exportKeyPair(pair: KeyPair): Promise<JsonWebKey> {
+  return { kty: 'EC', crv: 'P-256', d: toB64u(pair.secret), x: toB64u(pair.raw.subarray(1, 33)), y: toB64u(pair.raw.subarray(33, 65)), ext: true }
 }
 
-export async function importKeyPair(jwk: webcrypto.JsonWebKey): Promise<KeyPair> {
-  const privateKey = await subtle.importKey('jwk', jwk, CURVE, true, ['deriveBits'])
-  const publicKey = await subtle.importKey('jwk', { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true }, CURVE, true, [])
-  const raw = new Uint8Array(await subtle.exportKey('raw', publicKey))
-  return { privateKey, publicKey, raw }
-}
-
-async function importPublic(raw: Uint8Array): Promise<webcrypto.CryptoKey> {
-  if (!(raw instanceof Uint8Array) || raw.length !== 65 || raw[0] !== 4) throw new Error('公钥格式不对')
-  return subtle.importKey('raw', raw, CURVE, true, [])
-}
-
-async function dh(privateKey: webcrypto.CryptoKey, publicKey: webcrypto.CryptoKey): Promise<Uint8Array> {
-  return new Uint8Array(await subtle.deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256))
-}
-
-async function finish(
-  dh1: Uint8Array, dh2: Uint8Array, dh3: Uint8Array,
-  serverStatic: Uint8Array, clientStatic: Uint8Array, clientEph: Uint8Array, serverEph: Uint8Array
-): Promise<{ c2s: webcrypto.CryptoKey; s2c: webcrypto.CryptoKey }> {
-  const salt = await sha256(concat(LABEL, serverStatic, clientStatic, clientEph, serverEph))
-  const ikm = await subtle.importKey('raw', concat(dh1, dh2, dh3), 'HKDF', false, ['deriveBits'])
-  const okm = new Uint8Array(await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: INFO }, ikm, 512))
-  const key = (bytes: Uint8Array) => subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt'])
-  return { c2s: await key(okm.slice(0, 32)), s2c: await key(okm.slice(32, 64)) }
-}
-
-export async function clientSession(input: { clientStatic: KeyPair; clientEph: KeyPair; serverStaticRaw: Uint8Array; serverEphRaw: Uint8Array }): Promise<SecureChannel> {
-  const serverStatic = await importPublic(input.serverStaticRaw)
-  const serverEph = await importPublic(input.serverEphRaw)
-  const keys = await finish(
-    await dh(input.clientEph.privateKey, serverEph),
-    await dh(input.clientEph.privateKey, serverStatic),
-    await dh(input.clientStatic.privateKey, serverEph),
-    input.serverStaticRaw, input.clientStatic.raw, input.clientEph.raw, input.serverEphRaw
-  )
-  return new SecureChannel(keys.c2s, keys.s2c)
-}
-
-export async function serverSession(input: { serverStatic: KeyPair; serverEph: KeyPair; clientStaticRaw: Uint8Array; clientEphRaw: Uint8Array }): Promise<SecureChannel> {
-  const clientStatic = await importPublic(input.clientStaticRaw)
-  const clientEph = await importPublic(input.clientEphRaw)
-  const keys = await finish(
-    await dh(input.serverEph.privateKey, clientEph),
-    await dh(input.serverStatic.privateKey, clientEph),
-    await dh(input.serverEph.privateKey, clientStatic),
-    input.serverStatic.raw, input.clientStaticRaw, input.clientEphRaw, input.serverEph.raw
-  )
-  return new SecureChannel(keys.s2c, keys.c2s)
-}
-
-function counterBytes(n: number): Uint8Array {
-  const out = new Uint8Array(8)
-  new DataView(out.buffer).setBigUint64(0, BigInt(n))
-  return out
+export async function importKeyPair(jwk: JsonWebKey): Promise<KeyPair> {
+  if (jwk.kty !== 'EC' || jwk.crv !== 'P-256' || typeof jwk.d !== 'string') throw new Error('密钥格式不对')
+  const pair = fromSecret(fromB64u(jwk.d))
+  if ((jwk.x && jwk.x !== toB64u(pair.raw.subarray(1, 33))) || (jwk.y && jwk.y !== toB64u(pair.raw.subarray(33, 65)))) throw new Error('密钥格式不对')
+  return pair
 }
 
 export class SecureChannel {
-  private sendCount = 0
-  private recvCount = 0
-  private sendChain: Promise<unknown> = Promise.resolve()
-  private recvChain: Promise<unknown> = Promise.resolve()
-
-  constructor(private readonly sendKey: webcrypto.CryptoKey, private readonly recvKey: webcrypto.CryptoKey) {}
+  constructor(private readonly channel: RelayChannel) {}
 
   seal(obj: unknown): Promise<string> {
-    const n = this.sendCount++
-    const job = this.sendChain.then(async () => {
-      const ctr = counterBytes(n)
-      const iv = concat(new Uint8Array(4), ctr)
-      const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, this.sendKey, encoder.encode(JSON.stringify(obj))))
-      return `x.${toB64u(concat(ctr, ct))}`
-    })
-    this.sendChain = job.catch(() => undefined)
-    return job
+    try {
+      return Promise.resolve(this.channel.seal(obj))
+    } catch (error) {
+      return Promise.reject(error)
+    }
   }
 
   open(frame: string): Promise<unknown> {
-    const job = this.recvChain.then(async () => {
-      if (typeof frame !== 'string' || !frame.startsWith('x.')) throw new Error('不是加密帧')
-      const bytes = fromB64u(frame.slice(2))
-      if (bytes.length < 8 + 16) throw new Error('加密帧太短')
-      const ctr = bytes.slice(0, 8)
-      const n = Number(new DataView(ctr.buffer).getBigUint64(0))
-      if (n !== this.recvCount) throw new Error('加密帧计数不对（重放或乱序）')
-      const iv = concat(new Uint8Array(4), ctr)
-      const plain = await subtle.decrypt({ name: 'AES-GCM', iv }, this.recvKey, bytes.slice(8))
-      this.recvCount++
-      return JSON.parse(decoder.decode(plain)) as unknown
-    })
-    this.recvChain = job.catch(() => undefined)
-    return job
+    try {
+      return Promise.resolve(this.channel.open(frame))
+    } catch (error) {
+      return Promise.reject(error)
+    }
   }
+}
+
+export async function clientSession(input: { clientStatic: KeyPair; clientEph: KeyPair; serverStaticRaw: Uint8Array; serverEphRaw: Uint8Array }): Promise<SecureChannel> {
+  const keys = relayClientKeys(nodeRelayPrimitives, { clientSecret: input.clientStatic.secret, ephSecret: input.clientEph.secret, hostRaw: input.serverStaticRaw, hostEphRaw: input.serverEphRaw })
+  return new SecureChannel(new RelayChannel(keys, codec))
+}
+
+export async function serverSession(input: { serverStatic: KeyPair; serverEph: KeyPair; clientStaticRaw: Uint8Array; clientEphRaw: Uint8Array }): Promise<SecureChannel> {
+  const keys = relayServerKeys(nodeRelayPrimitives, { hostSecret: input.serverStatic.secret, ephSecret: input.serverEph.secret, clientRaw: input.clientStaticRaw, clientEphRaw: input.clientEphRaw })
+  return new SecureChannel(new RelayChannel(keys, codec))
 }

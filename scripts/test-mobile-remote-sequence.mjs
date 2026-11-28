@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { startFakeDesktop } from './mobile-render/fake-desktop.mjs'
 import { reportSkip } from './lib/test-skip.mjs'
+import { remoteCall } from './lib/remote-call.mjs'
 
 const load = async (contents) => {
   const built = await build({ stdin: { contents, resolveDir: '.', loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent' })
@@ -17,7 +18,6 @@ const { RemoteClient, RemoteHttpError, pair } = await load(`export { RemoteClien
   reportSkip(`${message}，跳过`)
   process.exit(0)
 })
-const { capabilityAllowed } = await load(`export { capabilityAllowed } from './src/shared/capability-negotiation'`)
 
 const calls = []
 const state = { running: false, branch: 'main', sessions: [
@@ -83,10 +83,8 @@ assert.ok(confirmed?.fingerprint, '配对前拿到电脑身份指纹给用户核
 assert.match(connection.baseUrl, /^relay:\/\//, '手输地址配对改走加密通道')
 const client = new RemoteClient(connection)
 
-const caps = await client.info()
-for (const name of ['insight', 'compact', 'branches', 'search', 'session-flags', 'session-delete', 'models']) {
-  assert.ok(capabilityAllowed(caps, name), `能力 ${name} 对手机可用`)
-}
+const info = await client.info()
+assert.ok(info.apiVersion > 0 && info.device, '经加密通道取到协议版本与设备')
 assert.equal((await client.sessions()).length, 2, '取会话列表')
 assert.equal((await client.history('s-1')).messages[0].text, '你好')
 
@@ -140,7 +138,7 @@ await assert.rejects(client.deleteSession('s-1'), (err) => err.status === 409 &&
 await client.deleteSession('s-2')
 assert.deepEqual((await client.sessions()).map((s) => s.id), ['s-1'])
 
-const raw = await fetch(`${baseUrl}/remote/v1/sessions/s-2/delete`, { method: 'POST', headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' }, body: '{}' })
+const raw = await remoteCall(baseUrl, 'session.delete', { sessionId: 's-2' }, { token: connection.token })
 assert.equal(raw.status, 400, '没有 confirm 的删除被拒')
 assert.equal(calls.filter((c) => c[0] === 'delete').length, 2, '被拒的删除没有到达处理器')
 

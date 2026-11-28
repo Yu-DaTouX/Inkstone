@@ -1,5 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
+import { VERSION_HEADERS, callPath } from './lib/remote-call.mjs'
 import { build } from 'esbuild'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -122,8 +123,7 @@ try {
   await check('配对后的能力协商经隧道，不再宣告 Agent Hub', async () => {
     const client = new M.RemoteClient(connection)
     const info = await client.info()
-    assert.ok(info.capabilities.includes('sessions'))
-    assert.ok(!info.capabilities.includes('agent-hub'))
+    assert.ok(info.apiVersion > 0 && info.device)
   })
 
   await check('事件流经隧道到达，中文不乱码', async () => {
@@ -157,20 +157,20 @@ try {
     relay.legacy = true
     const old = new M.RelayTunnel(connection.relay)
     try {
-      const res = await old.request('GET', '/remote/v1/info', { headers: { authorization: `Bearer ${connection.token}` } })
+      const res = await old.request('POST', callPath('info'), { headers: { ...VERSION_HEADERS, authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' }, body: '{}' })
       assert.equal(old.version, 1)
       assert.equal(res.status, 200)
-      assert.ok(res.text.includes('"sessions"'), res.text.slice(0, 200))
+      assert.ok(res.text.includes('"apiVersion"'), res.text.slice(0, 200))
       const got = []
       let started
       const opened = new Promise((r) => { started = r })
-      const stop = old.stream('/remote/v1/events?since=0', { authorization: `Bearer ${connection.token}`, accept: 'text/event-stream' }, { onStart: () => started(), onChunk: (t) => got.push(t), onEnd: () => undefined })
+      const stop = old.stream('/remote/v1/events?since=0', { ...VERSION_HEADERS, authorization: `Bearer ${connection.token}`, accept: 'text/event-stream' }, { onStart: () => started(), onChunk: (t) => got.push(t), onEnd: () => undefined })
       await opened
       server.publish({ ch: 'notify', payload: { text: '旧版协议的中文 😀' } })
       await new Promise((r) => setTimeout(r, 200))
       stop()
       assert.ok(got.join('').includes('旧版协议的中文 😀'))
-      const post = await old.request('POST', '/remote/v1/device', { headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: '旧手机' }) })
+      const post = await old.request('POST', callPath('device.rename'), { headers: { ...VERSION_HEADERS, authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: '旧手机' }) })
       assert.ok(post.status < 500, String(post.status))
     } finally {
       relay.legacy = false
@@ -202,12 +202,12 @@ try {
     assert.equal(M.setFrameCipher(native), true)
     const tunnel = new M.RelayTunnel(connection.relay)
     try {
-      const res = await tunnel.request('GET', '/remote/v1/info', { headers: { authorization: `Bearer ${connection.token}` } })
+      const res = await tunnel.request('POST', callPath('info'), { headers: { ...VERSION_HEADERS, authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' }, body: '{}' })
       assert.equal(res.status, 200)
       const got = []
       let started
       const opened = new Promise((r) => { started = r })
-      const stop = tunnel.stream('/remote/v1/events?since=0', { authorization: `Bearer ${connection.token}`, accept: 'text/event-stream' }, { onStart: () => started(), onChunk: (t) => got.push(t), onEnd: () => undefined })
+      const stop = tunnel.stream('/remote/v1/events?since=0', { ...VERSION_HEADERS, authorization: `Bearer ${connection.token}`, accept: 'text/event-stream' }, { onStart: () => started(), onChunk: (t) => got.push(t), onEnd: () => undefined })
       await opened
       server.publish({ ch: 'notify', payload: { text: '原生解密的中文 😀' } })
       await new Promise((r) => setTimeout(r, 200))

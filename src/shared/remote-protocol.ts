@@ -1,4 +1,6 @@
-export const REMOTE_PROTOCOL_VERSION = 2
+export const REMOTE_PROTOCOL_VERSION = 3
+export const REMOTE_VERSION_HEADER = 'x-yan-remote-version'
+export const REMOTE_CALL_PREFIX = '/remote/v1/call/'
 export const REMOTE_DEFAULT_PORT = 37892
 export const REMOTE_PAIRING_TTL_MS = 5 * 60_000
 export const REMOTE_PAIRING_CODE_RE = /^\d{6}$/
@@ -10,12 +12,7 @@ export const REMOTE_ARTIFACT_MAX_BYTES = 10 * 1024 * 1024
 export const REMOTE_MESSAGE_MAX_BYTES = 12 * 1024 * 1024
 
 export interface RemoteInfo {
-  ok: true
   apiVersion: number
-  transport: Array<'http' | 'sse'>
-  tokenRequired: true
-  capabilities: string[]
-  capabilityDetails?: import('./capability-negotiation').ServiceCapability[]
   device: RemoteDeviceSummary | null
   computer?: { name: string }
 }
@@ -44,10 +41,9 @@ export interface RemoteModel {
 export interface RemoteDeviceSummary {
   id: string
   name: string
-  kind?: 'phone' | 'peer' | 'agent' | 'viewer'
+  kind?: 'phone' | 'viewer'
   createdAt: number
   lastSeenAt: number | null
-  encrypted?: boolean
   tunnelClientId?: string
   watchSessionId?: string
 }
@@ -81,7 +77,7 @@ export interface RemoteRelaySettings {
 export interface RemoteRelayClient {
   id: string
   name: string
-  kind: 'phone' | 'peer' | 'agent'
+  kind: 'phone'
   addedAt: number
   lastSeenAt: number | null
   revokedAt: number | null
@@ -94,7 +90,7 @@ export interface RemoteRelayStatus {
   connected: boolean
   detail: string | null
   clients: RemoteRelayClient[]
-  pairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null
+  pairing: { link: string; expiresAt: number } | null
 }
 
 export interface RemoteAccessSettings {
@@ -315,3 +311,48 @@ export interface RemoteUsage {
 }
 
 export type RemoteSubagentReview = 'pending' | 'conflict' | 'merged' | 'discarded' | 'archived'
+
+type SessionArgs = { sessionId: string }
+type SubagentArgs = { sessionId: string; runId: string }
+
+export interface RemoteActionArgs {
+  info: Record<string, never>
+  status: Record<string, never>
+  sessions: Record<string, never>
+  questions: Record<string, never>
+  quota: Record<string, never>
+  usage: { range: '7d' | '30d' | 'all' }
+  search: { q: string }
+  'session.history': SessionArgs & { limit?: number; before?: string }
+  'session.subagents': SessionArgs
+  'session.jobs': SessionArgs
+  'session.workflows': SessionArgs
+  'session.branches': SessionArgs
+  'session.insight': SessionArgs
+  'session.models': SessionArgs
+  'session.new': { projectId?: string; worktree?: boolean }
+  'session.select': SessionArgs
+  'session.send': SessionArgs & { text: string; images?: RemoteImageInput[]; mode?: 'steer' | 'followUp' }
+  'session.model': SessionArgs & { provider: string; modelId: string }
+  'session.thinking': SessionArgs & { level: string }
+  'session.flags': SessionArgs & { pinned?: boolean; archived?: boolean }
+  'session.delete': SessionArgs & { confirm: true }
+  'session.queue': SessionArgs & { op: RemoteQueueOp }
+  'session.compact': SessionArgs
+  'session.branch': SessionArgs & { branch: string }
+  'session.rename': SessionArgs & { name: string }
+  'subagent.patch': SubagentArgs
+  'subagent.stop': SubagentArgs
+  'subagent.review': SubagentArgs & { action: 'merge' | 'discard'; confirm: true }
+  'subagent.send': SubagentArgs & { text: string }
+  'job.stop': SessionArgs & { jobId: string }
+  'workflow.control': SessionArgs & { workflowId: string; action: 'pause' | 'resume' | 'stop' }
+  'question.answer': { questionId: string; answer: RemoteAnswer }
+  'question.approval': RemoteHumanApproval & { questionId: string }
+  'run.abort': { runId: string }
+  'voice.transcribe': { wav: string }
+  'device.rename': { name: string }
+  'device.revoke': Record<string, never>
+}
+
+export type RemoteAction = keyof RemoteActionArgs

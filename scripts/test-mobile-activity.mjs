@@ -8,7 +8,7 @@ const nobleStub = { name: 'noble-stub', setup(b) {
 } }
 
 await runSuite(import.meta.url, async (ok) => {
-  const built = await build({ stdin: { contents: `export * from './mobile/src/activity'; export { RemoteClient } from './mobile/src/api/client'`, resolveDir: '.', loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', plugins: [nobleStub] })
+  const built = await build({ stdin: { contents: `export * from './mobile/src/activity'; export { RemoteClient } from './mobile/src/api/client'; export { RelayTunnel } from './mobile/src/api/relay'`, resolveDir: '.', loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', plugins: [nobleStub] })
   const M = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 
   let list = M.addNotice([], { id: 'a', level: 'info', message: '一', sessionId: 's-1' }, 1000)
@@ -29,34 +29,35 @@ await runSuite(import.meta.url, async (ok) => {
   const wf = { status: 'running', waitingQuota: true, progress: { total: 10, done: 6, failed: 1, running: 2, queued: 1, stopped: 0 }, canPause: true, canResume: false, canStop: true }
   ok(M.workflowStatusText(wf) === '等额度' && M.workflowStatusText({ status: 'paused' }) === '已暂停', '工作流状态文案')
   ok(M.workflowProgressText(wf) === '6/10 完成 · 2 进行中 · 1 失败', '工作流进度文案')
-  ok(M.workflowActions(wf, true).join() === 'pause,stop' && M.workflowActions({ canPause: false, canResume: true, canStop: true }, true).join() === 'resume,stop', '按状态给暂停、继续、停止')
-  ok(M.workflowActions(wf, false).length === 0, '电脑不支持控制时不给按钮')
+  ok(M.workflowActions(wf).join() === 'pause,stop' && M.workflowActions({ canPause: false, canResume: true, canStop: true }).join() === 'resume,stop', '按状态给暂停、继续、停止')
 
-  ok(M.jobStoppable({ live: true, state: 'running' }, true) && !M.jobStoppable({ live: true, state: 'stopping' }, true) && !M.jobStoppable({ live: false, state: 'completed' }, true) && !M.jobStoppable({ live: true, state: 'running' }, false), '只有仍在运行且电脑支持时给停止')
+  ok(M.jobStoppable({ live: true, state: 'running' }) && !M.jobStoppable({ live: true, state: 'stopping' }) && !M.jobStoppable({ live: false, state: 'completed' }), '只有仍在运行时给停止')
   const lines = M.patchLines('diff --git a/x b/x\r\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-旧\n+新\n 同\n')
   ok(lines.lines.map((line) => line.kind).join() === 'file,file,file,hunk,del,add,ctx' && !lines.clipped, '补丁按行着色分类')
   const many = M.patchLines(Array.from({ length: 10 }, (_, i) => `+${i}`).join('\n'), 4)
   ok(many.lines.length === 4 && many.clipped, '超过行数上限时截断并标出')
   ok(M.patchLines('+' + 'x'.repeat(1000)).lines[0].text.length === 401, '超长单行截断')
   const realFetch = globalThis.fetch
+  M.RelayTunnel.for = () => ({ request: async (method, path, init) => { const response = await globalThis.fetch(`relay://pc${path}`, { method, headers: init.headers, body: init.body }); return { status: response.status, text: await response.text() } } })
   const seen = []
   globalThis.fetch = async (url, init) => {
-    seen.push({ url, method: init.method ?? 'GET', key: init.headers['idempotency-key'] })
-    const data = url.includes('/jobs') ? { jobs: [{ id: 'j1' }] } : url.includes('/workflows') && (init.method ?? 'GET') === 'GET' ? { runs: [{ id: 'wf-0000000a' }] } : url.includes('/usage') ? { range: '30d' } : { cards: [], checkedAt: 1 }
+    const body = JSON.parse(init.body ?? '{}')
+    seen.push({ url, method: init.method ?? 'GET', key: init.headers['idempotency-key'], body, version: init.headers['x-yan-remote-version'] })
+    const data = url.endsWith('/session.jobs') ? { jobs: [{ id: 'j1' }] } : url.endsWith('/session.workflows') ? { runs: [{ id: 'wf-0000000a' }] } : url.endsWith('/usage') ? { range: body.range } : { cards: [], checkedAt: 1 }
     return new Response(JSON.stringify({ ok: true, data }), { status: 200, headers: { 'content-type': 'application/json' } })
   }
   try {
-    const client = new M.RemoteClient({ baseUrl: 'http://127.0.0.1:1', token: 't', deviceId: 'd' })
-    ok((await client.jobs('s 1'))[0].id === 'j1' && seen[0].url.endsWith('/sessions/s%201/jobs'), '读取后台任务')
+    const client = new M.RemoteClient({ baseUrl: 'relay://pc', relay: { join: 'wss://relay', hostKey: 'h', clientKey: 'c' }, token: 't', deviceId: 'd' })
+    ok((await client.jobs('s 1'))[0].id === 'j1' && seen[0].url.endsWith('/remote/v1/call/session.jobs') && seen[0].body.sessionId === 's 1' && seen[0].method === 'POST' && /^\d+$/.test(seen[0].version), '读取后台任务，带协议版本')
     ok((await client.workflows('s-1'))[0].id === 'wf-0000000a', '读取工作流')
     await client.workflowControl('s-1', 'wf-0000000a', 'pause')
-    ok(seen[2].method === 'POST' && seen[2].url.endsWith('/workflows/wf-0000000a/pause') && /^m-/.test(seen[2].key), '工作流控制带幂等键')
+    ok(seen[2].method === 'POST' && seen[2].url.endsWith('/workflow.control') && seen[2].body.workflowId === 'wf-0000000a' && seen[2].body.action === 'pause' && /^m-/.test(seen[2].key), '工作流控制带幂等键')
     await client.stopJob('s-1', 'term-job-a-1')
-    ok(seen[3].method === 'POST' && seen[3].url.endsWith('/sessions/s-1/jobs/term-job-a-1/stop') && /^m-/.test(seen[3].key), '停止后台任务带幂等键')
+    ok(seen[3].method === 'POST' && seen[3].url.endsWith('/job.stop') && seen[3].body.jobId === 'term-job-a-1' && /^m-/.test(seen[3].key), '停止后台任务带幂等键')
     await client.subagentPatch('s-1', 'sub-a')
-    ok(seen[4].method === 'GET' && seen[4].url.endsWith('/sessions/s-1/subagents/sub-a/patch'), '读取子代理补丁')
+    ok(seen[4].url.endsWith('/subagent.patch') && seen[4].body.runId === 'sub-a' && !seen[4].key, '读取子代理补丁不带幂等键')
     seen.splice(3, 2)
-    ok((await client.quota()).checkedAt === 1 && (await client.usage('30d')).range === '30d' && seen[4].url.endsWith('/usage?range=30d'), '读取额度与用量')
+    ok((await client.quota()).checkedAt === 1 && (await client.usage('30d')).range === '30d' && seen[4].url.endsWith('/usage') && seen[4].body.range === '30d', '读取额度与用量')
   } finally {
     globalThis.fetch = realFetch
   }

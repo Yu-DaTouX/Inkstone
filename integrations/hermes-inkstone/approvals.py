@@ -77,9 +77,8 @@ class HumanApprovals:
             item["decision"] = confirmed
             question = item["question"]
             request_id = item["request_id"]
-        from urllib.parse import quote
-        result = client.request("POST", "/questions/" + quote(question["id"], safe="") + "/approval", {
-            "sessionId": question["sessionId"], "runId": question["runId"],
+        result = client.call("question.approval", {
+            "questionId": question["id"], "sessionId": question["sessionId"], "runId": question["runId"],
             "digest": question["approvalDigest"], "confirmed": confirmed
         }, request_id)
         if result.get("outcomeUnknown"):

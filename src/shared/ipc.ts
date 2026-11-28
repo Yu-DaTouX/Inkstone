@@ -1953,7 +1953,7 @@ export interface YanBridge {
     cancelPairing(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     revoke(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     forget(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
-    relayPair(kind: 'phone'): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    relayPair(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayCancel(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayRevoke(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayForget(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>

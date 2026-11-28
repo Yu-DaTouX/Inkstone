@@ -13,7 +13,6 @@ import { SubagentCard } from './SubagentCard'
 import { BranchSheet } from './BranchSheet'
 import { Section } from './Section'
 import { JobsSection, WorkflowsSection } from './ActivitySections'
-import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import type { IconName } from '../../../src/renderer/src/icons/sprite'
 
 export type ArtifactRef = NonNullable<HistoryMessage['artifacts']>[number]
@@ -66,7 +65,7 @@ function ChangesSection({ changes }: { changes: RemoteSessionChanges }) {
 
 function ActionsSection({ sessionId, running, pinned, archived, onRemoved }: { sessionId: string; running: boolean; pinned: boolean; archived: boolean; onRemoved?: () => void }) {
   const p = usePalette()
-  const { client, info, refresh } = useRemote()
+  const { client, refresh } = useRemote()
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const run = async (key: string, task: () => Promise<void>) => {
@@ -80,14 +79,12 @@ function ActionsSection({ sessionId, running, pinned, archived, onRemoved }: { s
     { text: pick('取消', 'Cancel'), style: 'cancel' },
     { text: pick('删除', 'Delete'), style: 'destructive', onPress: () => void run('delete', async () => { await client.deleteSession(sessionId); onRemoved?.() }) }
   ])
-  const items: Array<{ key: string; icon: IconName; label: string; danger?: boolean; disabled?: boolean; onPress: () => void }> = []
-  if (capabilityAllowed(info, 'session-flags')) {
-    items.push({ key: 'pin', icon: 'pin', label: pinned ? pick('取消置顶', 'Unpin') : pick('置顶', 'Pin'), onPress: () => void run('pin', () => client.setSessionFlags(sessionId, { pinned: !pinned })) })
-    items.push({ key: 'archive', icon: 'compact', label: archived ? pick('取消归档', 'Unarchive') : pick('归档', 'Archive'), disabled: running && !archived, onPress: () => void run('archive', () => client.setSessionFlags(sessionId, { archived: !archived })) })
-  }
-  if (capabilityAllowed(info, 'compact')) items.push({ key: 'compact', icon: 'layers', label: pick('压缩上下文', 'Compact context'), disabled: running, onPress: () => void run('compact', () => client.compact(sessionId)) })
-  if (capabilityAllowed(info, 'session-delete')) items.push({ key: 'delete', icon: 'close', label: pick('删除', 'Delete'), danger: true, onPress: confirmDelete })
-  if (!items.length) return null
+  const items: Array<{ key: string; icon: IconName; label: string; danger?: boolean; disabled?: boolean; onPress: () => void }> = [
+    { key: 'pin', icon: 'pin', label: pinned ? pick('取消置顶', 'Unpin') : pick('置顶', 'Pin'), onPress: () => void run('pin', () => client.setSessionFlags(sessionId, { pinned: !pinned })) },
+    { key: 'archive', icon: 'compact', label: archived ? pick('取消归档', 'Unarchive') : pick('归档', 'Archive'), disabled: running && !archived, onPress: () => void run('archive', () => client.setSessionFlags(sessionId, { archived: !archived })) },
+    { key: 'compact', icon: 'layers', label: pick('压缩上下文', 'Compact context'), disabled: running, onPress: () => void run('compact', () => client.compact(sessionId)) },
+    { key: 'delete', icon: 'close', label: pick('删除', 'Delete'), danger: true, onPress: confirmDelete }
+  ]
   return <Section title={pick('操作', 'Actions')}>
     {items.map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.label} disabled={item.disabled || !!busy} onPress={item.onPress} style={[styles.row, { opacity: item.disabled ? 0.4 : 1 }]}>
       <Icon name={item.icon} size={icon.sm} color={item.danger ? p.err : p.fgDim} />
@@ -113,7 +110,7 @@ export function DetailPane({ detail, onOpenArtifact, onSessionRemoved, backgroun
     <Section title={pick('环境', 'Environment')}>
       <View style={styles.row}><Icon name="terminal" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, { color: p.fg }]}>{info?.computer?.name || client.connection.computerName || pick('电脑', 'Desktop')}</Text></View>
       <View style={styles.row}><Icon name="folder" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} ellipsizeMode="head" style={[styles.rowText, { color: p.fg }]}>{project?.cwd || session?.cwdName || pick('电脑工作目录', 'Desktop working folder')}</Text></View>
-      {detail.changes?.branch && capabilityAllowed(info, 'branches') ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`分支 ${detail.changes.branch}，点按切换`, `Branch ${detail.changes.branch}, tap to switch`)} onPress={() => setBranchOpen(true)} style={styles.row}><Icon name="branch" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, styles.mono, { color: p.fg }]}>{detail.changes.branch}</Text><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></Pressable> : null}
+      {detail.changes?.branch ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`分支 ${detail.changes.branch}，点按切换`, `Branch ${detail.changes.branch}, tap to switch`)} onPress={() => setBranchOpen(true)} style={styles.row}><Icon name="branch" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, styles.mono, { color: p.fg }]}>{detail.changes.branch}</Text><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></Pressable> : null}
       {detail.model ? <View style={styles.row}><Icon name="sparkles" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, { color: p.fg }]}>{detail.model}</Text></View> : null}
     </Section>
     {detail.stats ? <UsageSection stats={detail.stats} /> : null}

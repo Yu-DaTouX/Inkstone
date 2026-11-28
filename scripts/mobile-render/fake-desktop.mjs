@@ -63,7 +63,7 @@ export const defaultSessions = () => [
   { id: 's-2', title: '要删除的会话', cwdName: 'repo', projectId: 'p-1', updatedAt: Date.now() - 120_000, messageCount: 1 }
 ]
 
-export async function startFakeDesktop({ omit = [], tweak } = {}) {
+export async function startFakeDesktop({ tweak } = {}) {
   const mods = await loadDesktopModules()
   const { RemoteServer, RemoteDeviceStore } = mods
   const dir = await mkdtemp(join(tmpdir(), 'yan-mobile-fake-'))
@@ -144,7 +144,6 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
       return { ok: true, data: {} }
     })
   }
-  for (const key of omit) delete handlers[key]
   tweak?.(handlers, state)
   const hostPair = await mods.generateKeyPair()
   const { direct, state: tunnelState } = createTunnel(mods)

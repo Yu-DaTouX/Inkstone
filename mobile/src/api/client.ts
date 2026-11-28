@@ -1,4 +1,5 @@
 import { pick } from '../../../src/shared/ui-lang'
+import { REMOTE_CALL_PREFIX, REMOTE_PROTOCOL_VERSION, REMOTE_VERSION_HEADER, type RemoteAction, type RemoteActionArgs } from '../../../src/shared/remote-protocol'
 import type {
   RemoteAnswer,
   RemoteEventEnvelope,
@@ -9,13 +10,13 @@ import type {
 } from '../../../src/shared/remote-protocol'
 import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary, RemoteJob, RemoteQueue, RemoteQueueOp, RemoteQuota, RemoteSubagentDiff, RemoteSubagentPatch, RemoteSubagentReview, RemoteUsage, RemoteWorkflow } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
-import { bytesToUtf8, directTunnelUrl, fromB64u, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
+import { directTunnelUrl, fromB64u, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { formatHostFingerprint } from '../../../src/shared/host-identity'
 
 export interface Connection {
   baseUrl: string
-  relay?: RelayConfig
+  relay: RelayConfig
   token: string
   deviceId: string
   computerName?: string
@@ -52,7 +53,7 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-type Target = { baseUrl: string; relay?: RelayConfig }
+type Target = { baseUrl: string; relay: RelayConfig }
 type ClientRequestInit = { method?: 'GET' | 'POST'; token?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number; upload?: boolean }
 
 function uploadTimedOut(timeoutMs: number): RemoteHttpError {
@@ -65,8 +66,8 @@ async function request<T>(
   path: string,
   init: ClientRequestInit = {}
 ): Promise<T> {
-  const { baseUrl, relay } = typeof target === 'string' ? { baseUrl: target, relay: undefined } : target
-  if (relay) return relayRequest<T>(relay, path, init)
+  if (typeof target !== 'string') return relayRequest<T>(target.relay, path, init)
+  const baseUrl = target
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? 15_000)
   try {
@@ -92,7 +93,7 @@ async function request<T>(
 }
 
 function requestHeaders(init: { token?: string; body?: unknown; idempotencyKey?: string }): Record<string, string> {
-  const headers: Record<string, string> = { accept: 'application/json' }
+  const headers: Record<string, string> = { accept: 'application/json', [REMOTE_VERSION_HEADER]: String(REMOTE_PROTOCOL_VERSION) }
   if (init.token) headers.authorization = `Bearer ${init.token}`
   if (init.body !== undefined) headers['content-type'] = 'application/json'
   if (init.idempotencyKey) headers['idempotency-key'] = init.idempotencyKey
@@ -191,36 +192,6 @@ export async function pair(baseUrl: string, code: string, deviceName: string, co
   }
   if (!(await confirm(preflight.identity))) throw new RemoteHttpError(0, pick('已取消：没有确认电脑身份', 'Cancelled: the desktop identity was not confirmed'), 'identity_not_confirmed')
   return pairViaRelay(tunnelPairing(baseUrl, preflight.invite, code), deviceName)
-}
-
-export async function secureConnection(connection: Connection): Promise<Connection | null> {
-  if (connection.relay || !/^https?:\/\//i.test(connection.baseUrl)) return null
-  let invite: TunnelInvite
-  try {
-    invite = await request<TunnelInvite>(connection.baseUrl, '/remote/v1/tunnel/enroll', { method: 'POST', token: connection.token, body: {} })
-  } catch {
-    return null
-  }
-  let pairing: RelayPairing
-  try {
-    pairing = tunnelPairing(connection.baseUrl, invite, '')
-    const fingerprint = hostFingerprint(pairing.hostKey)
-    if (typeof invite.hostFingerprint === 'string' && invite.hostFingerprint && invite.hostFingerprint !== fingerprint) {
-      return null
-    }
-  } catch {
-    return null
-  }
-  const clientKey = connection.clientKey ?? newClientKey()
-  const relay: RelayConfig = { direct: pairing.direct, hostKey: pairing.hostKey, clientKey }
-  const tunnel = RelayTunnel.for(relay, connection.deviceName)
-  try {
-    await tunnel.connect(pairing.relayCode)
-  } catch {
-    tunnel.close()
-    return null
-  }
-  return { ...connection, baseUrl: `relay://${connection.computerName || pairing.computerName}`, relay, clientKey }
 }
 
 export interface SessionListItem {
@@ -329,244 +300,192 @@ export class RemoteClient {
   readonly historyCache = new HistoryCache()
   constructor(readonly connection: Connection) {}
 
-  private get<T>(path: string): Promise<T> {
-    return request<T>(this.connection, path, { token: this.connection.token })
+  private call<T, A extends RemoteAction = RemoteAction>(action: A, args: RemoteActionArgs[A], options: { key?: string; timeoutMs?: number; bytes?: number } = {}): Promise<T> {
+    const upload = options.bytes !== undefined && options.bytes > UPLOAD_FREE_BYTES
+    return request<{ data: T }>(this.connection, `${REMOTE_CALL_PREFIX}${action}`, {
+      method: 'POST',
+      token: this.connection.token,
+      body: args,
+      idempotencyKey: options.key,
+      timeoutMs: upload ? uploadTimeoutMs(options.bytes!) : options.timeoutMs,
+      upload
+    }).then((result) => result.data)
   }
 
-  private post<T>(path: string, body: unknown, key: string, timeoutMs?: number): Promise<T> {
-    return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key, timeoutMs })
-  }
-
-  private upload<T>(path: string, body: unknown, key: string, bytes: number): Promise<T> {
-    if (bytes <= UPLOAD_FREE_BYTES) return this.post<T>(path, body, key)
-    return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key, timeoutMs: uploadTimeoutMs(bytes), upload: true })
+  private get source(): Record<string, string> {
+    return { authorization: `Bearer ${this.connection.token}`, [REMOTE_VERSION_HEADER]: String(REMOTE_PROTOCOL_VERSION) }
   }
 
   info(): Promise<RemoteInfo> {
-    return this.get<RemoteInfo>('/remote/v1/info')
+    return this.call('info', {})
   }
 
-  async status(): Promise<Record<string, unknown>> {
-    return (await this.get<{ data: Record<string, unknown> }>('/remote/v1/status')).data
+  status(): Promise<Record<string, unknown>> {
+    return this.call('status', {})
   }
 
   async sessions(): Promise<SessionListItem[]> {
-    const result = await this.get<{ data: { sessions: SessionListItem[] } }>('/remote/v1/sessions')
-    return result.data.sessions
+    return (await this.call<{ sessions: SessionListItem[] }>('sessions', {})).sessions
   }
 
-  async history(sessionId: string, limit = 60, before?: string): Promise<HistoryPage> {
-    const result = await this.get<{ data: HistoryPage }>(
-      `/remote/v1/sessions/${encodeURIComponent(sessionId)}?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}`
-    )
-    return result.data
+  history(sessionId: string, limit = 60, before?: string): Promise<HistoryPage> {
+    return this.call('session.history', { sessionId, limit, ...(before ? { before } : {}) })
   }
 
   async subagents(sessionId: string): Promise<SubagentInfo[]> {
-    return (await this.get<{ data: { runs: SubagentInfo[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents`)).data.runs
+    return (await this.call<{ runs: SubagentInfo[] }>('session.subagents', { sessionId })).runs
   }
 
   async renameSession(sessionId: string, name: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/rename`, { name }, idempotencyKey())
+    await this.call('session.rename', { sessionId, name })
   }
 
   async stopSubagent(sessionId: string, runId: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/stop`, {}, idempotencyKey())
+    await this.call('subagent.stop', { sessionId, runId }, { key: idempotencyKey() })
   }
 
-  async reviewSubagent(sessionId: string, runId: string, action: 'merge' | 'discard', key = idempotencyKey()): Promise<{ id: string; review: string; warning?: string }> {
-    return (await this.post<{ data: { id: string; review: string; warning?: string } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/${action}`, { confirm: true }, key, SLOW_REQUEST_MS)).data
+  reviewSubagent(sessionId: string, runId: string, action: 'merge' | 'discard', key = idempotencyKey()): Promise<{ id: string; review: string; warning?: string }> {
+    return this.call('subagent.review', { sessionId, runId, action, confirm: true }, { key, timeoutMs: SLOW_REQUEST_MS })
   }
 
   async sendSubagent(sessionId: string, runId: string, text: string, key = idempotencyKey()): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/send`, { text }, key)
+    await this.call('subagent.send', { sessionId, runId, text }, { key })
   }
 
   async jobs(sessionId: string): Promise<RemoteJob[]> {
-    return (await this.get<{ data: { jobs: RemoteJob[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/jobs`)).data.jobs
+    return (await this.call<{ jobs: RemoteJob[] }>('session.jobs', { sessionId })).jobs
   }
 
   async stopJob(sessionId: string, jobId: string, key = idempotencyKey()): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/jobs/${encodeURIComponent(jobId)}/stop`, {}, key)
+    await this.call('job.stop', { sessionId, jobId }, { key })
   }
 
-  async subagentPatch(sessionId: string, runId: string): Promise<RemoteSubagentPatch> {
-    return (await request<{ data: RemoteSubagentPatch }>(this.connection, `/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/patch`, { token: this.connection.token, timeoutMs: SLOW_REQUEST_MS })).data
+  subagentPatch(sessionId: string, runId: string): Promise<RemoteSubagentPatch> {
+    return this.call('subagent.patch', { sessionId, runId }, { timeoutMs: SLOW_REQUEST_MS })
   }
 
   async workflows(sessionId: string): Promise<RemoteWorkflow[]> {
-    return (await this.get<{ data: { runs: RemoteWorkflow[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/workflows`)).data.runs
+    return (await this.call<{ runs: RemoteWorkflow[] }>('session.workflows', { sessionId })).runs
   }
 
   async workflowControl(sessionId: string, workflowId: string, action: 'pause' | 'resume' | 'stop', key = idempotencyKey()): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/${action}`, {}, key)
+    await this.call('workflow.control', { sessionId, workflowId, action }, { key })
   }
 
-  async quota(): Promise<RemoteQuota> {
-    return (await request<{ data: RemoteQuota }>(this.connection, '/remote/v1/quota', { token: this.connection.token, timeoutMs: SLOW_REQUEST_MS })).data
+  quota(): Promise<RemoteQuota> {
+    return this.call('quota', {}, { timeoutMs: SLOW_REQUEST_MS })
   }
 
-  async usage(range: '7d' | '30d' | 'all' = '7d'): Promise<RemoteUsage> {
-    return (await request<{ data: RemoteUsage }>(this.connection, `/remote/v1/usage?range=${range}`, { token: this.connection.token, timeoutMs: SLOW_REQUEST_MS })).data
+  usage(range: '7d' | '30d' | 'all' = '7d'): Promise<RemoteUsage> {
+    return this.call('usage', { range }, { timeoutMs: SLOW_REQUEST_MS })
   }
 
   async editQueue(sessionId: string, op: RemoteQueueOp, key = idempotencyKey()): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/queue`, op, key)
+    await this.call('session.queue', { sessionId, op }, { key })
   }
 
   async setSessionFlags(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/flags`, flags, idempotencyKey())
+    await this.call('session.flags', { sessionId, ...flags }, { key: idempotencyKey() })
   }
 
   async deleteSession(sessionId: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/delete`, { confirm: true }, idempotencyKey(), SLOW_REQUEST_MS)
+    await this.call('session.delete', { sessionId, confirm: true }, { key: idempotencyKey(), timeoutMs: SLOW_REQUEST_MS })
   }
 
   async compact(sessionId: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/compact`, {}, idempotencyKey(), COMPACT_REQUEST_MS)
+    await this.call('session.compact', { sessionId }, { key: idempotencyKey(), timeoutMs: COMPACT_REQUEST_MS })
   }
 
-  async branches(sessionId: string): Promise<{ repo: boolean; branches: Array<{ name: string; current: boolean; busy?: boolean }>; current: string | null }> {
-    return (await this.get<{ data: { repo: boolean; branches: Array<{ name: string; current: boolean; busy?: boolean }>; current: string | null } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/branches`)).data
+  branches(sessionId: string): Promise<{ repo: boolean; branches: Array<{ name: string; current: boolean; busy?: boolean }>; current: string | null }> {
+    return this.call('session.branches', { sessionId })
   }
 
   async switchBranch(sessionId: string, branch: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/branch`, { branch }, idempotencyKey(), SLOW_REQUEST_MS)
+    await this.call('session.branch', { sessionId, branch }, { key: idempotencyKey(), timeoutMs: SLOW_REQUEST_MS })
   }
 
   async search(query: string): Promise<Array<{ sessionId: string; snippet: string; matches: number }>> {
-    return (await this.get<{ data: { hits: Array<{ sessionId: string; snippet: string; matches: number }> } }>(`/remote/v1/search?q=${encodeURIComponent(query)}`)).data.hits
+    return (await this.call<{ hits: Array<{ sessionId: string; snippet: string; matches: number }> }>('search', { q: query })).hits
   }
 
-  async insight(sessionId: string): Promise<RemoteInsight> {
-    return (await this.get<{ data: RemoteInsight }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/insight`)).data
+  insight(sessionId: string): Promise<RemoteInsight> {
+    return this.call('session.insight', { sessionId })
   }
 
   async questions(): Promise<RemotePendingQuestion[]> {
-    return (await this.get<{ data: { questions: RemotePendingQuestion[] } }>('/remote/v1/questions')).data.questions
+    return (await this.call<{ questions: RemotePendingQuestion[] }>('questions', {})).questions
   }
 
   answer(questionId: string, answer: RemoteAnswer, key = idempotencyKey()): Promise<unknown> {
-    return this.post(`/remote/v1/questions/${encodeURIComponent(questionId)}/answer`, answer, key)
+    return this.call('question.answer', { questionId, answer }, { key })
   }
 
   approve(question: RemotePendingQuestion, confirmed: boolean, key = idempotencyKey(), scope?: 'session'): Promise<unknown> {
-    return this.post(`/remote/v1/questions/${encodeURIComponent(question.id)}/approval`, { sessionId: question.sessionId, runId: question.runId, digest: question.approvalDigest, confirmed, ...(scope ? { scope } : {}) }, key)
+    return this.call('question.approval', { questionId: question.id, sessionId: question.sessionId ?? null, runId: question.runId ?? '', digest: question.approvalDigest ?? '', confirmed, ...(scope ? { scope } : {}) }, { key })
   }
 
   send(sessionId: string, text: string, key = idempotencyKey(), images?: RemoteImageInput[], mode?: 'steer' | 'followUp'): Promise<unknown> {
     const bytes = text.length + (images ?? []).reduce((sum, image) => sum + image.data.length, 0)
-    return this.upload(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images, ...(mode ? { mode } : {}) }, key, bytes)
+    return this.call('session.send', { sessionId, text, ...(images ? { images } : {}), ...(mode ? { mode } : {}) }, { key, bytes })
   }
 
   async revokeSelf(): Promise<void> {
-    await this.post('/remote/v1/devices/self/revoke', {}, idempotencyKey())
+    await this.call('device.revoke', {})
   }
 
-  async renameDevice(name: string): Promise<RemoteDeviceSummary> {
-    return (await this.post<{ data: RemoteDeviceSummary }>('/remote/v1/device', { name }, idempotencyKey())).data
+  renameDevice(name: string): Promise<RemoteDeviceSummary> {
+    return this.call('device.rename', { name })
   }
 
-  async models(sessionId: string): Promise<{ models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null; pending?: boolean }> {
-    return (await this.get<{ data: { models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null; pending?: boolean } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/models`)).data
+  models(sessionId: string): Promise<{ models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null; pending?: boolean }> {
+    return this.call('session.models', { sessionId })
   }
 
   async setModel(sessionId: string, model: RemoteModel, key = idempotencyKey()): Promise<RemoteModel> {
-    return (await this.post<{ data: { current: RemoteModel } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/model`, { provider: model.provider, modelId: model.id }, key)).data.current
+    return (await this.call<{ current: RemoteModel }>('session.model', { sessionId, provider: model.provider, modelId: model.id }, { key })).current
   }
 
   async setThinking(sessionId: string, level: string, key = idempotencyKey()): Promise<string> {
-    return (await this.post<{ data: { level: string } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/thinking`, { level }, key)).data.level
+    return (await this.call<{ level: string }>('session.thinking', { sessionId, level }, { key })).level
   }
 
   imageSource(sessionId: string, messageId: string, index: number) {
-    return { uri: `${this.connection.baseUrl}/remote/v1/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(messageId)}/${index}`, headers: { authorization: `Bearer ${this.connection.token}` } }
+    return { uri: `${this.connection.baseUrl}/remote/v1/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(messageId)}/${index}`, headers: this.source }
   }
 
   abort(runId: string, key = idempotencyKey()): Promise<unknown> {
-    return this.post('/remote/v1/runs/abort', { runId }, key)
+    return this.call('run.abort', { runId }, { key })
   }
 
   async transcribe(wav: string): Promise<string> {
-    return (await this.upload<{ data: { text: string } }>('/remote/v1/voice/transcribe', { wav }, idempotencyKey(), Math.max(wav.length, UPLOAD_FREE_BYTES + 1))).data.text
+    return (await this.call<{ text: string }>('voice.transcribe', { wav }, { key: idempotencyKey(), bytes: Math.max(wav.length, UPLOAD_FREE_BYTES + 1) })).text
   }
 
-  async newSession(projectId?: string, key = idempotencyKey(), worktree = false): Promise<{ sessionId?: string }> {
-    return (await this.post<{ data: { sessionId?: string } }>('/remote/v1/sessions/new', { ...(projectId ? { projectId } : {}), ...(worktree ? { worktree: true } : {}) }, key, worktree ? SLOW_REQUEST_MS : undefined)).data
+  newSession(projectId?: string, key = idempotencyKey(), worktree = false): Promise<{ sessionId?: string }> {
+    return this.call('session.new', { ...(projectId ? { projectId } : {}), ...(worktree ? { worktree: true } : {}) }, { key, timeoutMs: worktree ? SLOW_REQUEST_MS : undefined })
   }
 
   artifactSource(sessionId: string, artifactId: string): { uri: string; headers: Record<string, string> } {
     return {
       uri: `${this.connection.baseUrl}/remote/v1/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`,
-      headers: { authorization: `Bearer ${this.connection.token}` }
+      headers: this.source
     }
   }
 
   async resolveSource(source: { uri: string; headers: Record<string, string> }): Promise<{ uri: string; headers?: Record<string, string> }> {
-    const relay = this.connection.relay
-    if (!relay) return source
     const path = source.uri.slice(this.connection.baseUrl.length)
-    const res = await RelayTunnel.for(relay).request('GET', path, { headers: source.headers, timeoutMs: 60_000 })
+    const res = await RelayTunnel.for(this.connection.relay).request('GET', path, { headers: source.headers, timeoutMs: 60_000 })
     if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取图片失败', 'Failed to load image'))
     return { uri: `data:${res.headers['content-type'] ?? 'application/octet-stream'};base64,${res.base64}` }
   }
 
   async artifactText(sessionId: string, artifactId: string): Promise<string> {
     const source = this.artifactSource(sessionId, artifactId)
-    const relay = this.connection.relay
     const maxBytes = 2 * 1024 * 1024
-    if (relay) {
-      const res = await RelayTunnel.for(relay).request('GET', source.uri.slice(this.connection.baseUrl.length), { headers: source.headers, timeoutMs: 60_000 })
-      if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取成果失败', 'Failed to load artifact'))
-      if (res.byteLength > maxBytes) throw new RemoteHttpError(res.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
-      return res.text
-    }
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 60_000)
-    let response: Response
-    try { response = await fetch(source.uri, { headers: source.headers, signal: controller.signal }) }
-    catch (error) {
-      clearTimeout(timer)
-      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, pick('读取成果超时', 'Timed out loading artifact'))
-      throw error
-    }
-    try {
-    if (!response.ok) {
-      const json = await readJson(response)
-      throw new RemoteHttpError(response.status, String(json.error ?? pick('读取成果失败', 'Failed to load artifact')))
-    }
-    const declared = Number(response.headers.get('content-length'))
-    if (Number.isFinite(declared) && declared > maxBytes) throw new RemoteHttpError(response.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
-    const body = (response as Response & { body?: { getReader(): {
-      read(): Promise<{ done: boolean; value: Uint8Array }>
-      cancel(): Promise<void>
-      releaseLock(): void
-    } } }).body
-    if (!body) {
-      const bytes = new Uint8Array(await response.arrayBuffer())
-      if (bytes.byteLength > maxBytes) throw new RemoteHttpError(response.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
-      return bytesToUtf8(bytes)
-    }
-    const reader = body.getReader()
-    const chunks: Uint8Array[] = []
-    let size = 0
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        size += value.byteLength
-        if (size > maxBytes) { await reader.cancel(); throw new RemoteHttpError(response.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile')) }
-        chunks.push(value)
-      }
-    } finally { reader.releaseLock() }
-    const bytes = new Uint8Array(size)
-    let offset = 0
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
-    return bytesToUtf8(bytes)
-    } catch (error) {
-      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, pick('读取成果超时', 'Timed out loading artifact'))
-      throw error
-    } finally { clearTimeout(timer) }
+    const res = await RelayTunnel.for(this.connection.relay).request('GET', source.uri.slice(this.connection.baseUrl.length), { headers: source.headers, timeoutMs: 60_000 })
+    if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取成果失败', 'Failed to load artifact'))
+    if (res.byteLength > maxBytes) throw new RemoteHttpError(res.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
+    return res.text
   }
 }
 
@@ -584,10 +503,8 @@ export const EVENT_WATCH_MS = 10_000
 export const EVENT_WAKE_STALE_MS = 20_000
 
 export class RemoteEventStream {
-  private xhr: XMLHttpRequest | null = null
   private cancelRelay: (() => void) | null = null
   private lastSeq = 0
-  private offset = 0
   private buffer = ''
   private retryMs = 1000
   private retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -616,8 +533,6 @@ export class RemoteEventStream {
     this.retryTimer = null
     if (this.watchdog) clearInterval(this.watchdog)
     this.watchdog = null
-    this.xhr?.abort()
-    this.xhr = null
     this.cancelRelay?.()
     this.cancelRelay = null
   }
@@ -642,13 +557,10 @@ export class RemoteEventStream {
   private reconnectNow(): void {
     if (this.stopped) return
     this.epoch++
-    const xhr = this.xhr
-    this.xhr = null
-    xhr?.abort()
     const cancel = this.cancelRelay
     this.cancelRelay = null
     cancel?.()
-    if (this.connection.relay) RelayTunnel.for(this.connection.relay).reset()
+    RelayTunnel.for(this.connection.relay).reset()
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null }
     this.retryMs = 1000
     this.open()
@@ -662,40 +574,13 @@ export class RemoteEventStream {
     else this.handlers.onState(this.lastSeq > 0 ? 'reconnecting' : 'connecting')
     this.lastActivity = this.clock.now()
     const epoch = this.epoch
-    if (this.connection.relay) return this.openRelay(this.connection.relay, epoch)
-    const xhr = new XMLHttpRequest()
-    this.xhr = xhr
-    this.offset = 0
-    this.buffer = ''
-    xhr.open('GET', `${this.connection.baseUrl}/remote/v1/events?since=${this.lastSeq}`)
-    xhr.setRequestHeader('authorization', `Bearer ${this.connection.token}`)
-    xhr.setRequestHeader('accept', 'text/event-stream')
-    xhr.onreadystatechange = () => {
-      if (this.stopped || this.epoch !== epoch || this.xhr !== xhr) return
-      this.lastActivity = this.clock.now()
-      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
-        if (xhr.status === 401) {
-          this.stopped = true
-          this.handlers.onUnauthorized()
-          xhr.abort()
-          return
-        }
-        if (xhr.status === 200) {
-          this.retryMs = 1000
-          this.handlers.onState('open')
-        }
-      }
-      if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) this.consume(xhr.responseText)
-      if (xhr.readyState === XMLHttpRequest.DONE) this.scheduleReconnect()
-    }
-    xhr.onerror = () => { if (!this.stopped && this.epoch === epoch && this.xhr === xhr) this.scheduleReconnect() }
-    xhr.send()
+    this.openRelay(this.connection.relay, epoch)
   }
 
   private openRelay(relay: RelayConfig, epoch: number): void {
     this.buffer = ''
     let received = 0
-    this.cancelRelay = RelayTunnel.for(relay).stream(`/remote/v1/events?since=${this.lastSeq}`, { authorization: `Bearer ${this.connection.token}`, accept: 'text/event-stream' }, {
+    this.cancelRelay = RelayTunnel.for(relay).stream(`/remote/v1/events?since=${this.lastSeq}`, { authorization: `Bearer ${this.connection.token}`, accept: 'text/event-stream', [REMOTE_VERSION_HEADER]: String(REMOTE_PROTOCOL_VERSION) }, {
       onStart: (status) => {
         if (this.stopped || this.epoch !== epoch) return
         this.lastActivity = this.clock.now()
@@ -736,20 +621,8 @@ export class RemoteEventStream {
     })
   }
 
-  private consume(text: string): void {
-    if (this.stopped) return
-    this.consumeText(text.slice(this.offset))
-    this.offset = text.length
-    if (text.length >= 1_000_000) {
-      const xhr = this.xhr
-      this.rotate()
-      xhr?.abort()
-    }
-  }
-
   private rotate(): void {
     if (this.stopped || this.retryTimer) return
-    this.xhr = null
     this.rotating = true
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null
@@ -801,7 +674,6 @@ export class RemoteEventStream {
 
   private scheduleReconnect(): void {
     if (this.stopped || this.retryTimer) return
-    this.xhr = null
     this.handlers.onState('reconnecting')
     const delay = this.retryMs
     this.retryMs = Math.min(this.retryMs * 2, 30_000)

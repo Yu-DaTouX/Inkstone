@@ -10,7 +10,7 @@ if (!existsSync(join('mobile', 'node_modules', '@noble', 'curves'))) {
 }
 
 const built = await build({
-  stdin: { contents: `export { RemoteEventStream, EVENT_IDLE_MS, EVENT_WAKE_STALE_MS } from './src/api/client'`, resolveDir: 'mobile', loader: 'ts' },
+  stdin: { contents: `export { RemoteEventStream, EVENT_IDLE_MS, EVENT_WAKE_STALE_MS } from './src/api/client'; export { RelayTunnel } from './src/api/relay'`, resolveDir: 'mobile', loader: 'ts' },
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -18,30 +18,21 @@ const built = await build({
 })
 
 const opened = []
-class FakeXhr {
-  static HEADERS_RECEIVED = 2
-  static LOADING = 3
-  static DONE = 4
-  readyState = 0
-  status = 0
-  responseText = ''
+class FakeStream {
   aborted = false
-  constructor() { opened.push(this) }
-  open(method, url) { this.url = url }
-  setRequestHeader() {}
-  send() {}
-  abort() { this.aborted = true; this.readyState = 4; this.onreadystatechange?.() }
+  ended = false
+  constructor(url, handlers) { this.url = url; this.handlers = handlers; opened.push(this) }
   reply(status, text = '') {
-    this.status = status
-    this.readyState = 2
-    this.onreadystatechange?.()
-    this.responseText += text
-    this.readyState = 3
-    this.onreadystatechange?.()
+    this.handlers.onStart(status)
+    if (text) this.handlers.onChunk(text)
   }
+  end() { if (!this.ended) { this.ended = true; this.handlers.onEnd() } }
 }
-globalThis.XMLHttpRequest = FakeXhr
 const M = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+M.RelayTunnel.for = () => ({
+  stream: (path, _headers, handlers) => { const item = new FakeStream(path, handlers); return () => { item.aborted = true; item.end() } },
+  reset() {}
+})
 
 const now = { value: 1_000_000, now() { return this.value } }
 const states = []
@@ -49,7 +40,7 @@ const events = []
 const resyncs = []
 const frame = (seq) => `id: ${seq}\nevent: state\ndata: ${JSON.stringify({ seq, channel: 'state', payload: {} })}\n\n`
 const stream = new M.RemoteEventStream(
-  { baseUrl: 'http://pc:1', token: 't', deviceId: 'd' },
+  { baseUrl: 'relay://pc', relay: { join: 'wss://relay', hostKey: 'h', clientKey: 'c' }, token: 't', deviceId: 'd' },
   { onEvent: (event) => events.push(event.seq), onResync: (event) => resyncs.push(event), onState: (state) => states.push(state), onUnauthorized() {} },
   now
 )
@@ -78,8 +69,7 @@ stream.checkIdle()
 assert.equal(opened.length, 3, '空闲超过心跳上限视为半开连接并重连')
 
 opened[2].reply(200)
-opened[2].readyState = 4
-opened[2].onreadystatechange()
+opened[2].end()
 assert.equal(opened.length, 3, '断线后先等退避，不立刻重连')
 stream.wake()
 assert.equal(opened.length, 4, '回到前台跳过退避立即重连')

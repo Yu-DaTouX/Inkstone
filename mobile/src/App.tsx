@@ -1,24 +1,21 @@
-import { LIFE_ASSISTANT_ENABLED } from './features'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StatusBar, StyleSheet, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
-import { RemoteClient, RemoteHttpError, secureConnection, type Connection } from './api/client'
+import { RemoteClient, RemoteHttpError, type Connection } from './api/client'
 import { RelayTunnel } from './api/relay'
 import { readUiPrefs, writeUiPrefs, type PhotoDraft } from './device'
 import { pairingPrefillFor, parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
 import { ArtifactScreen } from './screens/ArtifactScreen'
-import { AssistantScreen, type AssistantConversation } from './screens/AssistantScreen'
-import { AssistantSettingsScreen } from './screens/AssistantSettingsScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { PairScreen } from './screens/PairScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { DetailPane, type SessionDetail } from './components/DetailPane'
 import { RemoteProvider, useRemote } from './state'
-import { Button, EmptyState, Header, IconButton } from './ui'
+import { EmptyState, Header, IconButton } from './ui'
 import { clearConnection, loadConnection, saveConnection } from './storage'
-import { space, usePalette } from './theme'
+import { usePalette } from './theme'
 import { BootSplash, ContentEnter } from './motion'
 import { useFoldLayout } from './foldLayout'
 import { computeLayout, type Frame } from './windowLayout'
@@ -31,8 +28,6 @@ type ArtifactLink = { id: string; filename: string; mediaType: string; kind: str
 
 type Route =
   | { name: 'home' }
-  | { name: 'assistant' }
-  | { name: 'assistant-settings' }
   | { name: 'settings' }
   | { name: 'session'; sessionId: string; title: string }
   | { name: 'artifact'; sessionId: string; title: string; artifact: ArtifactLink }
@@ -78,9 +73,6 @@ function AppRoot() {
   const [connection, setConnection] = useState<Connection | null | undefined>(undefined)
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdate | null>(null)
   const [route, setRoute] = useState<Route>({ name: 'home' })
-  const [assistantConversation, setAssistantConversation] = useState<AssistantConversation>({ messages: [], draft: '' })
-  const [localRoute, setLocalRoute] = useState<'welcome' | 'assistant' | 'assistant-settings'>('welcome')
-  const assistantSettingsFrom = useRef<'assistant' | 'settings'>('assistant')
   const [pairingPrefill, setPairingPrefill] = useState<PairingPrefill | null>(null)
   const [revoked, setRevoked] = useState(false)
   const connectionState = useRef<Connection | null | undefined>(undefined)
@@ -131,10 +123,6 @@ function AppRoot() {
         const parsed = pairingPrefillFor(pending, saved ? 'connected' : 'disconnected')
         if (parsed) setPairingPrefill(parsed)
       }
-      const secured = saved ? await secureConnection(saved) : null
-      if (!secured || !alive) return
-      await saveConnection(secured)
-      if (alive) setConnection(secured)
     })
     return () => { alive = false }
   }, [])
@@ -142,7 +130,7 @@ function AppRoot() {
   useEffect(() => {
     const receive = (url: string | null) => {
       if (!url) return
-      if (url === 'inkstone://inbox' || url === 'inkstone://hub') { setRoute({ name: 'home' }); return }
+      if (url === 'inkstone://inbox') { setRoute({ name: 'home' }); return }
       const state = connectionState.current === undefined ? 'unknown' : connectionState.current ? 'connected' : 'disconnected'
       if (state === 'unknown') {
         if (parsePairingLink(url)) pendingLink.current = url
@@ -170,7 +158,7 @@ function AppRoot() {
         if (!confirmed) return
       }
     }
-    if (connection?.relay) RelayTunnel.for(connection.relay).close()
+    if (connection) RelayTunnel.for(connection.relay).close()
     await clearConnection()
     setConnection(null)
     setAlertsEnabled(false)
@@ -210,16 +198,13 @@ function AppRoot() {
       if (isSpeechActive()) { cancelSpeech(); return true }
       if (Keyboard.isVisible()) { Keyboard.dismiss(); return true }
       if (pairingPrefill && connection) { setPairingPrefill(null); return true }
-      if (!connection && localRoute !== 'welcome') { setLocalRoute(localRoute === 'assistant-settings' ? 'assistant' : 'welcome'); return true }
-      if (route.name === 'assistant-settings') { setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' }); return true }
-      if (route.name === 'assistant') { setRoute({ name: 'home' }); return true }
       if (route.name === 'artifact') { setRoute({ name: 'session', sessionId: route.sessionId, title: route.title }); return true }
       if (route.name === 'session' && detailOpen && mode !== 'triple' && mode !== 'tabletop') { setDetailOpen(false); return true }
       if (route.name === 'session' || route.name === 'settings') { setRoute({ name: 'home' }); return true }
       return false
     })
     return () => sub.remove()
-  }, [connection, pairingPrefill, route, localRoute, mode, detailOpen])
+  }, [connection, pairingPrefill, route, mode, detailOpen])
 
   const openSession = useCallback((id: string, title: string) => {
     setRoute({ name: 'session', sessionId: id, title })
@@ -280,7 +265,6 @@ function AppRoot() {
       onBack={() => setRoute({ name: 'home' })}
       sidebarVisible={listShown}
       onToggleSidebar={mode === 'split' ? () => setSidebarCollapsed((c) => !c) : undefined}
-      onOpenAssistantSettings={() => { assistantSettingsFrom.current = 'settings'; setRoute({ name: 'assistant-settings' }) }}
       leftHanded={leftHanded}
       onLeftHandedChange={changeLeftHanded}
       update={availableUpdate}
@@ -293,16 +277,11 @@ function AppRoot() {
       sidebarVisible={listShown}
       onToggleSidebar={mode === 'split' ? () => setSidebarCollapsed((c) => !c) : undefined}
     />
-  ) : route.name === 'assistant' ? (
-    <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setRoute({ name: 'home' })} onConfigure={() => { assistantSettingsFrom.current = 'assistant'; setRoute({ name: 'assistant-settings' }) }} />
-  ) : route.name === 'assistant-settings' ? (
-    <AssistantSettingsScreen onBack={() => setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' })} />
   ) : null
 
   const home = connection ? <HomeScreen
     onOpen={openSession}
     onSettings={() => setRoute({ name: 'settings' })}
-    onOpenAssistant={() => setRoute({ name: 'assistant' })}
     alertsEnabled={alertsEnabled}
     onEnableAlerts={() => void enableAlerts()}
     selectedSessionId={sessionId}
@@ -346,16 +325,6 @@ function AppRoot() {
         <View ref={frameRef} collapsable={false} onLayout={measure} style={{ flex: 1, paddingBottom: keyboardOverlap }}>
         {connection === undefined ? null : !paired ? (
           <View style={[singleRegion, { backgroundColor: p.bg0 }]}>
-            {localRoute !== 'welcome' && !pairingPrefill ? (
-              localRoute === 'assistant-settings' ? (
-                <AssistantSettingsScreen onBack={() => setLocalRoute('assistant')} />
-              ) : (
-                <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setLocalRoute('welcome')} onConfigure={() => setLocalRoute('assistant-settings')} />
-              )
-            ) : <>
-              {LIFE_ASSISTANT_ENABLED ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
-                <Button compact variant="ghost" label={pick('先用生活助手', 'Try the assistant first')} onPress={() => setLocalRoute('assistant')} />
-              </View> : null}
               <PairScreen
                 prefill={pairingPrefill}
                 notice={revoked && !connection ? pick('电脑已不再认这台手机（配对被移除或授权被撤销）。请在电脑「设置 → 设备连接」重新生成配对码后再连接。', 'The desktop no longer accepts this phone (pairing removed or access revoked). Generate a new code in Settings → Device connection on the desktop, then pair again.') : undefined}
@@ -368,7 +337,6 @@ function AppRoot() {
                   setRoute({ name: 'home' })
                 }}
               />
-            </>}
           </View>
         ) : (
           <RemoteProvider connection={connection} onUnauthorized={unpairByDesktop}>

@@ -1,5 +1,4 @@
 import { pick } from '../../../src/shared/ui-lang'
-import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useState } from 'react'
 import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import type { Connection } from '../api/client'
@@ -22,7 +21,7 @@ const LANG_OPTIONS: Array<{ value: LangChoice; label: () => string }> = [
   { value: 'en-US', label: () => 'English' }
 ]
 
-export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings, leftHanded, onLeftHandedChange, update }: {
+export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, leftHanded, onLeftHandedChange, update }: {
   connection: Connection
   update?: AppUpdate | null
   leftHanded: boolean
@@ -34,7 +33,6 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
   onBack: () => void
   onToggleSidebar?: () => void
   sidebarVisible?: boolean
-  onOpenAssistantSettings?: () => void
 }) {
   const p = usePalette()
   const bottomInset = useBottomInset()
@@ -81,11 +79,6 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
           <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>{pick('同时提醒多 Agent 的待答复、待审阅和待核实事项。锁屏只显示数量。', 'Also alerts for multi-agent items to answer, review or verify. The lock screen shows counts only.')}</Text>
           <Button label={pick('系统通知设置', 'System notification settings')} onPress={() => void openAlertSettings()} />
         </View>
-        {LIFE_ASSISTANT_ENABLED ? <>
-          <SectionTitle>{pick('生活助手', 'Assistant')}</SectionTitle>
-          <Button label={pick('模型与服务商', 'Models and providers')} icon="key" onPress={() => onOpenAssistantSettings?.()} />
-          <Meta style={{ fontSize: font.sm }}>{pick('密钥存在系统钥匙串，只在本机；不配对电脑也能用。', 'Keys stay in the system keychain on this phone. Works without pairing.')}</Meta>
-        </> : null}
         <SectionTitle>{LANG_TITLE}</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           {LANG_OPTIONS.map((option) => <Button key={option.value} label={option.label()} compact variant={lang.choice === option.value ? 'primary' : 'secondary'} onPress={() => lang.setChoice(option.value)} />)}
@@ -98,7 +91,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
         <SectionTitle>{pick('设备管理', 'Devices')}</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           <Meta style={{ fontSize: font.sm }}>{pick('此手机', 'This phone')}</Meta>
-          <View style={[styles.row, { gap: space[2] }]}><Input inset value={name} onChangeText={setName} maxLength={60} accessibilityLabel={pick('此手机设备名', 'This phone name')} style={{ flex: 1 }} />{info?.capabilities.includes('device-name') ? <IconButton name="check" label={pick('保存设备名', 'Save device name')} busy={renaming} disabled={!name.trim() || name.trim() === info.device?.name} onPress={() => void rename()} /> : null}</View>
+          <View style={[styles.row, { gap: space[2] }]}><Input inset value={name} onChangeText={setName} maxLength={60} accessibilityLabel={pick('此手机设备名', 'This phone name')} style={{ flex: 1 }} /><IconButton name="check" label={pick('保存设备名', 'Save device name')} busy={renaming} disabled={!name.trim() || name.trim() === info?.device?.name} onPress={() => void rename()} /></View>
         </View>
         <Button label={pick('解除配对', 'Unpair')} variant="danger" onPress={() => Alert.alert(pick('解除配对？', 'Unpair?'), pick('重新连接需要新的配对码。', 'Reconnecting needs a new pairing code.'), [
           { text: pick('取消', 'Cancel'), style: 'cancel' },

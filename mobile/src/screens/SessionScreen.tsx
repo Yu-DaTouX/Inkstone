@@ -1,6 +1,6 @@
 import { pick } from '../../../src/shared/ui-lang'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
+import { AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage, type SubagentInfo } from '../api/client'
 import type { SessionDetail } from '../components/DetailPane'
 import { QuestionCard } from '../components/QuestionCard'
@@ -21,7 +21,6 @@ import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
 import { RenameSheet } from '../components/RenameSheet'
 import type { RemoteModel, RemoteQueueOp, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
-import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { composerSendPlan, type SendChoice } from '../sessionActions'
 import { NOTICE_SHOW_MS, noticesFor } from '../activity'
 
@@ -68,7 +67,7 @@ export function SessionScreen({
 }) {
   const p = usePalette()
   const bottomInset = useBottomInset()
-  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread, latestStats, notices } = useRemote()
+  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, marksReady, markRead, unread, latestStats, notices } = useRemote()
   const [dismissedNotices, setDismissedNotices] = useState<ReadonlySet<string>>(() => new Set())
   const [noticeTick, setNoticeTick] = useState(0)
   const shownNotices = useMemo(() => noticesFor(notices, sessionId, Date.now(), dismissedNotices), [notices, sessionId, dismissedNotices, noticeTick])
@@ -95,8 +94,6 @@ export function SessionScreen({
   const [plan, setPlan] = useState<HistoryPage['plan']>(cached?.plan)
   const [queue, setQueue] = useState<HistoryPage['queue']>(cached?.queue)
   const [subagents, setSubagents] = useState<SubagentInfo[]>([])
-  const subagentsAllowed = capabilityAllowed(info, 'subagents')
-  const insightAllowed = capabilityAllowed(info, 'insight')
   const [stats, setStats] = useState<RemoteSessionStats | undefined>(() => latestStats(sessionId))
   const [changes, setChanges] = useState<RemoteSessionChanges | null>(null)
   const insightAt = useRef(0)
@@ -261,15 +258,13 @@ export function SessionScreen({
   }
 
   const loadSubagents = useCallback(async (): Promise<void> => {
-    if (!subagentsAllowed) return
     try {
       const runs = await client.subagents(sessionId)
       if (alive.current) setSubagents((current) => (JSON.stringify(current) === JSON.stringify(runs) ? current : runs))
     } catch { }
-  }, [client, sessionId, subagentsAllowed])
+  }, [client, sessionId])
 
   const loadInsight = useCallback(async (): Promise<void> => {
-    if (!insightAllowed) return
     insightAt.current = Date.now()
     try {
       const next = await client.insight(sessionId)
@@ -277,7 +272,7 @@ export function SessionScreen({
       setStats((current) => next.stats ?? current)
       setChanges((current) => (JSON.stringify(current) === JSON.stringify(next.changes) ? current : next.changes))
     } catch { }
-  }, [client, insightAllowed, sessionId])
+  }, [client, sessionId])
 
   useEffect(() => {
     onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName, stats, changes, reloadInsight: () => void loadInsight() })
@@ -388,7 +383,6 @@ export function SessionScreen({
 
   const addPhotos = async () => {
     if (picking || sending || photos.length >= 4) return
-    if (!info?.capabilities.includes('send-images')) { Alert.alert(pick('请更新电脑端', 'Update the desktop app'), pick('新版电脑端支持图片发送。', 'Newer desktop versions support sending images.')); return }
     if (model?.input && !model.input.includes('image')) { setError(pick('当前模型不支持图片，请先切换模型', 'This model does not support images. Switch models first.')); return }
     setPicking(true); setError(null)
     try { const selected = await pickImages(4 - photos.length); if (selected?.length) onPhotosChange([...photos, ...selected].slice(0, 4)) }
@@ -415,7 +409,7 @@ export function SessionScreen({
       <View style={tabletop ? { height: tabletop.top } : { flex: 1 }}>
       <Header
         title={sessions.find((entry) => entry.id === sessionId)?.title || title || pick('会话', 'Session')}
-        onTitleLongPress={capabilityAllowed(info, 'rename') ? () => setRenaming(true) : undefined}
+        onTitleLongPress={() => setRenaming(true)}
         crumb={projects.find((project) => project.id === sessions.find((s) => s.id === sessionId)?.projectId)?.name || cwdName}
         left={onToggleSidebar ? <IconButton name="sidebar-left" selected={sidebarVisible} label={sidebarVisible ? pick('收起项目和会话列表', 'Hide project and session list') : pick('展开项目和会话列表', 'Show project and session list')} onPress={onToggleSidebar} /> : <IconButton name="back" label={pick('返回会话列表', 'Back to session list')} onPress={onBack} />}
         right={onOpenDetail ? <IconButton name="sidebar-right" selected={detailOpen} label={detailOpen ? pick('收起会话详情', 'Hide session details') : pick('打开会话详情', 'Open session details')} onPress={onOpenDetail} /> : undefined}
@@ -473,7 +467,7 @@ export function SessionScreen({
             </View>
           ) : null}
         </>}
-        renderItem={({ item }) => <TimelineRow item={item} live={item.key === liveKey} expandedTools={item.kind === 'process' || item.kind === 'notice' || item.message.role === 'bash' ? expandedTools : NO_EXPANDED} client={client} sessionId={sessionId} modelName={modelName} onToggle={toggleExpanded} onView={setViewing} onOpenArtifact={onOpenArtifact} onCompose={compose} onRetry={item.key === failedKey && !runner?.running && capabilityAllowed(info, 'send') ? retryFailed : undefined} onCompact={item.key === failedKey && !runner?.running && capabilityAllowed(info, 'compact') ? compactNow : undefined} />}
+        renderItem={({ item }) => <TimelineRow item={item} live={item.key === liveKey} expandedTools={item.kind === 'process' || item.kind === 'notice' || item.message.role === 'bash' ? expandedTools : NO_EXPANDED} client={client} sessionId={sessionId} modelName={modelName} onToggle={toggleExpanded} onView={setViewing} onOpenArtifact={onOpenArtifact} onCompose={compose} onRetry={item.key === failedKey && !runner?.running ? retryFailed : undefined} onCompact={item.key === failedKey && !runner?.running ? compactNow : undefined} />}
       />
       {banner ? <View style={StyleSheet.absoluteFill}>{banner}</View> : null}
       <ImageViewer client={client} source={viewing ? client.imageSource(sessionId, viewing.messageId, viewing.index) : null} label={viewing?.label ?? ''} onClose={() => setViewing(null)} />
@@ -492,7 +486,7 @@ export function SessionScreen({
           <View style={styles.flex} />
           {onOpenDetail ? <Icon name="chevron-right" size={icon.sm} color={p.fgMute} /> : null}
         </Pressable> : null}
-        <QueuedMessages queue={queue} onOp={capabilityAllowed(info, 'queue-edit') ? editQueue : undefined} />
+        <QueuedMessages queue={queue} onOp={editQueue} />
         <View style={[styles.inputFrame, { backgroundColor: p.surface, borderColor: p.borderSoft }]}>
         <TextInput
           disableFullscreenUI
@@ -506,16 +500,16 @@ export function SessionScreen({
           accessibilityLabel={pick('消息内容', 'Message')}
         />
         <View style={styles.composerActions}>
-          <IconButton name="plus" label={pick('添加图片', 'Add image')} busy={picking} disabled={!capabilityAllowed(info, 'send-images') || sending || photos.length >= 4 || voicePhase !== 'idle'} onPress={() => void addPhotos()} />
-          <SpeechInputButton onText={(text) => onDraftChange(draft.trim() ? `${draft.trimEnd()} ${text}` : text)} onError={setVoiceError} onStateChange={setVoicePhase} disabled={sending} transcribe={capabilityAllowed(info, 'voice-transcribe') ? (wav) => client.transcribe(wav) : undefined} />
+          <IconButton name="plus" label={pick('添加图片', 'Add image')} busy={picking} disabled={sending || photos.length >= 4 || voicePhase !== 'idle'} onPress={() => void addPhotos()} />
+          <SpeechInputButton onText={(text) => onDraftChange(draft.trim() ? `${draft.trimEnd()} ${text}` : text)} onError={setVoiceError} onStateChange={setVoicePhase} disabled={sending} transcribe={(wav) => client.transcribe(wav)} />
           {voicePhase !== 'idle' ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.flex, { color: p.accent, fontSize: font.xs }]}>{voicePhase === 'listening' ? pick('正在听…', 'Listening…') : voicePhase === 'processing' ? pick('转写中…', 'Transcribing…') : pick('准备中…', 'Preparing…')}</Text> : <>
             <View style={styles.flex} />
             {runner?.running ? <Pressable accessibilityRole="switch" accessibilityState={{ checked: sendChoice === 'followUp' }} accessibilityLabel={sendChoice === 'steer' ? pick('发送方式：插话，点按改为排队', 'Send mode: steer. Tap to queue instead') : pick('发送方式：排队，点按改为插话', 'Send mode: queue. Tap to steer instead')} disabled={sending} onPress={() => setSendChoice(sendChoice === 'steer' ? 'followUp' : 'steer')} style={[styles.chip, { minHeight: touch.min, flexShrink: 0 }]}><Text style={{ color: sendChoice === 'steer' ? p.accent : p.fgDim, fontSize: font.sm }}>{sendChoice === 'steer' ? pick('插话', 'Steer') : pick('排队', 'Queue')}</Text></Pressable> : null}
-            <Pressable accessibilityRole="button" accessibilityLabel={pick(`选择模型，当前 ${modelName || '电脑模型'}`, `Choose model, current ${modelName || 'desktop model'}`)} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert(pick('请更新电脑端', 'Update the desktop app'), pick('新版电脑端支持模型选择。', 'Newer desktop versions support model selection.')) }} style={[styles.chip, { minHeight: touch.min }]}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fg, fontSize: font.sm, fontWeight: weight.strong }}>{modelName || pick('模型', 'Model')}</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={pick(`选择模型，当前 ${modelName || '电脑模型'}`, `Choose model, current ${modelName || 'desktop model'}`)} disabled={sending} onPress={() => setModelPicker(true)} style={[styles.chip, { minHeight: touch.min }]}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fg, fontSize: font.sm, fontWeight: weight.strong }}>{modelName || pick('模型', 'Model')}</Text></Pressable>
           </>}
           {runner?.running && !draft.trim() && !photos.length ? (
-            <IconButton name="stop" label={pick('停止当前运行', 'Stop current run')} danger busy={aborting} disabled={!capabilityAllowed(info, 'abort')} onPress={() => void abort(runner.runId)} />
-          ) : <IconButton name="send" label={pick('发送消息', 'Send message')} primary busy={sending} disabled={!capabilityAllowed(info, 'send') || (!draft.trim() && !photos.length) || stream !== 'open' || voicePhase !== 'idle' || picking} onPress={() => void send()} />}
+            <IconButton name="stop" label={pick('停止当前运行', 'Stop current run')} danger busy={aborting} onPress={() => void abort(runner.runId)} />
+          ) : <IconButton name="send" label={pick('发送消息', 'Send message')} primary busy={sending} disabled={(!draft.trim() && !photos.length) || stream !== 'open' || voicePhase !== 'idle' || picking} onPress={() => void send()} />}
         </View>
         </View>
         {voiceError ? <Text accessibilityLiveRegion="polite" style={[styles.voiceError, { color: p.err }]}>{voiceError}</Text> : null}

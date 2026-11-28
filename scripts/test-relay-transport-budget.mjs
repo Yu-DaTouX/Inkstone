@@ -258,7 +258,7 @@ await check('慢接收端下 SSE 积压超限：以带错误的 end 结束该流
 
 await check('流式上传一律拒绝，不转发到电脑', async () => {
   const client = await openSession()
-  const req = client.request('POST', '/remote/v1/sessions/s/messages', { stream: 'in' })
+  const req = client.request('POST', '/remote/v1/call/session.send', { stream: 'in' })
   await req.send()
   const res = await client.next()
   assert.equal(res.t, 'res')

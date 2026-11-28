@@ -1,5 +1,6 @@
 import './lib/test-isolate.mjs'
 import assert from 'node:assert/strict'
+import { VERSION_HEADERS, callPath } from './lib/remote-call.mjs'
 import { build } from 'esbuild'
 import { mkdtemp } from 'node:fs/promises'
 import { networkInterfaces, tmpdir } from 'node:os'
@@ -20,7 +21,7 @@ await build({
   plugins: [{ name: 'electron-stub', setup(b) { b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'const app = { getPath: () => process.cwd(), getVersion: () => "0.0.0", isPackaged: false, on() {} }; module.exports = new Proxy({ app }, { get: (t, k) => (k in t ? t[k] : typeof k === "string" ? {} : undefined) })', loader: 'js' })) } }], banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }
 })
 await build({
-  stdin: { contents: `export * from './src/api/relay'; export { pair, pairViaRelay, secureConnection, RemoteClient, RemoteEventStream } from './src/api/client'; export { parsePairingLink } from './src/pairLink'`, resolveDir: join(process.cwd(), 'mobile'), loader: 'ts' },
+  stdin: { contents: `export * from './src/api/relay'; export { pair, pairViaRelay, RemoteClient, RemoteEventStream } from './src/api/client'; export { parsePairingLink } from './src/pairLink'`, resolveDir: join(process.cwd(), 'mobile'), loader: 'ts' },
   outfile: join(root, 'mobile.mjs'), bundle: true, platform: 'neutral', format: 'esm', mainFields: ['module', 'main'], logLevel: 'silent'
 })
 const D = await import(pathToFileURL(join(root, 'desk.mjs')))
@@ -38,7 +39,7 @@ const base = `http://${lan}:${status.port}`
 
 let failures = 0
 const check = async (name, fn) => { try { await fn(); console.log(`✔ ${name}`) } catch (error) { failures++; console.log(`✖ ${name}\n  ${error?.stack ?? error}`) } }
-const plain = (path, init = {}) => fetch(`${base}${path}`, init).then(async (res) => ({ status: res.status, json: await res.json().catch(() => ({})) }))
+const plain = (path, init = {}) => fetch(`${base}${path}`, { ...init, headers: { ...VERSION_HEADERS, ...(init.headers ?? {}) } }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => ({})) }))
 
 try {
   let connection
@@ -52,14 +53,14 @@ try {
     connection = await M.pairViaRelay(parsed.relay, '测试手机')
     assert.equal(M.RelayTunnel.for(connection.relay).route, 'direct')
     const info = await new M.RemoteClient(connection).info()
-    assert.ok(info.capabilities.includes('sessions'))
+    assert.ok(info.apiVersion > 0 && info.device)
     const device = (await access.status()).devices.find((d) => d.id === connection.deviceId)
-    assert.equal(device?.encrypted, true)
+    assert.ok(device)
     assert.ok((await access.status()).relay.clients.some((c) => c.id === device.tunnelClientId), '设备记录关联到它的加密通道客户端')
   })
 
   await check('经加密通道配对的令牌，明文直连一律拒绝', async () => {
-    const res = await plain('/remote/v1/info', { headers: { authorization: `Bearer ${connection.token}` } })
+    const res = await plain(callPath('info'), { method: 'POST', headers: { authorization: `Bearer ${connection.token}` } })
     assert.equal(res.status, 403)
     assert.equal(res.json.code, 'tunnel_required')
   })
@@ -77,14 +78,14 @@ try {
     assert.ok(got.some((e) => e.channel === 'notify'), JSON.stringify(got).slice(0, 200))
   })
 
-  await check('旧版手机明文配对被拒并提示更新；另一台砚（peer）配对已停用', async () => {
+  await check('明文配对一律被拒并提示走加密通道，声明什么类型都一样', async () => {
     access.startPairing()
     const phone = await plain('/remote/v1/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: '000000', deviceName: '旧手机' }) })
     assert.equal(phone.status, 426)
     assert.equal(phone.json.code, 'tunnel_required')
     const peer = await plain('/remote/v1/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: '000000', deviceName: '另一台', kind: 'peer' }) })
-    assert.equal(peer.status, 403)
-    assert.equal(peer.json.code, 'peer_retired')
+    assert.equal(peer.status, 426)
+    assert.equal(peer.json.code, 'tunnel_required')
     access.cancelPairing()
   })
 
@@ -99,7 +100,7 @@ try {
     assert.equal(confirmed.fingerprint, await access.hostIdentity())
     assert.ok(manual.relay?.direct?.length)
     assert.match(manual.baseUrl, /^relay:\/\//)
-    assert.ok((await new M.RemoteClient(manual).info()).capabilities.includes('sessions'))
+    assert.ok((await new M.RemoteClient(manual).info()).apiVersion > 0)
   })
 
   await check('手输配对码输错一次后，同一个配对码还能重试成功', async () => {
@@ -108,7 +109,7 @@ try {
     await assert.rejects(() => M.pair(base, wrong, '输错的手机', async () => true), (error) => error?.code === 'invalid_code')
     const retried = await M.pair(base, code, '重试的手机', async () => true)
     assert.match(retried.baseUrl, /^relay:\/\//)
-    assert.ok((await new M.RemoteClient(retried).info()).capabilities.includes('sessions'))
+    assert.ok((await new M.RemoteClient(retried).info()).apiVersion > 0)
   })
 
   await check('同一次配对的中继码被用掉后最多补发到 5 个，之后要重新生成配对码', async () => {
@@ -141,21 +142,15 @@ try {
     assert.equal(res.status, 403)
   })
 
-  await check('旧的明文直连配对自动迁移到加密通道，迁移后明文失效', async () => {
+  await check('老的明文令牌不再能从局域网直连，也没有升级入口', async () => {
     const { code } = access.startPairing()
-    const legacy = await access.devices.pair(code, '老手机', 'phone')
+    const legacy = await access.devices.pair(code, '老手机')
     assert.ok(legacy.ok)
-    const old = { baseUrl: base, token: legacy.token, deviceId: legacy.device.id, computerName: '电脑', deviceName: '老手机' }
-    assert.equal((await plain('/remote/v1/info', { headers: { authorization: `Bearer ${old.token}` } })).status, 200)
-    assert.ok((await access.status()).devices.find((d) => d.id === old.deviceId && !d.encrypted))
-    const secured = await M.secureConnection(old)
-    assert.ok(secured?.relay?.direct?.length)
-    assert.equal(secured.token, old.token)
-    assert.ok((await new M.RemoteClient(secured).info()).capabilities.includes('sessions'))
-    assert.equal((await plain('/remote/v1/info', { headers: { authorization: `Bearer ${old.token}` } })).status, 403)
-    const migrated = (await access.status()).devices.find((d) => d.id === old.deviceId)
-    assert.ok(migrated?.encrypted && migrated.tunnelClientId, '迁移后的设备标记为加密并关联通道客户端')
-    assert.equal(await M.secureConnection(old), null)
+    const auth = { authorization: `Bearer ${legacy.token}` }
+    const info = await plain(callPath('info'), { method: 'POST', headers: auth })
+    assert.deepEqual([info.status, info.json.code], [403, 'tunnel_required'])
+    const enroll = await plain('/remote/v1/tunnel/enroll', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: '{}' })
+    assert.equal(enroll.status, 403)
   })
 
   await check('直连地址不通且没有中继时，很快报错而不是一直等', async () => {

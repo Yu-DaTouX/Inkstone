@@ -64,13 +64,13 @@ export interface SubagentActionInput {
   canDiscard?: boolean
 }
 
-export function subagentActions(run: SubagentActionInput, caps: { review: boolean; send: boolean }): { merge: boolean; discard: boolean; send: boolean } {
+export function subagentActions(run: SubagentActionInput): { merge: boolean; discard: boolean; send: boolean } {
   const live = run.status === 'starting' || run.status === 'running'
   const interrupted = run.status === 'cancelled' && run.endReason === 'interrupted'
   const reviewing = run.review === 'pending' || run.review === 'conflict'
   return {
-    merge: caps.review && !live && run.canMerge === true,
-    discard: caps.review && !live && run.canDiscard === true,
-    send: caps.send && (live || (interrupted && run.resumable !== false) || reviewing)
+    merge: !live && run.canMerge === true,
+    discard: !live && run.canDiscard === true,
+    send: live || (interrupted && run.resumable !== false) || reviewing
   }
 }

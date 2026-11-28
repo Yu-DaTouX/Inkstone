@@ -2,7 +2,7 @@ import { request as httpRequest, type ClientRequest } from 'node:http'
 import { StringDecoder } from 'node:string_decoder'
 import { fromB64u, generateKeyPair, RELAY_PROTOCOL_VERSION, serverSession, toB64u, type KeyPair, type SecureChannel } from './crypto'
 import type { RelayClient, RelayClientKind } from './store'
-import { REMOTE_IDEMPOTENCY_HEADER, REMOTE_MESSAGE_MAX_BYTES } from '../../shared/remote-protocol'
+import { REMOTE_CALL_PREFIX, REMOTE_IDEMPOTENCY_HEADER, REMOTE_MESSAGE_MAX_BYTES, REMOTE_VERSION_HEADER } from '../../shared/remote-protocol'
 import { pick } from '../../shared/ui-lang'
 
 export interface Pipe {
@@ -45,8 +45,7 @@ const STREAM_BACKLOG_BYTES = 12 * 1024 * 1024
 const INBOUND_HIGH_BYTES = 8 * 1024 * 1024
 const INBOUND_LOW_BYTES = 2 * 1024 * 1024
 const DRAIN_POLL_MS = 20
-const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
-const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
+const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, REMOTE_VERSION_HEADER, 'last-event-id', 'accept']
 const VIEWER_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair', '/remote/v1/devices/self/revoke', '/remote/v1/watch', '/remote/v1/watch/events'])
 const TEXT_PROTOCOL = 2
 
@@ -64,7 +63,7 @@ const HANDSHAKE_FRAME_MAX = 4096
 export const SEALED_FRAME_MAX = 24 * 1024 * 1024
 
 function declaredKind(value: unknown): RelayClientKind | undefined {
-  return value === 'phone' || value === 'peer' || value === 'agent' || value === 'viewer' ? value : undefined
+  return value === 'phone' || value === 'viewer' ? value : undefined
 }
 
 export class TunnelSession {
@@ -231,7 +230,6 @@ export class TunnelSession {
       return this.fail(id, 403, pick('经中继只能访问砚的远程接口', 'Only the Inkstone remote API is reachable through the relay'))
     }
     const kind = this.client?.kind ?? 'phone'
-    if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, pick('Agent Hub 已退役，礁石不能再使用远程接口', 'Agent Hub is retired; the remote API is no longer available'))
     if (kind === 'viewer' && !VIEWER_PATHS.has(url.pathname)) return this.fail(id, 403, pick('旁观只能读取被共享的会话', 'A viewer can only read the shared session'))
     if (msg.stream === 'in') return this.fail(id, 400, pick('这个请求不支持流式上传', 'This request does not accept a streamed upload'))
     if (this.pending.size >= MAX_REQUESTS) return this.fail(id, 429, pick('同时进行的请求太多', 'Too many concurrent requests'))
@@ -241,8 +239,8 @@ export class TunnelSession {
     const body = typeof msg.body === 'string' ? msg.body : ''
     const bodyText = typeof msg.text === 'string' ? msg.text : null
     const maxBytes = method !== 'POST' ? null
-      : url.pathname === '/remote/v1/voice/transcribe' ? VOICE_MAX_BODY_BYTES
-        : /^\/remote\/v1\/sessions\/[^/]+\/messages$/.test(url.pathname) ? REMOTE_MESSAGE_MAX_BYTES : null
+      : url.pathname === `${REMOTE_CALL_PREFIX}voice.transcribe` ? VOICE_MAX_BODY_BYTES
+        : url.pathname === `${REMOTE_CALL_PREFIX}session.send` ? REMOTE_MESSAGE_MAX_BYTES : null
     const limit = maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3)
     if (bodyText !== null ? Buffer.byteLength(bodyText) > (maxBytes ?? MAX_BODY_B64) : body.length > limit) return this.fail(id, 413, pick('请求太大', 'Request too large'))
     let payload = bodyText !== null ? Buffer.from(bodyText, 'utf8') : body ? Buffer.from(body, 'base64') : Buffer.alloc(0)

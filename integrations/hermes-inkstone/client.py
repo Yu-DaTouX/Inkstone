@@ -1,4 +1,4 @@
-"""Small synchronous client for Inkstone's existing remote/v1 protocol."""
+"""Small synchronous client for the Inkstone remote/v1 action protocol."""
 import json
 import ipaddress
 import os
@@ -8,10 +8,11 @@ import uuid
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from http.client import HTTPException
-from urllib.parse import quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 MAX_RESPONSE = 4 * 1024 * 1024
+PROTOCOL_VERSION = 3
 READ_ACTIONS = ("info", "status", "sessions", "history", "models", "questions")
 CONTROL_ACTIONS = ("new", "select", "send", "model", "rename", "abort", "answer")
 
@@ -81,7 +82,7 @@ def segment(params, name):
     value = text_arg(params, name)
     if value in (".", "..") or any(c in value for c in "/\\\r\n\x00"):
         raise ValueError(f"{name} must be a stable ID, not a path.")
-    return quote(value, safe="")
+    return value
 
 
 class Client:
@@ -92,7 +93,7 @@ class Client:
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
 
     def request(self, method, path, body=None, request_id=None):
-        headers = {"accept": "application/json"}
+        headers = {"accept": "application/json", "x-yan-remote-version": str(PROTOCOL_VERSION)}
         if self.token:
             headers["authorization"] = "Bearer " + self.token
         if request_id:
@@ -122,27 +123,30 @@ class Client:
                 result["httpStatus"] = status
             if status == 401:
                 result["hint"] = "Device token expired or revoked. Pair again on the desktop."
-            if result.get("code") == "agent_scope":
-                result["hint"] = "This is a Hub-only Reef token. Pair this plugin as a separate remote client; do not reuse that token."
+            if result.get("code") == "version_mismatch":
+                result["hint"] = "Inkstone and this plugin speak different protocol versions. Update both to the latest release."
             return result
         except (URLError, TimeoutError, socket.timeout, OSError, HTTPException):
             return {"ok": False, "code": "connection_failed", "outcomeUnknown": method == "POST",
                     "error": "Cannot reach Inkstone. Check desktop remote access, address and network. A submitted operation may already have executed; do not blindly resend."}
 
+    def call(self, action, args=None, request_id=None):
+        return self.request("POST", "/call/" + action, args or {}, request_id)
+
     def read(self, params):
         action = params.get("action")
         if action in ("info", "status", "sessions", "questions"):
-            return self.request("GET", "/" + action)
+            return self.call(action)
         if action == "models":
-            return self.request("GET", "/sessions/" + segment(params, "session_id") + "/models")
+            return self.call("session.models", {"sessionId": segment(params, "session_id")})
         if action == "history":
             limit = params.get("limit", 40)
             if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
                 raise ValueError("limit must be an integer from 1 to 100.")
-            query = {"limit": limit}
+            args = {"sessionId": segment(params, "session_id"), "limit": limit}
             if params.get("before") is not None:
-                query["before"] = text_arg(params, "before", 2000)
-            return self.request("GET", "/sessions/" + segment(params, "session_id") + "?" + urlencode(query))
+                args["before"] = text_arg(params, "before", 2000)
+            return self.call("session.history", args)
         raise ValueError("Unknown read action.")
 
     def control(self, params):
@@ -154,29 +158,32 @@ class Client:
             raise ValueError("request_id must be 8-128 letters, numbers or . _ : -.")
         body = {}
         if action == "new":
-            path = "/sessions/new"
+            name = "session.new"
         elif action == "answer":
-            path = "/questions/" + segment(params, "question_id") + "/answer"
+            name = "question.answer"
             if params.get("cancelled") is True:
-                body = {"cancelled": True}
+                answer = {"cancelled": True}
             elif isinstance(params.get("confirmed"), bool):
-                body = {"confirmed": params["confirmed"]}
+                answer = {"confirmed": params["confirmed"]}
             else:
-                body = {"value": text_arg(params, "value", 20_000)}
+                answer = {"value": text_arg(params, "value", 20_000)}
+            body = {"questionId": segment(params, "question_id"), "answer": answer}
         elif action == "abort":
             if not re.fullmatch(r"r[1-9]\d{0,8}", text_arg(params, "run_id")):
                 raise ValueError("run_id must be the desktop runner ID, for example r1.")
             body = {"runId": params["run_id"]}
-            path = "/runs/abort"
+            name = "run.abort"
         else:
-            path = "/sessions/" + segment(params, "session_id") + "/" + ("messages" if action == "send" else action)
+            name = "session." + action
+            body = {"sessionId": segment(params, "session_id")}
             if action == "send":
-                body = {"text": text_arg(params, "text", 20_000)}
+                body["text"] = text_arg(params, "text", 20_000)
             elif action == "model":
-                body = {"provider": text_arg(params, "provider"), "modelId": text_arg(params, "model_id", 300)}
+                body["provider"] = text_arg(params, "provider")
+                body["modelId"] = text_arg(params, "model_id", 300)
             elif action == "rename":
-                body = {"name": text_arg(params, "name")}
-        result = self.request("POST", path, body, request_id)
+                body["name"] = text_arg(params, "name")
+        result = self.call(name, body, request_id)
         result["requestId"] = request_id
         if action == "send" and result.get("ok"):
             result["hint"] = "Accepted by the desktop, not a completed answer. Read history for this session and status for its runId."

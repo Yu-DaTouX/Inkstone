@@ -1,6 +1,5 @@
 {
   "mobile/src/brandMark.ts": 1,
-  "mobile/src/screens/AssistantScreen.tsx": 1,
   "mobile/src/screens/HomeScreen.tsx": 2,
   "mobile/src/screens/SettingsScreen.tsx": 3,
   "mobile/src/state.tsx": 1,
@@ -256,7 +255,6 @@
   "src/shared/base64url.ts": 1,
   "src/shared/browser-wait.ts": 6,
   "src/shared/capabilities.ts": 2,
-  "src/shared/capability-negotiation.ts": 1,
   "src/shared/continuation-prompt.ts": 10,
   "src/shared/currency.ts": 2,
   "src/shared/danger-block.ts": 4,

@@ -63,7 +63,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(self.control(action="answer", question_id="ordinary-question", value="file A")["ok"])
         legacy = client_module.Client(os.environ["INKSTONE_TEST_URL"], "fixture-token-hermes")
         body = {"sessionId": sensitive["sessionId"], "runId": sensitive["runId"], "digest": sensitive["approvalDigest"], "confirmed": True}
-        self.assertEqual(legacy.request("POST", "/questions/" + sensitive["id"] + "/approval", body, "legacy-approval-key")["httpStatus"], 403)
+        self.assertEqual(legacy.call("question.approval", {**body, "questionId": sensitive["id"]}, "legacy-approval-key")["httpStatus"], 403)
         command = self.ctx.commands["inkstone"]
         self.assertIn("失效", command("approve never-shown"))
         preview = command("approvals")
@@ -137,7 +137,7 @@ class PluginTests(unittest.TestCase):
                 self.assertEqual(connect.main(), 0)
             token = json.loads(path.read_text())["token"]
             self.assertNotIn(token, output.getvalue())
-            self.assertTrue(client_module.Client(url, token).request("GET", "/info")["ok"])
+            self.assertTrue(client_module.Client(url, token).call("info")["ok"])
             self.assertEqual(len(list(Path(folder).iterdir())), 1)
             with patch.dict(os.environ, {"INKSTONE_CONNECTION_FILE": str(path)}), patch.object(sys, "argv", ["connect.py", "--check"]), patch("sys.stdout", output):
                 self.assertEqual(connect.main(), 0)
@@ -162,7 +162,7 @@ class PluginTests(unittest.TestCase):
     def test_redirect_never_forwards_token(self):
         received = []
         class Handler(BaseHTTPRequestHandler):
-            def do_GET(self):
+            def do_POST(self):
                 received.append(self.path)
                 self.send_response(302)
                 self.send_header("location", "/secret-destination")
@@ -175,7 +175,7 @@ class PluginTests(unittest.TestCase):
         try:
             result = client_module.Client(f"http://127.0.0.1:{server.server_port}", "secret").read({"action": "status"})
             self.assertFalse(result["ok"])
-            self.assertEqual(received, ["/remote/v1/status"])
+            self.assertEqual(received, ["/remote/v1/call/status"])
         finally:
             server.shutdown()
             server.server_close()

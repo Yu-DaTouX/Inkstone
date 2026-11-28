@@ -1,4 +1,5 @@
 import { runSuite } from './lib/test-suite.mjs'
+import { remoteCall } from './lib/remote-call.mjs'
 
 const electronStub = {
   name: 'electron-stub',
@@ -23,7 +24,8 @@ const electronStub = {
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const host = await compile('src/main/remote-host.ts', { plugins: [electronStub], external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'] })
-  const { RemoteServer, parseRemoteQueueOp } = await compile('src/main/remote-server.ts')
+  const { RemoteServer } = await compile('src/main/remote-server.ts')
+  const { parseRemoteQueueOp } = await compile('src/main/remote-actions.ts')
 
   const NOTICE = '<subagent-notification id="sub-a" status="done">\n结果\n这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。'
   const longText = 'x'.repeat(600)
@@ -151,38 +153,29 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const info = await server.start()
   const base = `http://127.0.0.1:${info.port}`
   let keySeq = 0
-  const post = async (path, body, token, key = `test-key-${++keySeq}-abcdef`) => {
-    const response = await fetch(base + path, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(key ? { 'idempotency-key': key } : {}) }, body: JSON.stringify(body) })
-    return { status: response.status, body: await response.json() }
-  }
-  const getInfo = async (token) => (await (await fetch(`${base}/remote/v1/info`, { headers: { authorization: `Bearer ${token}` } })).json()).capabilities
+  const post = (action, body, token, key = `test-key-${++keySeq}-abcdef`) => remoteCall(base, action, body, { token, key })
   try {
-    const phoneCaps = await getInfo('phone-device-token-123456')
-    ok(phoneCaps.includes('queue-edit') && phoneCaps.includes('subagent-review') && phoneCaps.includes('subagent-send'), '配对手机能看到新能力', JSON.stringify(phoneCaps))
-    const legacyCaps = await getInfo('legacy-remote-token-1234567890')
-    ok(legacyCaps.includes('queue-edit') && !legacyCaps.includes('subagent-review'), '非配对手机的令牌拿不到合并放弃能力')
-
-    const queued = await post('/remote/v1/sessions/s-1/queue', { op: 'steer', id: 'q-3', expect: 'b'.repeat(64) }, 'phone-device-token-123456')
+    const queued = await post('session.queue', { sessionId: 's-1', op: { op: 'steer', id: 'q-3', expect: 'b'.repeat(64) } }, 'phone-device-token-123456')
     ok(queued.status === 200 && httpCalls.at(-1)[0] === 'queue' && httpCalls.at(-1)[2].op === 'steer', '排队操作路由到处理器')
-    const noKey = await post('/remote/v1/sessions/s-1/queue', { op: 'clear', items: [{ id: 'q-1', expect: 'b'.repeat(64) }] }, 'phone-device-token-123456', '')
+    const noKey = await post('session.queue', { sessionId: 's-1', op: { op: 'clear', items: [{ id: 'q-1', expect: 'b'.repeat(64) }] } }, 'phone-device-token-123456', '')
     ok(noKey.status === 400 && noKey.body.code === 'idempotency_key_required', '排队操作必须带幂等键')
-    const badOp = await post('/remote/v1/sessions/s-1/queue', { op: 'remove', id: 'q-1' }, 'phone-device-token-123456')
+    const badOp = await post('session.queue', { sessionId: 's-1', op: { op: 'remove', id: 'q-1' } }, 'phone-device-token-123456')
     ok(badOp.status === 400, '缺 expect 的排队操作返回 400')
 
     const before = httpCalls.length
-    const legacyMerge = await post('/remote/v1/sessions/s-1/subagents/sub-1/merge', { confirm: true }, 'legacy-remote-token-1234567890')
+    const legacyMerge = await post('subagent.review', { sessionId: 's-1', runId: 'sub-1', action: 'merge', confirm: true }, 'legacy-remote-token-1234567890')
     ok(legacyMerge.status === 403 && legacyMerge.body.code === 'paired_user_required' && httpCalls.length === before, '合并需要配对的手机')
-    const unconfirmed = await post('/remote/v1/sessions/s-1/subagents/sub-1/discard', {}, 'phone-device-token-123456')
+    const unconfirmed = await post('subagent.review', { sessionId: 's-1', runId: 'sub-1', action: 'discard' }, 'phone-device-token-123456')
     ok(unconfirmed.status === 400 && httpCalls.length === before, '放弃需要明确确认')
-    const discard = await post('/remote/v1/sessions/s-1/subagents/sub-1/discard', { confirm: true }, 'phone-device-token-123456')
+    const discard = await post('subagent.review', { sessionId: 's-1', runId: 'sub-1', action: 'discard', confirm: true }, 'phone-device-token-123456')
     ok(discard.status === 200 && httpCalls.at(-1)[3] === 'discard', '确认后放弃路由到处理器')
-    const badRun = await post('/remote/v1/sessions/s-1/subagents/..%2Fx/merge', { confirm: true }, 'phone-device-token-123456')
+    const badRun = await post('subagent.review', { sessionId: 's-1', runId: '../x', action: 'merge', confirm: true }, 'phone-device-token-123456')
     ok(badRun.status === 400, '子代理 id 不合法时拒绝')
-    const message = await post('/remote/v1/sessions/s-1/subagents/sub-1/send', { text: '继续改' }, 'phone-device-token-123456')
+    const message = await post('subagent.send', { sessionId: 's-1', runId: 'sub-1', text: '继续改' }, 'phone-device-token-123456')
     ok(message.status === 200 && httpCalls.at(-1)[0] === 'send' && httpCalls.at(-1)[3] === '继续改', '给子代理发消息路由到处理器')
-    const empty = await post('/remote/v1/sessions/s-1/subagents/sub-1/send', { text: '  ' }, 'phone-device-token-123456')
+    const empty = await post('subagent.send', { sessionId: 's-1', runId: 'sub-1', text: '  ' }, 'phone-device-token-123456')
     ok(empty.status === 400, '空消息拒绝')
-    const stopStill = await post('/remote/v1/sessions/s-1/subagents/sub-1/stop', {}, 'phone-device-token-123456')
+    const stopStill = await post('subagent.stop', { sessionId: 's-1', runId: 'sub-1' }, 'phone-device-token-123456')
     ok(stopStill.status === 404, '原有停止路由不受影响（未配置处理器时仍提示更新）')
   } finally {
     await server.stop()

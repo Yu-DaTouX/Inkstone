@@ -3,11 +3,10 @@ import { p256 } from '@noble/curves/nist.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
+import { RELAY_PROTOCOL_VERSION, RelayChannel, relayClientKeys, relayFrameCodec, type RelayFrameCodec, type RelayPrimitives } from '../../../src/shared/relay-crypto'
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = RELAY_PROTOCOL_VERSION
 const TEXT_PROTOCOL = 2
-const LABEL = utf8ToBytes('reef-v1')
-const INFO = utf8ToBytes('reef-v1 keys')
 const HANDSHAKE_MS = 15_000
 const DIRECT_MS = 2_500
 
@@ -254,80 +253,45 @@ export function relayClientPublicKey(clientKey: string): string {
   return toB64u(p256.getPublicKey(fromB64u(clientKey), false))
 }
 
-function ecdh(secret: Uint8Array, publicRaw: Uint8Array): Uint8Array {
-  return p256.getSharedSecret(secret, publicRaw, true).slice(1)
+export const mobileRelayPrimitives: RelayPrimitives = {
+  publicKey: (secret) => p256.getPublicKey(secret, false),
+  ecdh: (secret, publicRaw) => p256.getSharedSecret(secret, publicRaw, true).slice(1),
+  sha256: (bytes) => sha256(bytes),
+  hkdf: (ikm, salt, info, length) => hkdf(sha256, ikm, salt, info, length),
+  encrypt: (key, iv, plain) => gcm(key, iv).encrypt(plain),
+  decrypt: (key, iv, sealed) => gcm(key, iv).decrypt(sealed),
+  utf8: utf8ToBytes,
+  text: bytesToUtf8,
+  toB64u,
+  fromB64u
 }
+
+const jsCodec = relayFrameCodec(mobileRelayPrimitives)
 
 export interface FrameCipher {
   open(key: string, frame: string, expected: number): string
   seal(key: string, counter: number, text: string): string
 }
 
-let frameCipher: FrameCipher | null = null
+let codec: RelayFrameCodec = jsCodec
 
 export function setFrameCipher(cipher: FrameCipher | null): boolean {
-  frameCipher = null
+  codec = jsCodec
   if (!cipher) return false
+  const native: RelayFrameCodec = {
+    seal: (key, counter, text) => cipher.seal(toB64u(key), counter, text),
+    open: (key, frame, expected) => cipher.open(toB64u(key), frame, expected)
+  }
   try {
     const key = new Uint8Array(32).map((_, i) => i * 7 + 1)
-    const id = toB64u(key)
-    const sample = { t: 'probe', text: 'é ✓ 😀 ok' }
-    const js = new Channel(key, key)
-    const viaJs = js.seal(sample)
-    if (cipher.open(id, viaJs, 0) !== JSON.stringify(sample)) return false
-    const native = cipher.seal(id, 0, JSON.stringify(sample))
-    if (JSON.stringify(new Channel(key, key).open(native)) !== JSON.stringify(sample)) return false
+    const sample = JSON.stringify({ t: 'probe', text: 'é ✓ 😀 ok' })
+    if (native.open(key, jsCodec.seal(key, 0, sample), 0) !== sample) return false
+    if (jsCodec.open(key, native.seal(key, 0, sample), 0) !== sample) return false
   } catch {
     return false
   }
-  frameCipher = cipher
+  codec = native
   return true
-}
-
-class Channel {
-  private sendCount = 0
-  private recvCount = 0
-  private readonly sendId: string
-  private readonly recvId: string
-  constructor(private readonly sendKey: Uint8Array, private readonly recvKey: Uint8Array) {
-    this.sendId = toB64u(sendKey)
-    this.recvId = toB64u(recvKey)
-  }
-
-  seal(obj: unknown): string {
-    const text = JSON.stringify(obj)
-    if (frameCipher) return frameCipher.seal(this.sendId, this.sendCount++, text)
-    const ctr = new Uint8Array(8)
-    new DataView(ctr.buffer).setBigUint64(0, BigInt(this.sendCount++))
-    const ct = gcm(this.sendKey, concat(new Uint8Array(4), ctr)).encrypt(utf8ToBytes(text))
-    return `x.${toB64u(concat(ctr, ct))}`
-  }
-
-  open(frame: string): Record<string, unknown> {
-    if (!frame.startsWith('x.')) throw new Error(pick('不是加密帧', 'Not an encrypted frame'))
-    if (frameCipher) {
-      const text = frameCipher.open(this.recvId, frame, this.recvCount)
-      this.recvCount++
-      return JSON.parse(text) as Record<string, unknown>
-    }
-    const bytes = fromB64u(frame.slice(2))
-    if (bytes.length < 24) throw new Error(pick('加密帧太短', 'Encrypted frame too short'))
-    const ctr = bytes.slice(0, 8)
-    const n = Number(new DataView(ctr.buffer).getBigUint64(0))
-    if (n !== this.recvCount) throw new Error(pick('加密帧计数不对', 'Encrypted frame count mismatch'))
-    const plain = gcm(this.recvKey, concat(new Uint8Array(4), ctr)).decrypt(bytes.slice(8))
-    this.recvCount++
-    return JSON.parse(bytesToUtf8(plain)) as Record<string, unknown>
-  }
-}
-
-function clientChannel(clientSecret: Uint8Array, ephSecret: Uint8Array, hostRaw: Uint8Array, hostEphRaw: Uint8Array): Channel {
-  const clientRaw = p256.getPublicKey(clientSecret, false)
-  const ephRaw = p256.getPublicKey(ephSecret, false)
-  const ikm = concat(ecdh(ephSecret, hostEphRaw), ecdh(ephSecret, hostRaw), ecdh(clientSecret, hostEphRaw))
-  const salt = sha256(concat(LABEL, hostRaw, clientRaw, ephRaw, hostEphRaw))
-  const okm = hkdf(sha256, ikm, salt, INFO, 64)
-  return new Channel(okm.slice(0, 32), okm.slice(32, 64))
 }
 
 type Payload = { bytes?: Uint8Array; text?: string; base64?: string }
@@ -387,7 +351,7 @@ export class RelayError extends Error {
 export class RelayTunnel {
   private static readonly shared = new Map<string, RelayTunnel>()
   private ws: WebSocket | null = null
-  private channel: Channel | null = null
+  private channel: RelayChannel | null = null
   private ready: Promise<void> | null = null
   private readonly pending = new Map<string, Pending>()
   private seq = 0
@@ -498,7 +462,7 @@ export class RelayTunnel {
             const hi = JSON.parse(text) as { t?: unknown; v?: unknown; e?: unknown }
             if (hi.t !== 'hi' || typeof hi.e !== 'string') throw new RelayError(pick('电脑的握手消息不对', 'Invalid handshake from desktop'))
             this.version = hi.v === TEXT_PROTOCOL ? TEXT_PROTOCOL : PROTOCOL_VERSION
-            this.channel = clientChannel(clientSecret, ephSecret, fromB64u(this.config.hostKey), fromB64u(hi.e))
+            this.channel = new RelayChannel(relayClientKeys(mobileRelayPrimitives, { clientSecret, ephSecret, hostRaw: fromB64u(this.config.hostKey), hostEphRaw: fromB64u(hi.e) }), codec)
             state = 'auth'
             ws.send(this.channel.seal({ t: 'auth', name: this.deviceName, ...(pairCode ? { pair: pairCode } : {}) }))
             return

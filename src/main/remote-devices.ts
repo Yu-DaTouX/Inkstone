@@ -90,7 +90,7 @@ export class RemoteDeviceStore {
           const document = parsed as Partial<DeviceFile>
           if (document.version !== 1 || !Array.isArray(document.devices)) throw new SyntaxError('设备表格式无效')
           return document.devices
-            .filter((device) => typeof device?.id === 'string' && device.kind !== 'viewer' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash))
+            .filter((device) => typeof device?.id === 'string' && (device.kind === undefined || device.kind === 'phone') && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash))
             .map((device) => ({ ...device, name: cleanName(device.name) }))
         } catch (error) {
           await copyFile(this.file, `${this.file}.corrupt-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`).catch(() => undefined)
@@ -149,7 +149,7 @@ export class RemoteDeviceStore {
     return { code: this.pairing.code, expiresAt: this.pairing.expiresAt }
   }
 
-  async pair(code: unknown, deviceName: unknown, kind: unknown = 'phone', encrypted = false, tunnelClientId?: string): Promise<PairResult> {
+  async pair(code: unknown, deviceName: unknown, tunnelClientId?: string): Promise<PairResult> {
     return this.enqueue(async () => {
       const pairing = this.pairing
       if (!pairing) return { ok: false, error: 'no_pairing' }
@@ -177,12 +177,11 @@ export class RemoteDeviceStore {
       const device: StoredDevice = {
         id: `device-${randomUUID()}`,
         name: cleanName(deviceName),
-        kind: kind === 'peer' || kind === 'agent' ? kind : 'phone',
+        kind: 'phone',
         createdAt: this.now(),
         lastSeenAt: null,
         revokedAt: null,
         tokenHash: hashToken(token),
-        ...(encrypted ? { encrypted: true } : {}),
         ...(tunnelClientId ? { tunnelClientId } : {})
       }
       const next = [...devices, device]
@@ -217,7 +216,6 @@ export class RemoteDeviceStore {
       lastSeenAt: this.now(),
       revokedAt: null,
       tokenHash: hashToken(token),
-      encrypted: true,
       watchSessionId: sessionId
     }
     this.viewerDevices = [...this.viewerDevices, device]
@@ -254,16 +252,6 @@ export class RemoteDeviceStore {
       })
     }
     return summaryOf(device)
-  }
-
-  async markEncrypted(id: string, tunnelClientId?: string): Promise<void> {
-    return this.enqueue(async () => {
-      const devices = await this.load()
-      if (!devices.some((item) => item.id === id && !item.encrypted)) return
-      const next = devices.map((item) => (item.id === id ? { ...item, encrypted: true, ...(tunnelClientId ? { tunnelClientId } : {}) } : item))
-      await this.save(next)
-      this.devices = next
-    })
   }
 
   async list(): Promise<RemoteDeviceRecord[]> {
@@ -310,6 +298,6 @@ export class RemoteDeviceStore {
 }
 
 function summaryOf(device: StoredDevice): RemoteDeviceSummary {
-  if (device.kind === 'viewer') return { id: device.id, name: device.name, kind: 'viewer', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, encrypted: true, ...(device.watchSessionId ? { watchSessionId: device.watchSessionId } : {}) }
-  return { id: device.id, name: device.name, kind: device.kind === 'peer' || device.kind === 'agent' ? device.kind : 'phone', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, ...(device.encrypted ? { encrypted: true } : {}), ...(device.tunnelClientId ? { tunnelClientId: device.tunnelClientId } : {}) }
+  if (device.kind === 'viewer') return { id: device.id, name: device.name, kind: 'viewer', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, ...(device.watchSessionId ? { watchSessionId: device.watchSessionId } : {}) }
+  return { id: device.id, name: device.name, kind: 'phone', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, ...(device.tunnelClientId ? { tunnelClientId: device.tunnelClientId } : {}) }
 }

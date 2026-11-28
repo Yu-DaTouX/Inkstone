@@ -1,5 +1,4 @@
 import { pick } from '../../../src/shared/ui-lang'
-import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type SessionListItem } from '../api/client'
@@ -9,7 +8,6 @@ import { GlyphSpinner } from '../motion'
 import { useRemote } from '../state'
 import { useBottomInset } from '../insets'
 import { font, icon, mono, radius, space, touch, usePalette, useProjectLook, weight } from '../theme'
-import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { ActivityLine, IconButton, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
 
 const UNGROUPED = 'folder:未分类'
@@ -31,11 +29,9 @@ type Row =
   | { kind: 'group'; key: string; group: Group; open: boolean }
   | { kind: 'session'; key: string; session: SessionListItem; meta?: string }
   | { kind: 'more'; key: string; groupId: string; hidden: number }
-  | { kind: 'assistant'; key: string }
 
-export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled, onEnableAlerts, selectedSessionId }: {
+export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, selectedSessionId }: {
   onOpen: (sessionId: string, title: string) => void
-  onOpenAssistant: () => void
   onSettings: () => void
   alertsEnabled: boolean
   onEnableAlerts: () => void
@@ -54,17 +50,15 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
   const newAttempt = useRef<{ key: string; projectId: string | null; worktree: boolean } | null>(null)
   const [inWorktree, setInWorktree] = useState(false)
 
-  const searchAllowed = capabilityAllowed(info, 'search')
-  const worktreeAllowed = capabilityAllowed(info, 'new-worktree')
   useEffect(() => {
     const needle = query.trim()
-    if (!searchAllowed || needle.length < 2) { setContentHits([]); return }
+    if (needle.length < 2) { setContentHits([]); return }
     let alive = true
     const timer = setTimeout(() => {
       void client.search(needle).then((hits) => { if (alive) setContentHits(hits) }).catch(() => { if (alive) setContentHits([]) })
     }, 400)
     return () => { alive = false; clearTimeout(timer) }
-  }, [client, query, searchAllowed])
+  }, [client, query])
 
   const asking = useMemo(() => new Set(questions.map((q) => q.sessionId).filter(Boolean)), [questions])
   const running = useMemo(() => new Set(runners.filter((r) => r.running || r.waiting).map((r) => r.sessionId)), [runners])
@@ -118,7 +112,6 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       out.push({ kind: 'section', key: 'run', title: STATUS_TEXT.run, count: live.length })
       for (const s of live) out.push({ kind: 'run', key: `run-${s.id}`, session: s })
     }
-    if (LIFE_ASSISTANT_ENABLED) out.push({ kind: 'assistant', key: 'assistant' })
     out.push({ kind: 'section', key: 'projects', title: pick('项目', 'Projects') })
     groups.forEach((group, index) => {
       const holdsCurrent = group.sessions.some((s) => s.id === selectedSessionId)
@@ -137,7 +130,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     setPicker(false)
     setCreating(true)
     const target = projectId ?? null
-    const worktree = worktreeAllowed && inWorktree
+    const worktree = inWorktree
     const attempt = newAttempt.current?.projectId === target && newAttempt.current.worktree === worktree ? newAttempt.current : { key: idempotencyKey(), projectId: target, worktree }
     newAttempt.current = attempt
     try {
@@ -161,9 +154,6 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
 
   const renderRow = ({ item }: { item: Row }) => {
     if (item.kind === 'section') return <SectionTitle count={item.count}>{item.title}</SectionTitle>
-    if (item.kind === 'assistant') return <Pressable accessibilityRole="button" accessibilityLabel={pick('打开生活助手', 'Open assistant')} onPress={onOpenAssistant} style={({ pressed }) => [styles.group, { opacity: pressed ? 0.6 : 1 }]}>
-      <Icon name="sparkles" color={p.accent} size={icon.sm} /><Text style={[styles.groupName, { color: p.fg }]}>{pick('生活助手', 'Assistant')}</Text><Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
-    </Pressable>
     if (item.kind === 'ask') {
       const q = questions.find((entry) => entry.id === item.questionId)
       if (!q) return null
@@ -234,11 +224,11 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       <Pressable accessibilityLabel={pick('关闭', 'Close')} onPress={() => setPicker(false)} style={styles.scrim}>
         <Pressable style={[styles.sheet, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
           <Text style={[styles.sheetTitle, { color: p.fg }]}>{pick('在哪个项目新建会话？', 'New session in which project?')}</Text>
-          {worktreeAllowed ? <Pressable accessibilityRole="switch" accessibilityState={{ checked: inWorktree }} accessibilityLabel={pick('在新的 Git 工作树里开始', 'Start in a new Git worktree')} onPress={() => setInWorktree((value) => !value)} style={styles.group}>
+          <Pressable accessibilityRole="switch" accessibilityState={{ checked: inWorktree }} accessibilityLabel={pick('在新的 Git 工作树里开始', 'Start in a new Git worktree')} onPress={() => setInWorktree((value) => !value)} style={styles.group}>
             <Icon name="branch" color={p.fgDim} size={icon.md} />
             <View style={styles.rowMain}><Text style={{ color: p.fg, fontSize: font.base }}>{pick('在新工作树里', 'In a new worktree')}</Text><Meta numberOfLines={2}>{pick('电脑为这个会话新建一个 Git 工作树，改动不影响主目录', 'The desktop creates a Git worktree so changes stay out of the main folder')}</Meta></View>
             <Switch value={inWorktree} onValueChange={setInWorktree} importantForAccessibility="no-hide-descendants" trackColor={{ true: p.accent, false: p.borderSoft }} />
-          </Pressable> : null}
+          </Pressable>
           <FlatList
             data={projects}
             keyExtractor={(item) => item.id}
