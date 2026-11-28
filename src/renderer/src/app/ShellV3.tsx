@@ -156,6 +156,7 @@ export default function ShellV3(): ReactElement {
 
   const settings = useStore((s) => s.settings)
   const conn = useStore((s) => s.conn)
+  const bootstrapError = useStore((s) => s.bootstrapError)
   const hasSession = useStore((s) => s.session !== null)
   const sessionFile = useStore((s) => s.session?.sessionFile)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
@@ -327,14 +328,13 @@ export default function ShellV3(): ReactElement {
   const tilesAxis = TILES_WIDTH_MAX + TILES_WIDTH_MIN
 
   useEffect(() => {
-    if (!settings) return
-    const settled = conn === 'exited' || conn === 'error' || (conn === 'ready' && hasSession)
+    const settled = !!bootstrapError || (!!settings && (conn === 'exited' || conn === 'error' || (conn === 'ready' && hasSession)))
     if (!settled) return
     let id = requestAnimationFrame(() => {
       id = requestAnimationFrame(() => dismissBootSplash())
     })
     return () => cancelAnimationFrame(id)
-  }, [settings, conn, hasSession])
+  }, [bootstrapError, settings, conn, hasSession])
 
   useEffect(() => {
     const openSearch = (): void => useUiV3.getState().setSidebarOpen(true)

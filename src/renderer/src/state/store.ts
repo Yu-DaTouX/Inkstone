@@ -115,6 +115,7 @@ export interface Notice {
 export interface Store {
   conn: ConnState
   connDetail: string
+  bootstrapError: string | null
   logs: string[]
   startupPhase: boolean
 
@@ -498,7 +499,6 @@ function requestViewResync(need: ViewResyncNeed): void {
 async function restorePendingUiRequests(): Promise<void> {
   uiRestoreAt = Date.now()
   const pushes = await window.yan.pendingUiRequests().catch(() => [] as MainPush[])
-  if (!useStore.getState().activeRunnerId) return
   for (const push of pushes) useStore.getState().applyPush(push)
 }
 
@@ -536,6 +536,7 @@ export const useStore = create<Store>((rawSet, get) => {
   return {
   conn: 'starting',
   connDetail: '',
+  bootstrapError: null,
   ...createNoticesSlice(sliceCtx),
   startupPhase: true,
 
@@ -608,6 +609,7 @@ export const useStore = create<Store>((rawSet, get) => {
     performance.mark('yan:bootstrap-start')
     const pushed = { state: false, messages: false }
     bootPushes = pushed
+    if (get().bootstrapError) set({ bootstrapError: null })
     let loadedSettings: Awaited<ReturnType<typeof api.getSettings>>
     let session: Awaited<ReturnType<typeof api.getState>>
     let messages: Awaited<ReturnType<typeof api.getMessages>>
@@ -628,6 +630,9 @@ export const useStore = create<Store>((rawSet, get) => {
         timedBoot('manualTitles', api.manualTitles().catch(() => ({}) as Record<string, string>)),
         api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
       ])
+    } catch (error) {
+      set({ bootstrapError: error instanceof Error ? error.message : String(error) })
+      return
     } finally {
       if (bootPushes === pushed) bootPushes = null
     }
@@ -637,6 +642,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const fetchedIds = new Set(messages.map((item) => item.id))
 
     set({
+      bootstrapError: null,
       settings,
       session: pushed.state ? get().session : session ?? get().session,
       messages: pushed.messages ? [...messages, ...get().messages.filter((item) => !fetchedIds.has(item.id))] : messages.length ? messages : get().messages,

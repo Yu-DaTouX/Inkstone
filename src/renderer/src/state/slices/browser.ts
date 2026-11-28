@@ -31,17 +31,26 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 
 let browserVisibilitySeq = 0
 
+const BROWSER_HIDE_SNAPSHOT_TIMEOUT_MS = 250
+
 export function applyBrowserVisibility(get: () => Store): void {
   if (teardown) return
   const desired = browserVisibilityFor(get())
   const seq = ++browserVisibilitySeq
   if (!desired && get().browserNativeVisible && browserSurfaceActive && typeof window.yan.browser.snapshot === 'function') {
-    void window.yan.browser.snapshot().catch(() => null).then(async (cover) => {
+    const capture = window.yan.browser.snapshot().catch(() => null).then(async (cover) => {
       if (cover && typeof Image === 'function') {
         const image = new Image()
         image.src = cover
         await image.decode().catch(() => undefined)
       }
+      return cover
+    })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), BROWSER_HIDE_SNAPSHOT_TIMEOUT_MS)
+    })
+    void Promise.race([capture, deadline]).finally(() => { if (timer) clearTimeout(timer) }).then((cover) => {
       if (seq !== browserVisibilitySeq) return
       useStore.setState({ browserCover: cover, browserNativeVisible: false })
       requestAnimationFrame(() => {

@@ -49,8 +49,36 @@ export function ConnBanner(): ReactElement | null {
   const t = useT()
   const conn = useStore((s) => s.conn)
   const connDetail = useStore((s) => s.connDetail)
+  const bootstrapError = useStore((s) => s.bootstrapError)
+  const bootstrap = useStore((s) => s.bootstrap)
   const refreshSessions = useStore((s) => s.refreshSessions)
   const [retrying, setRetrying] = useState(false)
+  if (bootstrapError) {
+    return (
+      <Notice
+        tone="fail"
+        compact
+        className="v3-conn-banner"
+        title={pick('初始化加载失败', 'Initialization failed')}
+        data-testid="v3-bootstrap-banner"
+        action={
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={retrying}
+            onPress={() => {
+              setRetrying(true)
+              void bootstrap().catch(() => undefined).finally(() => setRetrying(false))
+            }}
+          >
+            {t('conn.retry')}
+          </Button>
+        }
+      >
+        {bootstrapError}
+      </Notice>
+    )
+  }
   if (conn !== 'exited' && conn !== 'error') return <ExtensionSkipBanner />
   return (
     <Notice

@@ -33,6 +33,12 @@ export function withBrowserState(states: Store['browserStates'], sessionId: stri
     delete next[key]
     excess--
   }
+  for (const key of Object.keys(next)) {
+    if (excess <= 0) break
+    if (key === sessionId) continue
+    delete next[key]
+    excess--
+  }
   return next
 }
 
