@@ -61,9 +61,10 @@ class PluginTests(unittest.TestCase):
         self.assertFalse(self.control(action="approve", question_id=sensitive["id"])["ok"])
         self.assertFalse(self.control(action="answer", question_id=sensitive["id"], confirmed=True)["ok"])
         self.assertTrue(self.control(action="answer", question_id="ordinary-question", value="file A")["ok"])
-        legacy = client_module.Client(os.environ["INKSTONE_TEST_URL"], "fixture-token-hermes")
+        legacy = client_module.Client(os.environ["INKSTONE_TEST_URL"], "fixture-token-hermes", timeout=90)
         body = {"sessionId": sensitive["sessionId"], "runId": sensitive["runId"], "digest": sensitive["approvalDigest"], "confirmed": True}
-        self.assertEqual(legacy.call("question.approval", {**body, "questionId": sensitive["id"]}, "legacy-approval-key")["httpStatus"], 403)
+        denied = legacy.call("question.approval", {**body, "questionId": sensitive["id"]}, "legacy-approval-key")
+        self.assertEqual(denied.get("httpStatus"), 403, denied)
         command = self.ctx.commands["inkstone"]
         self.assertIn("失效", command("approve never-shown"))
         preview = command("approvals")

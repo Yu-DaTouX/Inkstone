@@ -286,7 +286,7 @@ export class SubagentService {
       const thinkingParam = params.thinkingLevel ?? params.thinking
       const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
       if (thinkingParam !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
-        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${THINKING_LEVELS.join(' / ')}`)
+        throw new CapabilityCommandError('subagent_thinking_invalid', pick(`thinking 只能是 ${THINKING_LEVELS.join(' / ')}`, `thinking must be one of ${THINKING_LEVELS.join(' / ')}`))
       }
       if (params.fork === true && thinkingLevel) {
         throw new CapabilityCommandError('subagent_fork_thinking', 'fork 子代理沿用当前会话的思考档，不能再传 --thinking；需要别的档位时改派普通子代理')
@@ -392,12 +392,12 @@ export class SubagentService {
       const mode = rawMode === 'follow-up' || rawMode === 'followup' ? 'followUp' : 'steer'
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
       if (params.model !== undefined && !requested) {
-        throw new CapabilityCommandError('subagent_model_invalid', 'model 参数无效')
+        throw new CapabilityCommandError('subagent_model_invalid', pick('model 参数无效', 'Invalid model argument'))
       }
       const thinkingParam = params.thinkingLevel ?? params.thinking
       const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
       if (thinkingParam !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
-        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${THINKING_LEVELS.join(' / ')}`)
+        throw new CapabilityCommandError('subagent_thinking_invalid', pick(`thinking 只能是 ${THINKING_LEVELS.join(' / ')}`, `thinking must be one of ${THINKING_LEVELS.join(' / ')}`))
       }
       let model = requested
       if (requested && this.deps.resolveModelLabel) {
@@ -433,15 +433,15 @@ export class SubagentService {
     if (command === 'subagent.set_model') {
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
       if (params.model !== undefined && !requested) {
-        throw new CapabilityCommandError('subagent_model_invalid', 'model 参数无效')
+        throw new CapabilityCommandError('subagent_model_invalid', pick('model 参数无效', 'Invalid model argument'))
       }
       const thinkingParam = params.thinkingLevel ?? params.thinking
       const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
       if (thinkingParam !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
-        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${THINKING_LEVELS.join(' / ')}`)
+        throw new CapabilityCommandError('subagent_thinking_invalid', pick(`thinking 只能是 ${THINKING_LEVELS.join(' / ')}`, `thinking must be one of ${THINKING_LEVELS.join(' / ')}`))
       }
       if (!requested && !thinkingLevel) {
-        throw new CapabilityCommandError('subagent_model_required', 'subagent set_model 需要 model 或 thinkingLevel')
+        throw new CapabilityCommandError('subagent_model_required', pick('subagent set_model 需要 model 或 thinkingLevel', 'subagent set_model needs model or thinkingLevel'))
       }
       let model = requested
       if (requested && this.deps.resolveModelLabel) {
@@ -455,7 +455,7 @@ export class SubagentService {
       }
       const result = await ctrl.setModel(id, { parentSessionId: context.parentSessionId, from: 'parent', ...(model ? { model } : {}), ...(thinkingLevel ? { thinkingLevel } : {}) })
       if (!result.ok || !result.run) {
-        throw new CapabilityCommandError('subagent_set_model_failed', result.error ?? `切换子代理模型失败：${id}`)
+        throw new CapabilityCommandError('subagent_set_model_failed', result.error ?? pick(`切换子代理模型失败：${id}`, `Failed to change subagent model: ${id}`))
       }
       return {
         data: result.run,

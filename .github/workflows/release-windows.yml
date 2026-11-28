@@ -30,7 +30,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     env:
-      PI_VERSION: '1.6.1'
+      PI_VERSION: '1.7.0'
     defaults:
       run:
         shell: bash

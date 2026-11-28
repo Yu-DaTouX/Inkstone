@@ -10,6 +10,7 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { deflateRawSync } from 'node:zlib'
 import { get } from 'node:http'
+import { VERSION_HEADERS } from './lib/remote-call.mjs'
 import { Worker } from 'node:worker_threads'
 import { performance } from 'node:perf_hooks'
 
@@ -205,7 +206,7 @@ try {
   const requests = [], responses = []
   try {
     const connect = () => new Promise((done, reject) => {
-      const req = get({ hostname: '127.0.0.1', port: info.port, path: '/remote/v1/events', headers: { authorization: 'Bearer synthetic-fix-test-token' } }, res => {
+      const req = get({ hostname: '127.0.0.1', port: info.port, path: '/remote/v1/events', headers: { ...VERSION_HEADERS, authorization: 'Bearer synthetic-fix-test-token' } }, res => {
         res.pause(); responses.push(res); done(res)
       })
       req.on('error', reject); requests.push(req)

@@ -70,8 +70,8 @@ await test('rejected critical request releases the boot gate', async () => {
   const caught = pending.then(() => null, (error) => error)
   await Promise.resolve()
   wait.reject(new Error('getMessages down'))
-  const error = await caught
-  assert.equal(String(error?.message), 'getMessages down')
+  assert.equal(await caught, null)
+  assert.equal(get().bootstrapError, 'getMessages down')
   get().applyPush({ ch: 'tool', payload: { msgId: 'missing', call: { id: 'c1' } } })
   await new Promise((r) => setTimeout(r, 450))
   assert.equal(resyncs, 1, '闸门清除后缺失目标的推送可以触发视图重同步')
@@ -117,13 +117,14 @@ await test('an older bootstrap rejecting does not clear the gate of a newer boot
   const first = deferred()
   const second = deferred()
   window.yan = fakeApi({ getSettings: () => first.promise })
-  const p1 = get().bootstrap().then(() => null, (error) => error)
+  const p1 = get().bootstrap()
   await Promise.resolve()
   window.yan = fakeApi({ getSettings: () => second.promise })
   const p2 = get().bootstrap()
   await Promise.resolve()
   first.reject(new Error('first down'))
-  assert.equal(String((await p1)?.message), 'first down')
+  await p1
+  assert.equal(get().bootstrapError, 'first down')
   get().applyPush({ ch: 'state', payload: { ...session('A'), isAgentRunning: true } })
   second.resolve({})
   await p2

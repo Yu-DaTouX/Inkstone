@@ -433,6 +433,7 @@ try {
     agent.markStreaming = () => {}
     agent.setAgentRunning = () => {}
     agent.queue = { reset: () => {} }
+    agent.operations = { reset: () => {} }
     agent.acp = { resetScope: () => {} }
     agent.stream = {}
     agent.resetSessionScope()
