@@ -192,7 +192,7 @@ export default async function run({ box, cdp, fake, runDir, check, waitFor, slee
   await unfold('usage')
   await unfold('connectors')
   await waitFor(`${has(rail('stats'), '140')} && ${has(rail('connectors'), '砚子代理桥')}`)
-  await waitFor(`${has(rail('usage'), '92.5%')} && ${has(rail('usage'), '78%')}`)
+  await waitFor(`${has(rail('usage'), '7.5%')} && ${has(rail('usage'), '22%')}`)
   check('右栏展示实报上下文、上下文明细、简洁带进度条订阅用量和同步 MCP', await ev(`${has(rail('stats'), 'tok/s')} && ${has(rail('context'), '25%')} && !!document.querySelector('${rail('context')} [data-testid="wb-ov-ctx-breakdown"]') && !(${has(rail('usage'), '最近已上报回合')}) && !(${has(rail('usage'), '订阅剩余额度')}) && ${has(rail('usage'), 'Claude and GPT models')} && !!document.querySelector('${rail('usage')} .wb-ov-qmini .wb-ctx-bar .wb-ov-qfill') && !!document.querySelector('[data-testid="antigravity-quota-refresh"]') && ${has(rail('changes'), '未上报')} && ${has(rail('connectors'), 'sync-fixture')} && !(${has(rail('connectors'), 'disabled-fixture')}) && !!document.querySelector('[data-testid="wb-rail-env-summary"] .wb-env-dirty')`))
   const quotaResets = await ev(`Array.from(document.querySelectorAll('[data-testid="rail-antigravity-quota"] .wb-ov-qmain'), group => ({
     name: group.querySelector('.wb-ov-qmain-label')?.textContent?.trim(),
@@ -202,13 +202,13 @@ export default async function run({ box, cdp, fake, runDir, check, waitFor, slee
     tips: Array.from(group.querySelectorAll('.wb-ov-qmini'), row => row.title.split('\\n').find(line => line.startsWith('重置 ')) ?? null)
   }))`)
   const [geminiQuota, claudeQuota, argonQuota] = quotaResets
-  check('有效的 5h / 每周分别直接显示重置时间与剩余条，Claude 与 4 Argon 满额占位时间不显示',
+  check('有效的 5h / 每周分别直接显示重置时间与已用条，Claude 与 4 Argon 满额占位时间不显示',
     geminiQuota?.current === '1' &&
     geminiQuota.resets.every((line) => typeof line === 'string' && line.startsWith('重置 ')) &&
     geminiQuota.resets[0] !== geminiQuota.resets[1] &&
-    geminiQuota.widths[0] === '93%' && geminiQuota.widths[1] === '78%' &&
-    claudeQuota?.resets.length === 2 && claudeQuota.resets.every((line) => line === null) && claudeQuota.tips.every((tip) => tip === null) &&
-    argonQuota?.name === 'Gemini 4 Argon' && argonQuota.resets.length === 1 && argonQuota.resets[0] === null && argonQuota.tips[0] === null,
+    geminiQuota.widths[0] === '8%' && geminiQuota.widths[1] === '22%' &&
+    claudeQuota?.resets.length === 2 && claudeQuota.resets.every((line) => line === null) && claudeQuota.tips.every((tip) => tip === null) && claudeQuota.widths.length === 0 &&
+    argonQuota?.name === 'Gemini 4 Argon' && argonQuota.resets.length === 1 && argonQuota.resets[0] === null && argonQuota.tips[0] === null && argonQuota.widths.length === 0,
     quotaResets)
   await ev(`document.querySelector('${rail('usage')}')?.scrollIntoView({ block: 'end' })`)
   await kit.shot('antigravity-reported-metrics', { native: false })
@@ -255,17 +255,17 @@ export default async function run({ box, cdp, fake, runDir, check, waitFor, slee
   writeFileSync(quotaState, 'offline')
   await sleep(5100)
   await click(quotaRefresh)
-  await waitFor(`${has(rail('usage'), '正在显示上次成功查询的额度')} && ${has(rail('usage'), '92.5%')}`)
+  await waitFor(`${has(rail('usage'), '正在显示上次成功查询的额度')} && ${has(rail('usage'), '7.5%')}`)
   check('额度查询暂时失败时，仍显示上次额度和旧数据提示', true)
   writeFileSync(quotaState, 'signed-out')
   await sleep(2100)
   await click(quotaRefresh)
-  await waitFor(`${has(rail('usage'), '请先登录 Antigravity CLI')} && !(${has(rail('usage'), '92.5%')})`)
+  await waitFor(`${has(rail('usage'), '请先登录 Antigravity CLI')} && !(${has(rail('usage'), '7.5%')})`)
   check('CLI 认证失效后立即隐藏旧账号的额度', true)
   writeFileSync(quotaState, 'ok')
   await sleep(2100)
   await click(quotaRefresh)
-  await waitFor(has(rail('usage'), '92.5%'))
+  await waitFor(has(rail('usage'), '7.5%'))
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
   await ev(`${app}.addAttachments([{ id: 'acp-img-1', kind: 'image', data: ${JSON.stringify(png)}, mimeType: 'image/png', name: 'shot.png', size: ${Buffer.from(png, 'base64').length} }])`)
   await send('看这张图')

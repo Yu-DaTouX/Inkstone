@@ -652,7 +652,7 @@
   "quota.ag.reset": "已重置",
   "quota.ag.resetsWithCountdown": "重置 {clock} · {countdown}后",
   "quota.ag.resetsAt": "重置 {clock}",
-  "quota.ag.remaining": "剩余 {left} ({used}% 已用)",
+  "quota.ag.used": "已用 {used}（剩余 {left}）",
   "quota.ag.showingLast": "正在显示上次成功查询的额度。{error}",
   "quota.ag.checking": "正在查询额度…",
   "quota.ag.unavailable": "暂时无法读取额度。",

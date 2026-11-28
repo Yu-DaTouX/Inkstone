@@ -652,7 +652,7 @@
   "quota.ag.reset": "Reset",
   "quota.ag.resetsWithCountdown": "Resets {clock} · in {countdown}",
   "quota.ag.resetsAt": "Resets {clock}",
-  "quota.ag.remaining": "Remaining {left} ({used}% used)",
+  "quota.ag.used": "{used} used ({left} remaining)",
   "quota.ag.showingLast": "Showing the last successful allowance. {error}",
   "quota.ag.checking": "Checking allowance…",
   "quota.ag.unavailable": "Allowance unavailable.",

@@ -54,13 +54,20 @@ try {
   await assert.rejects(service.run('subagent.start', { task: 'x', isolation: 'worktre', fork: true }, context), { code: 'subagent_isolation_invalid' })
   assert.equal(starts.length, 3, '写错 isolation 时不启动子代理，也不退回共享目录')
   const levels = []
+  const briefs = []
   service.get = async () => ({
     setContext() {},
     hasActiveWriter: () => false,
-    start: async (_task, _model, _isolation, _brief, _resume, startContext) => { levels.push(startContext.thinkingLevel); return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't' } } }
+    start: async (_task, _model, _isolation, brief, _resume, startContext) => {
+      levels.push(startContext.thinkingLevel)
+      briefs.push(brief)
+      return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't', ...(brief?.title ? { brief: { goal: 'x', deliverables: [], sources: [], boundary: '', ...brief } } : {}) } }
+    }
   })
   for (const thinking of ['off', 'xhigh', 'max', ' MAX ']) await service.run('subagent.start', { task: 'x', thinking, isolation: 'none' }, context)
-  await service.run('subagent.start', { task: 'x', thinkingLevel: 'max', isolation: 'none' }, context)
+  const titledStart = await service.run('subagent.start', { task: 'x', title: '查接口边界', thinkingLevel: 'max', isolation: 'none' }, context)
+  assert.equal(briefs.at(-1)?.title, '查接口边界', 'subagent.start 将 title 写入 brief')
+  assert.equal(titledStart.summary.title, '查接口边界', 'subagent.start 摘要回传 title')
   assert.deepEqual(levels, ['off', 'xhigh', 'max', 'max', 'max'], '子代理入口接受与主会话相同的思考档，含 max')
   for (const thinking of ['ultra', '', 5]) {
     await assert.rejects(service.run('subagent.start', { task: 'x', thinking, isolation: 'none' }, context), { code: 'subagent_thinking_invalid' }, `写错的思考档报错：${JSON.stringify(thinking)}`)
@@ -111,15 +118,35 @@ try {
 
   const longTask = '很长的子代理任务说明。'.repeat(20_000)
   const longCalls = []
+  const sendOpts = []
+  const modelCalls = []
   service.get = async () => ({
     setContext() {},
     hasActiveWriter: () => false,
+    parentOwns: () => true,
     start: async (task) => { longCalls.push(['start', task]); return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task } } },
-    send: async (_id, message) => { longCalls.push(['send', message]); return { ok: true, delivery: 'queued', run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't' } } }
+    send: async (_id, message, _mode, origin) => {
+      longCalls.push(['send', message])
+      sendOpts.push(origin)
+      return { ok: true, delivery: 'queued', run: { id: 'sub-a1b2c3d4', status: 'running', model: origin?.model ?? 'fixture/fixture', thinkingLevel: origin?.thinkingLevel, transcript: [], task: 't' } }
+    },
+    setModel: async (id, options) => {
+      modelCalls.push({ id, ...options })
+      return { ok: true, applied: 'live', run: { id, status: 'running', model: options.model ?? 'fixture/fixture', thinkingLevel: options.thinkingLevel, transcript: [], task: 't' } }
+    }
   })
   await service.run('subagent.start', { task: longTask, isolation: 'none' }, context)
   await service.run('subagent.send', { id: 'sub-a1b2c3d4', message: longTask }, context)
   assert.deepEqual(longCalls.map(([kind, text]) => [kind, text.length]), [['start', longTask.length], ['send', longTask.length]], '很长的任务文本能启动、能续派，不按长度拒绝或截断')
+  const sendWithModel = await service.run('subagent.send', { id: 'sub-a1b2c3d4', message: '继续', model: 'opencode-go/deepseek-v4.1-flash', thinkingLevel: 'HIGH' }, context)
+  assert.equal(sendOpts.at(-1)?.model, 'fixture/fixture', 'subagent.send 经过 resolveModelLabel 解析模型')
+  assert.equal(sendOpts.at(-1)?.thinkingLevel, 'high', 'subagent.send 规范化并透传 thinkingLevel')
+  assert.equal(sendWithModel.summary.model, 'fixture/fixture')
+  const switched = await service.run('subagent.set_model', { id: 'sub-a1b2c3d4', model: 'opencode-go/deepseek-v4.1-flash', thinking: 'medium' }, context)
+  assert.equal(modelCalls.length, 1)
+  assert.equal(switched.summary.applied, 'live')
+  assert.equal(switched.summary.thinkingLevel, 'medium')
+  await assert.rejects(service.run('subagent.set_model', { id: 'sub-a1b2c3d4' }, context), { code: 'subagent_model_required' })
 
   const finished = { id: 'sub-a1b2c3d4', status: 'done', task: 't', parentSessionId: 'p', isolation: 'shared-cwd', startedAt: 1, endedAt: 2, review: 'none', transcript: [{ id: 'm1', role: 'assistant', text: '最终结论全文' }], deliverables: [], toolCalls: 0 }
   service.get = async () => ({ setContext() {}, get: () => finished, getFull: async () => finished, parentOwns: (id, sessionId) => sessionId === finished.parentSessionId })

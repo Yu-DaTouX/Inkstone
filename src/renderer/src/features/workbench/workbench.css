@@ -1803,10 +1803,6 @@
     background: var(--ink);
   }
 
-  .wb-ov-qmini[data-full='1'] .wb-ov-qfill {
-    opacity: 0.45;
-  }
-
   .wb-ov-ag-reset {
     color: var(--fg3);
   }

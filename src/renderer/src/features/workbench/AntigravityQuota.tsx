@@ -8,6 +8,7 @@ import {
   type AntigravityQuotaWindow
 } from '../../../../shared/antigravity'
 import { WINDOW_DURATION } from '../../../../shared/quota-forecast'
+import { quotaTone } from '../../../../shared/quota-tone'
 import { refreshAntigravityQuota, useAntigravityQuotaStore } from '../../state/antigravity-quota'
 import { Badge, Card, Collapsible, CollapsibleHeader, CollapsiblePanel, IconButton, Notice, type RailTone } from '../../ui'
 import { RefreshCw } from '../../ui/icons'
@@ -31,6 +32,14 @@ export function useAntigravityQuota(enabled: boolean, running: boolean) {
   }, [enabled, refresh])
 
   return { snapshot, loading, refresh }
+}
+
+function usedPercent(remainingFraction: number): number {
+  return Math.min(100, Math.max(0, 100 - remainingFraction * 100))
+}
+
+function usedFraction(remainingFraction: number): number {
+  return usedPercent(remainingFraction) / 100
 }
 
 function percent(fraction: number, lang: string): string {
@@ -70,7 +79,7 @@ export function antigravityQuotaSummary(snapshot: AntigravityQuotaSnapshot | und
   const locale = lang === 'en-US' ? 'en-US' : 'zh-CN'
   const chosen = matchAntigravityGroup(groups, model)
   const summary = chosen
-    ? orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, locale)} ${percent(window.remainingFraction, lang)}`).join(' · ')
+    ? orderedWindows(chosen).slice(0, 2).map((window) => `${periodLabel(window, locale)} ${percent(usedFraction(window.remainingFraction), lang)}`).join(' · ')
     : translate(locale, 'quota.ag.groups', { n: groups.length })
   return snapshot?.staleSince === undefined ? summary : `${summary} · ${translate(locale, 'quota.ag.stale')}`
 }
@@ -80,15 +89,14 @@ export function antigravityQuotaTone(snapshot: AntigravityQuotaSnapshot | undefi
   if (!groups?.length || snapshot?.staleSince !== undefined) return undefined
   const chosen = matchAntigravityGroup(groups, model)
   const windows = chosen ? chosen.windows : groups.flatMap((group) => group.windows)
-  if (windows.some((window) => window.remainingFraction <= 0)) return 'fail'
-  if (windows.some((window) => window.remainingFraction <= 0.2)) return 'ask'
+  const tones = windows.map((window) => windowTone(window.remainingFraction))
+  if (tones.includes('fail')) return 'fail'
+  if (tones.includes('ask')) return 'ask'
   return undefined
 }
 
-function windowTone(fraction: number): 'ok' | 'ask' | 'fail' {
-  if (fraction <= 0) return 'fail'
-  if (fraction <= 0.2) return 'ask'
-  return 'ok'
+function windowTone(remainingFraction: number): 'ok' | 'ask' | 'fail' {
+  return quotaTone(usedFraction(remainingFraction) * 100, remainingFraction <= 0)
 }
 
 function formatCountdown(ms: number, lang: Lang): string {
@@ -164,10 +172,10 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
             </div>
             <ul className="wb-ov-qminis">
               {windows.map(({ window, name, awaiting, clock, countdown }) => {
-                const remaining = Math.round(Math.min(100, Math.max(0, window.remainingFraction * 100)))
-                const used = Math.round(Math.min(100, Math.max(0, (1 - window.remainingFraction) * 100)))
-                const left = percent(window.remainingFraction, lang)
-                const full = window.remainingFraction >= 1
+                const usedPct = usedPercent(window.remainingFraction)
+                const used = Math.round(usedPct)
+                const usedText = percent(usedPct / 100, lang)
+                const left = percent(Math.min(1, Math.max(0, window.remainingFraction)), lang)
                 const tone = stale || awaiting ? 'stale' : windowTone(window.remainingFraction)
                 const resetLine = awaiting
                   ? translate(locale, 'quota.ag.reset')
@@ -178,18 +186,18 @@ export function AntigravityQuotaDetails({ quota, lang, model, now = Date.now() }
                     : undefined
                 const tip = [
                   `${group.name} · ${name}`,
-                  translate(locale, 'quota.ag.remaining', { left, used }),
+                  translate(locale, 'quota.ag.used', { used: usedText, left }),
                   clock ? translate(locale, 'quota.ag.resetsAt', { clock }) : ''
                 ].filter(Boolean).join('\n')
                 return (
-                  <li key={window.id} className="wb-ov-qmini wb-ov-ag-row" data-tone={tone} data-full={full ? '1' : undefined} title={tip}>
+                  <li key={window.id} className="wb-ov-qmini wb-ov-ag-row" data-tone={tone} title={tip}>
                     <span className="wb-ov-qmini-name">{name}</span>
                     <div className="wb-ov-ctx-meter">
-                      <div className="wb-ctx-bar" role="img" aria-label={`${group.name} ${name} ${left}`}>
-                        {remaining > 0 ? <i className="wb-ov-qfill" style={{ width: `${remaining}%` }} /> : null}
+                      <div className="wb-ctx-bar" role="img" aria-label={`${group.name} ${name} ${usedText}`}>
+                        {used > 0 ? <i className="wb-ov-qfill" style={{ width: `${used}%` }} /> : null}
                       </div>
                     </div>
-                    <span className="wb-ov-qmini-num">{left}</span>
+                    <span className="wb-ov-qmini-num">{usedText}</span>
                     {resetLine ? <span className="wb-ov-ag-reset">{resetLine}</span> : null}
                   </li>
                 )

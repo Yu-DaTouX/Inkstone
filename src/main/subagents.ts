@@ -273,7 +273,9 @@ export interface SubagentExtensionSkip {
 export type SubagentSendMode = 'steer' | 'followUp'
 export type SubagentSendFrom = 'parent' | 'user'
 interface QueuedMessage { text: string; mode: SubagentSendMode; from: SubagentSendFrom }
+export interface SubagentSendOptions { parentSessionId?: string; from?: SubagentSendFrom; model?: string; thinkingLevel?: string }
 export interface SubagentSendResult { ok: boolean; error?: string; run?: SubagentRun; delivery?: 'queued' | 'started' | 'resumed' }
+export interface SubagentModelResult { ok: boolean; error?: string; run?: SubagentRun; applied?: 'live' | 'next-resume' }
 
 export interface SubagentOptions {
   cwd: string
@@ -1269,15 +1271,115 @@ export class SubagentController {
     }
   }
 
+  private validateModelSwitch(snapshot: SubagentRun, model: string | undefined): string | undefined {
+    if (!model || model === snapshot.model) return undefined
+    if (snapshot.model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`) || model.startsWith(`${ANTIGRAVITY_PROVIDER}/`)) {
+      return pick('Antigravity 子代理不支持切换模型；请新派子代理并带上上次结论。', 'Antigravity subagents do not support switching models; start a new subagent with the prior result.')
+    }
+    if (snapshot.fork) {
+      return pick('fork 子代理沿用来源会话的模型，不支持换模型续接；需要别的模型时请新派普通子代理。', 'Fork subagents stay on the parent model and cannot switch models; start a regular subagent instead.')
+    }
+    return subagentModelError(model, snapshot.isolation === 'controlled-cwd')
+  }
+
+  private async applyLiveModelChange(
+    live: Run,
+    model: string | undefined,
+    thinkingLevel: string | undefined,
+    current: () => boolean
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (model && model !== live.model) {
+      const expectedApi = await this.opts.resolveModelApi?.(model, { sessionId: live.parentSessionId, runId: live.parentRunId })
+      if (!current()) return { ok: false, error: pick('子 Agent在切换模型期间已结束，请重试', 'Subagent ended while switching models; retry') }
+      const selectionError = await confirmRegisteredModel(live.rpc, model, { readOnly: live.isolation === 'controlled-cwd', expectedApi })
+      if (!current()) return { ok: false, error: pick('子 Agent在切换模型期间已结束，请重试', 'Subagent ended while switching models; retry') }
+      if (selectionError) return { ok: false, error: selectionError }
+      live.model = model
+      live.quotaAccount = undefined
+      this.noteQuotaAccount(live)
+    }
+    if (thinkingLevel && thinkingLevel !== live.thinkingLevel) {
+      const res = await live.rpc.command('set_thinking_level', { level: thinkingLevel }, { timeoutMs: 2_000 })
+      if (!current()) return { ok: false, error: pick('子 Agent在切换思考档期间已结束，请重试', 'Subagent ended while switching thinking level; retry') }
+      if (!res.success) return { ok: false, error: res.error ?? pick('切换思考档失败', 'Failed to switch thinking level') }
+      live.thinkingLevel = thinkingLevel
+    }
+    return { ok: true }
+  }
+
+  async setModel(
+    id: string,
+    options: { model?: string; thinkingLevel?: string; parentSessionId?: string; from?: SubagentSendFrom } = {}
+  ): Promise<SubagentModelResult> {
+    const model = options.model?.trim() || undefined
+    const thinkingLevel = options.thinkingLevel?.trim().toLowerCase() || undefined
+    if (!model && !thinkingLevel) return { ok: false, error: pick('请提供要切换的 model 或 thinkingLevel', 'Provide model or thinkingLevel to switch') }
+    const from = options.from ?? 'parent'
+    const live = this.runs.get(id)
+    const snapshot = live ? this.snapshot(live) : this.history.get(id)?.run
+    if (!snapshot) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
+    if (from === 'parent' && this.staleOwners.has(id)) return { ok: false, error: staleOwnerError() }
+    if (from === 'parent' && !this.parentOwns(id, options.parentSessionId)) {
+      return { ok: false, error: pick('只能修改本会话派出的子 Agent模型', 'Models can only be changed on subagents started from this session') }
+    }
+    if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子 Agent正在启动，稍后再切换模型', 'Subagent is starting; switch models shortly') }
+    const switchError = this.validateModelSwitch(snapshot, model)
+    if (switchError) return { ok: false, error: switchError }
+
+    if (live && live.status === 'running' && !live.settled) {
+      if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子 Agent正在收尾，等它结束后再切换模型即可', 'Subagent is wrapping up; switch models after it finishes') }
+      if (live.quotaRecovery) return { ok: false, error: pick('子 Agent正在等待额度恢复，请先停止后再换模型续派', 'Subagent is waiting for quota recovery; stop it first or resume with a new model') }
+      const activation = live.activation
+      const current = (): boolean => this.runs.get(id) === live && live.activation === activation && live.status === 'running' && !live.settled && !live.settling
+      try {
+        const switched = await this.applyLiveModelChange(live, model, thinkingLevel, current)
+        if (!switched.ok) return switched
+        live.latestActivity = model ? pick(`已切换模型：${model}`, `Switched model: ${model}`) : pick(`已切换思考档：${thinkingLevel}`, `Switched thinking level: ${thinkingLevel}`)
+        await this.writeMetadata(live)
+        this.emit(live)
+        return { ok: true, run: this.snapshot(live), applied: 'live' }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
+
+    if (this.retiring.has(id)) return { ok: false, error: retiringError() }
+    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，请处理完再切换模型', 'This subagent\'s changes are being merged or discarded; try again afterwards') }
+    const record = live ? this.history.get(id) : await this.history.full(id)
+    const target = live ? this.snapshot(live) : record?.run
+    if (!target) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
+    if (target.resumable && !target.resumable.ok) {
+      return { ok: false, error: target.resumable.reason ?? pick('这个子 Agent已不能续接，无法切换模型', 'This subagent cannot be resumed, so its model cannot be switched') }
+    }
+    const nextModel = model ?? target.model
+    const nextThinking = thinkingLevel ?? (model && model !== target.model ? undefined : target.thinkingLevel)
+    if (live) {
+      live.model = nextModel
+      live.thinkingLevel = nextThinking
+      await this.writeMetadata(live)
+      this.emit(live)
+      return { ok: true, run: this.snapshot(live), applied: 'next-resume' }
+    }
+    if (!record) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
+    const nextRun: SubagentRun = { ...record.run, model: nextModel, ...(nextThinking ? { thinkingLevel: nextThinking } : { thinkingLevel: undefined }) }
+    await this.history.save(nextRun, record.rootCwd, { ...(record.run.diff?.patchPath ? { patchPath: record.run.diff.patchPath } : {}), ...(record.resume ? { resume: record.resume } : {}) })
+    const updated = this.history.get(id)
+    const view = updated ? this.historic(updated) : nextRun
+    this.emitHistoric(view)
+    return { ok: true, run: view, applied: 'next-resume' }
+  }
+
   async send(
     id: string,
     message: string,
     mode: SubagentSendMode = 'steer',
-    origin: { parentSessionId?: string; from?: SubagentSendFrom } = {}
+    origin: SubagentSendOptions = {}
   ): Promise<SubagentSendResult> {
     const text = message.trim()
     if (!text) return { ok: false, error: pick('追加内容为空', 'Message is empty') }
     const from = origin.from ?? 'parent'
+    const model = origin.model?.trim() || undefined
+    const thinkingLevel = origin.thinkingLevel?.trim().toLowerCase() || undefined
     const live = this.runs.get(id)
     const snapshot = live ? this.snapshot(live) : this.history.get(id)?.run
     if (!snapshot) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
@@ -1286,9 +1388,14 @@ export class SubagentController {
       return { ok: false, error: pick('只能向本会话派出的子 Agent追加信息', 'Messages can only be sent to subagents started from this session') }
     }
     if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子 Agent正在启动，稍后再发', 'Subagent is starting; send again shortly') }
-    if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from)
+    const switchError = this.validateModelSwitch(snapshot, model)
+    if (switchError) return { ok: false, error: switchError }
+    if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from, { model, thinkingLevel })
     if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子 Agent正在收尾，等它结束后再发即可续接', 'Subagent is wrapping up; send again after it finishes to resume it') }
     if (live.quotaRecovery) {
+      if ((model && model !== live.model) || (thinkingLevel && thinkingLevel !== live.thinkingLevel)) {
+        return { ok: false, error: pick('子 Agent正在等待额度恢复，暂不能在排队时切换模型；请先停止后再换模型续派', 'Subagent is waiting for quota recovery and cannot switch models while queued; stop it first and resume with the new model') }
+      }
       const queued = live.queued ?? (live.queued = [])
       queued.push({ text, mode, from })
       if (mode === 'followUp') live.followUp = text
@@ -1299,6 +1406,11 @@ export class SubagentController {
     const activation = live.activation
     const current = (): boolean => this.runs.get(id) === live && live.activation === activation && live.status === 'running' && !live.settled && !live.settling
     try {
+      if (model || thinkingLevel) {
+        const switched = await this.applyLiveModelChange(live, model, thinkingLevel, current)
+        if (!switched.ok) return switched
+        await this.writeMetadata(live)
+      }
       const res = await live.rpc.command('prompt', { message: forwardedMessage(text, mode, from), streamingBehavior: mode }, { timeoutMs: 10_000 })
       if (!res.success) return { ok: false, error: res.error ?? pick('追加信息没有送达', 'Message was not delivered') }
       if (!current()) return { ok: false, error: pick('子 Agent在发送期间已结束，这条信息可能没有被处理；请再发一次以续接', 'Subagent ended while sending; the message may not have been handled. Send again to resume') }
@@ -1317,7 +1429,12 @@ export class SubagentController {
     }
   }
 
-  private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
+  private async resume(
+    id: string,
+    text: string,
+    from: SubagentSendFrom,
+    overrides: { model?: string; thinkingLevel?: string } = {}
+  ): Promise<SubagentSendResult> {
     if (this.retiring.has(id)) return { ok: false, error: retiringError() }
     if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，不能同时续接；处理完再发', 'This subagent\'s changes are being merged or discarded; send again afterwards') }
     if (this.stoppingAll) return { ok: false, error: pick('子 Agent正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
@@ -1362,7 +1479,11 @@ export class SubagentController {
         return { ok: false, error: pick('worktree 子 Agent的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
       }
       if (snapshot.launchFailed) return { ok: false, error: pick('这个子 Agent没有成功启动过，不能续接，请重新派一个', 'This subagent never started successfully and cannot be resumed; start a new one') }
-      const viaAntigravity = !!snapshot.model?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)
+      const switchError = this.validateModelSwitch(snapshot, overrides.model)
+      if (switchError) return { ok: false, error: switchError }
+      const nextModel = overrides.model ?? snapshot.model
+      const nextThinking = overrides.thinkingLevel ?? (overrides.model && overrides.model !== snapshot.model ? undefined : snapshot.thinkingLevel)
+      const viaAntigravity = !!nextModel?.startsWith(`${ANTIGRAVITY_PROVIDER}/`)
       const antigravitySessionId = viaAntigravity ? antigravitySessionOf(previous) ?? record?.resume?.antigravitySessionId : undefined
       if (viaAntigravity && !antigravitySessionId) return { ok: false, error: pick('Antigravity 子代理已结束。请新派任务并带上上次结论。', 'The Antigravity subagent ended. Delegate a new task with its prior result.') }
       const sessionFile = viaAntigravity ? undefined : await latestSessionFile(this.sessionDir(id))
@@ -1381,12 +1502,12 @@ export class SubagentController {
         existsSync
       )
       const stale = this.staleOwners.has(id)
-      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentRunId: stale ? undefined : snapshot.parentRunId, parentGeneration: stale ? undefined : snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: snapshot.thinkingLevel }
+      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentRunId: stale ? undefined : snapshot.parentRunId, parentGeneration: stale ? undefined : snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: nextThinking }
       let brief: SubagentBrief
       let rpc: SubagentRpc
       try {
         brief = previous?.brief ?? resumeBrief(snapshot)
-        rpc = await this.createRpc(ctx, workspace.cwd, snapshot.model, workspace.isolation, id, sessionFile, forkSource, antigravitySessionId)
+        rpc = await this.createRpc(ctx, workspace.cwd, nextModel, workspace.isolation, id, sessionFile, forkSource, antigravitySessionId)
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
@@ -1422,6 +1543,7 @@ export class SubagentController {
       const earlier = [...(run.parentMessageIds ?? []), ...(run.parentMessageId ? [run.parentMessageId] : [])]
       Object.assign(run, {
         ...(resumedIn && resumedIn !== run.parentMessageId ? { parentMessageId: resumedIn, parentMessageIds: [...new Set(earlier)].slice(-20) } : {}),
+        model: nextModel, thinkingLevel: nextThinking,
         rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now, followUp: text, quotaWait: undefined, queued: undefined,
         latestActivity: pick('正在续接…', 'Resuming…'), stderrTail: [], runningTools: new Set<string>(),
         contextRevision: (run.contextRevision ?? 0) + 1, diff: undefined, resultPath: undefined,
@@ -1451,12 +1573,12 @@ export class SubagentController {
           await this.fail(id, pick('子 Agent续接超时', 'Subagent resume timed out'), 'startup')
           return { ok: false, error: this.runs.get(id)?.error ?? pick('子 Agent续接超时', 'Subagent resume timed out') }
         }
-        if (snapshot.model && ready.model && modelMismatch(snapshot.model, ready.model)) {
-          const error = pick(`续接时模型 ${snapshot.model} 没有生效（pi 实际使用 ${ready.model}），请核对登录状态后重试`, `Model ${snapshot.model} was not applied on resume (pi used ${ready.model}); check sign-in and retry`)
+        if (nextModel && ready.model && modelMismatch(nextModel, ready.model)) {
+          const error = pick(`续接时模型 ${nextModel} 没有生效（pi 实际使用 ${ready.model}），请核对登录状态后重试`, `Model ${nextModel} was not applied on resume (pi used ${ready.model}); check sign-in and retry`)
           await this.fail(id, error, 'startup')
           return { ok: false, error }
         }
-        if (snapshot.model && ready.model) {
+        if (nextModel && ready.model) {
           const expectedApi = await ctx.resolveModelApi?.(ready.model, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId })
           if (!current('starting')) return stoppedError()
           const selectionError = await confirmRegisteredModel(rpc, ready.model, { readOnly: workspace.isolation === 'controlled-cwd', expectedApi })
@@ -1465,6 +1587,7 @@ export class SubagentController {
             await this.fail(id, selectionError, 'startup')
             return { ok: false, error: selectionError }
           }
+          run.model = ready.model
         }
         if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
         run.status = 'running'

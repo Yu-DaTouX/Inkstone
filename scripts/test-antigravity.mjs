@@ -129,15 +129,16 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const noResets = renderQuota([0, -1, Infinity, NaN, Date.UTC(2019, 0, 1), Number.MAX_VALUE, undefined].map((resetAt, index) => ({ ...fiveHour, id: `bad-${index}`, resetAt })))
   ok(!/\bResets?\b/.test(noResets) && noResets.includes('Claude and GPT models'), '渲染端独立拦截占位和无效时间，全组无有效时间不显示重置')
   const fullRolling = renderQuota([{ ...weekly, id: 'argon-full', remainingFraction: 1, resetAt: nextWeek.getTime() }])
-  ok(!/\bResets?\b/.test(fullRolling) && fullRolling.includes('100%') && fullRolling.includes('width:100%') && fullRolling.includes('data-full="1"'), '渲染端同样拦截 100% 满额滚动窗口的假重置时间，进度条按剩余比例展示')
+  ok(!/\bResets?\b/.test(fullRolling) && fullRolling.includes('>0%<') && !fullRolling.includes('wb-ov-qfill'), '渲染端同样拦截 100% 满额滚动窗口的假重置时间，已用 0% 时不画填充条')
   const both = renderQuota([{ ...weekly, remainingFraction: 0.83, resetAt: nextWeek.getTime() }, { ...fiveHour, remainingFraction: 0.74, resetAt: today.getTime() }])
-  ok(both.includes('Resets 17:28 · in 3h 58m') && both.includes(`Resets ${weeklyTime} · in 6d 9h`) && both.includes('width:74%') && both.includes('width:83%'), '5h 与每周分别直接显示各自重置时间与倒计时，进度条与剩余百分比一致')
+  ok(both.includes('Resets 17:28 · in 3h 58m') && both.includes(`Resets ${weeklyTime} · in 6d 9h`) && both.includes('width:26%') && both.includes('width:17%') && both.includes('>26%<') && both.includes('>17%<'), '5h 与每周分别直接显示各自重置时间与倒计时，进度条与已用百分比一致')
   const staleQuota = { checkedAt: now.getTime(), staleSince: now.getTime() - 5000, groups: [group], error: 'Fixture timeout.' }
   const staleMarkup = renderToStaticMarkup(createElement(AntigravityQuotaDetails, {
     lang: 'en-US', now: now.getTime(), model: { id: 'Gemini 4 Neon', name: 'Gemini 4 Neon' }, quota: { snapshot: staleQuota, loading: false, refresh() {} }
   }))
-  ok(staleMarkup.includes('Fixture timeout.') && staleMarkup.includes('Showing the last successful allowance') && staleMarkup.includes('92.5%') &&
+  ok(staleMarkup.includes('Fixture timeout.') && staleMarkup.includes('Showing the last successful allowance') && staleMarkup.includes('7.5%') &&
     staleMarkup.includes('Current') && antigravityQuotaSummary(staleQuota, { id: 'Gemini 4 Neon' }, 'en-US').includes('Stale') &&
+    antigravityQuotaSummary(staleQuota, { id: 'Gemini 4 Neon' }, 'en-US').includes('5h 7.5%') &&
     antigravityQuotaTone(staleQuota, { id: 'Gemini 4 Neon' }) === undefined &&
     antigravityQuotaTone({ checkedAt: now.getTime(), groups: [group] }, { id: 'Gemini 4 Neon' }) === 'fail', '折叠摘要、当前分组标记与旧数据提示正常，非旧数据耗尽返回 fail 语气')
   const paneMarkup = renderToStaticMarkup(createElement(I18nProvider, null, createElement(AntigravityQuotaPaneSection, {
@@ -1167,10 +1168,20 @@ await runSuite(import.meta.url, async (ok, compile) => {
           if (command === 'subagent.get') {
             return {
               summary: { id: params.id, status: 'done', latestActivity: '已完成' },
-              data: { model: 'openai-codex/gpt-6.2-sol', thinkingLevel: 'high', finalMessage: '审查结论', changedFiles: ['src/a.ts'] }
+              data: { isolation: 'controlled-cwd', model: 'openai-codex/gpt-6.2-sol', thinkingLevel: 'high', brief: { title: '审查接口边界' }, finalMessage: '审查结论', changedFiles: ['src/a.ts'] }
             }
           }
-          return { summary: { id: 'sub-11112222', status: 'running', model: params.model, thinkingLevel: params.thinkingLevel } }
+          if (command === 'subagent.send') {
+            return {
+              summary: { kind: 'subagent', action: 'send', id: params.id, mode: 'resume', delivery: 'resumed', status: 'running', model: params.model ?? 'openai-codex/gpt-6.2-sol', ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}), latestActivity: '已续接' }
+            }
+          }
+          if (command === 'subagent.set_model') {
+            return {
+              summary: { kind: 'subagent', action: 'set-model', id: params.id, status: 'done', model: params.model ?? 'openai-codex/gpt-6.2-sol', ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}), applied: 'next-resume' }
+            }
+          }
+          return { summary: { id: 'sub-11112222', status: 'running', ...(params.title ? { title: params.title } : {}), model: params.model, thinkingLevel: params.thinkingLevel } }
         }
       }),
       {
@@ -1204,7 +1215,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       assert.equal((await fetch(http.url, { method: 'POST' })).status, 403)
       assert.equal((await fetch(http.url, { method: 'POST', headers: { Authorization: env.INKSTONE_PI_MCP_AUTH, Origin: 'http://localhost' } })).status, 403)
       const listed = await callMcp(http.url, http.headers[0].value, 'tools/list', {})
-      ok(listed.tools.length === 2, 'HTTP 配置直接调用挂载的 loopback MCP，未改动 stdio 配置和鉴权防线')
+      ok(listed.tools.length === 4 && listed.tools.some((tool) => tool.name === 'send_pi_subagent') && listed.tools.some((tool) => tool.name === 'switch_pi_subagent_model'), 'HTTP 配置暴露 start/get/send/switch_model 四个 Pi 子代理工具，未改动 stdio 配置和鉴权防线', JSON.stringify(listed.tools.map((tool) => tool.name)))
       const direct = start('http-mcp')
       try {
         const fakeBridgeDoesNotExist = { ...bridge.configs[0], command: join(cwd, 'nonexistent-fixture-bridge') }
@@ -1216,6 +1227,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
       } finally { await direct.session.close() }
       const startSchema = listed.tools.find((tool) => tool.name === 'start_pi_subagent')?.inputSchema
       ok(Array.isArray(startSchema?.properties?.thinkingLevel?.enum) && startSchema.properties.thinkingLevel.enum.includes('high') && startSchema.properties.thinkingLevel.enum.includes('max'), 'start_pi_subagent 工具模式公开合法 thinkingLevel 枚举')
+      ok(startSchema?.properties?.title?.type === 'string' && Array.isArray(startSchema?.required) && startSchema.required.includes('title'), 'start_pi_subagent 工具模式公开并要求短标题 title')
       const cgListed = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/list', {})
       ok(cgListed.tools.some((tool) => tool.name === 'codegraph_explore') && bridge.knownTools().has('codegraph_explore'), '同步 MCP 暴露的工具名同步登记到 knownTools')
       const cgPlanDenied = await callMcp(cgEnv.INKSTONE_PI_MCP_URL, cgEnv.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'codegraph_explore', arguments: { query: 'q' } })
@@ -1234,12 +1246,26 @@ await runSuite(import.meta.url, async (ok, compile) => {
       ok(denied.isError === true && calls.length === 0, 'Plan 模式下拒绝派发可写 Pi 子代理')
       const badThinking = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', readOnly: true, thinkingLevel: 'turbo' } })
       ok(badThinking.isError === true && calls.length === 0, '拒绝非法 thinkingLevel 参数')
-      const allowed = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', model: 'openai-codex/gpt-6.2-sol', thinkingLevel: ' HIGH ', readOnly: true } })
+      const badTitle = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', title: 'a'.repeat(201), readOnly: true } })
+      ok(badTitle.isError === true && calls.length === 0, '拒绝过长或非法 title 参数')
+      const allowed = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'start_pi_subagent', arguments: { task: 'inspect files', title: '  审查\n接口边界  ', model: 'openai-codex/gpt-6.2-sol', thinkingLevel: ' HIGH ', readOnly: true } })
       const startedPayload = JSON.parse(allowed.content[0].text)
-      ok(!allowed.isError && calls.length === 1 && calls[0].params.thinkingLevel === 'high' && startedPayload.thinkingLevel === 'high', 'Plan 模式下允许派发只读 Pi 子代理并透传 thinkingLevel', JSON.stringify({ calls, startedPayload }))
+      ok(!allowed.isError && calls.length === 1 && calls[0].params.thinkingLevel === 'high' && calls[0].params.title === '审查 接口边界' && startedPayload.thinkingLevel === 'high' && startedPayload.title === '审查 接口边界', 'Plan 模式下允许派发只读 Pi 子代理并透传 title 与 thinkingLevel', JSON.stringify({ calls, startedPayload }))
       const fetched = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'get_pi_subagent', arguments: { id: 'sub-11112222' } })
       const fetchedPayload = JSON.parse(fetched.content[0].text)
-      ok(!fetched.isError && fetchedPayload.thinkingLevel === 'high' && fetchedPayload.latestActivity === '已完成' && fetchedPayload.changedFiles?.[0] === 'src/a.ts', 'get_pi_subagent 返回思考档位、最新进度和改动文件', JSON.stringify(fetchedPayload))
+      ok(!fetched.isError && fetchedPayload.title === '审查接口边界' && fetchedPayload.thinkingLevel === 'high' && fetchedPayload.latestActivity === '已完成' && fetchedPayload.changedFiles?.[0] === 'src/a.ts', 'get_pi_subagent 返回标题、思考档位、最新进度和改动文件', JSON.stringify(fetchedPayload))
+      const badSend = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'send_pi_subagent', arguments: { id: 'sub-11112222', message: '继续', model: 'antigravity/gemini-4-neon' } })
+      ok(badSend.isError === true, 'send_pi_subagent 拒绝 antigravity 模型')
+      const sent = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'send_pi_subagent', arguments: { id: 'sub-11112222', message: '换模型继续审查', mode: 'follow-up', model: 'opencode-go/deepseek-v4.1-flash', thinkingLevel: ' HIGH ' } })
+      const sentPayload = JSON.parse(sent.content[0].text)
+      ok(!sent.isError && sentPayload.delivery === 'resumed' && sentPayload.model === 'opencode-go/deepseek-v4.1-flash' && sentPayload.thinkingLevel === 'high', 'send_pi_subagent 支持在 Plan 模式后续派只读子代理并同时切换模型与思考档', JSON.stringify(sentPayload))
+      const emptySwitch = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'switch_pi_subagent_model', arguments: { id: 'sub-11112222' } })
+      ok(emptySwitch.isError === true, 'switch_pi_subagent_model 缺少 model 与 thinkingLevel 时报错')
+      const switched = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'switch_pi_subagent_model', arguments: { id: 'sub-11112222', model: 'opencode-go/deepseek-v4.1-flash', thinkingLevel: 'medium' } })
+      const switchedPayload = JSON.parse(switched.content[0].text)
+      ok(!switched.isError && switchedPayload.applied === 'next-resume' && switchedPayload.model === 'opencode-go/deepseek-v4.1-flash' && switchedPayload.thinkingLevel === 'medium', 'switch_pi_subagent_model 可独立切换子代理模型与思考档', JSON.stringify(switchedPayload))
+      const strangerSend = await callMcp(env.INKSTONE_PI_MCP_URL, env.INKSTONE_PI_MCP_AUTH, 'tools/call', { name: 'send_pi_subagent', arguments: { id: 'sub-99999999', message: 'hi' } })
+      ok(strangerSend.isError === true, 'send_pi_subagent 拒绝非本会话拥有的子代理')
 
       const reconnected = await openAntigravityDelegation(
         resolve('resources/pi-extensions/antigravity-pi-mcp.mjs'),

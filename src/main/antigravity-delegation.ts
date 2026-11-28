@@ -40,7 +40,11 @@ const BROWSER_TOOLS = [
 interface DelegationTurn {
   signal: AbortSignal
   mode?: string
-  run?(command: 'subagent.start' | 'subagent.get', params: Record<string, unknown>): Promise<CapabilityCommandResult>
+  run?(command: 'subagent.start' | 'subagent.get' | 'subagent.send' | 'subagent.set_model', params: Record<string, unknown>): Promise<CapabilityCommandResult>
+}
+
+function validPiModel(value: unknown): boolean {
+  return typeof value === 'string' && !!value.trim() && value.length <= 200 && value.includes('/') && !value.trim().toLowerCase().startsWith(`${ANTIGRAVITY_PROVIDER}/`)
 }
 
 export async function openAntigravityDelegation(script: string, active: () => DelegationTurn | undefined,
@@ -48,7 +52,7 @@ export async function openAntigravityDelegation(script: string, active: () => De
   const name = 'inkstone-pi'
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('hex')}`)
   const owned = options.owned ?? new Set<string>()
-  const knownTools = new Set<string>([...(options.delegate ? ['start_pi_subagent', 'get_pi_subagent'] : []), ...(options.browser ? BROWSER_TOOLS.map((tool) => tool.name) : [])])
+  const knownTools = new Set<string>([...(options.delegate ? ['start_pi_subagent', 'get_pi_subagent', 'send_pi_subagent', 'switch_pi_subagent_model'] : []), ...(options.browser ? BROWSER_TOOLS.map((tool) => tool.name) : [])])
   const ownRoute = options.delegate || !!options.browser
   let started = 0
   let starting = 0
@@ -63,8 +67,10 @@ export async function openAntigravityDelegation(script: string, active: () => De
         : [
         ...(options.browser ? BROWSER_TOOLS : []),
         ...(options.delegate ? [
-        { name: 'start_pi_subagent', description: 'Delegate an independent coding task to an Inkstone Pi subagent in the current project. Returns its id; use get_pi_subagent to read the result.', inputSchema: { type: 'object', properties: { task: { type: 'string' }, model: { type: 'string', description: 'Optional exact Pi provider/model' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' }, readOnly: { type: 'boolean' } }, required: ['task'], additionalProperties: false } },
+        { name: 'start_pi_subagent', description: 'Delegate an independent coding task to an Inkstone Pi subagent in the current project. Provide a short `title` for the subagent card so parallel subagents stay distinct. Returns its id; use get_pi_subagent to read the result, send_pi_subagent to continue or resume with context, and switch_pi_subagent_model to change model/thinking.', inputSchema: { type: 'object', properties: { task: { type: 'string' }, title: { type: 'string', description: 'Short 2-8 word title displayed on the subagent card (distinct per subagent when running in parallel)' }, model: { type: 'string', description: 'Optional exact Pi provider/model' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' }, readOnly: { type: 'boolean' } }, required: ['task', 'title'], additionalProperties: false } },
         { name: 'get_pi_subagent', description: 'Read the state and final answer of a Pi subagent started by this Antigravity session.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false } },
+        { name: 'send_pi_subagent', description: 'Send a follow-up or steering message to an existing Pi subagent started by this Antigravity session. If it has finished, stopped, or failed (e.g. rate-limited), it resumes with its full prior context preserved. Optionally pass model and/or thinkingLevel to switch models when continuing or resuming.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, message: { type: 'string', description: 'Follow-up instruction or continuation prompt for the subagent' }, mode: { type: 'string', enum: ['steer', 'follow-up'], description: 'Delivery mode while running (default: steer). Ignored when resuming a stopped/finished subagent.' }, model: { type: 'string', description: 'Optional exact Pi provider/model to switch to' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' } }, required: ['id', 'message'], additionalProperties: false } },
+        { name: 'switch_pi_subagent_model', description: 'Switch the Pi model and/or thinking level of an existing Pi subagent started by this Antigravity session. Applies immediately while running, or updates the model used on the next resume via send_pi_subagent.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, model: { type: 'string', description: 'Optional exact Pi provider/model' }, thinkingLevel: { type: 'string', enum: [...THINKING_LEVELS], description: 'Optional Pi thinking level (off, minimal, low, medium, high, xhigh, max)' } }, required: ['id'], additionalProperties: false } },
         ] : []),
       ]
       for (const tool of tools) knownTools.add(tool.name)
@@ -118,16 +124,21 @@ export async function openAntigravityDelegation(script: string, active: () => De
         if (!turn.run) return result({ error: 'The Pi subagent bridge is unavailable.' }, true)
         if (params.name === 'start_pi_subagent') {
           if (turn.mode === 'plan' && args.readOnly !== true) return result({ error: 'Plan mode only permits read-only Pi subagents (set readOnly: true).' }, true)
+          const title = typeof args.title === 'string' ? args.title.replace(/\s+/g, ' ').trim() : undefined
+          if (args.title !== undefined && (typeof args.title !== 'string' || args.title.length > 200)) {
+            return result({ error: 'Invalid Pi subagent title.' }, true)
+          }
           const thinkingLevel = typeof args.thinkingLevel === 'string' ? args.thinkingLevel.trim().toLowerCase() : undefined
           if (args.thinkingLevel !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
             return result({ error: `Invalid thinkingLevel. Allowed values: ${THINKING_LEVELS.join(', ')}.` }, true)
           }
           if (started + starting >= 32 || typeof args.task !== 'string' || !args.task.trim() || args.task.length > 16_000 || (args.readOnly !== undefined && typeof args.readOnly !== 'boolean') ||
-            (args.model !== undefined && (typeof args.model !== 'string' || !args.model.trim() || args.model.length > 200 || !args.model.includes('/') || args.model.trim().toLowerCase().startsWith(`${ANTIGRAVITY_PROVIDER}/`)))) return result({ error: 'Invalid Pi subagent task or session limit reached.' }, true)
+            (args.model !== undefined && !validPiModel(args.model))) return result({ error: 'Invalid Pi subagent task or session limit reached.' }, true)
           starting += 1
           try {
             const { summary } = await turn.run('subagent.start', {
               task: args.task,
+              ...(title ? { title } : {}),
               model: args.model,
               ...(thinkingLevel ? { thinkingLevel } : {}),
               readOnly: args.readOnly
@@ -141,10 +152,11 @@ export async function openAntigravityDelegation(script: string, active: () => De
         }
         if (params.name === 'get_pi_subagent' && typeof args.id === 'string' && owned.has(args.id)) {
           const { summary, data } = await turn.run('subagent.get', { id: args.id })
-          const run = data as { finalMessage?: string; model?: string; thinkingLevel?: string; error?: string; changedFiles?: string[] } | undefined
+          const run = data as { finalMessage?: string; model?: string; thinkingLevel?: string; error?: string; changedFiles?: string[]; brief?: { title?: string } } | undefined
           return result({
             id: args.id,
             status: summary.status,
+            ...(run?.brief?.title ? { title: run.brief.title } : {}),
             model: run?.model,
             ...(run?.thinkingLevel ? { thinkingLevel: run.thinkingLevel } : {}),
             ...(typeof summary.latestActivity === 'string' && summary.latestActivity ? { latestActivity: summary.latestActivity } : {}),
@@ -152,6 +164,55 @@ export async function openAntigravityDelegation(script: string, active: () => De
             finalMessage: run?.finalMessage,
             error: run?.error
           })
+        }
+        if (params.name === 'send_pi_subagent' && typeof args.id === 'string' && owned.has(args.id)) {
+          if (typeof args.message !== 'string' || !args.message.trim() || args.message.length > 16_000) {
+            return result({ error: 'Invalid Pi subagent message.' }, true)
+          }
+          const rawMode = typeof args.mode === 'string' ? args.mode.trim().toLowerCase() : undefined
+          if (args.mode !== undefined && rawMode !== 'steer' && rawMode !== 'follow-up') {
+            return result({ error: 'Invalid mode. Allowed values: steer, follow-up.' }, true)
+          }
+          if (args.model !== undefined && !validPiModel(args.model)) {
+            return result({ error: 'Invalid Pi subagent model.' }, true)
+          }
+          const thinkingLevel = typeof args.thinkingLevel === 'string' ? args.thinkingLevel.trim().toLowerCase() : undefined
+          if (args.thinkingLevel !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
+            return result({ error: `Invalid thinkingLevel. Allowed values: ${THINKING_LEVELS.join(', ')}.` }, true)
+          }
+          if (turn.mode === 'plan') {
+            const current = await turn.run('subagent.get', { id: args.id })
+            const isolation = (current.data as { isolation?: unknown } | undefined)?.isolation
+            if (isolation !== 'controlled-cwd') {
+              return result({ error: 'Plan mode only permits continuing read-only Pi subagents.' }, true)
+            }
+          }
+          const { summary } = await turn.run('subagent.send', {
+            id: args.id,
+            message: args.message,
+            ...(rawMode ? { mode: rawMode } : {}),
+            ...(typeof args.model === 'string' ? { model: args.model.trim() } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {})
+          })
+          return result(summary)
+        }
+        if (params.name === 'switch_pi_subagent_model' && typeof args.id === 'string' && owned.has(args.id)) {
+          if (args.model !== undefined && !validPiModel(args.model)) {
+            return result({ error: 'Invalid Pi subagent model.' }, true)
+          }
+          const thinkingLevel = typeof args.thinkingLevel === 'string' ? args.thinkingLevel.trim().toLowerCase() : undefined
+          if (args.thinkingLevel !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
+            return result({ error: `Invalid thinkingLevel. Allowed values: ${THINKING_LEVELS.join(', ')}.` }, true)
+          }
+          if (args.model === undefined && thinkingLevel === undefined) {
+            return result({ error: 'Provide model or thinkingLevel to switch.' }, true)
+          }
+          const { summary } = await turn.run('subagent.set_model', {
+            id: args.id,
+            ...(typeof args.model === 'string' ? { model: args.model.trim() } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {})
+          })
+          return result(summary)
         }
         return result({ error: 'Unknown tool or subagent not owned by this connection.' }, true)
       } catch (error) {

@@ -14,8 +14,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ] }]
   const snapshot = { groups, staleSince: now, error: 'fixture timeout' }
   for (const [lang, expected] of [
-    ['en-US', ['Refresh quota', 'Resets 13:30 · in 1h 30m', 'Remaining 75% (25% used)', 'Showing the last successful allowance. fixture timeout', '5h 75% · Wk 50% · Stale']],
-    ['zh-CN', ['刷新额度', '重置 13:30 · 1时30分后', '剩余 75% (25% 已用)', '正在显示上次成功查询的额度。fixture timeout', '5h 75% · 每周 50% · 旧数据']]
+    ['en-US', ['Refresh quota', 'Resets 13:30 · in 1h 30m', '25% used (75% remaining)', 'Showing the last successful allowance. fixture timeout', '5h 25% · Wk 50% · Stale']],
+    ['zh-CN', ['刷新额度', '重置 13:30 · 1时30分后', '已用 25%（剩余 75%）', '正在显示上次成功查询的额度。fixture timeout', '5h 25% · 每周 50% · 旧数据']]
   ]) {
     const detail = renderToStaticMarkup(createElement(AntigravityQuotaDetails, { lang, now, model, quota: { snapshot, loading: false, refresh() {} } }))
     for (const phrase of expected.slice(0, -1)) ok(detail.includes(phrase), `${lang}：${phrase}`)

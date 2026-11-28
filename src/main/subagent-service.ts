@@ -96,6 +96,7 @@ function startSummary(run: SubagentRun, note?: string): { data: SubagentRun; sum
       model: run.model,
       isolation: run.isolation,
       ...(run.fork ? { fork: true } : {}),
+      ...(run.brief?.title ? { title: run.brief.title } : {}),
       task: typeof run.task === 'string' && run.task.length > SUMMARY_TASK_CHARS ? `${run.task.slice(0, SUMMARY_TASK_CHARS)}…` : run.task,
       ...(run.thinkingLevel ? { thinkingLevel: run.thinkingLevel } : {}),
       latestActivity: run.latestActivity,
@@ -280,7 +281,7 @@ export class SubagentService {
         throw new CapabilityCommandError('subagent_read_only_invalid', 'read-only 只能是 true 或 false')
       }
       const readOnly = readOnlyArgs.some((value) => value === true || value === 'true')
-      const title = typeof params.title === 'string' ? params.title : undefined
+      const title = typeof params.title === 'string' ? params.title.replace(/\s+/g, ' ').trim().slice(0, 200) || undefined : undefined
       const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
       const thinkingParam = params.thinkingLevel ?? params.thinking
       const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
@@ -340,7 +341,7 @@ export class SubagentService {
       )
     }
 
-    if (command === 'subagent.get' || command === 'subagent.stop' || command === 'subagent.merge' || command === 'subagent.discard') {
+    if (command === 'subagent.get' || command === 'subagent.stop' || command === 'subagent.merge' || command === 'subagent.discard' || command === 'subagent.set_model') {
       if (!ctrl.parentOwns(id, context.parentSessionId)) {
         throw new CapabilityCommandError('subagent_not_found', `找不到当前会话的子代理：${id}`)
       }
@@ -389,7 +390,26 @@ export class SubagentService {
         throw new CapabilityCommandError('subagent_mode_invalid', 'mode 只能是 steer 或 follow-up')
       }
       const mode = rawMode === 'follow-up' || rawMode === 'followup' ? 'followUp' : 'steer'
-      const result = await ctrl.send(id, message, mode, { parentSessionId: context.parentSessionId, from: 'parent' })
+      const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
+      if (params.model !== undefined && !requested) {
+        throw new CapabilityCommandError('subagent_model_invalid', 'model 参数无效')
+      }
+      const thinkingParam = params.thinkingLevel ?? params.thinking
+      const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
+      if (thinkingParam !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
+        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${THINKING_LEVELS.join(' / ')}`)
+      }
+      let model = requested
+      if (requested && this.deps.resolveModelLabel) {
+        const resolved = await this.deps.resolveModelLabel(requested, context)
+        if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
+        model = resolved.label || undefined
+      }
+      if (signal?.aborted) throw new CapabilityCommandError('cancelled', pick('父会话已停止，未续派子代理', 'The parent session stopped; subagent message was not sent'))
+      if (context.fromAntigravity && model?.startsWith('antigravity/')) {
+        throw new CapabilityCommandError('subagent_model_invalid', pick('Antigravity 只可从此入口操作 Pi 子代理模型', 'Antigravity can only select Pi models through this entry point'))
+      }
+      const result = await ctrl.send(id, message, mode, { parentSessionId: context.parentSessionId, from: 'parent', ...(model ? { model } : {}), ...(thinkingLevel ? { thinkingLevel } : {}) })
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError('subagent_send_failed', result.error ?? `追加信息失败：${id}`)
       }
@@ -399,9 +419,55 @@ export class SubagentService {
           kind: 'subagent',
           action: 'send',
           id,
+          ...(result.run.brief?.title ? { title: result.run.brief.title } : {}),
           mode: result.delivery === 'resumed' ? 'resume' : mode === 'followUp' ? 'follow-up' : 'steer',
           delivery: result.delivery,
           status: result.run.status,
+          model: result.run.model,
+          ...(result.run.thinkingLevel ? { thinkingLevel: result.run.thinkingLevel } : {}),
+          latestActivity: result.run.latestActivity
+        }
+      }
+    }
+
+    if (command === 'subagent.set_model') {
+      const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
+      if (params.model !== undefined && !requested) {
+        throw new CapabilityCommandError('subagent_model_invalid', 'model 参数无效')
+      }
+      const thinkingParam = params.thinkingLevel ?? params.thinking
+      const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
+      if (thinkingParam !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
+        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${THINKING_LEVELS.join(' / ')}`)
+      }
+      if (!requested && !thinkingLevel) {
+        throw new CapabilityCommandError('subagent_model_required', 'subagent set_model 需要 model 或 thinkingLevel')
+      }
+      let model = requested
+      if (requested && this.deps.resolveModelLabel) {
+        const resolved = await this.deps.resolveModelLabel(requested, context)
+        if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
+        model = resolved.label || undefined
+      }
+      if (signal?.aborted) throw new CapabilityCommandError('cancelled', pick('父会话已停止，未切换子代理模型', 'The parent session stopped; subagent model was not changed'))
+      if (context.fromAntigravity && model?.startsWith('antigravity/')) {
+        throw new CapabilityCommandError('subagent_model_invalid', pick('Antigravity 只可从此入口操作 Pi 子代理模型', 'Antigravity can only select Pi models through this entry point'))
+      }
+      const result = await ctrl.setModel(id, { parentSessionId: context.parentSessionId, from: 'parent', ...(model ? { model } : {}), ...(thinkingLevel ? { thinkingLevel } : {}) })
+      if (!result.ok || !result.run) {
+        throw new CapabilityCommandError('subagent_set_model_failed', result.error ?? `切换子代理模型失败：${id}`)
+      }
+      return {
+        data: result.run,
+        summary: {
+          kind: 'subagent',
+          action: 'set-model',
+          id,
+          ...(result.run.brief?.title ? { title: result.run.brief.title } : {}),
+          status: result.run.status,
+          model: result.run.model,
+          ...(result.run.thinkingLevel ? { thinkingLevel: result.run.thinkingLevel } : {}),
+          applied: result.applied,
           latestActivity: result.run.latestActivity
         }
       }
