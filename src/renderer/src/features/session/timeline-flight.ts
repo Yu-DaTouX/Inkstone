@@ -15,6 +15,7 @@ const NEAR_MAX_MS = 420
 const NEAR_MS_PER_ROOT_SCREEN = 140
 const NEAR_LIMIT = 1.5
 const LANDING_ROWS_MAX = 12
+const GHOST_ROWS_MAX = 64
 
 export interface FlightPlan {
   far: boolean
@@ -48,10 +49,31 @@ export function flightPhase(plan: FlightPlan, elapsed: number): FlightPhase {
   return elapsed < plan.leadMs + plan.cruiseMs ? 'cruise' : 'land'
 }
 
-export function skipCruise(plan: FlightPlan, elapsed: number, landingReady: boolean): number {
-  if (!plan.far || !landingReady) return elapsed
-  const landAt = plan.leadMs + plan.cruiseMs
-  return elapsed >= plan.leadMs && elapsed < landAt ? landAt : elapsed
+export interface GhostGeometry {
+  count: number
+  findIndex(offset: number): number
+  offset(index: number): number
+  size(index: number): number
+}
+
+export interface GhostRow {
+  index: number
+  top: number
+  height: number
+}
+
+export function ghostRows(geometry: GhostGeometry, top: number, viewport: number, skip: (index: number) => boolean): GhostRow[] {
+  const rows: GhostRow[] = []
+  if (geometry.count <= 0 || viewport <= 0) return rows
+  const bottom = top + viewport
+  for (let index = Math.max(0, geometry.findIndex(top)); index < geometry.count && rows.length < GHOST_ROWS_MAX; index += 1) {
+    const start = geometry.offset(index)
+    if (start >= bottom) break
+    const height = geometry.size(index)
+    if (height <= 0 || start + height <= top || skip(index)) continue
+    rows.push({ index, top: start - top, height })
+  }
+  return rows
 }
 
 function clamp01(value: number): number {

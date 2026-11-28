@@ -88,20 +88,44 @@
   }
   :root[data-reduce-motion='true'] :is(.v3-caret, .v3-code-head, .v3-msg.streaming .v3-md-image, .v3-md-table-wrap tr, .v3-code, .katex-display, .v3-mermaid-svg, .v3-code [class^='hljs-'], .v3-md-table-wrap col) { animation: none; transition: none; }
 
-  .v3-stream-host[data-flight-skim]::before {
-    content: '';
+  .v3-flight-ghosts {
     position: absolute;
-    inset: var(--s-20) var(--col-pr, var(--s-20)) 0 var(--col-pl, var(--s-20));
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+    contain: strict;
+  }
+  .v3-flight-ghosts[hidden], .v3-flight-ghost[hidden] { display: none; }
+  .v3-flight-ghost {
+    position: absolute;
+    inset: 0 0 auto 0;
+    overflow: hidden;
+    padding: 0 var(--col-pr, var(--s-20)) 0 var(--col-pl, var(--s-20));
+    contain: layout paint style;
+    will-change: transform;
+  }
+  .v3-flight-ghost__frame {
+    display: flex;
     max-width: var(--size-chat);
     margin-inline: auto;
-    z-index: 2;
-    pointer-events: none;
-    background-image:
-      repeating-linear-gradient(to bottom, transparent 0 var(--s-8), var(--alpha-2) var(--s-8) var(--s-16), transparent var(--s-16) calc(var(--s-24) * 4)),
-      repeating-linear-gradient(to bottom, transparent 0 var(--s-32), var(--alpha-2) var(--s-32) calc(var(--s-32) + var(--s-8)), transparent calc(var(--s-32) + var(--s-8)) calc(var(--s-24) * 4)),
-      repeating-linear-gradient(to bottom, transparent 0 calc(var(--s-24) * 2 + var(--s-8)), var(--alpha-2) calc(var(--s-24) * 2 + var(--s-8)) calc(var(--s-24) * 2 + var(--s-16)), transparent calc(var(--s-24) * 2 + var(--s-16)) calc(var(--s-24) * 4));
-    background-size: 92% calc(var(--s-24) * 4), 74% calc(var(--s-24) * 4), 62% calc(var(--s-24) * 4);
-    background-repeat: repeat-y;
+    padding-block: var(--s-8);
+  }
+  .v3-flight-ghost__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--d-prose);
+    line-height: var(--d-prose-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .v3-flight-ghost[data-kind='user'] .v3-flight-ghost__frame { justify-content: flex-end; }
+  .v3-flight-ghost[data-kind='user'] .v3-flight-ghost__body {
+    flex: 0 1 auto;
+    max-width: 85%;
+    padding: var(--s-8) var(--s-12);
+    border-radius: var(--r-md);
+    background: var(--sunken);
   }
   .v3-msg.msg-located { border-radius: var(--r-md); animation: v3-msg-nav-flash calc(var(--dur-slow) * 2) var(--ease-glide) both; }
   @media (prefers-reduced-motion: reduce) { .v3-msg.msg-located { animation: none; } }

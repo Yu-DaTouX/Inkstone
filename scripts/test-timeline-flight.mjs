@@ -11,7 +11,7 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(join(tmpdir(), 'yan-timeline-flight-'))
 const outfile = join(dir, 'timeline-flight.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/timeline-flight.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
-const { planFlight, flightTravel, flightPhase, landingIndices, skipCruise, FLIGHT_INSET_PX } = await import(pathToFileURL(outfile).href)
+const { planFlight, flightTravel, flightPhase, landingIndices, ghostRows, FLIGHT_INSET_PX } = await import(pathToFileURL(outfile).href)
 
 let pass = 0
 function check(label, fn) {
@@ -25,18 +25,35 @@ const VIEW = 900
 try {
   check('落点留白是 24px', () => assert.equal(FLIGHT_INSET_PX, 24))
 
-  check('落点已挂载时跳过巡航，不穿过未挂载区', () => {
+  check('远跳巡航不再跳过：穿越段每帧都有内容可画', () => {
     const plan = planFlight(VIEW * 40, VIEW)
     const cruiseAt = plan.leadMs + 10
-    const landAt = plan.leadMs + plan.cruiseMs
     assert.equal(flightPhase(plan, cruiseAt), 'cruise')
-    assert.equal(skipCruise(plan, cruiseAt, true), landAt)
-    assert.equal(flightPhase(plan, skipCruise(plan, cruiseAt, true)), 'land')
-    assert.equal(skipCruise(plan, cruiseAt, false), cruiseAt)
-    assert.equal(skipCruise(plan, plan.leadMs - 1, true), plan.leadMs - 1)
-    assert.equal(skipCruise(plan, landAt + 5, true), landAt + 5)
-    const near = planFlight(300, VIEW)
-    assert.equal(skipCruise(near, 50, true), 50)
+    const before = flightTravel(plan, cruiseAt, VIEW * 40)
+    const after = flightTravel(plan, cruiseAt + 16, VIEW * 40)
+    assert.ok(after > before)
+  })
+
+  check('残影行只取视口内、未挂载的行，按偏移排好', () => {
+    const sizes = [100, 50, 300, 80, 120, 400, 60]
+    const offsets = sizes.reduce((acc, size, index) => (acc.push(index ? acc[index - 1] + sizes[index - 1] : 0), acc), [])
+    const geometry = {
+      count: sizes.length,
+      findIndex: (offset) => Math.max(0, offsets.findLastIndex((start) => start <= offset)),
+      offset: (index) => offsets[index],
+      size: (index) => sizes[index]
+    }
+    const rows = ghostRows(geometry, 120, 450, (index) => index === 3)
+    assert.deepEqual(rows.map((row) => row.index), [1, 2, 4])
+    assert.deepEqual(rows.map((row) => row.top), [-20, 30, 410])
+    assert.deepEqual(rows.map((row) => row.height), [50, 300, 120])
+    assert.deepEqual(ghostRows(geometry, 0, 0, () => false), [])
+    assert.deepEqual(ghostRows({ ...geometry, count: 0 }, 0, 400, () => false), [])
+  })
+
+  check('残影行数有上限，极小行也不会无限铺', () => {
+    const geometry = { count: 10_000, findIndex: (offset) => Math.floor(offset), offset: (index) => index, size: () => 1 }
+    assert.equal(ghostRows(geometry, 0, 5000, () => false).length, 64)
   })
 
   check('零距离不动', () => {

@@ -44,7 +44,8 @@ import { createTurnFindTexts } from './session-find'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, wheelReachesBottom, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
 import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, resolveAnchorPoint, readScrollSnapshot, pinnedBottomTop, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, tailGap, type SettleAnchor } from './scroll-position'
-import { FLIGHT_FRAME_CAP_MS, FLIGHT_INSET_PX, FLIGHT_SETTLE_FRAMES, FLIGHT_SETTLE_STILL, flightPhase, flightTravel, landingIndices, planFlight, skipCruise } from './timeline-flight'
+import { FLIGHT_FRAME_CAP_MS, FLIGHT_INSET_PX, FLIGHT_SETTLE_FRAMES, FLIGHT_SETTLE_STILL, flightPhase, flightTravel, ghostRows, landingIndices, planFlight } from './timeline-flight'
+import { createGhostLayer, type GhostLayer } from './flight-ghosts'
 import './session.css'
 import { readVirtualCache, saveVirtualCache, virtualizeSession } from './virtual-cache'
 import { withSubmittingMessages } from '../../state/submitting-messages'
@@ -103,21 +104,6 @@ function followTau(gap: number): number {
 
 function pinBottom(box: HTMLElement): void {
   box.scrollTop = box.scrollHeight
-}
-
-function paintSkim(box: HTMLElement, enabled: boolean): boolean {
-  const host = box.closest<HTMLElement>('.v3-stream-host')
-  if (!enabled) {
-    host?.removeAttribute('data-flight-skim')
-    return false
-  }
-  const view = box.getBoundingClientRect()
-  const visible = [...box.querySelectorAll<HTMLElement>('.v3-msg')].some((node) => {
-    const rect = node.getBoundingClientRect()
-    return rect.bottom > view.top && rect.top < view.bottom
-  })
-  host?.toggleAttribute('data-flight-skim', !visible)
-  return !visible
 }
 
 function mountedRows(box: HTMLElement): Set<number> {
@@ -350,6 +336,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const settlingRef = useRef(false)
   const cancelNavigationRef = useRef<() => void>(() => undefined)
   const flightRef = useRef<Flight | null>(null)
+  const ghostRef = useRef<GhostLayer | null>(null)
   const [keepMounted, setKeepMounted] = useState<readonly number[] | undefined>(undefined)
   const [flying, setFlying] = useState(false)
   const [wideBuffer, setWideBuffer] = useState(false)
@@ -524,8 +511,28 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     cancelAnimationFrame(manualSkimFrameRef.current)
     manualSkimFrameRef.current = 0
     lastVirtualOffsetRef.current = 0
-    hostRef.current?.removeAttribute('data-flight-skim')
+    ghostRef.current?.clear()
   }, [identity, virtual])
+
+  const paintGhosts = useCallback((box: HTMLElement): number => {
+    const handle = vlistRef.current
+    const host = hostRef.current
+    if (!handle || !host) return 0
+    const items = renderTurnsRef.current
+    const real = mountedRows(box)
+    const rows = ghostRows({
+      count: items.length,
+      findIndex: (offset) => handle.findItemIndex(offset),
+      offset: (index) => handle.getItemOffset(index),
+      size: (index) => handle.getItemSize(index)
+    }, box.scrollTop, box.clientHeight, (index) => real.has(index))
+    const layer = ghostRef.current ?? (ghostRef.current = createGhostLayer(host))
+    layer.paint(box, rows, (index) => {
+      const item = items[index]
+      return item && !isPending(item) ? item : null
+    })
+    return rows.length
+  }, [])
 
   const readVirtualScroll = useCallback(() => {
     const h = vlistRef.current
@@ -561,11 +568,12 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       const sync = (): void => {
         manualSkimFrameRef.current = 0
         if (!box.isConnected || flightRef.current) return
-        if (paintSkim(box, true)) manualSkimFrameRef.current = requestAnimationFrame(sync)
+        if (paintGhosts(box) > 0) manualSkimFrameRef.current = requestAnimationFrame(sync)
+        else ghostRef.current?.clear()
       }
       sync()
     })
-  }, [readVirtualScroll])
+  }, [readVirtualScroll, paintGhosts])
 
   useEffect(() => {
     const host = hostRef.current
@@ -892,7 +900,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     if (frame !== null) cancelAnimationFrame(frame)
     settlingRef.current = false
     flightRef.current = null
-    hostRef.current?.removeAttribute('data-flight-skim')
+    ghostRef.current?.clear()
     if (retainLanding) landingReleaseRef.current = window.setTimeout(() => {
       landingReleaseRef.current = 0
       setKeepMounted(undefined)
@@ -941,7 +949,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       const next = Math.min(Math.max(0, box.scrollHeight - box.clientHeight), Math.max(0, top))
       if (Math.abs(next - box.scrollTop) > 0.25) box.scrollTo({ top: next, behavior: 'instant' })
       written = box.scrollTop
-      if (flight.skim) paintSkim(box, true)
+      if (flight.skim) paintGhosts(box)
     }
     const prepare = (): void => {
       if (prepared) return
@@ -979,12 +987,11 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       last = now
       const drift = box.scrollTop - written
       if (Math.abs(drift) > 0.5) origin += drift
-      if (virtual && flightPhase(plan, elapsed) === 'cruise') elapsed = skipCruise(plan, elapsed, request.exact?.() != null)
       const phase = flightPhase(plan, elapsed)
       const skim = phase !== 'lead' && plan.far && landing.length > 0 && !(request.renderLanding && phase !== 'cruise')
       if (skim !== flight.skim) {
         flight.skim = skim
-        if (!skim) paintSkim(box, false)
+        if (!skim) ghostRef.current?.clear()
         setKeepMounted([...landing])
       }
       if (phase === 'done') {
@@ -1003,7 +1010,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       return
     }
     navRef.current = requestAnimationFrame(step)
-  }, [endNavigation, scrollBox, virtual, onVirtualScroll, readScroll])
+  }, [endNavigation, scrollBox, virtual, onVirtualScroll, readScroll, paintGhosts])
 
   const flyToRow = useCallback((index: number, turnId: string, align: 'start' | 'center', options: { instant?: boolean; arrive?: () => void } = {}) => {
     const box = scrollBox()
