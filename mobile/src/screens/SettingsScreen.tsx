@@ -76,7 +76,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
             <Text style={{ flex: 1, color: p.fg, fontSize: font.base }}>{pick('任务与问题通知', 'Task and question notifications')}</Text>
             <Switch value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel={pick('手机待回答通知', 'Phone question notifications')} trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
           </View>
-          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>{pick('同时提醒多 Agent 的待答复、待审阅和待核实事项。锁屏只显示数量。', 'Also alerts for multi-agent items to answer, review or verify. The lock screen shows counts only.')}</Text>
+          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>{pick('电脑上的会话等你回答时通知此手机。锁屏只显示数量。', 'Notifies this phone when a desktop session is waiting for your answer. The lock screen shows counts only.')}</Text>
           <Button label={pick('系统通知设置', 'System notification settings')} onPress={() => void openAlertSettings()} />
         </View>
         <SectionTitle>{LANG_TITLE}</SectionTitle>

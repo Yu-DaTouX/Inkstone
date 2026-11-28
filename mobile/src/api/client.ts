@@ -116,6 +116,9 @@ async function relayRequest<T>(
       json = JSON.parse(res.text) as Record<string, unknown>
     } catch {
     }
+    if (res.status === 404 && path.startsWith(REMOTE_CALL_PREFIX)) {
+      throw new RemoteHttpError(404, pick('电脑上的砚版本较旧，请先在电脑上更新砚。', 'The desktop runs an older Inkstone. Update Inkstone on the desktop first.'), 'version_mismatch')
+    }
     if (res.status < 200 || res.status >= 300 || json.ok === false) {
       throw new RemoteHttpError(res.status, String(json.error ?? pick(`请求失败（${res.status}）`, `Request failed (${res.status})`)), typeof json.code === 'string' ? json.code : undefined)
     }

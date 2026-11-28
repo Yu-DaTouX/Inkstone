@@ -219,6 +219,21 @@ try {
     }
   })
 
+  await check('旧版电脑不认识动作表时提示更新电脑', async () => {
+    const handle = server.handle
+    server.handle = async (req, res) => {
+      if (!req.url.startsWith('/remote/v1/call/')) return handle.call(server, req, res)
+      res.writeHead(404, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: '远程 API 路径不存在' }))
+    }
+    try {
+      const client = new M.RemoteClient(connection)
+      await assert.rejects(client.sessions(), (e) => e.status === 404 && e.code === 'version_mismatch' && /更新|Update/.test(e.message))
+    } finally {
+      server.handle = handle
+    }
+  })
+
   await check('电脑撤销后，手机的请求失败', async () => {
     for (const c of (await bridge.status()).clients) await bridge.revoke(c.id)
     const client = new M.RemoteClient(connection)
