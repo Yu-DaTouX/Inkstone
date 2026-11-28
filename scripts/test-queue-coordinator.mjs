@@ -200,6 +200,16 @@ try {
       await queue.written
       ok(cleared.steering.join() === 's' && cleared.followUp.join() === 'f' && queue.isEmpty(), '停止时清空并交回原队列内容')
     }
+
+    {
+      const { queue } = harness({ sessionId: 'empty-img-2' })
+      queue.publishItems({ steering: [], followUp: [{ id: 'i1', text: '', images: [red] }] })
+      queue.consume('', [red])
+      queue.publish([], [''])
+      queue.publishItems({ steering: [], followUp: [{ id: 'i2', text: '', images: [red] }] })
+      queue.publish([], [''])
+      ok(queue.state.followUp.length === 1 && queue.state.followUp[0].id === 'i2', '消费一条纯图片后 consumedEmpty 递减，不会误吞后续纯图片排队')
+    }
   })
 } finally {
   await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })

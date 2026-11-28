@@ -334,6 +334,7 @@ async function runTerminalRegistry() {
     const mixed = [...owned(10), { id: 'dead1', owner: 's', alive: false }, { id: 'dead2', owner: 's', alive: false }]
     assert.deepEqual(reg.planOwnerSlot(mixed, 's'), { allowed: true, evict: ['dead1'] })
     assert.deepEqual(reg.planOwnerSlot([...owned(12, true, 'other')], 's'), { allowed: true, evict: [] })
+    assert.deepEqual(reg.planOwnerSlot(owned(12, true, 'E:\\Work\\Repo'), 'e:/work/repo'), { allowed: false, evict: [] })
 
     const emitted = []
     const scheduled = []
@@ -356,6 +357,11 @@ async function runTerminalRegistry() {
     assert.deepEqual(emitted, [['a', 'hello'], ['b', 'x']])
     batcher.push('a', '0123456789')
     assert.deepEqual(emitted.at(-1), ['a', '0123456789'])
+    const beforeBurst = emitted.length
+    for (let i = 0; i < 10; i += 1) batcher.push('a', `chunk-${i}-abcdef`)
+    assert.ok(emitted.length - beforeBurst <= 1, '同一时间窗高频刷屏受字节预算限流，不无限同步连发 IPC')
+    scheduled.at(-1)()
+    assert.ok(emitted.at(-1)[1].length <= 10, '超预算积压按安全边界保留尾部')
     batcher.push('c', 'pending')
     batcher.flush('c')
     assert.deepEqual(emitted.at(-1), ['c', 'pending'])

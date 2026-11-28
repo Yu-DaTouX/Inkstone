@@ -54,6 +54,7 @@ export interface TerminalStartOptions {
 interface TerminalEntry {
   info: TerminalSessionInfo
   pty: IPty
+  pid?: number
   buffer: string
   seq: number
   total: number
@@ -107,6 +108,7 @@ export function terminalLoadError(): string | null {
 }
 
 const sessions = new Map<string, TerminalEntry>()
+const pendingKills = new Set<Promise<void>>()
 let sink: TerminalSink | null = null
 
 const batcher = new OutputBatcher((id, data) => {
@@ -262,7 +264,7 @@ export function startTerminalDetailed(options: TerminalStartOptions = {}): Termi
     exitCode: null,
     ...(owner ? { owner } : {})
   }
-  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, total: 0, lastOutputAt: Date.now(), tracker: new TerminalProgramStatusTracker() }
+  const entry: TerminalEntry = { info, pty: child, pid: Number.isInteger(child.pid) && child.pid > 0 ? child.pid : undefined, buffer: '', seq: 0, total: 0, lastOutputAt: Date.now(), tracker: new TerminalProgramStatusTracker() }
   sessions.set(id, entry)
 
   child.onData((data) => {
@@ -323,17 +325,20 @@ function killPty(entry: TerminalEntry): Promise<void> {
     } catch {
     }
   }
-  const pid = entry.info.alive ? entry.pty.pid : undefined
+  const pid = entry.pid ?? (Number.isInteger(entry.pty.pid) && entry.pty.pid > 0 ? entry.pty.pid : undefined)
   if (process.platform !== 'win32' || !pid) {
     kill()
     return Promise.resolve()
   }
-  return new Promise((resolve) => {
+  const task = new Promise<void>((resolve) => {
     execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 5_000 }, () => {
       kill()
       resolve()
     })
   })
+  pendingKills.add(task)
+  void task.finally(() => { pendingKills.delete(task) })
+  return task
 }
 
 function removeTerminal(id: string): Promise<void> | null {
@@ -437,5 +442,5 @@ export function closeTerminalsForOwner(owner: string): number {
 
 export function disposeTerminals(): Promise<void> {
   const pending = [...sessions.keys()].map((id) => removeTerminal(id))
-  return Promise.all(pending).then(() => undefined)
+  return Promise.all([...pending, ...pendingKills]).then(() => undefined)
 }

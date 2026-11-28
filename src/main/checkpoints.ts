@@ -264,7 +264,7 @@ async function oversizedInWorktree(cwd: string, dir: string, sha: string): Promi
   return (await measureFiles(cwd, listed.stdout.split('\0').filter(Boolean)))?.oversized ?? null
 }
 
-async function snapshotTree(cwd: string, dir: string, deadline?: GitDeadline): Promise<{ tree: string; oversized: string[] } | null> {
+async function snapshotTree(cwd: string, dir: string, deadline?: GitDeadline, strict = false): Promise<{ tree: string; oversized: string[] } | null> {
   const estimate = await shadowGit(cwd, dir, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { allowFailure: true, deadline })
   if (!estimate.ok) return null
   const listed = [...new Set(estimate.stdout.split('\0').filter(Boolean))]
@@ -276,14 +276,15 @@ async function snapshotTree(cwd: string, dir: string, deadline?: GitDeadline): P
     const drop = await shadowGit(cwd, dir, ['update-index', '--force-remove', '-z', '--stdin'], { allowFailure: true, stdin: `${oversized.join('\0')}\0`, deadline })
     if (!drop.ok) return null
   }
+  const addFlags = strict ? ['add', '-A'] : ['add', '-A', '--ignore-errors']
   const add = oversized.length
-    ? await shadowGit(cwd, dir, ['add', '-A', '--ignore-errors', '--pathspec-from-file=-', '--pathspec-file-nul'], {
+    ? await shadowGit(cwd, dir, [...addFlags, '--pathspec-from-file=-', '--pathspec-file-nul'], {
         allowFailure: true,
         stdin: ['.', ...oversized.map((p) => `:(exclude,literal)${p}`)].join('\0') + '\0',
         deadline
       })
-    : await shadowGit(cwd, dir, ['add', '-A', '--ignore-errors'], { allowFailure: true, deadline })
-  if (deadline?.expired() || (!add.ok && !/permission denied|unable to index|Invalid argument|short read|failed to insert/i.test(add.stderr))) return null
+    : await shadowGit(cwd, dir, addFlags, { allowFailure: true, deadline })
+  if (deadline?.expired() || (!add.ok && (strict || !/permission denied|unable to index|Invalid argument|short read|failed to insert/i.test(add.stderr)))) return null
   const count = await shadowGit(cwd, dir, ['ls-files', '--cached', '-z'], { allowFailure: true, deadline })
   if (count.ok && count.stdout.split('\0').length > MAX_FILES) return null
   const tree = await shadowGit(cwd, dir, ['write-tree'], { allowFailure: true, deadline })
@@ -322,8 +323,8 @@ export async function captureCheckpoint(cwd: string, sessionKey: string, text: s
   return serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', deadline)).catch(() => null)
 }
 
-async function snapshotWithLockRecovery(cwd: string, dir: string, deadline?: GitDeadline): Promise<{ tree: string; oversized: string[] } | null> {
-  const first = await snapshotTree(cwd, dir, deadline)
+async function snapshotWithLockRecovery(cwd: string, dir: string, deadline?: GitDeadline, strict = false): Promise<{ tree: string; oversized: string[] } | null> {
+  const first = await snapshotTree(cwd, dir, deadline, strict)
   if (first || deadline?.expired()) return first
   const lock = join(dir, 'repo.git', 'index.lock')
   if (!(await stat(lock).then((info) => info.isFile(), () => false))) return null
@@ -331,15 +332,15 @@ async function snapshotWithLockRecovery(cwd: string, dir: string, deadline?: Git
     console.warn('[checkpoints] snapshot blocked by index.lock that cannot be attributed to a git process of ours that already exited; skipping this checkpoint')
     return null
   }
-  const retried = await snapshotTree(cwd, dir, deadline)
+  const retried = await snapshotTree(cwd, dir, deadline, strict)
   if (!retried) console.warn('[checkpoints] still no checkpoint after removing the leftover index.lock')
   return retried
 }
 
-async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], deadline?: GitDeadline): Promise<CheckpointRecord | null> {
+async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], deadline?: GitDeadline, strict = false): Promise<CheckpointRecord | null> {
   const dir = projectDir(cwd)
   if (deadline?.expired() || !(await ensureRepo(cwd, dir, deadline))) return null
-  const snapshot = await snapshotWithLockRecovery(cwd, dir, deadline)
+  const snapshot = await snapshotWithLockRecovery(cwd, dir, deadline, strict)
   if (!snapshot || deadline?.expired()) return null
   const tree = snapshot.tree
   const index = await readIndex(dir, cwd)
@@ -434,8 +435,8 @@ export function restoreCheckpoint(cwd: string, recordId: string, sessionKey: str
     const target = index.records.find((r) => r.id === recordId)
     const sha = shaOf(target)
     if (!target || !sha) return { ok: false, error: pick('找不到这个检查点（可能已过期被清理）', 'Checkpoint not found (it may have expired)'), restored: 0 }
-    const before = await takeSnapshot(cwd, sessionKey || target.sessionKey, `回退前：${target.preview}`, 'restore')
-    if (!before) return { ok: false, error: pick('回退前没能存下现在的状态，已取消，文件没有改动', 'Could not save the current state before rollback; canceled, files unchanged'), restored: 0 }
+    const before = await takeSnapshot(cwd, sessionKey || target.sessionKey, `回退前：${target.preview}`, 'restore', undefined, true)
+    if (!before) return { ok: false, error: pick('回退前没能完整存下现在的状态（可能有文件被占用），已取消，文件没有改动', 'Could not save a complete snapshot before rollback (a file may be locked); canceled, files unchanged'), restored: 0 }
     const beforeSha = shaOf((await readIndex(dir, cwd)).records.find((r) => r.id === before.id))
     const kept = await oversizedInWorktree(cwd, dir, sha)
     if (!kept) return { ok: false, error: pick('读不到检查点内容，已取消，文件没有改动', 'Cannot read the checkpoint content; canceled, files unchanged'), undoId: before.id, restored: 0 }

@@ -47,6 +47,11 @@ export class SessionOperationGate {
   private readonly holds = new Map<number, Hold>()
 
   acquire(op: SessionOperation, generation?: number): SessionOperationAdmission {
+    if (generation !== undefined) {
+      for (const [token, hold] of this.holds) {
+        if (hold.generation !== undefined && hold.generation !== generation) this.holds.delete(token)
+      }
+    }
     const blocking = [...this.holds.values()].find((hold) => CONFLICTS[op].includes(hold.op))
     if (blocking) return { ok: false, error: sessionOperationBusyError(op, blocking.op), holder: blocking.op }
     const lease: Hold = { op, token: ++this.seq, generation, unknown: false }

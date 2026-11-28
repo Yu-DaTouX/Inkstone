@@ -3717,6 +3717,7 @@ export class AgentController extends EventEmitter {
     this.markStreaming(false)
     this.setAgentRunning(false)
     this.queue.reset()
+    this.operations.reset()
     this.compactionState = EMPTY_COMPACTION_STATE
     this.contextFrom = undefined
     this.nativeBranchView = false

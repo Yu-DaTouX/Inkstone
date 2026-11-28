@@ -44,12 +44,16 @@ export interface OwnedTerminal {
   alive: boolean
 }
 
+function sameOwnerKey(a: string, b: string): boolean {
+  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+}
+
 export function planOwnerSlot(
   terminals: readonly OwnedTerminal[],
   owner: string,
   limit = MAX_TERMINALS_PER_OWNER
 ): { allowed: boolean; evict: string[] } {
-  const owned = terminals.filter((terminal) => terminal.owner === owner)
+  const owned = terminals.filter((terminal) => !!terminal.owner && sameOwnerKey(terminal.owner, owner))
   if (owned.length < limit) return { allowed: true, evict: [] }
   const exited = owned.filter((terminal) => !terminal.alive)
   const needed = owned.length - limit + 1
@@ -63,23 +67,31 @@ type Cancel = (handle: unknown) => void
 export class OutputBatcher {
   private readonly pending = new Map<string, string>()
   private handle: unknown = null
+  private windowSent = 0
 
   constructor(
     private readonly emit: (id: string, data: string) => void,
     private readonly schedule: Schedule = (fn, ms) => setTimeout(fn, ms),
     private readonly cancel: Cancel = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
     private readonly intervalMs = FLUSH_INTERVAL_MS,
-    private readonly thresholdChars = FLUSH_THRESHOLD_CHARS
+    private readonly thresholdChars = FLUSH_THRESHOLD_CHARS,
+    private readonly windowBudgetChars = thresholdChars * 2
   ) {}
 
   push(id: string, data: string): void {
     if (!data) return
-    const next = (this.pending.get(id) ?? '') + data
-    this.pending.set(id, next)
-    if (next.length >= this.thresholdChars) {
+    let next = (this.pending.get(id) ?? '') + data
+    if (next.length >= this.thresholdChars && this.windowSent < this.windowBudgetChars) {
+      this.pending.set(id, next)
+      this.windowSent += next.length
       this.flush(id)
+      if (this.handle === null) this.handle = this.schedule(() => this.flushAll(), this.intervalMs)
       return
     }
+    if (next.length > this.thresholdChars) {
+      next = next.slice(safeTerminalCut(next, next.length - this.thresholdChars))
+    }
+    this.pending.set(id, next)
     if (this.handle === null) this.handle = this.schedule(() => this.flushAll(), this.intervalMs)
   }
 
@@ -88,17 +100,18 @@ export class OutputBatcher {
     if (data === undefined) return
     this.pending.delete(id)
     this.emit(id, data)
-    if (this.pending.size === 0) this.clearTimer()
+    if (this.pending.size === 0 && this.windowSent === 0) this.clearTimer()
   }
 
   flushAll(): void {
     this.clearTimer()
+    this.windowSent = 0
     for (const id of [...this.pending.keys()]) this.flush(id)
   }
 
   drop(id: string): void {
     this.pending.delete(id)
-    if (this.pending.size === 0) this.clearTimer()
+    if (this.pending.size === 0 && this.windowSent === 0) this.clearTimer()
   }
 
   private clearTimer(): void {

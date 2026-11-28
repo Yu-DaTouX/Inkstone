@@ -387,8 +387,14 @@ export class QueueCoordinator {
   }
 
   private liveTexts(raw: string[], kind: QueueKind): string[] {
-    let skip = this.consumedEmpty[kind]
-    return raw.filter(text => text || skip-- <= 0)
+    return raw.filter((text) => {
+      if (text) return true
+      if (this.consumedEmpty[kind] > 0) {
+        this.consumedEmpty[kind] -= 1
+        return false
+      }
+      return true
+    })
   }
 
   private itemOf(id: string): QueueKind | undefined {
