@@ -57,6 +57,28 @@ export function runSubagentBriefTests(ok, mod) {
 
     const sameGoal = briefPrompt(minimal.brief, '查一下这两个模块')
     ok(!/任务原话/.test(sameGoal), '目标与任务描述相同时不重复写一遍')
+    const english = parseSubagentBrief(
+      {
+        goal: 'Audit error handling across two modules',
+        deliverables: ['Summary', 'Mismatches with file:line'],
+        sources: ['src/main/agent.ts'],
+        boundary: 'Read-only, do not edit files'
+      },
+      'Compare error handling'
+    )
+    ok(english.ok, '纯英文 brief 正常解析')
+    const enPrompt = briefPrompt(english.brief, 'Compare error handling')
+    ok(/Original task: Compare error handling/.test(enPrompt) && /Deliverables:/.test(enPrompt) && /Use only these sources/.test(enPrompt) && /Boundary: Read-only/.test(enPrompt) && !/任务原话|要交回的东西|只依据这些来源|边界：/.test(enPrompt), '英文任务使用英文标签骨架，不掺入中文模板拉偏语言', enPrompt)
+    const enWithZhPath = parseSubagentBrief(
+      { goal: 'Inspect the config loader', sources: ['docs/中文说明.md'], deliverables: ['Report'] },
+      'Inspect the config loader'
+    )
+    ok(enWithZhPath.ok && /Deliverables:/.test(briefPrompt(enWithZhPath.brief, 'Inspect the config loader')) && !/要交回的东西/.test(briefPrompt(enWithZhPath.brief, 'Inspect the config loader')), '英文任务引用中文路径时不误判为中文任务')
+    const jaTask = parseSubagentBrief(
+      { goal: 'この設定ファイルの処理を確認して報告してください', deliverables: ['原因と修正案'] },
+      '確認してください'
+    )
+    ok(jaTask.ok && /Deliverables:/.test(briefPrompt(jaTask.brief, '確認してください')) && !/要交回的东西/.test(briefPrompt(jaTask.brief, '確認してください')), '含汉字的日文任务不误判为中文标签骨架')
     const legacyBudget = parseSubagentBrief({ maxToolCalls: 1000 }, '模型自主决定调用次数')
     ok(legacyBudget.ok && !('maxToolCalls' in legacyBudget.brief), '旧调用预算字段不再保留（当作未知字段忽略）')
     ok(!/预算|最多.*次工具调用/.test(briefPrompt({ ...minimal.brief, maxToolCalls: 5 }, 'x')), '旧历史brief也不会生成调用预算指令')

@@ -25,9 +25,9 @@ export const WORK_GUIDANCE = [
 export const REPORT_GUIDANCE = [
   'Final reply (after your last tool call), for a reader who skims:',
   '- Main line in plain sentences: what you did and how it turned out.',
-  '- Supporting detail (reasons, process, background, paths) goes in *single asterisks*; Inkstone shows it lighter.',
-  "- **Bold** only what truly needs the reader's attention: a decision or action for them, a failure, or a risk that should change their judgment. At most one or two, never adjacent, never for headings or ordinary facts.",
-  '- Claim only what you observed; short paragraphs; no repeated progress notes or generic closing offers.',
+  '- Supporting detail (reasons, process, background) goes in *single asterisks*; Inkstone shows it lighter (keep code blocks and paths with underscores or asterisks out of italics).',
+  "- **Bold** only what truly needs the reader's attention: a decision or action for them, a failure, or a risk that should change their judgment (at most one or two, never adjacent, not for ordinary facts). For multi-part analysis or long reports, use plain markdown headings (`###`) rather than bold lines.",
+  '- Claim only what you observed: never present an unchecked claim or guess as verified, and state what you could not check, what was out of scope, or why something is uncertain. Short paragraphs; no repeated progress notes or generic closing offers.',
   "Answers and discussion follow the same layers. When the user asks for a different format, length or style, the user's request comes first."
 ].join('\n')
 

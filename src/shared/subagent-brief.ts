@@ -76,19 +76,32 @@ export function parseSubagentBrief(
   }
 }
 
+function briefUsesChinese(brief: SubagentBrief, task: string): boolean {
+  const body = [brief.goal, task, brief.boundary, ...brief.deliverables]
+    .join('\n')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`]*`/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(body)) return false
+  const han = body.match(/\p{Script=Han}/gu)?.length ?? 0
+  const latin = (body.match(/[A-Za-z]/g)?.length ?? 0) / 4
+  return han >= 2 && han >= latin
+}
+
 export function briefPrompt(brief: SubagentBrief, task: string): string {
+  const zh = briefUsesChinese(brief, task)
   const lines: string[] = [brief.goal]
   const extra = task.trim() && task.trim() !== brief.goal.trim() ? task.trim() : ''
-  if (extra) lines.push('', `任务原话：${extra}`)
+  if (extra) lines.push('', `${zh ? '任务原话：' : 'Original task: '}${extra}`)
   if (brief.deliverables.length > 0) {
-    lines.push('', '要交回的东西：')
+    lines.push('', zh ? '要交回的东西：' : 'Deliverables:')
     for (const item of brief.deliverables) lines.push(`- ${item}`)
   }
   if (brief.sources.length > 0) {
-    lines.push('', '只依据这些来源（不要自行扩大）：')
+    lines.push('', zh ? '只依据这些来源（不要自行扩大）：' : 'Use only these sources (do not expand scope):')
     for (const item of brief.sources) lines.push(`- ${item}`)
   }
-  if (brief.boundary) lines.push('', `边界：${brief.boundary}`)
+  if (brief.boundary) lines.push('', `${zh ? '边界：' : 'Boundary: '}${brief.boundary}`)
   return lines.join('\n')
 }
 

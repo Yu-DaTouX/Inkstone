@@ -30,7 +30,7 @@ description: 任务需要当前没有的能力（连数据库、转写音频、�
 | --- | --- |
 | 加 MCP 服务 | `yan mcp add --name <名字> --command <命令> --arg … [--env 名字=$YAN_SECRET_…]`，网络服务用 `--url` |
 | 看、删、启停 MCP 服务 | `yan mcp services`，再 `yan mcp remove / enable / disable --name <名字>` |
-| 装、卸砚插件（桌宠、ComfyUI、语音输入、Minecraft 模组开发） | `yan plugin list`，再 `yan plugin install / remove --id <ID>` |
+| 装、卸砚插件（如桌宠、语音输入等，以 `yan plugin list` 为准） | `yan plugin list`，再 `yan plugin install / remove --id <ID>` |
 | 装、卸 pi 插件（npm 或 git 来源，可选全局或当前项目） | `yan package install --source npm:<包>@<版本>` 或 `git:github.com/<用户>/<仓库>`；`yan package list` / `remove` |
 | 存用户自己的做法 | 见 `playbook` 技能（`yan skill save`） |
 
@@ -44,7 +44,7 @@ description: 任务需要当前没有的能力（连数据库、转写音频、�
 | --- | --- | --- | --- |
 | 从 PDF / 文档里取表格和结构 | 结构化解析 | 技能包；Office 文件先看 `office` 技能 | `yan office read` 或按纯文本读，表格会散成行 |
 | 统计表格数据、画图 | 数据统计与画图 | 技能包，或本机 Python | 读成文本后计算；图交给 `yan image generate` |
-| 打开网页读正文 | 不缺，砚自带 | `yan browser navigate --url <地址>`，再 `yan browser text` | — |
+| 打开网页读正文 | 不缺，砚自带 | `yan browser run --code -`（或 `yan browser navigate` + `yan browser text`） | — |
 | 录音转写 / 朗读 | 语音能力 | 语音输入插件（`yan plugin install --id voice-input`）；朗读需要 MCP 服务 | 先用其他工具转成文本 |
 | 看图片里写了什么 | 取决于当前模型是否支持看图 | 换支持视觉的模型 | 先 OCR 成文本 |
 | 连数据库查数 | 数据库客户端 | 数据库 MCP 服务（连接串用 secret 字段向用户要） | 用本机命令行导出 CSV 再读 |

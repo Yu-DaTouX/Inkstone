@@ -89,7 +89,7 @@ const COMPUTER_TOOLS = [
   {
     action: 'move',
     tool: 'Move',
-    description: 'Move the mouse to loc or a snapshot label (hover). drag=true drags from the current position; from_loc makes the drag start explicit. duration in seconds.',
+    description: `Move the mouse to loc or a snapshot label (hover). drag=true drags from the current position; from_loc makes the drag start explicit. duration in seconds.${DESTRUCTIVE_NOTE}`,
     properties: { ...TARGET, drag: { type: 'boolean' }, from_loc: POINT, duration: { type: 'number', minimum: 0 } }
   },
   {
@@ -123,7 +123,7 @@ const COMPUTER_TOOLS = [
   {
     action: 'app',
     tool: 'App',
-    description: 'Manage applications. mode launch opens an app by Start menu name; launch_executable runs one executable path with args and cwd; resize sets window_loc/window_size of a named or the active window; switch focuses a window by name.',
+    description: `Manage applications. mode launch opens an app by Start menu name; launch_executable runs one executable path with args and cwd; resize sets window_loc/window_size of a named or the active window; switch focuses a window by name.${DESTRUCTIVE_NOTE}`,
     properties: {
       mode: { type: 'string', enum: ['launch', 'launch_executable', 'resize', 'switch'] },
       name: { type: 'string' },

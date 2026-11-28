@@ -39,7 +39,9 @@ const GUIDE_LINES = [
   PHONE_GROUP,
   SEARCH_GROUP,
   '- subagent: delegate work to other agents; read skill subagent first',
+  '- workflow: orchestrate many subagents or batch model() calls in a background script (read workflow.md in skill subagent)',
   '- model: one direct model call without tools (translate or rewrite given text, second opinion); batches use `model()` in `yan workflow`',
+  '- office: read Word, Excel, PowerPoint and PDF text (read skill office before editing)',
   '- image: generate images; artifact: attach an existing file to this reply',
   '- file: recoverable delete; session: move this session to another folder; operations: look up an operation\'s result',
   '- capabilities: find installed commands, skills and MCP tools when unsure a capability exists; install or remove skills, MCP services and plugins right in the chat (read skill capabilities first)',
@@ -62,8 +64,9 @@ export const CAPABILITY_GUIDE = capabilityGuide(false)
 
 export const VISUAL_ANSWER_GUIDE = [
   'When a picture explains better than words (a trend, options compared side by side, a mechanism or process), show it as an Inkstone block: a fenced code block whose language is yan-chart, yan-stats, yan-cards, yan-record, yan-flow, yan-steps, yan-widget or mermaid (```yan-chart, not an XML-style tag), even unasked, placed where it belongs in the reply, and do not restate what it shows. Read skill visual-answer for their fields first. Change lists and test results stay as text.',
-  'Charts must cite their data source and use only numbers from sources or the user; at most one or two blocks per answer.'
+  'Charts and stat blocks must cite their data source and use only numbers from sources or the user; at most one or two blocks per answer.'
 ].join('\n')
+export const VISUAL_ANSWER_DISABLED_GUIDE = 'Visual answer blocks (yan-chart, yan-stats, yan-cards, yan-record, yan-flow, yan-steps, yan-widget and mermaid) are turned off in settings: do not use them proactively unless the user explicitly asks.'
 const VISUAL_SECTION = 'inkstone_visual_answer'
 
 function desktopSetting(key) {
@@ -124,11 +127,11 @@ const OS_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
 export function environmentGuide(now = new Date(), platform = process.platform, shell = process.env.YAN_SHELL, pwsh = platform === 'win32' && hasPwsh(), options = {}) {
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const os = OS_NAMES[platform] ?? platform
-  if (options.readOnly) return `Today: ${day} (local date).`
+  if (options.readOnly) return `Today: ${day} (local date). OS: ${os}.`
   const shellLine = platform !== 'win32'
     ? `OS: ${os}.`
     : shell === 'powershell'
-      ? 'OS: Windows; system commands run in PowerShell.'
+      ? 'OS: Windows; system commands run in PowerShell. Edit files with the edit/write tools; Python text-mode writes on Windows turn \\n into \\r\\n.'
       : 'OS: Windows; the bash tool runs Git Bash, so write bash syntax, not PowerShell cmdlets. Windows programs such as node and python do not understand Git Bash paths like /tmp/... or /c/...: pass them C:/... paths (convert with `cygpath -m`). Edit files with the edit/write tools; Python text-mode writes on Windows turn \\n into \\r\\n.' +
         (pwsh ? ' For PowerShell run `pwsh` (PowerShell 7); `powershell` 5.1 is blocked.' : '')
   return [
@@ -228,17 +231,18 @@ export default function capabilityGuideExtension(pi) {
     }
     const computerUse = computerUseEnabled() ? computerUseGuide(ctx?.model, tools && toolNames(pi, 'getActiveTools').includes('computer_snapshot')) : ''
     const sections = event?.systemPromptOptions?.sections
+    const visualNote = visual ? VISUAL_ANSWER_GUIDE : VISUAL_ANSWER_DISABLED_GUIDE
     if (sections && typeof sections === 'object') {
       reserveInkstoneSections(sections)
       sections.inkstone_capabilities = guideText
       sections[COMPUTER_USE_SECTION] = computerUse
-      sections[VISUAL_SECTION] = visual ? VISUAL_ANSWER_GUIDE : ''
+      sections[VISUAL_SECTION] = visualNote
       sections[SESSION_SKILLS_SECTION] = sessionSkills
       sections[ENVIRONMENT_SECTION] = environmentGuide()
       return
     }
     if (base.includes(MARKER)) return
-    const guide = [guideText, computerUse, visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills, environmentGuide()].filter(Boolean).join('\n\n')
+    const guide = [guideText, computerUse, visualNote, sessionSkills, environmentGuide()].filter(Boolean).join('\n\n')
     return { systemPrompt: base ? `${base}\n\n${guide}` : guide }
   })
 }

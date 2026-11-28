@@ -84,7 +84,8 @@ description: 写 yan-chart、yan-stats、yan-cards 等回答块、mermaid 图或
 ```yan-stats
 { "items": [
   { "label": "本月额度", "value": "4.2 / 5", "meter": { "value": 4.2, "max": 5 } },
-  { "label": "磁盘", "value": "466 GB", "meter": { "value": 466, "max": 512 }, "detail": "剩 46 GB" } ] }
+  { "label": "磁盘", "value": "466 GB", "meter": { "value": 466, "max": 512 }, "detail": "剩 46 GB" } ],
+  "source": "本机系统与账户统计" }
 ```
 
 - `items` 1–6 个；`trend` 为 `up` / `down` / `flat`，`good` 说明哪个方向是好事（缺省 up）。`spark` 至少 2 个数，只放真实的逐期数据；只知道起点和终点时不写 `spark`，不要补中间值。

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { appendInstruction } from './context-compact.js'
-import { isHostAutomatedMessage } from './host-message.js'
+import { isHostAutomatedMessage, isHostContinuation } from './host-message.js'
 import { registerProviderRequestStage } from './provider-request.js'
 
 export const SUGGESTION_STATUS_KEY = 'inkstone_prompt_suggestion'
@@ -21,7 +21,7 @@ export const EVIDENCE_LOW_CHARS = 80_000
 const COMPLETIONS_APIS = new Set(['openai-completions'])
 const RESPONSES_APIS = new Set(['openai-responses', 'azure-openai-responses', 'openai-codex-responses'])
 
-const PREDICT_RULES = 'Write the single message the user is most likely to send next, in their own voice and language, exactly as they would type it: for example a short go-ahead, a pick among options just offered, or the natural next request. Predict what they would type, not what you think they should do. Do not answer, continue the task or call tools. If the reply asks for something only the user can supply (a fact about them, a file, a name or a date), or nothing is reasonably predictable, output only NONE. Otherwise output only the message, at most 20 words.'
+const PREDICT_RULES = 'Write the single message the user is most likely to send next, in their own voice and language, exactly as they would type it: for example a short go-ahead, a pick among options just offered, or the natural next request. Predict what they would type, not what you think they should do. Do not answer, continue the task or call tools. If the reply asks for something only the user can supply (a fact about them, a file, a name or a date), or nothing is reasonably predictable, output only NONE. Otherwise output only the message in plain text without quotes or markdown, at most 20 words (or about 20 Chinese/CJK characters).'
 
 export const SEPARATE_SYSTEM_PROMPT = [
   'You predict the next message a user will type to their AI agent in Inkstone. Each user message below is one past exchange between them, oldest first: what the user wrote and what the agent replied. The last one ends with the agent\'s latest reply.',
@@ -100,15 +100,20 @@ function textOf(content) {
 
 export function visibleTurns(entries) {
   const turns = []
+  let acceptAssistant = false
   for (const entry of Array.isArray(entries) ? entries : []) {
     const message = entry?.type === 'message' ? entry.message : null
     if (!message) continue
     const text = textOf(message.content).trim()
     if (!text) continue
     if (message.role === 'user') {
-      if (isHostAutomatedMessage(text)) continue
+      if (isHostAutomatedMessage(text)) {
+        if (!isHostContinuation(text)) acceptAssistant = false
+        continue
+      }
       turns.push({ user: text, assistant: [] })
-    } else if (message.role === 'assistant' && turns.length) turns.at(-1).assistant.push(text)
+      acceptAssistant = true
+    } else if (message.role === 'assistant' && turns.length && acceptAssistant) turns.at(-1).assistant.push(text)
   }
   return turns.map((turn) => `[user]\n${turn.user}\n\n[assistant]\n${turn.assistant.join('\n\n')}`)
 }
@@ -204,7 +209,7 @@ export function createPromptSuggestion({ enabled = suggestionsEnabled, localEnab
 
   const onAgentStart = (event, ctx) => {
     const prompt = String(event?.prompt ?? '').trim()
-    if (shown !== null && prompt && !prompt.startsWith('<subagent-notification')) {
+    if (shown !== null && prompt && !isHostAutomatedMessage(prompt)) {
       if (prompt === shown || prompt.startsWith(shown)) {
         ignored = 0
         backoff = 0
@@ -307,6 +312,7 @@ export function createPromptSuggestion({ enabled = suggestionsEnabled, localEnab
 }
 
 export default function promptSuggestionExtension(pi) {
+  if (process.env.YAN_RUNNER_KIND === 'fork' || process.env.YAN_RUNNER_KIND === 'subagent' || process.env.YAN_SIDE_QUESTION === '1') return
   const suggestion = createPromptSuggestion()
   registerProviderRequestStage(pi, 'prompt-suggestion', (payload, ctx) => suggestion.onRequest({ payload }, ctx))
   pi.on('before_agent_start', suggestion.onAgentStart)

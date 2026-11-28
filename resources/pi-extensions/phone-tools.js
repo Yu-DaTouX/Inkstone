@@ -6,6 +6,7 @@ const SETTLE = {
   quiet: { type: 'boolean', description: 'skip the automatic re-read of the screen' }
 }
 const SETTLE_NOTE = ' Waits, then returns the refreshed screen elements (refs update).'
+const PHONE_DESTRUCTIVE_NOTE = ' This is the user\'s real phone: ask before payments, deletions, sending messages or changing system settings.'
 
 const PHONE_TOOLS = [
   {
@@ -36,7 +37,7 @@ const PHONE_TOOLS = [
   },
   {
     action: 'tap',
-    description: `Tap on the phone: target by ref (from the latest phone_ui), by text (exact match first, then contains; index picks among matches), or by x/y pixels. hold: long press in ms.${SETTLE_NOTE} This is the user's real phone: ask before payments, deletions, sending messages or changing system settings.`,
+    description: `Tap on the phone: target by ref (from the latest phone_ui), by text (exact match first, then contains; index picks among matches), or by x/y pixels. hold: long press in ms.${SETTLE_NOTE}${PHONE_DESTRUCTIVE_NOTE}`,
     properties: {
       device: DEVICE, ref: { type: 'string' }, text: { type: 'string' }, index: { type: 'integer', minimum: 1 },
       x: { type: 'number' }, y: { type: 'number' }, hold: { type: 'integer', minimum: 0 }, ...SETTLE
@@ -52,13 +53,13 @@ const PHONE_TOOLS = [
   },
   {
     action: 'type',
-    description: `Type text into the focused field (with ref: tap that field first). ASCII only (adb limit). enter: press Enter afterwards.${SETTLE_NOTE}`,
+    description: `Type text into the focused field (with ref: tap that field first). ASCII only (adb limit). enter: press Enter afterwards.${SETTLE_NOTE}${PHONE_DESTRUCTIVE_NOTE}`,
     properties: { device: DEVICE, text: { type: 'string' }, ref: { type: 'string' }, enter: { type: 'boolean' }, ...SETTLE },
     required: ['text']
   },
   {
     action: 'key',
-    description: `Press a key: back, home, recents, enter, delete, tab, escape, menu, search, power, wake, volume_up, volume_down, up, down, left, right, or KEYCODE_*.${SETTLE_NOTE}`,
+    description: `Press a key: back, home, recents, enter, delete, tab, escape, menu, search, power, wake, volume_up, volume_down, up, down, left, right, or KEYCODE_*.${SETTLE_NOTE}${PHONE_DESTRUCTIVE_NOTE}`,
     properties: { device: DEVICE, key: { type: 'string' }, ...SETTLE },
     required: ['key']
   }

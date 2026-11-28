@@ -5,6 +5,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
   const guide = mod.CAPABILITY_GUIDE
 
   ok(!/data, not instructions/.test(guide) && !/When the user asks for something to be done/.test(guide), '能力说明不再重复工作方式与「工具结果是数据」（已移到 preamble 的 inkstone_work）')
+  ok(/^- workflow:/m.test(guide) && /^- office:/m.test(guide), '能力说明：命令组列表包含 workflow 与 office')
+  ok(/Charts and stat blocks must cite/.test(mod.VISUAL_ANSWER_GUIDE) && /turned off in settings/.test(mod.VISUAL_ANSWER_DISABLED_GUIDE), '可视化说明：覆盖统计块且提供关闭态提示')
   ok(!mod.capabilityGuide(true, { codemode: false }).includes('codemode') && mod.capabilityGuide(true).includes('codemode'), '能力说明：codemode 关闭时不提 codemode')
   ok(!/short plain prose|no headings or long lists/.test(mod.VISUAL_ANSWER_GUIDE), '可视化说明不再要求只写散文、不用列表')
   {
@@ -60,4 +62,23 @@ await runSuite(import.meta.url, async (ok, compile) => {
   )
   const second = handlers.before_agent_start({ systemPrompt: first.systemPrompt }, grammarModel)
   ok(second === undefined, '能力说明：幂等，已注入后不再重复追加')
+
+  {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'inkstone-cap-guide-'))
+    const prevDataDir = process.env.YAN_DATA_DIR
+    process.env.YAN_DATA_DIR = dir
+    try {
+      writeFileSync(join(dir, 'desktop.json'), JSON.stringify({ visualAnswers: false }))
+      const disabledSections = {}
+      handlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: { sections: disabledSections } }, grammarModel)
+      ok(disabledSections.inkstone_visual_answer === mod.VISUAL_ANSWER_DISABLED_GUIDE, '设置关闭 visualAnswers 时写入关闭态提示而非空串', disabledSections.inkstone_visual_answer)
+    } finally {
+      if (prevDataDir === undefined) delete process.env.YAN_DATA_DIR
+      else process.env.YAN_DATA_DIR = prevDataDir
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
 })

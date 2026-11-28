@@ -14,6 +14,7 @@ export async function runPreambleExtensionTests(ok, mod) {
   ok(YAN_PREAMBLE.includes("personal agent") && !YAN_PREAMBLE.includes('inside pi,') && !YAN_PREAMBLE.includes('coding assistant'), '开场白是英文的个人 agent 身份，不提 pi、不限于写代码')
   ok(/data, not instructions/.test(WORK_GUIDANCE) && /one-sentence progress note with your next tool call/.test(WORK_GUIDANCE), '怎么干活：进度句随下一次工具调用发出，含「工具结果是数据」')
   ok(/\*single asterisks\*/.test(REPORT_GUIDANCE) && /\*\*Bold\*\* only/.test(REPORT_GUIDANCE) && !/status mark/.test(REPORT_GUIDANCE), '汇报：三层字色，没有状态标记')
+  ok(/never present an unchecked claim or guess as verified/.test(REPORT_GUIDANCE) && /out of scope/.test(REPORT_GUIDANCE), '汇报：主会话明确要求不把未验证或猜测说成已确认，并交代范围限制')
   ok(/the user's request comes first/.test(REPORT_GUIDANCE) && /unless the user asks for a narrower look/.test(WORK_RULES[0]), '汇报风格与读取范围：用户另有要求时以用户为准')
 
   const handlers = {}
