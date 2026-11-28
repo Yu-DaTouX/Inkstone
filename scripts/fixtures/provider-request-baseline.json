@@ -1,129 +1,129 @@
 {
  "completions": [
   "status 425 9bdba57e56d4f4c87dbebdce :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":757,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5704 ca39fbeecbc0f7e46e6412d8 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
-  "request 6362 ab79ba41d974544f01cc6b03 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
+  "request 5704 a2efd3e2660eeb00cc0da3b2 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 6362 2034d6a7767c3f2ee4ff3f4e :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "status 48 f34952322388417544fb0a30 :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":null}",
-  "request 5809 9981abb8884461b93117ee5e :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
-  "request 6467 a6ae7d5d0cf27301d591cb7a :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
+  "request 5809 188f5e0e95f8d0b37e1183e1 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 6467 e582d3dddb8490061ec2b3df :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
-  "request 9062 1e5e05161fe9b13aed348fed :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
+  "request 9062 a18bded2cef11eea3c7eb8c7 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "completions-suggest-off": [
   "status 425 9bdba57e56d4f4c87dbebdce :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":757,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5704 ca39fbeecbc0f7e46e6412d8 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls"
+  "request 5704 a2efd3e2660eeb00cc0da3b2 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls"
  ],
  "completions-parallel-rejected": [
   "status 425 9bdba57e56d4f4c87dbebdce :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":757,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5704 ca39fbeecbc0f7e46e6412d8 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 5704 a2efd3e2660eeb00cc0da3b2 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
   "diagnostic 152 1dc2127b7ef34d4d7fa55b31 :: [Inkstone/provider-error] {\"provider\":\"fixture\",\"api\":\"openai-completions\",\"model\":\"model\",\"event\":\"http_error\",\"status\":400,\"requestId\":\"req_rejected\"}",
-  "request 5714 bd99389d9e9203f9d87ef51a :: POST /v1/chat/completions tools=read|bash|edit|write|web_search user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools",
-  "request 6392 08a4686b641959890f3e18e0 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search tool_choice=\"none\"",
+  "request 5714 ded491176eab8c0c703ce9e3 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools",
+  "request 6392 5e1d327f7c256075aa44c6a2 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search tool_choice=\"none\"",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "status 48 f34952322388417544fb0a30 :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":null}",
-  "request 5821 dc6a8ef242104a3fa9ab9cf6 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools",
-  "request 6499 1b07ddbadd6c4bc38b44383d :: POST /v1/chat/completions tools=read|bash|edit|write|web_search tool_choice=\"none\"",
+  "request 5821 f3b3ed6f33bee7f47719ff97 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools",
+  "request 6499 29ada0bb6ec809da505fc6cb :: POST /v1/chat/completions tools=read|bash|edit|write|web_search tool_choice=\"none\"",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "entry 174 01df5f5a83d24004663e431b :: {\"customType\":\"inkstone-provider-error\",\"data\":{\"provider\":\"fixture\",\"api\":\"openai-completions\",\"model\":\"model\",\"event\":\"http_error\",\"status\":400,\"requestId\":\"r"
  ],
  "responses-reasoning": [
   "status 425 1abfa1c25a8aca0ef0782ec8 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":742,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5742 866d060550177840a67cb9a3 :: POST /v1/responses tools=read|bash|edit|write|web_search parallel=true reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,input,stream,prompt_cache_key,prompt_cache_retention,prompt_cache_options,store,max_output_tokens,tools,reasoning,include,parallel_tool_calls",
+  "request 5742 d2cfc3f8be6be2e32b34e177 :: POST /v1/responses tools=read|bash|edit|write|web_search parallel=true reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,input,stream,prompt_cache_key,prompt_cache_retention,prompt_cache_options,store,max_output_tokens,tools,reasoning,include,parallel_tool_calls",
   "request 1150 28957428e95a62e6231edaf6 :: POST /v1/responses tools=- reasoning={\"effort\":\"low\",\"summary\":\"auto\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "status 48 f34952322388417544fb0a30 :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":null}",
-  "request 5959 c4b1075a21e1640eca56586c :: POST /v1/responses tools=read|bash|edit|write|web_search parallel=true reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,input,stream,prompt_cache_key,prompt_cache_retention,prompt_cache_options,store,max_output_tokens,tools,reasoning,include,parallel_tool_calls",
+  "request 5959 d50ce0cec928e534887e4059 :: POST /v1/responses tools=read|bash|edit|write|web_search parallel=true reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,input,stream,prompt_cache_key,prompt_cache_retention,prompt_cache_options,store,max_output_tokens,tools,reasoning,include,parallel_tool_calls",
   "request 1252 81f596cd8c0203990d48b850 :: POST /v1/responses tools=- reasoning={\"effort\":\"low\",\"summary\":\"auto\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
-  "request 9226 28125af603d071611648bee2 :: POST /v1/responses tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"}",
+  "request 9226 2eec9b58f9e4d265609836dd :: POST /v1/responses tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"}",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "anthropic-updates": [
   "status 425 7b72c859472e611b72783763 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":767,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5740 156ca757103b960e9e9fb0f7 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5740 ae58deb06237b0d7125f9cc5 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "request 1107 057ef8ac842b8a60fe2d85e0 :: POST /v1/messages?beta=true tools=- thinking={\"type\":\"disabled\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "status 48 f34952322388417544fb0a30 :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":null}",
-  "request 5870 f33b70cfc71d5efbff48afe2 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5870 b0f023b9aa4f8c175665d9e8 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "request 1203 cecd3d02299ea5b1e1c26d76 :: POST /v1/messages?beta=true tools=- thinking={\"type\":\"disabled\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
-  "request 9199 a9fc1a8315c262780c9708bd :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} tool_choice={\"type\":\"none\"}",
+  "request 9199 ad84df46c9d2caa7ea1e0bde :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} tool_choice={\"type\":\"none\"}",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "anthropic-updates-rejected": [
   "status 425 7b72c859472e611b72783763 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":767,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5740 156ca757103b960e9e9fb0f7 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5740 ae58deb06237b0d7125f9cc5 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "diagnostic 164 ff933860341f238cc403030d :: [Inkstone/provider-error] {\"provider\":\"anthropic\",\"api\":\"anthropic-messages\",\"model\":\"claude-opus-5-5\",\"event\":\"http_error\",\"status\":400,\"requestId\":\"req_reject",
-  "request 5800 1596d5c7534e7aa278278687 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
-  "request 5929 f3e3aae5e3942b3a794b36d8 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5800 6ab43b849a3987f98e3db527 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5929 1e29d9f1c45e8a756eb05149 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "diagnostic 164 ff933860341f238cc403030d :: [Inkstone/provider-error] {\"provider\":\"anthropic\",\"api\":\"anthropic-messages\",\"model\":\"claude-opus-5-5\",\"event\":\"http_error\",\"status\":400,\"requestId\":\"req_reject",
-  "request 5990 0e4f7dea02f4a8ee895fb13e :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5990 452be0ce5187a17a1edbcb6b :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "entry 186 fb630add908fa7d1c6a690bd :: {\"customType\":\"inkstone-provider-error\",\"data\":{\"provider\":\"anthropic\",\"api\":\"anthropic-messages\",\"model\":\"claude-opus-5-5\",\"event\":\"http_error\",\"status\":400,\"r",
   "entry 186 fb630add908fa7d1c6a690bd :: {\"customType\":\"inkstone-provider-error\",\"data\":{\"provider\":\"anthropic\",\"api\":\"anthropic-messages\",\"model\":\"claude-opus-5-5\",\"event\":\"http_error\",\"status\":400,\"r"
  ],
  "anthropic-oauth-search": [
   "status 425 e4d866652d7dc533c83f58b0 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":726,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5603 e2b162c7a15ce8bd32e2e029 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5603 71d0846ffa50582968b4e1bf :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "request 1129 9ce8f1536b3d6e4319e7e9e8 :: POST /v1/messages?beta=true tools=- thinking={\"type\":\"disabled\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
-  "request 8932 789d0996c8511790955ac6a4 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} tool_choice={\"type\":\"none\"}",
+  "request 8932 be90277a3c643824fbfa6719 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":8192,\"display\":\"summarized\"} tool_choice={\"type\":\"none\"}",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "anthropic-oauth-search-off": [
   "status 425 1d49729bfb5bba1e41993abf :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":769,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5727 3ef057462cb5e3af3da01503 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"disabled\"} user_saw=model,messages,max_tokens,stream,system,tools,thinking",
+  "request 5727 4213f5276834cbfc31a54b9d :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search thinking={\"type\":\"disabled\"} user_saw=model,messages,max_tokens,stream,system,tools,thinking",
   "request 1129 9ce8f1536b3d6e4319e7e9e8 :: POST /v1/messages?beta=true tools=- thinking={\"type\":\"disabled\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}"
  ],
  "codex-fast-search": [
   "status 425 29891b86604bcc362f6790e0 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":775,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":710,",
-  "request 5958 a3f089c151b769c895a517cb :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning,service_tier",
+  "request 5958 8faf763515b56db4c2a67b7b :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning,service_tier",
   "request 0 e3b0c44298fc1c149afbf4c8 :: GET /codex/responses unparsed",
   "request 1225 fe0ec97cd8e8324129d8dd88 :: POST /codex/responses tools=- parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"low\",\"summary\":\"auto\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "status 48 f34952322388417544fb0a30 :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":null}",
-  "request 6175 b997840fb0fac3325dc4f9e1 :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning,service_tier",
+  "request 6175 6ce71a00c741f2bb11521631 :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning,service_tier",
   "request 1327 bd2447a59be493fc0f4ab1ce :: POST /codex/responses tools=- parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"low\",\"summary\":\"auto\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "request 0 e3b0c44298fc1c149afbf4c8 :: GET /codex/responses unparsed",
-  "request 9435 312bab881b76ee7bd01853b6 :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"none\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"}",
+  "request 9435 007f4d4888a69f7c237b5de1 :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"none\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"}",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "anthropic-oauth-search-updates": [
   "status 425 e4d866652d7dc533c83f58b0 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":726,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5601 dddca117c648f60a366e43c4 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":14976,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5601 da8ac20aa0c20860578ebefa :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":14976,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "request 1129 9ce8f1536b3d6e4319e7e9e8 :: POST /v1/messages?beta=true tools=- thinking={\"type\":\"disabled\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
   "status 48 f34952322388417544fb0a30 :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":null}",
-  "request 5731 602c567bf30604a4b35b3e78 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":14976,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
+  "request 5731 45df0434820c8e1268816fb8 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":14976,\"display\":\"updates\"} user_saw=model,messages,max_tokens,stream,betas,system,tools,thinking",
   "request 1225 5f44749722fce3984824fd68 :: POST /v1/messages?beta=true tools=- thinking={\"type\":\"disabled\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}",
-  "request 9060 3d223c69aa134fd7f75f1ac0 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":14976,\"display\":\"updates\"} tool_choice={\"type\":\"none\"}",
+  "request 9060 b34e3ca2606ead004148cbf7 :: POST /v1/messages?beta=true tools=read|bash|edit|write|web_search:web_search_20250305 thinking={\"type\":\"enabled\",\"budget_tokens\":14976,\"display\":\"updates\"} tool_choice={\"type\":\"none\"}",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "codex-plain": [
   "status 425 8a6e27abd53f4e70898668e5 :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":823,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 6087 d82d19b994b9ce1db1d9c5dd :: POST /codex/responses tools=read|bash|edit|write|web_search parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning",
+  "request 6087 4fea795167955c9b88e3080e :: POST /codex/responses tools=read|bash|edit|write|web_search parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning",
   "request 0 e3b0c44298fc1c149afbf4c8 :: GET /codex/responses unparsed",
   "request 1225 fe0ec97cd8e8324129d8dd88 :: POST /codex/responses tools=- parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"low\",\"summary\":\"auto\"}",
   "status 60 dd5c3263611ae76d904e223b :: {\"key\":\"inkstone_prompt_suggestion\",\"text\":\"Fixture reply.\"}"
  ],
  "subagent-load-set": [
-  "request 5704 ca39fbeecbc0f7e46e6412d8 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
-  "request 5809 9981abb8884461b93117ee5e :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
-  "request 9062 1e5e05161fe9b13aed348fed :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
+  "request 5704 a2efd3e2660eeb00cc0da3b2 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 5809 188f5e0e95f8d0b37e1183e1 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 9062 a18bded2cef11eea3c7eb8c7 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true tool_choice=\"none\"",
   "compact 62 ef33b5a7723ef8a5c8a5970c :: {\"success\":true,\"path\":\"prefix\",\"fastError\":null,\"error\":null}"
  ],
  "title-load-set": [
-  "request 5958 a3f089c151b769c895a517cb :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning,service_tier"
+  "request 5958 8faf763515b56db4c2a67b7b :: POST /codex/responses tools=read|bash|edit|write|web_search service_tier=priority parallel=true tool_choice=\"auto\" reasoning={\"effort\":\"medium\",\"summary\":\"auto\"} user_saw=model,store,stream,input,text,include,prompt_cache_key,tool_choice,parallel_tool_calls,max_output_tokens,tools,reasoning,service_tier"
  ],
  "diagnostics-http-error": [
   "status 425 9bdba57e56d4f4c87dbebdce :: {\"key\":\"inkstone_context_usage\",\"text\":\"{\\\"v\\\":1,\\\"prompt\\\":<n>,\\\"builtin\\\":757,\\\"mcp\\\":0,\\\"skills\\\":0,\\\"mcpInfo\\\":0,\\\"memory\\\":0,\\\"deferred\\\":{\\\"builtin\\\":670,",
-  "request 5704 ca39fbeecbc0f7e46e6412d8 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 5704 a2efd3e2660eeb00cc0da3b2 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
   "diagnostic 152 dea9b589862bde64cbba5047 :: [Inkstone/provider-error] {\"provider\":\"fixture\",\"api\":\"openai-completions\",\"model\":\"model\",\"event\":\"http_error\",\"status\":500,\"requestId\":\"req_rejected\"}",
-  "request 5761 3439af4327e96534b9865cea :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
+  "request 5761 4e9ce04a0fb9231f725e6139 :: POST /v1/chat/completions tools=read|bash|edit|write|web_search parallel=true user_saw=model,messages,stream,prompt_cache_key,prompt_cache_retention,stream_options,store,max_completion_tokens,tools,parallel_tool_calls",
   "entry 174 d17a98f9984f6925c7fc4a24 :: {\"customType\":\"inkstone-provider-error\",\"data\":{\"provider\":\"fixture\",\"api\":\"openai-completions\",\"model\":\"model\",\"event\":\"http_error\",\"status\":500,\"requestId\":\"r"
  ]
 }

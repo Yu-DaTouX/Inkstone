@@ -181,7 +181,7 @@ async function runScenario(scenario, root, extDir, server) {
   writeFileSync(join(dirs.agent, 'models.json'), JSON.stringify({ providers: scenario.providers(server.port) }))
   writeFileSync(join(dirs.agent, 'auth.json'), JSON.stringify(scenario.auth ?? {}))
   writeFileSync(join(dirs.agent, 'settings.json'), JSON.stringify({ packages: [], defaultProvider: scenario.defaultModel[0], defaultModel: scenario.defaultModel[1], defaultThinkingLevel: scenario.thinking, retry: { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1 }, cacheWarming: 'off', transport: 'sse' }))
-  writeFileSync(join(dirs.data, 'desktop.json'), JSON.stringify(scenario.desktop))
+  writeFileSync(join(dirs.data, 'desktop.json'), JSON.stringify({ promptSuggestionsLocal: true, ...scenario.desktop }))
   server.state.records = []
   server.state.reject = scenario.reject?.() ?? null
   const systemRoot = process.env.SystemRoot || 'C:/Windows'
